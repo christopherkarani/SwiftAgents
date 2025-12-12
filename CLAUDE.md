@@ -95,6 +95,47 @@ swift package plugin --allow-writing-to-package-directory swiftformat  # Format 
 - **Foundation Models**: Apple's on-device models (iOS 26+)
 - **MLX**: Local model execution fallback
 
+## Sub-Agents
+
+Use specialized agents for focused expertise. Delegate proactively:
+
+| Agent | When to Use |
+|-------|-------------|
+| `api-designer` | Designing public APIs, naming, fluent interfaces |
+| `protocol-architect` | Type hierarchies, protocol composition, POP patterns |
+| `concurrency-expert` | Async code, actors, Sendable, data-race safety |
+| `macro-engineer` | Implementing or modifying Swift macros |
+| `code-reviewer` | After code changes, before commits |
+| `test-specialist` | Writing tests, mocks, async test patterns |
+| `framework-architect` | Multi-agent orchestration patterns, coordination |
+
+**Workflow**: For complex tasks, use agents in sequence:
+1. `protocol-architect` → design abstractions
+2. `api-designer` → refine public interface
+3. `concurrency-expert` → verify thread safety
+4. `test-specialist` → implement tests
+5. `code-reviewer` → final review
+
+## Sub-Agents
+
+Use these specialized agents for complex tasks. Delegate proactively.
+
+| Agent | When to Use |
+|-------|-------------|
+| `api-designer` | Designing public APIs, naming decisions, fluent interfaces |
+| `protocol-architect` | Type hierarchies, protocol composition, POP patterns |
+| `concurrency-expert` | Async code, actors, Sendable conformance, data-race safety |
+| `macro-engineer` | Implementing or modifying Swift macros |
+| `code-reviewer` | After code changes, before commits |
+| `test-specialist` | Writing tests, creating mocks, test coverage |
+| `framework-architect` | Multi-agent orchestration patterns, coordination design |
+
+### Delegation Guidelines
+- **Before implementing**: Consult `api-designer` and `protocol-architect`
+- **During implementation**: Use `concurrency-expert` for async code, `macro-engineer` for macros
+- **After changes**: Always run `code-reviewer` before committing
+- **For tests**: Delegate to `test-specialist` for mock patterns and coverage
+
 ## Quick References
 - API patterns: See `Sources/SwiftAgents/Examples/`
 - Protocol design: See `Sources/SwiftAgents/Core/Protocols/`
