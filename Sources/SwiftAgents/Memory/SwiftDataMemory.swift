@@ -76,7 +76,7 @@ public actor SwiftDataMemory: AgentMemory {
             }
         } catch {
             // Log error but don't throw - memory operations should be resilient
-            Logger.memory.error("SwiftDataMemory: Failed to save message: \(error)")
+            Logger.memory.error("SwiftDataMemory: Failed to save message: \(error, privacy: .private)")
         }
     }
 
@@ -92,7 +92,7 @@ public actor SwiftDataMemory: AgentMemory {
             let persisted = try modelContext.fetch(descriptor)
             return persisted.compactMap { $0.toMemoryMessage() }
         } catch {
-            Logger.memory.error("SwiftDataMemory: Failed to fetch messages: \(error)")
+            Logger.memory.error("SwiftDataMemory: Failed to fetch messages: \(error, privacy: .private)")
             return []
         }
     }
@@ -107,7 +107,7 @@ public actor SwiftDataMemory: AgentMemory {
             }
             try modelContext.save()
         } catch {
-            Logger.memory.error("SwiftDataMemory: Failed to clear messages: \(error)")
+            Logger.memory.error("SwiftDataMemory: Failed to clear messages: \(error, privacy: .private)")
         }
     }
 
@@ -118,6 +118,7 @@ public actor SwiftDataMemory: AgentMemory {
             do {
                 return try modelContext.fetchCount(descriptor)
             } catch {
+                Logger.memory.error("SwiftDataMemory: Failed to fetch count: \(error, privacy: .private)")
                 return 0
             }
         }
@@ -128,9 +129,10 @@ public actor SwiftDataMemory: AgentMemory {
         get async {
             let descriptor = PersistedMessage.fetchDescriptor(forConversation: conversationId)
             do {
-                let messages = try modelContext.fetch(descriptor)
-                return messages.isEmpty
+                let count = try modelContext.fetchCount(descriptor)
+                return count == 0
             } catch {
+                Logger.memory.error("SwiftDataMemory: Failed to check isEmpty: \(error, privacy: .private)")
                 return true
             }
         }
@@ -152,7 +154,7 @@ public actor SwiftDataMemory: AgentMemory {
                 try modelContext.save()
             }
         } catch {
-            Logger.memory.error("SwiftDataMemory: Failed to trim messages: \(error)")
+            Logger.memory.error("SwiftDataMemory: Failed to trim messages: \(error, privacy: .private)")
         }
     }
 }
@@ -178,7 +180,7 @@ extension SwiftDataMemory {
                 await trimToMaxMessages()
             }
         } catch {
-            Logger.memory.error("SwiftDataMemory: Failed to save messages: \(error)")
+            Logger.memory.error("SwiftDataMemory: Failed to save messages: \(error, privacy: .private)")
         }
     }
 
@@ -194,7 +196,7 @@ extension SwiftDataMemory {
             // Reverse because fetch was in descending order
             return persisted.reversed().compactMap { $0.toMemoryMessage() }
         } catch {
-            Logger.memory.error("SwiftDataMemory: Failed to fetch recent messages: \(error)")
+            Logger.memory.error("SwiftDataMemory: Failed to fetch recent messages: \(error, privacy: .private)")
             return []
         }
     }
@@ -212,7 +214,7 @@ extension SwiftDataMemory {
             let messages = try modelContext.fetch(descriptor)
             return Array(Set(messages.map(\.conversationId))).sorted()
         } catch {
-            Logger.memory.error("SwiftDataMemory: Failed to fetch conversation IDs: \(error)")
+            Logger.memory.error("SwiftDataMemory: Failed to fetch conversation IDs: \(error, privacy: .private)")
             return []
         }
     }
@@ -230,7 +232,7 @@ extension SwiftDataMemory {
             }
             try modelContext.save()
         } catch {
-            Logger.memory.error("SwiftDataMemory: Failed to delete conversation: \(error)")
+            Logger.memory.error("SwiftDataMemory: Failed to delete conversation: \(error, privacy: .private)")
         }
     }
 
@@ -244,6 +246,7 @@ extension SwiftDataMemory {
         do {
             return try modelContext.fetchCount(descriptor)
         } catch {
+            Logger.memory.error("SwiftDataMemory: Failed to fetch message count for conversation \(id): \(error, privacy: .private)")
             return 0
         }
     }

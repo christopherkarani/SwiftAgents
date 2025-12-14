@@ -70,6 +70,12 @@ public protocol AgentMemory: Actor, Sendable {
 
     /// The number of messages currently stored.
     var count: Int { get async }
+
+    /// Whether the memory contains no messages.
+    ///
+    /// Implementations should provide an efficient check that avoids
+    /// fetching all messages when possible.
+    var isEmpty: Bool { get async }
 }
 
 // MARK: - Helper Functions
@@ -162,6 +168,7 @@ public actor AnyAgentMemory: AgentMemory {
     private let _getAllMessages: @Sendable () async -> [MemoryMessage]
     private let _clear: @Sendable () async -> Void
     private let _count: @Sendable () async -> Int
+    private let _isEmpty: @Sendable () async -> Bool
 
     /// Creates a type-erased wrapper around any AgentMemory.
     ///
@@ -172,6 +179,7 @@ public actor AnyAgentMemory: AgentMemory {
         _getAllMessages = { await memory.getAllMessages() }
         _clear = { await memory.clear() }
         _count = { await memory.count }
+        _isEmpty = { await memory.isEmpty }
     }
 
     public func add(_ message: MemoryMessage) async {
@@ -193,6 +201,12 @@ public actor AnyAgentMemory: AgentMemory {
     public var count: Int {
         get async {
             await _count()
+        }
+    }
+
+    public var isEmpty: Bool {
+        get async {
+            await _isEmpty()
         }
     }
 }

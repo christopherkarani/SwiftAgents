@@ -55,8 +55,6 @@ opt_in_rules:
 # Disabled rules
 disabled_rules:
   - trailing_comma  # Project uses no trailing commas
-  - force_cast
-  - force_try
   - todo  # Allow TODO comments during development
   - opening_brace  # SwiftFormat handles this
   - extension_access_modifier  # Existing code doesn't use this pattern
@@ -123,11 +121,14 @@ large_tuple:
   warning: 3
   error: 4
 
+# Force cast and force try (warnings only, not errors)
+force_cast: warning
+force_try: warning
+
 # File header format (matches project style)
 file_header:
   required_pattern: |
-    \/\/.*\.swift
-    \/\/ SwiftAgents.*
+    \/\/ \w+\.swift\n\/\/ SwiftAgents Framework
 
 # Modifier order (Swift 6 conventions)
 modifier_order:

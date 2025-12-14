@@ -2,7 +2,7 @@
 # https://github.com/nicklockwood/SwiftFormat
 
 # Swift version
---swiftversion 6.0
+--swiftversion 6.2
 
 # File options
 --exclude .build,Package.swift
