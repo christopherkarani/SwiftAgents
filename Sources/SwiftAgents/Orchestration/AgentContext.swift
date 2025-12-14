@@ -66,17 +66,17 @@ public enum AgentContextKey: String, Sendable {
 /// let path = await context.getExecutionPath()
 /// // ["DataFetcher", "Analyzer"]
 /// ```
-public actor AgentContext: Sendable {
+public actor AgentContext {
     // MARK: - Properties
 
     /// The original input that started orchestration.
-    public nonisolated let originalInput: String
+    nonisolated public let originalInput: String
 
     /// Unique identifier for this execution.
-    public nonisolated let executionId: UUID
+    nonisolated public let executionId: UUID
 
     /// When this context was created.
-    public nonisolated let createdAt: Date
+    nonisolated public let createdAt: Date
 
     // MARK: - Private Storage
 
@@ -257,19 +257,15 @@ public actor AgentContext: Sendable {
 
         // Merge messages
         let otherMessages = await other.getMessages()
-        for message in otherMessages {
+        for message in otherMessages where !messages.contains(where: { $0.id == message.id }) {
             // Avoid duplicates by checking message ID
-            if !messages.contains(where: { $0.id == message.id }) {
-                messages.append(message)
-            }
+            messages.append(message)
         }
 
         // Merge execution path
         let otherPath = await other.getExecutionPath()
-        for agentName in otherPath {
-            if !executionPath.contains(agentName) {
-                executionPath.append(agentName)
-            }
+        for agentName in otherPath where !executionPath.contains(agentName) {
+            executionPath.append(agentName)
         }
     }
 
@@ -310,7 +306,7 @@ public actor AgentContext: Sendable {
 // MARK: - CustomStringConvertible
 
 extension AgentContext: CustomStringConvertible {
-    public nonisolated var description: String {
+    nonisolated public var description: String {
         """
         AgentContext(
             executionId: \(executionId),
@@ -324,7 +320,7 @@ extension AgentContext: CustomStringConvertible {
 // MARK: - CustomDebugStringConvertible
 
 extension AgentContext: CustomDebugStringConvertible {
-    public nonisolated var debugDescription: String {
+    nonisolated public var debugDescription: String {
         """
         AgentContext(
             executionId: \(executionId),

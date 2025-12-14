@@ -102,7 +102,7 @@ public actor MockInferenceProvider: InferenceProvider {
     }
 
     nonisolated public func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
-        return AsyncThrowingStream { continuation in
+        AsyncThrowingStream { continuation in
             Task {
                 do {
                     await self.recordStreamCall(prompt: prompt, options: options)

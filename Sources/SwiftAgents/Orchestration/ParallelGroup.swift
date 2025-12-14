@@ -328,22 +328,22 @@ public enum MergeStrategies {
 public actor ParallelGroup: Agent {
     // MARK: - Agent Protocol Properties (nonisolated)
 
-    public nonisolated var tools: [any Tool] { [] }
+    nonisolated public var tools: [any Tool] { [] }
 
-    public nonisolated var instructions: String {
+    nonisolated public var instructions: String {
         "Parallel group of \(agents.count) agents"
     }
 
-    public nonisolated let configuration: AgentConfiguration
+    nonisolated public let configuration: AgentConfiguration
 
-    public nonisolated var memory: (any AgentMemory)? { nil }
+    nonisolated public var memory: (any AgentMemory)? { nil }
 
-    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Group Properties (nonisolated)
 
     /// The agents in this parallel group with their names.
-    public nonisolated let agents: [(name: String, agent: any Agent)]
+    nonisolated public let agents: [(name: String, agent: any Agent)]
 
     // MARK: - Private State
 

@@ -15,19 +15,19 @@ struct InferenceOptionsTests {
     @Test("Default initialization")
     func defaultInitialization() {
         let options = InferenceOptions()
-        
+
         #expect(options.temperature == 1.0)
         #expect(options.maxTokens == nil)
-        #expect(options.stopSequences == [])
+        #expect(options.stopSequences.isEmpty)
     }
     
     @Test("Default static constant")
     func defaultStaticConstant() {
         let options = InferenceOptions.default
-        
+
         #expect(options.temperature == 1.0)
         #expect(options.maxTokens == nil)
-        #expect(options.stopSequences == [])
+        #expect(options.stopSequences.isEmpty)
     }
     
     @Test("Custom initialization with all parameters")
@@ -46,10 +46,10 @@ struct InferenceOptionsTests {
     @Test("Partial custom initialization")
     func partialCustomInitialization() {
         let options = InferenceOptions(temperature: 0.5)
-        
+
         #expect(options.temperature == 0.5)
         #expect(options.maxTokens == nil)
-        #expect(options.stopSequences == [])
+        #expect(options.stopSequences.isEmpty)
     }
     
     @Test("Edge case: minimum temperature")
@@ -300,9 +300,9 @@ struct InferenceResponseTests {
     @Test("Default initialization")
     func defaultInitialization() {
         let response = InferenceResponse()
-        
+
         #expect(response.content == nil)
-        #expect(response.toolCalls == [])
+        #expect(response.toolCalls.isEmpty)
         #expect(response.finishReason == .completed)
         #expect(response.hasToolCalls == false)
     }
@@ -310,9 +310,9 @@ struct InferenceResponseTests {
     @Test("Initialization with content only")
     func contentOnlyInitialization() {
         let response = InferenceResponse(content: "Hello, world!")
-        
+
         #expect(response.content == "Hello, world!")
-        #expect(response.toolCalls == [])
+        #expect(response.toolCalls.isEmpty)
         #expect(response.finishReason == .completed)
         #expect(response.hasToolCalls == false)
     }
@@ -458,8 +458,8 @@ struct InferenceResponseTests {
     @Test("Edge case: empty content string")
     func emptyContentString() {
         let response = InferenceResponse(content: "")
-        
-        #expect(response.content == "")
+
+        #expect(response.content?.isEmpty == true)
         #expect(response.hasToolCalls == false)
     }
     

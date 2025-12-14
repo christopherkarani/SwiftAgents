@@ -263,25 +263,21 @@ public struct LLMRoutingStrategy: RoutingStrategy {
             .lowercased()
 
         // Try exact match first
-        for agent in availableAgents {
-            if cleaned == agent.name.lowercased() {
-                return RoutingDecision(
-                    selectedAgentName: agent.name,
-                    confidence: 0.95,
-                    reasoning: "LLM selected agent by exact name match"
-                )
-            }
+        for agent in availableAgents where cleaned == agent.name.lowercased() {
+            return RoutingDecision(
+                selectedAgentName: agent.name,
+                confidence: 0.95,
+                reasoning: "LLM selected agent by exact name match"
+            )
         }
 
         // Try partial match
-        for agent in availableAgents {
-            if cleaned.contains(agent.name.lowercased()) {
-                return RoutingDecision(
-                    selectedAgentName: agent.name,
-                    confidence: 0.85,
-                    reasoning: "LLM selected agent by partial name match"
-                )
-            }
+        for agent in availableAgents where cleaned.contains(agent.name.lowercased()) {
+            return RoutingDecision(
+                selectedAgentName: agent.name,
+                confidence: 0.85,
+                reasoning: "LLM selected agent by partial name match"
+            )
         }
 
         // If no match, use keyword fallback
@@ -448,11 +444,11 @@ public struct KeywordRoutingStrategy: RoutingStrategy {
 public actor SupervisorAgent: Agent {
     // MARK: - Agent Protocol Properties
 
-    public nonisolated let tools: [any Tool] = []
-    public nonisolated let instructions: String
-    public nonisolated let configuration: AgentConfiguration
-    public nonisolated var memory: (any AgentMemory)? { nil }
-    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+    nonisolated public let tools: [any Tool] = []
+    nonisolated public let instructions: String
+    nonisolated public let configuration: AgentConfiguration
+    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Supervisor Properties
 
@@ -586,7 +582,7 @@ public actor SupervisorAgent: Agent {
         }
     }
 
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {

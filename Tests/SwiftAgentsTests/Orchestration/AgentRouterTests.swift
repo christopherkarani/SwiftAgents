@@ -477,15 +477,13 @@ struct AgentRouterStreamingTests {
         
         // Should have started event
         let hasStarted = events.contains { event in
-            if case .started = event { return true }
-            return false
+            if case .started = event { true } else { false }
         }
         #expect(hasStarted)
         
         // Should have completed event
         let hasCompleted = events.contains { event in
-            if case .completed = event { return true }
-            return false
+            if case .completed = event { true } else { false }
         }
         #expect(hasCompleted)
     }

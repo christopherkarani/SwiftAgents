@@ -303,9 +303,9 @@ struct FallbackSummarizerTests {
         let fallback = MockSummarizer.unavailable()
         let summarizer = FallbackSummarizer(primary: primary, fallback: fallback)
         
-        await #expect(throws: SummarizerError.self) {
+        await #expect(throws: SummarizerError.self, performing: {
             try await summarizer.summarize("Test text", maxTokens: 100)
-        }
+        })
     }
     
     @Test("Throws unavailable when primary unavailable and fallback throws")
@@ -314,9 +314,9 @@ struct FallbackSummarizerTests {
         let fallback = MockSummarizer.failing(with: SummarizerError.inputTooShort)
         let summarizer = FallbackSummarizer(primary: primary, fallback: fallback)
         
-        await #expect(throws: SummarizerError.self) {
+        await #expect(throws: SummarizerError.self, performing: {
             try await summarizer.summarize("Test text", maxTokens: 100)
-        }
+        })
     }
     
     @Test("Propagates fallback error when primary throws and fallback throws")
@@ -325,9 +325,9 @@ struct FallbackSummarizerTests {
         let fallback = MockSummarizer.failing(with: SummarizerError.inputTooShort)
         let summarizer = FallbackSummarizer(primary: primary, fallback: fallback)
         
-        await #expect(throws: SummarizerError.self) {
+        await #expect(throws: SummarizerError.self, performing: {
             try await summarizer.summarize("Test text", maxTokens: 100)
-        }
+        })
     }
     
     // MARK: - Availability Logic

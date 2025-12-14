@@ -34,8 +34,8 @@ public actor ReActAgent: Agent {
     public let tools: [any Tool]
     public let instructions: String
     public let configuration: AgentConfiguration
-    public nonisolated let memory: (any AgentMemory)?
-    public nonisolated let inferenceProvider: (any InferenceProvider)?
+    nonisolated public let memory: (any AgentMemory)?
+    nonisolated public let inferenceProvider: (any InferenceProvider)?
 
     // MARK: - Internal State
 
@@ -106,7 +106,7 @@ public actor ReActAgent: Agent {
     /// Streams the agent's execution, yielding events as they occur.
     /// - Parameter input: The user's input/query.
     /// - Returns: An async stream of agent events.
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {

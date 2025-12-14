@@ -124,31 +124,31 @@ public actor SequentialChain: Agent {
     // MARK: - Agent Protocol Properties (nonisolated)
 
     /// Tools available to this chain (always empty - agents have their own tools).
-    public nonisolated var tools: [any Tool] { [] }
+    nonisolated public var tools: [any Tool] { [] }
 
     /// Instructions describing this sequential chain.
-    public nonisolated var instructions: String {
+    nonisolated public var instructions: String {
         "Sequential chain executing \(chainedAgents.count) agents in order"
     }
 
     /// Configuration for the chain execution.
-    public nonisolated let configuration: AgentConfiguration
+    nonisolated public let configuration: AgentConfiguration
 
     /// Memory system (chains don't maintain their own memory).
-    public nonisolated var memory: (any AgentMemory)? { nil }
+    nonisolated public var memory: (any AgentMemory)? { nil }
 
     /// Inference provider (chains don't use inference directly).
-    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Chain Properties (nonisolated)
 
     /// The agents in execution order.
-    public nonisolated let chainedAgents: [any Agent]
+    nonisolated public let chainedAgents: [any Agent]
 
     // MARK: - Internal Properties (nonisolated)
 
     /// Transformers to apply between agents (index -> transformer).
-    internal nonisolated let transformers: [Int: OutputTransformer]
+    nonisolated internal let transformers: [Int: OutputTransformer]
 
     // MARK: - Private State
 
@@ -192,7 +192,7 @@ public actor SequentialChain: Agent {
     ///     .withTransformer(after: 0, .withMetadata)
     ///     .withTransformer(after: 1, .passthrough)
     /// ```
-    public nonisolated func withTransformer(after index: Int, _ transformer: OutputTransformer) -> SequentialChain {
+    nonisolated public func withTransformer(after index: Int, _ transformer: OutputTransformer) -> SequentialChain {
         var newTransformers = transformers
         newTransformers[index] = transformer
         return SequentialChain(
@@ -280,7 +280,7 @@ public actor SequentialChain: Agent {
     ///
     /// - Parameter input: The initial input for the first agent.
     /// - Returns: An async stream of agent events.
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -359,7 +359,7 @@ public actor SequentialChain: Agent {
 // MARK: - CustomStringConvertible
 
 extension SequentialChain: CustomStringConvertible {
-    public nonisolated var description: String {
+    nonisolated public var description: String {
         "SequentialChain(\(chainedAgents.count) agents)"
     }
 }

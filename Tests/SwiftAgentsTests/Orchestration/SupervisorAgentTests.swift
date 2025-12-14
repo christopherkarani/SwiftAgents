@@ -391,9 +391,9 @@ struct SupervisorAgentDirectExecutionTests {
             routingStrategy: KeywordRoutingStrategy()
         )
         
-        await #expect(throws: AgentError.self) {
+        await #expect(throws: AgentError.self, performing: {
             _ = try await supervisor.executeAgent(named: "unknown", input: "test")
-        }
+        })
     }
 }
 
@@ -452,9 +452,9 @@ struct SupervisorAgentFallbackTests {
             fallbackAgent: nil
         )
 
-        await #expect(throws: AgentError.self) {
+        await #expect(throws: AgentError.self, performing: {
             _ = try await supervisor.run("input")
-        }
+        })
     }
     
     @Test("Handles agent execution errors with fallback")
@@ -528,17 +528,14 @@ struct SupervisorAgentStreamingTests {
         }
         
         #expect(!events.isEmpty)
-        #expect(events.contains(where: { 
-            if case .started = $0 { return true }
-            return false
+        #expect(events.contains(where: {
+            if case .started = $0 { true } else { false }
         }))
-        #expect(events.contains(where: { 
-            if case .thinking = $0 { return true }
-            return false
+        #expect(events.contains(where: {
+            if case .thinking = $0 { true } else { false }
         }))
-        #expect(events.contains(where: { 
-            if case .completed = $0 { return true }
-            return false
+        #expect(events.contains(where: {
+            if case .completed = $0 { true } else { false }
         }))
     }
 }

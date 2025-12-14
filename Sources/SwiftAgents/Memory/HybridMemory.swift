@@ -188,7 +188,7 @@ public actor HybridMemory: AgentMemory {
 
     /// Whether the memory is empty (no short-term messages and no summary).
     public var isEmpty: Bool {
-        get async { await shortTermMemory.count == 0 && longTermSummary.isEmpty }
+        get async { await shortTermMemory.isEmpty && longTermSummary.isEmpty }
     }
 
     // MARK: - Summary Information
