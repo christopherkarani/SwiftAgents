@@ -126,7 +126,7 @@ public actor SwiftDataMemory: AgentMemory {
 
     /// Whether the memory contains no messages for this conversation.
     public var isEmpty: Bool {
-        get async { await count == 0 }
+        get async { await count.isZero }
     }
 
     // MARK: - Private Methods
