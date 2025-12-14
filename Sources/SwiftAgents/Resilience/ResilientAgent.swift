@@ -38,11 +38,11 @@ public actor ResilientAgent: Agent {
 
     // MARK: - Resilience Configuration
 
-    private let base: any Agent
-    private let retryPolicy: RetryPolicy?
-    private let circuitBreaker: CircuitBreaker?
-    private let fallbackAgent: (any Agent)?
-    private let timeoutDuration: Duration?
+    private nonisolated let base: any Agent
+    private nonisolated let retryPolicy: RetryPolicy?
+    private nonisolated let circuitBreaker: CircuitBreaker?
+    private nonisolated let fallbackAgent: (any Agent)?
+    private nonisolated let timeoutDuration: Duration?
 
     // MARK: - Private State
 

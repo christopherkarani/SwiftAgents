@@ -355,15 +355,15 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
         let conversionCode = generateReturnConversion(userExecuteReturnType)
 
         if hasUserExecute {
-            return """
-                public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
-                    \(raw: extractionCode)
-                    let result = try await self._userExecute(\(raw: parameters.map { $0.name + ": " + $0.name }.joined(separator: ", ")))
-                    \(raw: conversionCode)
-                }
+            // Generate property assignments
+            let propertyAssignments = parameters.map { "self.\($0.name) = \($0.name)" }.joined(separator: "\n            ")
 
-                private func _userExecute(\(raw: parameters.map { "\($0.name): \($0.swiftType)" }.joined(separator: ", "))) async throws -> \(raw: userExecuteReturnType) {
-                    try await execute()
+            return """
+                public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+                    \(raw: extractionCode)
+            \(raw: propertyAssignments)
+                    let result = try await execute()
+                    \(raw: conversionCode)
                 }
                 """
         } else {
