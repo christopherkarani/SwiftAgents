@@ -1,5 +1,5 @@
 # SwiftAgents CI Workflow
-# Builds and tests the SwiftAgents framework on macOS
+# Builds and tests the SwiftAgents framework on macOS 26 (Tahoe)
 
 name: Swift CI
 
@@ -17,16 +17,17 @@ concurrency:
 jobs:
   build-and-test:
     name: Build & Test
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: '6.0'
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Show Swift version
+        run: swift --version
 
       - name: Cache Swift packages
         uses: actions/cache@v4
@@ -35,9 +36,6 @@ jobs:
           key: ${{ runner.os }}-swift-${{ hashFiles('Package.resolved') }}
           restore-keys: |
             ${{ runner.os }}-swift-
-
-      - name: Show Swift version
-        run: swift --version
 
       - name: Resolve dependencies
         run: swift package resolve
@@ -51,30 +49,34 @@ jobs:
       - name: Run tests
         run: swift test --parallel
 
-  code-quality:
-    name: Code Quality
-    runs-on: macos-15
+  ios-build:
+    name: iOS Build
+    runs-on: macos-26
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: '6.0'
+      - name: Show available simulators
+        run: xcrun simctl list devices available
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild build \
+            -scheme SwiftAgents \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -skipPackagePluginValidation
+
+  code-quality:
+    name: Code Quality
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Check Swift package
         run: swift package describe
 
       - name: Dump package
         run: swift package dump-package
-
-  # Platform-specific builds (when Xcode 26 is available on GitHub Actions)
-  # ios-build:
-  #   name: iOS Build
-  #   runs-on: macos-15
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Build for iOS
-  #       run: xcodebuild build -scheme SwiftAgents -destination 'platform=iOS Simulator,name=iPhone 16'
