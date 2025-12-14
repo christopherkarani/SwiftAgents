@@ -107,7 +107,15 @@ public protocol InferenceProvider: Sendable {
 /// Options for inference generation.
 ///
 /// Customize model behavior including temperature, token limits,
-/// and stop sequences.
+/// and stop sequences. Supports fluent builder pattern for easy configuration.
+///
+/// Example:
+/// ```swift
+/// let options = InferenceOptions.default
+///     .temperature(0.7)
+///     .maxTokens(2000)
+///     .stopSequences("END", "STOP")
+/// ```
 public struct InferenceOptions: Sendable, Equatable {
     /// Temperature for generation (0.0 = deterministic, 2.0 = creative).
     public var temperature: Double
@@ -118,6 +126,18 @@ public struct InferenceOptions: Sendable, Equatable {
     /// Sequences that will stop generation.
     public var stopSequences: [String]
 
+    /// Top-p (nucleus) sampling parameter.
+    public var topP: Double?
+
+    /// Top-k sampling parameter.
+    public var topK: Int?
+
+    /// Presence penalty for reducing repetition.
+    public var presencePenalty: Double?
+
+    /// Frequency penalty for reducing repetition.
+    public var frequencyPenalty: Double?
+
     /// Default inference options.
     public static let `default` = InferenceOptions()
 
@@ -126,14 +146,158 @@ public struct InferenceOptions: Sendable, Equatable {
     ///   - temperature: Generation temperature. Default: 1.0
     ///   - maxTokens: Maximum tokens. Default: nil
     ///   - stopSequences: Stop sequences. Default: []
+    ///   - topP: Top-p sampling. Default: nil
+    ///   - topK: Top-k sampling. Default: nil
+    ///   - presencePenalty: Presence penalty. Default: nil
+    ///   - frequencyPenalty: Frequency penalty. Default: nil
     public init(
         temperature: Double = 1.0,
         maxTokens: Int? = nil,
-        stopSequences: [String] = []
+        stopSequences: [String] = [],
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.stopSequences = stopSequences
+        self.topP = topP
+        self.topK = topK
+        self.presencePenalty = presencePenalty
+        self.frequencyPenalty = frequencyPenalty
+    }
+
+    // MARK: - Fluent Builder Methods
+
+    /// Sets the temperature for generation.
+    /// - Parameter value: The temperature (0.0-2.0). Values are clamped to valid range.
+    /// - Returns: A modified options instance.
+    public func temperature(_ value: Double) -> InferenceOptions {
+        var copy = self
+        copy.temperature = max(0.0, min(2.0, value))
+        return copy
+    }
+
+    /// Sets the maximum tokens to generate.
+    /// - Parameter value: The maximum token count, or nil for model default.
+    /// - Returns: A modified options instance.
+    public func maxTokens(_ value: Int?) -> InferenceOptions {
+        var copy = self
+        copy.maxTokens = value.flatMap { $0 > 0 ? $0 : nil }
+        return copy
+    }
+
+    /// Sets the stop sequences.
+    /// - Parameter sequences: Sequences that stop generation.
+    /// - Returns: A modified options instance.
+    public func stopSequences(_ sequences: String...) -> InferenceOptions {
+        var copy = self
+        copy.stopSequences = sequences
+        return copy
+    }
+
+    /// Sets the stop sequences from an array.
+    /// - Parameter sequences: Sequences that stop generation.
+    /// - Returns: A modified options instance.
+    public func stopSequences(_ sequences: [String]) -> InferenceOptions {
+        var copy = self
+        copy.stopSequences = sequences
+        return copy
+    }
+
+    /// Adds a single stop sequence.
+    /// - Parameter sequence: The sequence to add.
+    /// - Returns: A modified options instance.
+    public func addStopSequence(_ sequence: String) -> InferenceOptions {
+        var copy = self
+        copy.stopSequences.append(sequence)
+        return copy
+    }
+
+    /// Clears all stop sequences.
+    /// - Returns: A modified options instance.
+    public func clearStopSequences() -> InferenceOptions {
+        var copy = self
+        copy.stopSequences = []
+        return copy
+    }
+
+    /// Sets the top-p (nucleus) sampling parameter.
+    /// - Parameter value: The top-p value (0.0-1.0).
+    /// - Returns: A modified options instance.
+    public func topP(_ value: Double?) -> InferenceOptions {
+        var copy = self
+        copy.topP = value.map { max(0.0, min(1.0, $0)) }
+        return copy
+    }
+
+    /// Sets the top-k sampling parameter.
+    /// - Parameter value: The top-k value.
+    /// - Returns: A modified options instance.
+    public func topK(_ value: Int?) -> InferenceOptions {
+        var copy = self
+        copy.topK = value.flatMap { $0 > 0 ? $0 : nil }
+        return copy
+    }
+
+    /// Sets the presence penalty.
+    /// - Parameter value: The presence penalty (-2.0 to 2.0).
+    /// - Returns: A modified options instance.
+    public func presencePenalty(_ value: Double?) -> InferenceOptions {
+        var copy = self
+        copy.presencePenalty = value.map { max(-2.0, min(2.0, $0)) }
+        return copy
+    }
+
+    /// Sets the frequency penalty.
+    /// - Parameter value: The frequency penalty (-2.0 to 2.0).
+    /// - Returns: A modified options instance.
+    public func frequencyPenalty(_ value: Double?) -> InferenceOptions {
+        var copy = self
+        copy.frequencyPenalty = value.map { max(-2.0, min(2.0, $0)) }
+        return copy
+    }
+
+    /// Creates a copy with custom modifications.
+    /// - Parameter modifications: A closure that modifies the options.
+    /// - Returns: A modified options instance.
+    public func with(_ modifications: (inout InferenceOptions) -> Void) -> InferenceOptions {
+        var copy = self
+        modifications(&copy)
+        return copy
+    }
+
+    // MARK: - Preset Configurations
+
+    /// Creative preset with high temperature for diverse outputs.
+    public static var creative: InferenceOptions {
+        InferenceOptions(temperature: 1.2, topP: 0.95)
+    }
+
+    /// Precise preset with low temperature for deterministic outputs.
+    public static var precise: InferenceOptions {
+        InferenceOptions(temperature: 0.2, topP: 0.9)
+    }
+
+    /// Balanced preset for general use.
+    public static var balanced: InferenceOptions {
+        InferenceOptions(temperature: 0.7, topP: 0.9)
+    }
+
+    /// Code generation preset optimized for programming tasks.
+    public static var codeGeneration: InferenceOptions {
+        InferenceOptions(
+            temperature: 0.1,
+            maxTokens: 4000,
+            stopSequences: ["```", "###"],
+            topP: 0.95
+        )
+    }
+
+    /// Chat preset optimized for conversational interactions.
+    public static var chat: InferenceOptions {
+        InferenceOptions(temperature: 0.8, topP: 0.9, presencePenalty: 0.6)
     }
 }
 

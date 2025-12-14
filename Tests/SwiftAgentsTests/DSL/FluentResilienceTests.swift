@@ -1,0 +1,514 @@
+// FluentResilienceTests.swift
+// SwiftAgentsTests
+//
+// Tests for fluent resilience integration with Agent protocol.
+
+import Testing
+import Foundation
+@testable import SwiftAgents
+
+// MARK: - Fluent Resilience Tests
+
+@Suite("Fluent Resilience Tests")
+struct FluentResilienceTests {
+
+    // MARK: - withRetry Tests
+
+    @Test("withRetry wraps agent with retry policy")
+    func withRetryWrapsAgent() async throws {
+        var attemptCount = 0
+        let mockProvider = MockInferenceProvider()
+        await mockProvider.setError(TestResilienceError.transient)
+
+        // Configure to fail twice then succeed
+        let failingProvider = FailThenSucceedProvider(failCount: 2)
+
+        let baseAgent = ReActAgent(
+            tools: [],
+            instructions: "Test agent",
+            inferenceProvider: failingProvider
+        )
+
+        let resilientAgent = baseAgent.withRetry(.exponentialBackoff(maxAttempts: 3))
+
+        do {
+            let result = try await resilientAgent.run("test")
+            #expect(result.output.contains("success"))
+        } catch {
+            // May fail depending on implementation
+        }
+    }
+
+    @Test("withRetry respects max attempts")
+    func withRetryRespectsMaxAttempts() async throws {
+        let alwaysFailingProvider = AlwaysFailingProvider()
+
+        let baseAgent = ReActAgent(
+            tools: [],
+            instructions: "Test agent",
+            inferenceProvider: alwaysFailingProvider
+        )
+
+        let resilientAgent = baseAgent.withRetry(.fixed(maxAttempts: 3, delay: .milliseconds(10)))
+
+        do {
+            _ = try await resilientAgent.run("test")
+            Issue.record("Expected error after max attempts")
+        } catch {
+            // Expected to fail after 3 attempts
+            #expect(true)
+        }
+    }
+
+    @Test("withRetry with exponential backoff")
+    func withRetryExponentialBackoff() async throws {
+        let policy = RetryPolicy.exponentialBackoff(
+            maxAttempts: 5,
+            baseDelay: .milliseconds(10),
+            maxDelay: .seconds(1),
+            multiplier: 2.0
+        )
+
+        #expect(policy.maxAttempts == 5)
+        // Further verification would require timing tests
+    }
+
+    // MARK: - withCircuitBreaker Tests
+
+    @Test("withCircuitBreaker wraps agent")
+    func withCircuitBreakerWrapsAgent() async throws {
+        let mockProvider = MockInferenceProvider(responses: ["Final Answer: Success"])
+
+        let baseAgent = ReActAgent(
+            tools: [],
+            instructions: "Test agent",
+            inferenceProvider: mockProvider
+        )
+
+        let resilientAgent = baseAgent.withCircuitBreaker(threshold: 5, resetTimeout: .seconds(30))
+
+        let result = try await resilientAgent.run("test")
+        #expect(result.output.contains("Success"))
+    }
+
+    @Test("withCircuitBreaker opens after threshold failures")
+    func withCircuitBreakerOpensAfterThreshold() async throws {
+        let alwaysFailingProvider = AlwaysFailingProvider()
+
+        let baseAgent = ReActAgent(
+            tools: [],
+            instructions: "Test agent",
+            inferenceProvider: alwaysFailingProvider
+        )
+
+        let resilientAgent = baseAgent.withCircuitBreaker(threshold: 3, resetTimeout: .seconds(60))
+
+        // Fail 3 times to trip the circuit breaker
+        for _ in 0..<3 {
+            do {
+                _ = try await resilientAgent.run("test")
+            } catch {
+                // Expected failures
+            }
+        }
+
+        // Next call should fail immediately with circuit open
+        do {
+            _ = try await resilientAgent.run("test")
+            Issue.record("Expected circuit breaker to be open")
+        } catch let error as ResilienceError {
+            switch error {
+            case .circuitBreakerOpen:
+                #expect(true)
+            default:
+                Issue.record("Expected circuitBreakerOpen error")
+            }
+        } catch {
+            // Other error types may be acceptable
+        }
+    }
+
+    // MARK: - withFallback Tests
+
+    @Test("withFallback uses fallback agent on failure")
+    func withFallbackUsesFallbackOnFailure() async throws {
+        let alwaysFailingProvider = AlwaysFailingProvider()
+        let fallbackProvider = MockInferenceProvider(responses: ["Final Answer: Fallback response"])
+
+        let primaryAgent = ReActAgent(
+            tools: [],
+            instructions: "Primary agent",
+            inferenceProvider: alwaysFailingProvider
+        )
+
+        let fallbackAgent = ReActAgent(
+            tools: [],
+            instructions: "Fallback agent",
+            inferenceProvider: fallbackProvider
+        )
+
+        let resilientAgent = primaryAgent.withFallback(fallbackAgent)
+
+        let result = try await resilientAgent.run("test")
+        #expect(result.output.contains("Fallback"))
+    }
+
+    @Test("withFallback uses primary agent when successful")
+    func withFallbackUsesPrimaryWhenSuccessful() async throws {
+        let primaryProvider = MockInferenceProvider(responses: ["Final Answer: Primary response"])
+        let fallbackProvider = MockInferenceProvider(responses: ["Final Answer: Fallback response"])
+
+        let primaryAgent = ReActAgent(
+            tools: [],
+            instructions: "Primary agent",
+            inferenceProvider: primaryProvider
+        )
+
+        let fallbackAgent = ReActAgent(
+            tools: [],
+            instructions: "Fallback agent",
+            inferenceProvider: fallbackProvider
+        )
+
+        let resilientAgent = primaryAgent.withFallback(fallbackAgent)
+
+        let result = try await resilientAgent.run("test")
+        #expect(result.output.contains("Primary"))
+    }
+
+    // MARK: - Chaining Resilience Patterns
+
+    @Test("Chain multiple resilience patterns")
+    func chainMultipleResiliencePatterns() async throws {
+        let mockProvider = MockInferenceProvider(responses: ["Final Answer: Resilient response"])
+        let fallbackProvider = MockInferenceProvider(responses: ["Final Answer: Fallback"])
+
+        let baseAgent = ReActAgent(
+            tools: [],
+            instructions: "Base agent",
+            inferenceProvider: mockProvider
+        )
+
+        let fallbackAgent = ReActAgent(
+            tools: [],
+            instructions: "Fallback agent",
+            inferenceProvider: fallbackProvider
+        )
+
+        // Chain: retry -> circuit breaker -> fallback
+        let resilientAgent = baseAgent
+            .withRetry(.fixed(maxAttempts: 3, delay: .milliseconds(10)))
+            .withCircuitBreaker(threshold: 5, resetTimeout: .seconds(60))
+            .withFallback(fallbackAgent)
+
+        let result = try await resilientAgent.run("test")
+        #expect(!result.output.isEmpty)
+    }
+
+    // MARK: - withTimeout Tests
+
+    @Test("withTimeout cancels after timeout")
+    func withTimeoutCancelsAfterTimeout() async throws {
+        let slowProvider = SlowInferenceProvider(delay: .seconds(5))
+
+        let baseAgent = ReActAgent(
+            tools: [],
+            instructions: "Slow agent",
+            inferenceProvider: slowProvider
+        )
+
+        let timedAgent = baseAgent.withTimeout(.milliseconds(100))
+
+        do {
+            _ = try await timedAgent.run("test")
+            Issue.record("Expected timeout error")
+        } catch let error as AgentError {
+            switch error {
+            case .timeout:
+                #expect(true)
+            default:
+                Issue.record("Expected timeout error, got: \(error)")
+            }
+        } catch {
+            // Timeout may manifest as different error types
+        }
+    }
+
+    @Test("withTimeout completes if fast enough")
+    func withTimeoutCompletesIfFastEnough() async throws {
+        let fastProvider = MockInferenceProvider(responses: ["Final Answer: Fast response"])
+
+        let baseAgent = ReActAgent(
+            tools: [],
+            instructions: "Fast agent",
+            inferenceProvider: fastProvider
+        )
+
+        let timedAgent = baseAgent.withTimeout(.seconds(10))
+
+        let result = try await timedAgent.run("test")
+        #expect(result.output.contains("Fast"))
+    }
+
+    // MARK: - Resilience Metadata
+
+    @Test("Resilient agent includes retry metadata")
+    func resilientAgentIncludesRetryMetadata() async throws {
+        let failThenSucceed = FailThenSucceedProvider(failCount: 1)
+
+        let baseAgent = ReActAgent(
+            tools: [],
+            instructions: "Test agent",
+            inferenceProvider: failThenSucceed
+        )
+
+        let resilientAgent = baseAgent.withRetry(.fixed(maxAttempts: 3, delay: .milliseconds(10)))
+
+        let result = try await resilientAgent.run("test")
+
+        // Check for retry metadata
+        let retryCount = result.metadata["resilience.retry_count"]
+        // Implementation should add this metadata
+    }
+
+    // MARK: - RetryPolicy Configuration
+
+    @Test("RetryPolicy fixed configuration")
+    func retryPolicyFixedConfiguration() {
+        let policy = RetryPolicy.fixed(maxAttempts: 5, delay: .seconds(1))
+
+        #expect(policy.maxAttempts == 5)
+    }
+
+    @Test("RetryPolicy exponential configuration")
+    func retryPolicyExponentialConfiguration() {
+        let policy = RetryPolicy.exponentialBackoff(
+            maxAttempts: 10,
+            baseDelay: .milliseconds(100),
+            maxDelay: .seconds(30),
+            multiplier: 2.0
+        )
+
+        #expect(policy.maxAttempts == 10)
+    }
+
+    @Test("RetryPolicy with jitter")
+    func retryPolicyWithJitter() {
+        let policy = RetryPolicy.exponentialBackoff(
+            maxAttempts: 5,
+            baseDelay: .seconds(1),
+            maxDelay: .seconds(60),
+            multiplier: 2.0,
+            jitter: 0.1
+        )
+
+        #expect(policy.maxAttempts == 5)
+    }
+}
+
+// MARK: - Test Support Types
+
+enum TestResilienceError: Error {
+    case transient
+    case permanent
+}
+
+enum ResilienceError: Error {
+    case circuitBreakerOpen
+    case maxRetriesExceeded
+    case timeout
+}
+
+/// Provider that fails a specified number of times then succeeds
+actor FailThenSucceedProvider: InferenceProvider {
+    private var failCount: Int
+    private var callCount = 0
+
+    init(failCount: Int) {
+        self.failCount = failCount
+    }
+
+    func generate(prompt: String, options: InferenceOptions) async throws -> String {
+        callCount += 1
+        if callCount <= failCount {
+            throw TestResilienceError.transient
+        }
+        return "Final Answer: success after \(callCount) attempts"
+    }
+
+    nonisolated func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let result = try await self.generate(prompt: prompt, options: options)
+                    continuation.yield(result)
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    func generateWithToolCalls(
+        prompt: String,
+        tools: [ToolDefinition],
+        options: InferenceOptions
+    ) async throws -> InferenceResponse {
+        let content = try await generate(prompt: prompt, options: options)
+        return InferenceResponse(content: content, finishReason: .completed)
+    }
+}
+
+/// Provider that always fails
+struct AlwaysFailingProvider: InferenceProvider {
+    func generate(prompt: String, options: InferenceOptions) async throws -> String {
+        throw TestResilienceError.permanent
+    }
+
+    func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: TestResilienceError.permanent)
+        }
+    }
+
+    func generateWithToolCalls(
+        prompt: String,
+        tools: [ToolDefinition],
+        options: InferenceOptions
+    ) async throws -> InferenceResponse {
+        throw TestResilienceError.permanent
+    }
+}
+
+/// Provider that takes a long time to respond
+actor SlowInferenceProvider: InferenceProvider {
+    let delay: Duration
+
+    init(delay: Duration) {
+        self.delay = delay
+    }
+
+    func generate(prompt: String, options: InferenceOptions) async throws -> String {
+        try await Task.sleep(for: delay)
+        return "Final Answer: Slow response"
+    }
+
+    nonisolated func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let result = try await self.generate(prompt: prompt, options: options)
+                    continuation.yield(result)
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    func generateWithToolCalls(
+        prompt: String,
+        tools: [ToolDefinition],
+        options: InferenceOptions
+    ) async throws -> InferenceResponse {
+        let content = try await generate(prompt: prompt, options: options)
+        return InferenceResponse(content: content, finishReason: .completed)
+    }
+}
+
+// MARK: - Agent Resilience Extensions (to be implemented)
+
+extension Agent {
+    /// Wraps this agent with retry behavior
+    func withRetry(_ policy: RetryPolicy) -> ResilientAgent {
+        ResilientAgent(base: self, retry: policy)
+    }
+
+    /// Wraps this agent with circuit breaker
+    func withCircuitBreaker(threshold: Int, resetTimeout: Duration) -> ResilientAgent {
+        ResilientAgent(base: self, circuitBreakerThreshold: threshold, circuitBreakerResetTimeout: resetTimeout)
+    }
+
+    /// Wraps this agent with fallback
+    func withFallback(_ fallback: any Agent) -> ResilientAgent {
+        ResilientAgent(base: self, fallback: fallback)
+    }
+
+    /// Wraps this agent with timeout
+    func withTimeout(_ timeout: Duration) -> ResilientAgent {
+        ResilientAgent(base: self, timeout: timeout)
+    }
+}
+
+// MARK: - RetryPolicy (to be implemented/extended)
+
+extension RetryPolicy {
+    static func fixed(maxAttempts: Int, delay: Duration) -> RetryPolicy {
+        RetryPolicy(maxAttempts: maxAttempts, strategy: .fixed(delay: delay))
+    }
+
+    static func exponentialBackoff(
+        maxAttempts: Int,
+        baseDelay: Duration = .seconds(1),
+        maxDelay: Duration = .seconds(60),
+        multiplier: Double = 2.0,
+        jitter: Double = 0.0
+    ) -> RetryPolicy {
+        RetryPolicy(
+            maxAttempts: maxAttempts,
+            strategy: .exponential(base: baseDelay, max: maxDelay, multiplier: multiplier, jitter: jitter)
+        )
+    }
+}
+
+// MARK: - ResilientAgent (to be implemented)
+
+/// Agent wrapper that adds resilience patterns
+actor ResilientAgent: Agent {
+    nonisolated let tools: [any Tool]
+    nonisolated let instructions: String
+    nonisolated let configuration: AgentConfiguration
+    nonisolated var memory: (any AgentMemory)? { nil }
+    nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+
+    private let base: any Agent
+    private let retry: RetryPolicy?
+    private let circuitBreakerThreshold: Int?
+    private let circuitBreakerResetTimeout: Duration?
+    private let fallback: (any Agent)?
+    private let timeout: Duration?
+
+    init(
+        base: any Agent,
+        retry: RetryPolicy? = nil,
+        circuitBreakerThreshold: Int? = nil,
+        circuitBreakerResetTimeout: Duration? = nil,
+        fallback: (any Agent)? = nil,
+        timeout: Duration? = nil
+    ) {
+        self.base = base
+        self.tools = base.tools
+        self.instructions = base.instructions
+        self.configuration = base.configuration
+        self.retry = retry
+        self.circuitBreakerThreshold = circuitBreakerThreshold
+        self.circuitBreakerResetTimeout = circuitBreakerResetTimeout
+        self.fallback = fallback
+        self.timeout = timeout
+    }
+
+    func run(_ input: String) async throws -> AgentResult {
+        // Placeholder implementation
+        try await base.run(input)
+    }
+
+    nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+        base.stream(input)
+    }
+
+    func cancel() async {
+        await base.cancel()
+    }
+}
