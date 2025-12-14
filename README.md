@@ -22,6 +22,8 @@ SwiftAgents provides the agent orchestration layer on top of SwiftAI SDK, enabli
 - 🎨 **SwiftUI Components** - Ready-to-use chat views and agent status indicators
 - ⚡️ **Swift 6.2 Native** - Full actor isolation, Sendable types, and structured concurrency throughout
 - 🍎 **LLM Agnostic** - Designed for Use with any LLM, local, cloud or Foundation Models
+- 🪄 **Swift Macros** - `@Tool`, `@Agent`, `@Parameter` macros eliminate boilerplate
+- 🔗 **DSL & Operators** - Fluent APIs, result builders, and composition operators (`>>>`, `&+`, `~>`)
 
 ---
 
@@ -216,53 +218,30 @@ if let selectedAgent = result1.metadata["selected_agent"]?.stringValue,
 
 ### Custom Tools
 
-Create your own tools for agent capabilities:
+Create tools using the `@Tool` macro (recommended) or manual implementation:
 
 ```swift
 import SwiftAgents
 
-struct SearchTool: Tool {
-    let name = "web_search"
-    let description = "Searches the web for information"
-    let parameters: [ToolParameter] = [
-        ToolParameter(
-            name: "query",
-            description: "The search query",
-            type: .string,
-            isRequired: true
-        ),
-        ToolParameter(
-            name: "max_results",
-            description: "Maximum number of results to return",
-            type: .int,
-            isRequired: false,
-            defaultValue: .int(5)
-        )
-    ]
+// With @Tool macro (recommended) - 70% less code
+@Tool("Searches the web for information")
+struct SearchTool {
+    @Parameter("The search query")
+    var query: String
 
-    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
-        let query = try requiredString("query", from: arguments)
-        let maxResults = arguments["max_results"]?.intValue ?? 5
+    @Parameter("Maximum results", default: 5)
+    var maxResults: Int = 5
 
-        // Perform search (implementation details omitted)
-        let results = try await performWebSearch(query: query, limit: maxResults)
-
-        return .array(results.map { .string($0) })
-    }
-
-    private func performWebSearch(query: String, limit: Int) async throws -> [String] {
-        // Your search implementation here
-        return []
+    func execute() async throws -> [String] {
+        try await performWebSearch(query: query, limit: maxResults)
     }
 }
 
-// Use the custom tool
+// Use the tool
 let agent = ReActAgent.Builder()
     .inferenceProvider(provider)
     .addTool(SearchTool())
     .build()
-
-let result = try await agent.run("Search for latest Swift news")
 ```
 
 ### Advanced Memory Systems
@@ -420,6 +399,203 @@ struct MessageRow: View {
 
 ---
 
+## Macros & DSL API
+
+SwiftAgents provides Swift macros and DSL patterns to dramatically reduce boilerplate.
+
+### @Tool Macro
+
+Transform verbose tool definitions into concise declarations:
+
+```swift
+// Before: 30+ lines
+struct WeatherTool: Tool, Sendable {
+    let name = "weather"
+    let description = "Gets weather for a location"
+    let parameters: [ToolParameter] = [
+        ToolParameter(name: "location", description: "City name", type: .string, isRequired: true),
+        ToolParameter(name: "units", description: "Units", type: .string, isRequired: false, defaultValue: .string("celsius"))
+    ]
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        guard let location = arguments["location"]?.stringValue else { throw ... }
+        let units = arguments["units"]?.stringValue ?? "celsius"
+        return .string("72°F in \(location)")
+    }
+}
+
+// After: 10 lines with @Tool macro
+@Tool("Gets weather for a location")
+struct WeatherTool {
+    @Parameter("City name")
+    var location: String
+
+    @Parameter("Temperature units", default: "celsius")
+    var units: String = "celsius"
+
+    func execute() async throws -> String {
+        "72°F in \(location)"
+    }
+}
+```
+
+### @Agent Macro
+
+Create agents with minimal boilerplate:
+
+```swift
+@Agent("You are a helpful coding assistant")
+actor CodingAssistant {
+    let tools: [any Tool] = [CalculatorTool(), SearchTool()]
+
+    func process(_ input: String) async throws -> String {
+        // Your custom logic
+        "Processed: \(input)"
+    }
+}
+
+// Automatically generates: init, run(), stream(), cancel(), all protocol conformance
+let agent = CodingAssistant()
+let result = try await agent.run("Help me with Swift")
+```
+
+### Agent Builder DSL
+
+Declarative agent construction with result builders:
+
+```swift
+let agent = ReActAgent {
+    Instructions("You are a math tutor.")
+
+    Tools {
+        CalculatorTool()
+        if advancedMode {
+            GraphingTool()
+        }
+    }
+
+    Memory(ConversationMemory(maxMessages: 50))
+
+    Configuration(.default.maxIterations(10).temperature(0.7))
+}
+```
+
+### Pipeline Operators
+
+Type-safe composition with `>>>` operator:
+
+```swift
+// Chain transformations
+let pipeline = parseInput() >>> validateData() >>> processResult()
+let output = try await pipeline.execute(rawInput)
+
+// Agent pipelines
+let workflow = extractOutput() >>> summarize() >>> formatAsJSON()
+```
+
+### Agent Composition Operators
+
+Compose agents with operators:
+
+```swift
+// Parallel execution: &+
+let parallel = researchAgent &+ analysisAgent
+let results = try await parallel.run(query)  // Both run concurrently
+
+// Sequential chain: ~>
+let chain = fetchAgent ~> processAgent ~> formatAgent
+let result = try await chain.run(input)  // Output flows through each
+
+// Fallback: |?
+let resilient = primaryAgent |? backupAgent
+let result = try await resilient.run(input)  // Falls back on failure
+```
+
+### Fluent Resilience
+
+Chain resilience patterns fluently:
+
+```swift
+let resilientAgent = myAgent
+    .withRetry(.exponentialBackoff(maxAttempts: 3))
+    .withCircuitBreaker(threshold: 5, resetTimeout: .seconds(60))
+    .withFallback(backupAgent)
+    .withTimeout(.seconds(30))
+
+let result = try await resilientAgent.run(input)
+```
+
+### Memory Builder DSL
+
+Compose memory systems declaratively:
+
+```swift
+let memory = CompositeMemory {
+    ConversationMemory(maxMessages: 50)
+        .priority(.high)
+
+    SlidingWindowMemory(maxTokens: 4000)
+        .priority(.normal)
+}
+.withRetrievalStrategy(.hybrid(recencyWeight: 0.7, relevanceWeight: 0.3))
+.withMergeStrategy(.interleave)
+```
+
+### Stream Operations
+
+Functional operations on agent event streams:
+
+```swift
+for try await thought in agent.stream(query).thoughts {
+    print("Thinking: \(thought)")
+}
+
+// Filter, map, collect
+let events = try await agent.stream(query)
+    .filter { $0.isThinking }
+    .take(5)
+    .collect()
+
+// Side effects
+let stream = agent.stream(query)
+    .onEach { print("Event: \($0)") }
+    .onComplete { print("Done: \($0.output)") }
+```
+
+### Typed Context Keys
+
+Compile-time safe context access:
+
+```swift
+// Define typed keys
+extension ContextKey {
+    static let userID = ContextKey<String>("userID")
+    static let preferences = ContextKey<UserPreferences>("preferences")
+}
+
+// Type-safe access
+await context.setTyped(.userID, value: "user_123")
+let id: String? = await context.getTyped(.userID)  // Compile-time type checking
+```
+
+### InferenceOptions Presets
+
+Fluent configuration with presets:
+
+```swift
+let options = InferenceOptions.creative      // High temperature, diverse outputs
+let options = InferenceOptions.precise       // Low temperature, deterministic
+let options = InferenceOptions.codeGeneration // Optimized for code
+
+// Fluent customization
+let custom = InferenceOptions.default
+    .temperature(0.8)
+    .maxTokens(2000)
+    .topP(0.95)
+    .stopSequences("END", "DONE")
+```
+
+---
+
 ## Architecture
 
 ```
@@ -433,19 +609,19 @@ struct MessageRow: View {
 │                          SwiftAgents                            │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
 │  │   Agents     │  │    Memory    │  │    Tools     │          │
-│  │              │  │              │  │              │          │
-│  │ • ReAct      │  │ • Conversation│ │ • Protocol   │          │
-│  │ • Supervisor │  │ • Sliding    │  │ • Registry   │          │
-│  │ • Custom     │  │ • Summary    │  │ • Built-ins  │          │
+│  │ • ReAct      │  │ • Conversation│ │ • @Tool      │          │
+│  │ • @Agent     │  │ • Composite  │  │ • @Parameter │          │
+│  │ • Supervisor │  │ • Summary    │  │ • Registry   │          │
 │  └──────────────┘  └──────────────┘  └──────────────┘          │
 │                                                                 │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
 │  │Orchestration │  │ Observability│  │  Resilience  │          │
-│  │              │  │              │  │              │          │
-│  │ • Sequential │  │ • Tracing    │  │ • Circuit    │          │
-│  │ • Parallel   │  │ • Metrics    │  │   Breakers   │          │
-│  │ • Handoff    │  │ • OSLog      │  │ • Retry      │          │
+│  │ • &+ ~> |?   │  │ • @Traceable │  │ • withRetry  │          │
+│  │ • Pipeline   │  │ • Tracing    │  │ • withFallback│         │
+│  │ • Routing    │  │ • Metrics    │  │ • Circuit    │          │
 │  └──────────────┘  └──────────────┘  └──────────────┘          │
+├─────────────────────────────────────────────────────────────────┤
+│         SwiftAgentsMacros (Compile-Time Code Generation)        │
 ├─────────────────────────────────────────────────────────────────┤
 │              InferenceProvider Protocol (Abstract)              │
 │                  (Foundation Models / SwiftAI SDK)              │
