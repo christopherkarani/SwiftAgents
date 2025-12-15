@@ -32,13 +32,13 @@ jobs:
 
       - name: Install Swift via Swiftly
         run: |
-          curl -O https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz
-          tar zxf swiftly-$(uname -m).tar.gz
-          ./swiftly init -y --skip-install
-          . "$SWIFTLY_HOME_DIR/env.sh"
-          swiftly install 6.0.3
-          echo "$SWIFTLY_HOME_DIR/bin" >> $GITHUB_PATH
-          echo "SWIFTLY_HOME_DIR=$SWIFTLY_HOME_DIR" >> $GITHUB_ENV
+          curl -L -o swiftly-install.sh https://swiftlang.github.io/swiftly/swiftly-install.sh
+          chmod +x swiftly-install.sh
+          ./swiftly-install.sh -y
+          . ~/.local/share/swiftly/env.sh
+          swiftly install 6.2
+          echo "$HOME/.local/share/swiftly/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install SwiftLint and SwiftFormat
         run: |
@@ -58,8 +58,6 @@ jobs:
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
-        env:
-          SWIFTLY_HOME_DIR: ${{ env.SWIFTLY_HOME_DIR }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 

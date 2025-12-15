@@ -26,11 +26,13 @@ jobs:
 
       - name: Install Swiftly and Swift 6.2
         run: |
-          curl -O https://download.swift.org/swiftly/darwin/swiftly.pkg
-          sudo installer -pkg swiftly.pkg -target /
-          swiftly install 6.2 --post-install-file=post-install.sh
-          . ./post-install.sh
-          echo "$HOME/.swiftly/bin" >> $GITHUB_PATH
+          curl -L -o swiftly-install.sh https://swiftlang.github.io/swiftly/swiftly-install.sh
+          chmod +x swiftly-install.sh
+          ./swiftly-install.sh -y
+          . ~/.local/share/swiftly/env.sh
+          swiftly install 6.2
+          echo "$HOME/.local/share/swiftly/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Show Swift version
         run: swift --version
@@ -63,18 +65,13 @@ jobs:
 
       - name: Install Swiftly and Swift 6.2
         run: |
-          # Set explicit paths to avoid variable expansion issues
-          export SWIFTLY_HOME_DIR="$HOME/.local/share/swiftly"
-          export SWIFTLY_BIN_DIR="$HOME/.local/bin"
-          curl -O "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz"
-          tar zxf "swiftly-$(uname -m).tar.gz"
-          ./swiftly init --quiet-shell-followup
-          . "$SWIFTLY_HOME_DIR/env.sh"
+          curl -L -o swiftly-install.sh https://swiftlang.github.io/swiftly/swiftly-install.sh
+          chmod +x swiftly-install.sh
+          ./swiftly-install.sh -y
+          . ~/.local/share/swiftly/env.sh
           swiftly install 6.2
-          echo "$SWIFTLY_HOME_DIR/bin" >> $GITHUB_PATH
-          echo "$SWIFTLY_BIN_DIR" >> $GITHUB_PATH
-          # Persist for subsequent steps
-          echo "SWIFTLY_HOME_DIR=$SWIFTLY_HOME_DIR" >> $GITHUB_ENV
+          echo "$HOME/.local/share/swiftly/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Verify Swift version
         run: swift --version
