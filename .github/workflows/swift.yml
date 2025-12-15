@@ -24,21 +24,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Swiftly
+      - name: Install Swiftly and Swift 6.2
         run: |
-          curl -L https://swiftlang.github.io/swiftly/swiftly-install.sh | bash -s -- -y
+          curl -O https://download.swift.org/swiftly/darwin/swiftly.pkg
+          sudo installer -pkg swiftly.pkg -target /
+          swiftly install 6.2 --post-install-file=post-install.sh
+          . ./post-install.sh
           echo "$HOME/.swiftly/bin" >> $GITHUB_PATH
 
-      - name: Install Swift 6.2
-        run: |
-          export PATH="$HOME/.swiftly/bin:$PATH"
-          swiftly install 6.2
-          swiftly use 6.2
-
       - name: Show Swift version
-        run: |
-          export PATH="$HOME/.swiftly/bin:$PATH"
-          swift --version
+        run: swift --version
 
       - name: Cache Swift packages
         uses: actions/cache@v4
@@ -49,19 +44,13 @@ jobs:
             ${{ runner.os }}-swift-6.2-
 
       - name: Resolve dependencies
-        run: |
-          export PATH="$HOME/.swiftly/bin:$PATH"
-          swift package resolve
+        run: swift package resolve
 
       - name: Build
-        run: |
-          export PATH="$HOME/.swiftly/bin:$PATH"
-          swift build
+        run: swift build
 
       - name: Run tests
-        run: |
-          export PATH="$HOME/.swiftly/bin:$PATH"
-          swift test --parallel
+        run: swift test --parallel
 
   # Linux Build & Test (core features, no SwiftData)
   build-linux:
@@ -72,20 +61,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Swiftly
+      - name: Install Swiftly and Swift 6.2
         run: |
-          curl -L https://swiftlang.github.io/swiftly/swiftly-install.sh | bash -s -- -y
-          echo "$HOME/.swiftly/bin" >> $GITHUB_PATH
-
-      - name: Install Swift 6.2
-        run: |
-          export PATH="$HOME/.swiftly/bin:$PATH"
+          curl -O "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz"
+          tar zxf "swiftly-$(uname -m).tar.gz"
+          ./swiftly init --quiet-shell-followup
+          . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"
           swiftly install 6.2
-          swiftly use 6.2
+          echo "$HOME/.local/share/swiftly/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Verify Swift version
         run: |
-          export PATH="$HOME/.swiftly/bin:$PATH"
+          . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"
           swift --version
 
       - name: Cache Swift packages
@@ -98,17 +86,17 @@ jobs:
 
       - name: Resolve dependencies
         run: |
-          export PATH="$HOME/.swiftly/bin:$PATH"
+          . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"
           swift package resolve
 
       - name: Build
         run: |
-          export PATH="$HOME/.swiftly/bin:$PATH"
+          . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"
           swift build
 
       - name: Run tests
         run: |
-          export PATH="$HOME/.swiftly/bin:$PATH"
+          . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"
           swift test --parallel
 
   # Code Quality (macOS only - SwiftLint/SwiftFormat)
