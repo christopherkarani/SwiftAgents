@@ -5,9 +5,13 @@
 
 import Foundation
 
+#if canImport(Darwin)
 // MARK: - Calculator Tool
 
 /// A calculator tool that evaluates mathematical expressions.
+///
+/// **Platform Availability**: Apple platforms only (macOS, iOS, watchOS, tvOS, visionOS).
+/// Not available on Linux due to NSExpression dependency.
 ///
 /// Supports basic arithmetic operations: +, -, *, /, and parentheses.
 /// Uses NSExpression for safe evaluation without code injection risks.
@@ -86,6 +90,7 @@ public struct CalculatorTool: Tool, Sendable {
         }
     }
 }
+#endif // canImport(Darwin)
 
 // MARK: - DateTime Tool
 
@@ -333,18 +338,32 @@ public struct StringTool: Tool, Sendable {
 
 /// Provides access to all built-in tools.
 ///
+/// **Note**: The calculator tool is only available on Apple platforms (macOS, iOS, etc.).
+/// On Linux, only date/time and string tools are available.
+///
 /// Example:
 /// ```swift
 /// let agent = ReActAgent(tools: BuiltInTools.all)
 /// ```
 public enum BuiltInTools {
-    /// All available built-in tools.
+    /// All available built-in tools for the current platform.
+    ///
+    /// - Apple platforms: calculator, dateTime, string
+    /// - Linux: dateTime, string
     public static var all: [any Tool] {
+        #if canImport(Darwin)
         [calculator, dateTime, string]
+        #else
+        [dateTime, string]
+        #endif
     }
 
+    #if canImport(Darwin)
     /// The calculator tool for math expressions.
+    ///
+    /// **Platform Availability**: Apple platforms only.
     public static let calculator = CalculatorTool()
+    #endif
 
     /// The date/time tool for current time.
     public static let dateTime = DateTimeTool()

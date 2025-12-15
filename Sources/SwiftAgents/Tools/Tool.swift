@@ -206,8 +206,9 @@ public struct ToolDefinition: Sendable, Equatable {
 ///
 /// Example:
 /// ```swift
-/// let registry = ToolRegistry(tools: [CalculatorTool(), DateTimeTool()])
-/// let result = try await registry.execute(toolNamed: "calculator", arguments: ["expression": "2+2"])
+/// // Note: CalculatorTool is only available on Apple platforms
+/// let registry = ToolRegistry(tools: [DateTimeTool(), StringTool()])
+/// let result = try await registry.execute(toolNamed: "datetime", arguments: ["format": "iso8601"])
 /// ```
 public actor ToolRegistry {
     private var tools: [String: any Tool] = [:]

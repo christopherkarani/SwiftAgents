@@ -144,6 +144,7 @@ struct AgentBuilderTests {
 
     // MARK: - Tools Array Building
 
+    #if canImport(Darwin)
     @Test("Tools block builds array of tools")
     func toolsBlockBuildsArray() async throws {
         let agent = ReActAgent {
@@ -157,6 +158,7 @@ struct AgentBuilderTests {
 
         #expect(agent.tools.count == 3)
     }
+    #endif
 
     @Test("Tools block with loop")
     func toolsBlockWithLoop() async throws {
