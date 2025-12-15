@@ -35,8 +35,6 @@ public struct TraceableMacro: PeerMacro {
             throw TraceableError.onlyApplicableToStruct
         }
 
-        let typeName = structDecl.name.text
-
         // Generate a traced wrapper extension
         // Note: In practice, this would generate a wrapper that intercepts execute()
         // For now, we generate a helper method that tools can call

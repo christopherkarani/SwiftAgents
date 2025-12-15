@@ -73,7 +73,7 @@ extension ToolRegistry {
         toolNamed name: String,
         arguments: [String: SendableValue]
     ) async throws -> T.Output {
-        guard let tool = await self.tool(named: name) as? T else {
+        guard let tool = self.tool(named: name) as? T else {
             throw AgentError.toolNotFound(name: name)
         }
         return try await tool.executeTyped(arguments: arguments)

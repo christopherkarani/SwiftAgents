@@ -312,7 +312,7 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
         }
 
         // Clean up the type (remove Optional wrapper)
-        var cleanType = swiftType
+        let cleanType = swiftType
             .replacingOccurrences(of: "Optional<", with: "")
             .replacingOccurrences(of: ">", with: "")
             .replacingOccurrences(of: "?", with: "")

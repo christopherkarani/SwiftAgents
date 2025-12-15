@@ -14,7 +14,8 @@ import Foundation
 /// Not available on Linux due to NSExpression dependency.
 ///
 /// Supports basic arithmetic operations: +, -, *, /, and parentheses.
-/// Uses NSExpression for safe evaluation without code injection risks.
+/// Uses NSExpression on Apple platforms and a pure Swift parser on Linux
+/// for safe evaluation without code injection risks.
 ///
 /// Example:
 /// ```swift
@@ -73,19 +74,14 @@ public struct CalculatorTool: Tool, Sendable {
             )
         }
 
-        // Use NSExpression for safe evaluation
-        let nsExpression = NSExpression(format: trimmed)
-
-        if let result = nsExpression.expressionValue(with: nil, context: nil) as? Double {
-            return result
-        } else if let result = nsExpression.expressionValue(with: nil, context: nil) as? Int {
-            return Double(result)
-        } else if let result = nsExpression.expressionValue(with: nil, context: nil) as? NSNumber {
-            return result.doubleValue
-        } else {
+        // Use pure Swift ArithmeticParser on all platforms for consistency
+        // NSExpression is unavailable on Linux (swift-corelibs-foundation)
+        do {
+            return try ArithmeticParser.evaluate(trimmed)
+        } catch let error as ArithmeticParser.ParserError {
             throw AgentError.toolExecutionFailed(
                 toolName: name,
-                underlyingError: "Failed to evaluate expression: \(trimmed)"
+                underlyingError: "Failed to evaluate expression: \(error)"
             )
         }
     }
