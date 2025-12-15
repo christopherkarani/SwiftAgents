@@ -182,8 +182,10 @@ struct AgentBuilderTests {
         let agent = ReActAgent {
             Instructions("Hybrid memory agent.")
             Memory(HybridMemory(
-                conversationMemory: ConversationMemory(maxMessages: 50),
-                summaryMemory: SummaryMemory(maxTokens: 2000)
+                configuration: .init(
+                    shortTermMaxMessages: 50,
+                    longTermSummaryTokens: 2000
+                )
             ))
         }
 

@@ -313,12 +313,6 @@ enum TestResilienceError: Error {
     case permanent
 }
 
-enum ResilienceError: Error {
-    case circuitBreakerOpen
-    case maxRetriesExceeded
-    case timeout
-}
-
 /// Provider that fails a specified number of times then succeeds
 actor FailThenSucceedProvider: InferenceProvider {
     private var failCount: Int
@@ -415,100 +409,5 @@ actor SlowInferenceProvider: InferenceProvider {
     ) async throws -> InferenceResponse {
         let content = try await generate(prompt: prompt, options: options)
         return InferenceResponse(content: content, finishReason: .completed)
-    }
-}
-
-// MARK: - Agent Resilience Extensions (to be implemented)
-
-extension Agent {
-    /// Wraps this agent with retry behavior
-    func withRetry(_ policy: RetryPolicy) -> ResilientAgent {
-        ResilientAgent(base: self, retry: policy)
-    }
-
-    /// Wraps this agent with circuit breaker
-    func withCircuitBreaker(threshold: Int, resetTimeout: Duration) -> ResilientAgent {
-        ResilientAgent(base: self, circuitBreakerThreshold: threshold, circuitBreakerResetTimeout: resetTimeout)
-    }
-
-    /// Wraps this agent with fallback
-    func withFallback(_ fallback: any Agent) -> ResilientAgent {
-        ResilientAgent(base: self, fallback: fallback)
-    }
-
-    /// Wraps this agent with timeout
-    func withTimeout(_ timeout: Duration) -> ResilientAgent {
-        ResilientAgent(base: self, timeout: timeout)
-    }
-}
-
-// MARK: - RetryPolicy (to be implemented/extended)
-
-extension RetryPolicy {
-    static func fixed(maxAttempts: Int, delay: Duration) -> RetryPolicy {
-        RetryPolicy(maxAttempts: maxAttempts, strategy: .fixed(delay: delay))
-    }
-
-    static func exponentialBackoff(
-        maxAttempts: Int,
-        baseDelay: Duration = .seconds(1),
-        maxDelay: Duration = .seconds(60),
-        multiplier: Double = 2.0,
-        jitter: Double = 0.0
-    ) -> RetryPolicy {
-        RetryPolicy(
-            maxAttempts: maxAttempts,
-            strategy: .exponential(base: baseDelay, max: maxDelay, multiplier: multiplier, jitter: jitter)
-        )
-    }
-}
-
-// MARK: - ResilientAgent (to be implemented)
-
-/// Agent wrapper that adds resilience patterns
-actor ResilientAgent: Agent {
-    nonisolated let tools: [any Tool]
-    nonisolated let instructions: String
-    nonisolated let configuration: AgentConfiguration
-    nonisolated var memory: (any AgentMemory)? { nil }
-    nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
-
-    private let base: any Agent
-    private let retry: RetryPolicy?
-    private let circuitBreakerThreshold: Int?
-    private let circuitBreakerResetTimeout: Duration?
-    private let fallback: (any Agent)?
-    private let timeout: Duration?
-
-    init(
-        base: any Agent,
-        retry: RetryPolicy? = nil,
-        circuitBreakerThreshold: Int? = nil,
-        circuitBreakerResetTimeout: Duration? = nil,
-        fallback: (any Agent)? = nil,
-        timeout: Duration? = nil
-    ) {
-        self.base = base
-        self.tools = base.tools
-        self.instructions = base.instructions
-        self.configuration = base.configuration
-        self.retry = retry
-        self.circuitBreakerThreshold = circuitBreakerThreshold
-        self.circuitBreakerResetTimeout = circuitBreakerResetTimeout
-        self.fallback = fallback
-        self.timeout = timeout
-    }
-
-    func run(_ input: String) async throws -> AgentResult {
-        // Placeholder implementation
-        try await base.run(input)
-    }
-
-    nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        base.stream(input)
-    }
-
-    func cancel() async {
-        await base.cancel()
     }
 }

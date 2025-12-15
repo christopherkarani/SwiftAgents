@@ -24,9 +24,14 @@ import Foundation
 /// ```
 @resultBuilder
 public struct MemoryBuilder {
-    /// Builds a block of memory components.
+    /// Builds a block of memory components from variadic single components.
     public static func buildBlock(_ components: MemoryComponent...) -> [MemoryComponent] {
         components
+    }
+
+    /// Builds a block of memory components from variadic arrays (from buildExpression).
+    public static func buildBlock(_ components: [MemoryComponent]...) -> [MemoryComponent] {
+        components.flatMap { $0 }
     }
 
     /// Builds an empty block.

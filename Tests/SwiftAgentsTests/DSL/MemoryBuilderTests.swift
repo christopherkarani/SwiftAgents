@@ -27,7 +27,7 @@ struct MemoryBuilderTests {
     func buildCompositeMemoryMultipleComponents() async throws {
         let memory = CompositeMemory {
             ConversationMemory(maxMessages: 50)
-            SummaryMemory(maxTokens: 2000)
+            SummaryMemory()
         }
 
         #expect(memory.componentCount == 2)
@@ -40,7 +40,6 @@ struct MemoryBuilderTests {
         let memory = CompositeMemory {
             ConversationMemory(maxMessages: 100)
                 .withSummarization(after: 20)
-                .withTokenLimit(4000)
         }
 
         #expect(memory.componentCount == 1)
@@ -52,7 +51,7 @@ struct MemoryBuilderTests {
             ConversationMemory(maxMessages: 50)
                 .withSummarization(after: 10)
 
-            SlidingWindowMemory(windowSize: 20)
+            SlidingWindowMemory(maxTokens: 4000)
                 .withOverlapSize(5)
         }
 
@@ -94,7 +93,7 @@ struct MemoryBuilderTests {
     @Test("Composite memory stores to all components")
     func compositeMemoryStoresToAll() async throws {
         let conv = ConversationMemory(maxMessages: 50)
-        let sliding = SlidingWindowMemory(windowSize: 20)
+        let sliding = SlidingWindowMemory(maxTokens: 4000)
 
         let memory = CompositeMemory {
             conv
@@ -105,8 +104,8 @@ struct MemoryBuilderTests {
         await memory.store(message)
 
         // Both should have the message
-        let convMessages = await conv.retrieve(limit: 10)
-        let slidingMessages = await sliding.retrieve(limit: 10)
+        let convMessages = await conv.getAllMessages()
+        let slidingMessages = await sliding.getAllMessages()
 
         #expect(convMessages.count >= 1)
         #expect(slidingMessages.count >= 1)
@@ -116,7 +115,7 @@ struct MemoryBuilderTests {
     func compositeMemoryRetrievesFromPrimary() async throws {
         let memory = CompositeMemory {
             ConversationMemory(maxMessages: 50)
-            SlidingWindowMemory(windowSize: 20)
+            SlidingWindowMemory(maxTokens: 4000)
         }
 
         await memory.store(.user("Message 1"))
@@ -134,7 +133,7 @@ struct MemoryBuilderTests {
             ConversationMemory(maxMessages: 50)
                 .priority(.high)
 
-            SlidingWindowMemory(windowSize: 20)
+            SlidingWindowMemory(maxTokens: 4000)
                 .priority(.low)
         }
 
@@ -154,7 +153,6 @@ struct MemoryBuilderTests {
 
             MockVectorMemory()
                 .withSimilarityThreshold(0.7)
-                .withMaxResults(5)
         }
 
         #expect(memory.componentCount == 2)
@@ -181,7 +179,7 @@ struct MemoryBuilderTests {
     func buildMemoryWithMergeStrategy() async throws {
         let memory = CompositeMemory {
             ConversationMemory(maxMessages: 50)
-            SlidingWindowMemory(windowSize: 20)
+            SlidingWindowMemory(maxTokens: 4000)
         }
         .withMergeStrategy(.interleave)
 
@@ -205,7 +203,7 @@ struct MemoryBuilderTests {
     func compositeMemoryClearAffectsAll() async throws {
         let memory = CompositeMemory {
             ConversationMemory(maxMessages: 50)
-            SlidingWindowMemory(windowSize: 20)
+            SlidingWindowMemory(maxTokens: 4000)
         }
 
         await memory.store(.user("Test message"))
@@ -236,40 +234,9 @@ struct MemoryBuilderTests {
 
 // NOTE: CompositeMemory and MemoryBuilder are now public types exported from SwiftAgents.
 
-// MARK: - Memory Configuration Extensions
-
-extension ConversationMemory {
-    func withSummarization(after messageCount: Int) -> ConversationMemory {
-        // Return configured copy
-        self
-    }
-
-    func withTokenLimit(_ limit: Int) -> ConversationMemory {
-        // Return configured copy
-        self
-    }
-
-    func priority(_ priority: MemoryPriority) -> ConversationMemory {
-        // Return configured copy
-        self
-    }
-}
-
-extension SlidingWindowMemory {
-    func withOverlapSize(_ size: Int) -> SlidingWindowMemory {
-        // Return configured copy
-        self
-    }
-
-    func priority(_ priority: MemoryPriority) -> SlidingWindowMemory {
-        // Return configured copy
-        self
-    }
-}
-
 // MARK: - MockVectorMemory
 
-actor MockVectorMemory: AgentMemory {
+actor MockVectorMemory: AgentMemory, VectorMemoryConfigurable {
     private var messages: [MemoryMessage] = []
     private var similarityThreshold: Double = 0.5
     private var maxResults: Int = 10
@@ -299,31 +266,11 @@ actor MockVectorMemory: AgentMemory {
         get async { messages.isEmpty }
     }
 
-    nonisolated func withSimilarityThreshold(_ threshold: Double) -> MockVectorMemory {
-        self
+    nonisolated func withSimilarityThreshold(_ threshold: Double) -> MemoryComponent {
+        MemoryComponent(memory: self)
     }
 
-    nonisolated func withMaxResults(_ max: Int) -> MockVectorMemory {
-        self
+    nonisolated func withMaxResults(_ max: Int) -> MemoryComponent {
+        MemoryComponent(memory: self)
     }
-}
-
-// MARK: - Supporting Types
-
-enum MemoryPriority {
-    case low
-    case normal
-    case high
-}
-
-enum RetrievalStrategy {
-    case recency
-    case relevance
-    case hybrid
-}
-
-enum MergeStrategy {
-    case concatenate
-    case interleave
-    case deduplicate
 }

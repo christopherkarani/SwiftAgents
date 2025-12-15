@@ -340,7 +340,7 @@ actor ParallelComposition: Agent {
             toolCalls: results.flatMap { $0.toolCalls },
             toolResults: results.flatMap { $0.toolResults },
             iterationCount: results.map { $0.iterationCount }.max() ?? 1,
-            duration: results.map { $0.duration }.max() ?? 0,
+            duration: results.map { $0.duration }.max() ?? .zero,
             tokenUsage: nil,
             metadata: [:]
         )
@@ -379,7 +379,7 @@ actor SequentialComposition: Agent {
             lastResult = result
         }
 
-        return lastResult ?? AgentResult(output: "", toolCalls: [], toolResults: [], iterationCount: 0, duration: 0, tokenUsage: nil, metadata: [:])
+        return lastResult ?? AgentResult(output: "", toolCalls: [], toolResults: [], iterationCount: 0, duration: .zero, tokenUsage: nil, metadata: [:])
     }
 
     nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
@@ -471,7 +471,7 @@ struct EmptyAgent: Agent {
     var inferenceProvider: (any InferenceProvider)? { nil }
 
     func run(_ input: String) async throws -> AgentResult {
-        AgentResult(output: "", toolCalls: [], toolResults: [], iterationCount: 0, duration: 0, tokenUsage: nil, metadata: [:])
+        AgentResult(output: "", toolCalls: [], toolResults: [], iterationCount: 0, duration: .zero, tokenUsage: nil, metadata: [:])
     }
 
     func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {

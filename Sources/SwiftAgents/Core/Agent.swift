@@ -24,19 +24,19 @@ import Foundation
 /// ```
 public protocol Agent: Sendable {
     /// The tools available to this agent.
-    var tools: [any Tool] { get }
+    nonisolated var tools: [any Tool] { get }
 
     /// Instructions that define the agent's behavior and role.
-    var instructions: String { get }
+    nonisolated var instructions: String { get }
 
     /// Configuration settings for the agent.
-    var configuration: AgentConfiguration { get }
+    nonisolated var configuration: AgentConfiguration { get }
 
     /// Optional memory system for context management.
-    var memory: (any AgentMemory)? { get }
+    nonisolated var memory: (any AgentMemory)? { get }
 
     /// Optional custom inference provider.
-    var inferenceProvider: (any InferenceProvider)? { get }
+    nonisolated var inferenceProvider: (any InferenceProvider)? { get }
 
     /// Executes the agent with the given input and returns a result.
     /// - Parameter input: The user's input/query.

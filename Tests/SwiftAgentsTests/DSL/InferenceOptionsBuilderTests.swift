@@ -124,7 +124,7 @@ struct InferenceOptionsBuilderTests {
         let options = InferenceOptions.creative
 
         #expect(options.temperature >= 1.0)
-        #expect(options.topP >= 0.9)
+        #expect((options.topP ?? 0) >= 0.9)
     }
 
     @Test("Precise preset")

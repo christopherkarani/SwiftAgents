@@ -40,6 +40,11 @@ public struct ToolParameterBuilder {
         components
     }
 
+    /// Builds an empty parameter array for empty builder bodies.
+    public static func buildBlock() -> [ToolParameter] {
+        []
+    }
+
     /// Builds a parameter array from an array of parameters.
     public static func buildBlock(_ components: [ToolParameter]...) -> [ToolParameter] {
         components.flatMap { $0 }

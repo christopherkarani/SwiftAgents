@@ -31,11 +31,11 @@ import Foundation
 public actor ReActAgent: Agent {
     // MARK: - Agent Protocol Properties
 
-    public let tools: [any Tool]
-    public let instructions: String
-    public let configuration: AgentConfiguration
-    nonisolated public let memory: (any AgentMemory)?
-    nonisolated public let inferenceProvider: (any InferenceProvider)?
+    public nonisolated let tools: [any Tool]
+    public nonisolated let instructions: String
+    public nonisolated let configuration: AgentConfiguration
+    public nonisolated let memory: (any AgentMemory)?
+    public nonisolated let inferenceProvider: (any InferenceProvider)?
 
     // MARK: - Internal State
 
