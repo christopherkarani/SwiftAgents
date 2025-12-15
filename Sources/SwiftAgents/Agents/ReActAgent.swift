@@ -29,19 +29,15 @@ import Foundation
 /// print(result.output)  // "30"
 /// ```
 public actor ReActAgent: Agent {
+    // MARK: Public
+
     // MARK: - Agent Protocol Properties
 
-    public let tools: [any Tool]
-    public let instructions: String
-    public let configuration: AgentConfiguration
+    nonisolated public let tools: [any Tool]
+    nonisolated public let instructions: String
+    nonisolated public let configuration: AgentConfiguration
     nonisolated public let memory: (any AgentMemory)?
     nonisolated public let inferenceProvider: (any InferenceProvider)?
-
-    // MARK: - Internal State
-
-    private var currentTask: Task<Void, Never>?
-    private var isCancelled: Bool = false
-    private let toolRegistry: ToolRegistry
 
     // MARK: - Initialization
 
@@ -64,7 +60,7 @@ public actor ReActAgent: Agent {
         self.configuration = configuration
         self.memory = memory
         self.inferenceProvider = inferenceProvider
-        self.toolRegistry = ToolRegistry(tools: tools)
+        toolRegistry = ToolRegistry(tools: tools)
     }
 
     // MARK: - Agent Protocol Methods
@@ -107,28 +103,32 @@ public actor ReActAgent: Agent {
     /// - Parameter input: The user's input/query.
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    // Emit started event
-                    continuation.yield(.started(input: input))
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                // Emit started event
+                continuation.yield(.started(input: input))
 
-                    // Run the agent
-                    let result = try await self.run(input)
+                // Run the agent
+                let result = try await run(input)
 
-                    // Emit completed event
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch let error as AgentError {
-                    continuation.yield(.failed(error: error))
-                    continuation.finish(throwing: error)
-                } catch {
-                    let agentError = AgentError.internalError(reason: error.localizedDescription)
-                    continuation.yield(.failed(error: agentError))
-                    continuation.finish(throwing: agentError)
-                }
+                // Emit completed event
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch let error as AgentError {
+                continuation.yield(.failed(error: error))
+                continuation.finish(throwing: error)
+            } catch {
+                let agentError = AgentError.internalError(reason: error.localizedDescription)
+                continuation.yield(.failed(error: agentError))
+                continuation.finish(throwing: agentError)
             }
         }
+        return stream
     }
 
     /// Cancels any ongoing execution.
@@ -138,6 +138,23 @@ public actor ReActAgent: Agent {
         currentTask = nil
     }
 
+    // MARK: Private
+
+    // MARK: - Response Parsing
+
+    private enum ParsedResponse {
+        case finalAnswer(String)
+        case toolCall(name: String, arguments: [String: SendableValue])
+        case thinking(String)
+        case invalid(String)
+    }
+
+    // MARK: - Internal State
+
+    private var currentTask: Task<Void, Never>?
+    private var isCancelled: Bool = false
+    private let toolRegistry: ToolRegistry
+
     // MARK: - ReAct Loop Implementation
 
     private func executeReActLoop(
@@ -145,7 +162,7 @@ public actor ReActAgent: Agent {
         resultBuilder: AgentResult.Builder
     ) async throws -> String {
         var iteration = 0
-        var scratchpad = ""  // Accumulates Thought-Action-Observation history
+        var scratchpad = "" // Accumulates Thought-Action-Observation history
 
         while iteration < configuration.maxIterations {
             // Check for cancellation
@@ -171,11 +188,11 @@ public actor ReActAgent: Agent {
             let parsed = parseResponse(response)
 
             switch parsed {
-            case .finalAnswer(let answer):
+            case let .finalAnswer(answer):
                 // Agent has decided on a final answer
                 return answer
 
-            case .toolCall(let toolName, let arguments):
+            case let .toolCall(toolName, arguments):
                 // Agent wants to call a tool
                 let toolCall = ToolCall(
                     toolName: toolName,
@@ -234,11 +251,11 @@ public actor ReActAgent: Agent {
                     }
                 }
 
-            case .thinking(let thought):
+            case let .thinking(thought):
                 // Agent is just thinking, continue
                 scratchpad += "\nThought: \(thought)"
 
-            case .invalid(let raw):
+            case let .invalid(raw):
                 // Couldn't parse response, treat as thinking
                 scratchpad += "\nThought: \(raw)"
             }
@@ -253,7 +270,7 @@ public actor ReActAgent: Agent {
     private func buildPrompt(
         input: String,
         scratchpad: String,
-        iteration: Int
+        iteration _: Int
     ) -> String {
         let toolDescriptions = buildToolDescriptions()
 
@@ -335,15 +352,6 @@ public actor ReActAgent: Agent {
         )
     }
 
-    // MARK: - Response Parsing
-
-    private enum ParsedResponse {
-        case finalAnswer(String)
-        case toolCall(name: String, arguments: [String: SendableValue])
-        case thinking(String)
-        case invalid(String)
-    }
-
     private func parseResponse(_ response: String) -> ParsedResponse {
         let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -396,7 +404,7 @@ public actor ReActAgent: Agent {
               let parenEnd = trimmed.lastIndex(of: ")") else {
             // Try simple format: tool_name with no args
             let name = trimmed.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !name.isEmpty && !name.contains(" ") && !name.contains(":") {
+            if !name.isEmpty, !name.contains(" "), !name.contains(":") {
                 return (name: name, arguments: [:])
             }
             return nil
@@ -435,20 +443,20 @@ public actor ReActAgent: Agent {
         var quoteChar: Character = "\""
 
         for char in str {
-            if !inQuote && (char == "\"" || char == "'") {
+            if !inQuote, char == "\"" || char == "'" {
                 inQuote = true
                 quoteChar = char
                 current.append(char)
-            } else if inQuote && char == quoteChar {
+            } else if inQuote, char == quoteChar {
                 inQuote = false
                 current.append(char)
-            } else if !inQuote && (char == "(" || char == "[" || char == "{") {
+            } else if !inQuote, char == "(" || char == "[" || char == "{" {
                 depth += 1
                 current.append(char)
-            } else if !inQuote && (char == ")" || char == "]" || char == "}") {
+            } else if !inQuote, char == ")" || char == "]" || char == "}" {
                 depth -= 1
                 current.append(char)
-            } else if !inQuote && depth == 0 && char == "," {
+            } else if !inQuote, depth == 0, char == "," {
                 result.append(current.trimmingCharacters(in: .whitespaces))
                 current = ""
             } else {
@@ -482,7 +490,7 @@ public actor ReActAgent: Agent {
         // String (remove quotes if present)
         var str = trimmed
         if (str.hasPrefix("\"") && str.hasSuffix("\"")) ||
-           (str.hasPrefix("'") && str.hasSuffix("'")) {
+            (str.hasPrefix("'") && str.hasSuffix("'")) {
             str = String(str.dropFirst().dropLast())
         }
         return .string(str)
@@ -493,9 +501,9 @@ public actor ReActAgent: Agent {
     }
 }
 
-// MARK: - ReActAgent Builder
+// MARK: ReActAgent.Builder
 
-extension ReActAgent {
+public extension ReActAgent {
     /// Builder for creating ReActAgent instances with a fluent API.
     ///
     /// Example:
@@ -506,12 +514,8 @@ extension ReActAgent {
     ///     .configuration(.default.maxIterations(5))
     ///     .build()
     /// ```
-    public final class Builder: @unchecked Sendable {
-        private var tools: [any Tool] = []
-        private var instructions: String = ""
-        private var configuration: AgentConfiguration = .default
-        private var memory: (any AgentMemory)?
-        private var inferenceProvider: (any InferenceProvider)?
+    final class Builder: @unchecked Sendable {
+        // MARK: Public
 
         /// Creates a new builder.
         public init() {}
@@ -530,7 +534,7 @@ extension ReActAgent {
         /// - Returns: Self for chaining.
         @discardableResult
         public func addTool(_ tool: any Tool) -> Builder {
-            self.tools.append(tool)
+            tools.append(tool)
             return self
         }
 
@@ -538,7 +542,7 @@ extension ReActAgent {
         /// - Returns: Self for chaining.
         @discardableResult
         public func withBuiltInTools() -> Builder {
-            self.tools.append(contentsOf: BuiltInTools.all)
+            tools.append(contentsOf: BuiltInTools.all)
             return self
         }
 
@@ -574,7 +578,7 @@ extension ReActAgent {
         /// - Returns: Self for chaining.
         @discardableResult
         public func inferenceProvider(_ provider: any InferenceProvider) -> Builder {
-            self.inferenceProvider = provider
+            inferenceProvider = provider
             return self
         }
 
@@ -589,5 +593,13 @@ extension ReActAgent {
                 inferenceProvider: inferenceProvider
             )
         }
+
+        // MARK: Private
+
+        private var tools: [any Tool] = []
+        private var instructions: String = ""
+        private var configuration: AgentConfiguration = .default
+        private var memory: (any AgentMemory)?
+        private var inferenceProvider: (any InferenceProvider)?
     }
 }

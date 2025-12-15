@@ -4,11 +4,11 @@
 // Common test utilities and helpers for resilience component tests.
 // Individual test suites are in extension files for better organization.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - Test Errors
+// MARK: - TestError
 
 enum TestError: Error, Equatable, LocalizedError {
     case transient
@@ -18,19 +18,19 @@ enum TestError: Error, Equatable, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .transient: return "Transient error occurred"
-        case .permanent: return "Permanent error occurred"
-        case .network: return "Network error occurred"
-        case .timeout: return "Timeout error occurred"
+        case .transient: "Transient error occurred"
+        case .permanent: "Permanent error occurred"
+        case .network: "Network error occurred"
+        case .timeout: "Timeout error occurred"
         }
     }
 }
 
-// MARK: - Test Helpers (Thread-safe)
+// MARK: - TestCounter
 
 /// Thread-safe counter for testing async code
 actor TestCounter {
-    private var value: Int = 0
+    // MARK: Internal
 
     func increment() -> Int {
         value += 1
@@ -40,11 +40,17 @@ actor TestCounter {
     func get() -> Int { value }
 
     func reset() { value = 0 }
+
+    // MARK: Private
+
+    private var value: Int = 0
 }
+
+// MARK: - TestRecorder
 
 /// Thread-safe array for tracking values
 actor TestRecorder<T: Sendable> {
-    private var items: [T] = []
+    // MARK: Internal
 
     func append(_ item: T) {
         items.append(item)
@@ -53,15 +59,25 @@ actor TestRecorder<T: Sendable> {
     func getAll() -> [T] { items }
 
     func count() -> Int { items.count }
+
+    // MARK: Private
+
+    private var items: [T] = []
 }
+
+// MARK: - TestFlag
 
 /// Thread-safe boolean flag
 actor TestFlag {
-    private var value: Bool = false
+    // MARK: Internal
 
     func set(_ newValue: Bool) {
         value = newValue
     }
 
     func get() -> Bool { value }
+
+    // MARK: Private
+
+    private var value: Bool = false
 }

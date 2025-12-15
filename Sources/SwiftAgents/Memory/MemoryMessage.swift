@@ -5,11 +5,25 @@
 
 import Foundation
 
+// MARK: - MemoryMessage
+
 /// Represents a single message in agent memory.
 ///
 /// `MemoryMessage` is the fundamental unit of conversation history,
 /// storing the role, content, and metadata for each interaction.
 public struct MemoryMessage: Sendable, Codable, Identifiable, Equatable, Hashable {
+    /// The role of the entity in a conversation.
+    public enum Role: String, Sendable, Codable, CaseIterable {
+        /// Message from the user/human.
+        case user
+        /// Message from the AI assistant.
+        case assistant
+        /// System instruction or context.
+        case system
+        /// Output from a tool execution.
+        case tool
+    }
+
     /// Unique identifier for this message.
     public let id: UUID
 
@@ -25,16 +39,9 @@ public struct MemoryMessage: Sendable, Codable, Identifiable, Equatable, Hashabl
     /// Additional key-value metadata attached to this message.
     public let metadata: [String: String]
 
-    /// The role of the entity in a conversation.
-    public enum Role: String, Sendable, Codable, CaseIterable {
-        /// Message from the user/human.
-        case user
-        /// Message from the AI assistant.
-        case assistant
-        /// System instruction or context.
-        case system
-        /// Output from a tool execution.
-        case tool
+    /// Formatted content including role prefix for context display.
+    public var formattedContent: String {
+        "[\(role.rawValue)]: \(content)"
     }
 
     /// Creates a new memory message.
@@ -58,23 +65,18 @@ public struct MemoryMessage: Sendable, Codable, Identifiable, Equatable, Hashabl
         self.timestamp = timestamp
         self.metadata = metadata
     }
-
-    /// Formatted content including role prefix for context display.
-    public var formattedContent: String {
-        "[\(role.rawValue)]: \(content)"
-    }
 }
 
 // MARK: - Convenience Factory Methods
 
-extension MemoryMessage {
+public extension MemoryMessage {
     /// Creates a user message.
     ///
     /// - Parameters:
     ///   - content: The message content.
     ///   - metadata: Optional metadata.
     /// - Returns: A new message with user role.
-    public static func user(_ content: String, metadata: [String: String] = [:]) -> MemoryMessage {
+    static func user(_ content: String, metadata: [String: String] = [:]) -> MemoryMessage {
         MemoryMessage(role: .user, content: content, metadata: metadata)
     }
 
@@ -84,7 +86,7 @@ extension MemoryMessage {
     ///   - content: The message content.
     ///   - metadata: Optional metadata.
     /// - Returns: A new message with assistant role.
-    public static func assistant(_ content: String, metadata: [String: String] = [:]) -> MemoryMessage {
+    static func assistant(_ content: String, metadata: [String: String] = [:]) -> MemoryMessage {
         MemoryMessage(role: .assistant, content: content, metadata: metadata)
     }
 
@@ -94,7 +96,7 @@ extension MemoryMessage {
     ///   - content: The message content.
     ///   - metadata: Optional metadata.
     /// - Returns: A new message with system role.
-    public static func system(_ content: String, metadata: [String: String] = [:]) -> MemoryMessage {
+    static func system(_ content: String, metadata: [String: String] = [:]) -> MemoryMessage {
         MemoryMessage(role: .system, content: content, metadata: metadata)
     }
 
@@ -104,12 +106,12 @@ extension MemoryMessage {
     ///   - content: The tool output content.
     ///   - toolName: The name of the tool that produced this result.
     /// - Returns: A new message with tool role.
-    public static func tool(_ content: String, toolName: String) -> MemoryMessage {
+    static func tool(_ content: String, toolName: String) -> MemoryMessage {
         MemoryMessage(role: .tool, content: content, metadata: ["tool_name": toolName])
     }
 }
 
-// MARK: - Description
+// MARK: CustomStringConvertible
 
 extension MemoryMessage: CustomStringConvertible {
     public var description: String {

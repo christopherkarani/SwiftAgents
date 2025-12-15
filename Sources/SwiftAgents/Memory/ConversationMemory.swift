@@ -5,6 +5,8 @@
 
 import Foundation
 
+// MARK: - ConversationMemory
+
 /// A simple FIFO memory that maintains a fixed number of recent messages.
 ///
 /// `ConversationMemory` is the most basic memory implementation, storing
@@ -25,14 +27,17 @@ import Foundation
 /// As an actor, `ConversationMemory` is automatically thread-safe.
 /// All operations are serialized through the actor's executor.
 public actor ConversationMemory: AgentMemory {
+    // MARK: Public
+
     /// Maximum number of messages to retain.
     public let maxMessages: Int
 
-    /// Token estimator for context retrieval.
-    private let tokenEstimator: any TokenEstimator
+    public var count: Int {
+        messages.count
+    }
 
-    /// Internal message storage.
-    private var messages: [MemoryMessage] = []
+    /// Whether the memory contains no messages.
+    public var isEmpty: Bool { messages.isEmpty }
 
     /// Creates a new conversation memory.
     ///
@@ -58,7 +63,7 @@ public actor ConversationMemory: AgentMemory {
         }
     }
 
-    public func getContext(for query: String, tokenLimit: Int) async -> String {
+    public func getContext(for _: String, tokenLimit: Int) async -> String {
         formatMessagesForContext(messages, tokenLimit: tokenLimit, tokenEstimator: tokenEstimator)
     }
 
@@ -70,24 +75,25 @@ public actor ConversationMemory: AgentMemory {
         messages.removeAll()
     }
 
-    public var count: Int {
-        messages.count
-    }
+    // MARK: Private
 
-    /// Whether the memory contains no messages.
-    public var isEmpty: Bool { messages.isEmpty }
+    /// Token estimator for context retrieval.
+    private let tokenEstimator: any TokenEstimator
+
+    /// Internal message storage.
+    private var messages: [MemoryMessage] = []
 }
 
 // MARK: - Batch Operations
 
-extension ConversationMemory {
+public extension ConversationMemory {
     /// Adds multiple messages at once.
     ///
     /// More efficient than adding messages individually when importing
     /// conversation history.
     ///
     /// - Parameter newMessages: Messages to add in order.
-    public func addAll(_ newMessages: [MemoryMessage]) async {
+    func addAll(_ newMessages: [MemoryMessage]) async {
         messages.append(contentsOf: newMessages)
 
         if messages.count > maxMessages {
@@ -99,7 +105,7 @@ extension ConversationMemory {
     ///
     /// - Parameter n: Number of messages to return.
     /// - Returns: Array of recent messages (may be fewer than N if memory has less).
-    public func getRecentMessages(_ n: Int) async -> [MemoryMessage] {
+    func getRecentMessages(_ n: Int) async -> [MemoryMessage] {
         Array(messages.suffix(min(n, messages.count)))
     }
 
@@ -107,19 +113,29 @@ extension ConversationMemory {
     ///
     /// - Parameter n: Number of messages to return.
     /// - Returns: Array of oldest messages (may be fewer than N if memory has less).
-    public func getOldestMessages(_ n: Int) async -> [MemoryMessage] {
+    func getOldestMessages(_ n: Int) async -> [MemoryMessage] {
         Array(messages.prefix(min(n, messages.count)))
     }
 }
 
 // MARK: - Query Operations
 
-extension ConversationMemory {
+public extension ConversationMemory {
+    /// Returns the most recent message, if any.
+    var lastMessage: MemoryMessage? {
+        messages.last
+    }
+
+    /// Returns the first message, if any.
+    var firstMessage: MemoryMessage? {
+        messages.first
+    }
+
     /// Returns messages matching a predicate.
     ///
     /// - Parameter predicate: Closure to test each message.
     /// - Returns: Array of messages where predicate returns true.
-    public func filter(_ predicate: @Sendable (MemoryMessage) -> Bool) async -> [MemoryMessage] {
+    func filter(_ predicate: @Sendable (MemoryMessage) -> Bool) async -> [MemoryMessage] {
         messages.filter(predicate)
     }
 
@@ -127,26 +143,16 @@ extension ConversationMemory {
     ///
     /// - Parameter role: The role to filter by.
     /// - Returns: Array of messages with the specified role.
-    public func messages(withRole role: MemoryMessage.Role) async -> [MemoryMessage] {
+    func messages(withRole role: MemoryMessage.Role) async -> [MemoryMessage] {
         messages.filter { $0.role == role }
-    }
-
-    /// Returns the most recent message, if any.
-    public var lastMessage: MemoryMessage? {
-        messages.last
-    }
-
-    /// Returns the first message, if any.
-    public var firstMessage: MemoryMessage? {
-        messages.first
     }
 }
 
 // MARK: - Diagnostic Information
 
-extension ConversationMemory {
+public extension ConversationMemory {
     /// Returns diagnostic information about memory state.
-    public func diagnostics() async -> ConversationMemoryDiagnostics {
+    func diagnostics() async -> ConversationMemoryDiagnostics {
         ConversationMemoryDiagnostics(
             messageCount: messages.count,
             maxMessages: maxMessages,
@@ -156,6 +162,8 @@ extension ConversationMemory {
         )
     }
 }
+
+// MARK: - ConversationMemoryDiagnostics
 
 /// Diagnostic information for conversation memory.
 public struct ConversationMemoryDiagnostics: Sendable {

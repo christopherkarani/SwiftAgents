@@ -5,6 +5,8 @@
 
 import Foundation
 
+// MARK: - AgentError
+
 /// Errors that can occur during agent execution.
 public enum AgentError: Error, Sendable, Equatable {
     // MARK: - Input Errors
@@ -57,42 +59,42 @@ public enum AgentError: Error, Sendable, Equatable {
     case internalError(reason: String)
 }
 
-// MARK: - LocalizedError Conformance
+// MARK: LocalizedError
 
 extension AgentError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case .invalidInput(let reason):
-            return "Invalid input: \(reason)"
+        case let .invalidInput(reason):
+            "Invalid input: \(reason)"
         case .cancelled:
-            return "Agent execution was cancelled"
-        case .maxIterationsExceeded(let iterations):
-            return "Agent exceeded maximum iterations (\(iterations))"
-        case .timeout(let duration):
-            return "Agent execution timed out after \(duration)"
-        case .toolNotFound(let name):
-            return "Tool not found: \(name)"
-        case .toolExecutionFailed(let toolName, let error):
-            return "Tool '\(toolName)' failed: \(error)"
-        case .invalidToolArguments(let toolName, let reason):
-            return "Invalid arguments for tool '\(toolName)': \(reason)"
-        case .inferenceProviderUnavailable(let reason):
-            return "Inference provider unavailable: \(reason)"
-        case .contextWindowExceeded(let count, let limit):
-            return "Context window exceeded: \(count) tokens (limit: \(limit))"
+            "Agent execution was cancelled"
+        case let .maxIterationsExceeded(iterations):
+            "Agent exceeded maximum iterations (\(iterations))"
+        case let .timeout(duration):
+            "Agent execution timed out after \(duration)"
+        case let .toolNotFound(name):
+            "Tool not found: \(name)"
+        case let .toolExecutionFailed(toolName, error):
+            "Tool '\(toolName)' failed: \(error)"
+        case let .invalidToolArguments(toolName, reason):
+            "Invalid arguments for tool '\(toolName)': \(reason)"
+        case let .inferenceProviderUnavailable(reason):
+            "Inference provider unavailable: \(reason)"
+        case let .contextWindowExceeded(count, limit):
+            "Context window exceeded: \(count) tokens (limit: \(limit))"
         case .guardrailViolation:
-            return "Response violated content guidelines"
-        case .unsupportedLanguage(let language):
-            return "Language not supported: \(language)"
-        case .generationFailed(let reason):
-            return "Generation failed: \(reason)"
-        case .internalError(let reason):
-            return "Internal error: \(reason)"
+            "Response violated content guidelines"
+        case let .unsupportedLanguage(language):
+            "Language not supported: \(language)"
+        case let .generationFailed(reason):
+            "Generation failed: \(reason)"
+        case let .internalError(reason):
+            "Internal error: \(reason)"
         }
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension AgentError: CustomDebugStringConvertible {
     public var debugDescription: String {

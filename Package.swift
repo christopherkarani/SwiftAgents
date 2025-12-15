@@ -5,19 +5,20 @@ import CompilerPluginSupport
 let package = Package(
     name: "SwiftAgents",
     platforms: [
-        .macOS(.v26),
-        .iOS(.v26),
-        .watchOS(.v26),
-        .tvOS(.v26),
-        .visionOS(.v26)
+        .macOS(.v14),
+        .iOS(.v17),
+        .watchOS(.v10),
+        .tvOS(.v17),
+        .visionOS(.v1)
     ],
     products: [
-        .library(name: "SwiftAgents", targets: ["SwiftAgents"]),
-        .library(name: "SwiftAgentsUI", targets: ["SwiftAgentsUI"])
+        .library(name: "SwiftAgents", targets: ["SwiftAgents"])
     ],
     dependencies: [
         // Swift Syntax for macro implementations
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0")
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
+        // Swift Logging API
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")
     ],
     targets: [
         // MARK: - Macro Implementation (Compiler Plugin)
@@ -37,16 +38,10 @@ let package = Package(
         // MARK: - Main Library
         .target(
             name: "SwiftAgents",
-            dependencies: ["SwiftAgentsMacros"],
-            swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency")
-            ]
-        ),
-
-        // MARK: - UI Library
-        .target(
-            name: "SwiftAgentsUI",
-            dependencies: ["SwiftAgents"],
+            dependencies: [
+                "SwiftAgentsMacros",
+                .product(name: "Logging", package: "swift-log")
+            ],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]
@@ -56,13 +51,6 @@ let package = Package(
         .testTarget(
             name: "SwiftAgentsTests",
             dependencies: ["SwiftAgents"],
-            swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency")
-            ]
-        ),
-        .testTarget(
-            name: "SwiftAgentsUITests",
-            dependencies: ["SwiftAgentsUI"],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]

@@ -5,6 +5,8 @@
 
 import Foundation
 
+// MARK: - TokenEstimator
+
 /// Protocol for estimating token counts from text.
 ///
 /// Different LLMs use different tokenization schemes. This protocol
@@ -25,13 +27,13 @@ public protocol TokenEstimator: Sendable {
 
 // MARK: - Default Implementation
 
-extension TokenEstimator {
-    public func estimateTokens(for texts: [String]) -> Int {
+public extension TokenEstimator {
+    func estimateTokens(for texts: [String]) -> Int {
         texts.reduce(0) { $0 + estimateTokens(for: $1) }
     }
 }
 
-// MARK: - Character-Based Estimator
+// MARK: - CharacterBasedTokenEstimator
 
 /// Character-based token estimator using approximation.
 ///
@@ -64,7 +66,7 @@ public struct CharacterBasedTokenEstimator: TokenEstimator, Sendable {
     }
 }
 
-// MARK: - Word-Based Estimator
+// MARK: - WordBasedTokenEstimator
 
 /// Word-based token estimator.
 ///
@@ -98,13 +100,19 @@ public struct WordBasedTokenEstimator: TokenEstimator, Sendable {
     }
 }
 
-// MARK: - Combined Estimator
+// MARK: - AveragingTokenEstimator
 
 /// Combines multiple estimators and returns the average.
 ///
 /// Useful for getting a more balanced estimate when the text type is unknown.
 public struct AveragingTokenEstimator: TokenEstimator, Sendable {
-    private let estimators: [any TokenEstimator]
+    // MARK: Public
+
+    /// Default instance combining character and word-based estimators.
+    public static let shared = AveragingTokenEstimator(estimators: [
+        CharacterBasedTokenEstimator.shared,
+        WordBasedTokenEstimator.shared
+    ])
 
     /// Creates an averaging token estimator.
     ///
@@ -115,14 +123,12 @@ public struct AveragingTokenEstimator: TokenEstimator, Sendable {
             : estimators
     }
 
-    /// Default instance combining character and word-based estimators.
-    public static let shared = AveragingTokenEstimator(estimators: [
-        CharacterBasedTokenEstimator.shared,
-        WordBasedTokenEstimator.shared
-    ])
-
     public func estimateTokens(for text: String) -> Int {
         let total = estimators.reduce(0) { $0 + $1.estimateTokens(for: text) }
         return max(1, total / estimators.count)
     }
+
+    // MARK: Private
+
+    private let estimators: [any TokenEstimator]
 }

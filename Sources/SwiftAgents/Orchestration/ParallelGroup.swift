@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Merge Strategy Protocol
+// MARK: - ResultMergeStrategy
 
 /// A strategy for merging results from parallel agent executions.
 ///
@@ -17,7 +17,7 @@ import Foundation
 /// let strategy = MergeStrategies.Concatenate(separator: "\n---\n", includeAgentNames: true)
 /// let merged = try await strategy.merge(results)
 /// ```
-public protocol MergeStrategy: Sendable {
+public protocol ResultMergeStrategy: Sendable {
     /// Merges multiple agent results into a single result.
     ///
     /// - Parameter results: Dictionary of agent names to their results.
@@ -26,7 +26,7 @@ public protocol MergeStrategy: Sendable {
     func merge(_ results: [String: AgentResult]) async throws -> AgentResult
 }
 
-// MARK: - Built-in Merge Strategies
+// MARK: - MergeStrategies
 
 /// Built-in merge strategies for parallel execution.
 public enum MergeStrategies {
@@ -47,7 +47,7 @@ public enum MergeStrategies {
     /// // Agent2:
     /// // Output from agent2
     /// ```
-    public struct Concatenate: MergeStrategy {
+    public struct Concatenate: ResultMergeStrategy {
         /// Separator to use between outputs.
         public let separator: String
 
@@ -74,17 +74,17 @@ public enum MergeStrategies {
 
             let outputs: [String] = sortedResults.map { name, result in
                 if includeAgentNames {
-                    return "\(name):\n\(result.output)"
+                    "\(name):\n\(result.output)"
                 } else {
-                    return result.output
+                    result.output
                 }
             }
 
             let mergedOutput = outputs.joined(separator: separator)
 
             // Combine all tool calls and results
-            let allToolCalls = sortedResults.flatMap { $0.value.toolCalls }
-            let allToolResults = sortedResults.flatMap { $0.value.toolResults }
+            let allToolCalls = sortedResults.flatMap(\.value.toolCalls)
+            let allToolResults = sortedResults.flatMap(\.value.toolResults)
 
             // Sum iteration counts
             let totalIterations = sortedResults.reduce(0) { $0 + $1.value.iterationCount }
@@ -94,7 +94,7 @@ public enum MergeStrategies {
 
             // Merge token usage if all results have it
             let tokenUsage: TokenUsage? = {
-                let usages = sortedResults.compactMap { $0.value.tokenUsage }
+                let usages = sortedResults.compactMap(\.value.tokenUsage)
                 guard usages.count == sortedResults.count else { return nil }
                 let totalInput = usages.reduce(0) { $0 + $1.inputTokens }
                 let totalOutput = usages.reduce(0) { $0 + $1.outputTokens }
@@ -134,7 +134,7 @@ public enum MergeStrategies {
     /// ```swift
     /// let strategy = MergeStrategies.First()
     /// ```
-    public struct First: MergeStrategy {
+    public struct First: ResultMergeStrategy {
         /// Creates a first-result merge strategy.
         public init() {}
 
@@ -171,7 +171,7 @@ public enum MergeStrategies {
     /// ```swift
     /// let strategy = MergeStrategies.Longest()
     /// ```
-    public struct Longest: MergeStrategy {
+    public struct Longest: ResultMergeStrategy {
         /// Creates a longest-output merge strategy.
         public init() {}
 
@@ -214,7 +214,7 @@ public enum MergeStrategies {
     ///     return AgentResult(output: output)
     /// }
     /// ```
-    public struct Custom: MergeStrategy {
+    public struct Custom: ResultMergeStrategy {
         /// The custom merge function.
         public let mergeFunction: @Sendable ([String: AgentResult]) async throws -> AgentResult
 
@@ -246,7 +246,7 @@ public enum MergeStrategies {
     /// //   "agent2": "Output from agent2"
     /// // }
     /// ```
-    public struct Structured: MergeStrategy {
+    public struct Structured: ResultMergeStrategy {
         /// Creates a structured merge strategy.
         public init() {}
 
@@ -271,8 +271,8 @@ public enum MergeStrategies {
             }
 
             // Combine all tool calls and results
-            let allToolCalls = results.values.flatMap { $0.toolCalls }
-            let allToolResults = results.values.flatMap { $0.toolResults }
+            let allToolCalls = results.values.flatMap(\.toolCalls)
+            let allToolResults = results.values.flatMap(\.toolResults)
 
             // Sum iteration counts and durations
             let totalIterations = results.values.reduce(0) { $0 + $1.iterationCount }
@@ -296,7 +296,7 @@ public enum MergeStrategies {
     }
 }
 
-// MARK: - Parallel Group
+// MARK: - ParallelGroup
 
 /// An orchestrator that runs multiple agents in parallel.
 ///
@@ -326,6 +326,15 @@ public enum MergeStrategies {
 /// let result = try await group.run("Analyze this text")
 /// ```
 public actor ParallelGroup: Agent {
+    // MARK: Public
+
+    nonisolated public let configuration: AgentConfiguration
+
+    // MARK: - Group Properties (nonisolated)
+
+    /// The agents in this parallel group with their names.
+    nonisolated public let agents: [(name: String, agent: any Agent)]
+
     // MARK: - Agent Protocol Properties (nonisolated)
 
     nonisolated public var tools: [any Tool] { [] }
@@ -334,34 +343,9 @@ public actor ParallelGroup: Agent {
         "Parallel group of \(agents.count) agents"
     }
 
-    nonisolated public let configuration: AgentConfiguration
-
     nonisolated public var memory: (any AgentMemory)? { nil }
 
     nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
-
-    // MARK: - Group Properties (nonisolated)
-
-    /// The agents in this parallel group with their names.
-    nonisolated public let agents: [(name: String, agent: any Agent)]
-
-    // MARK: - Private State
-
-    /// The strategy for merging parallel results.
-    private let mergeStrategy: any MergeStrategy
-
-    /// Whether to continue execution if some agents fail.
-    private let continueOnError: Bool
-
-    /// Maximum number of agents to run concurrently.
-    /// If nil, all agents run without limit.
-    private let maxConcurrency: Int?
-
-    /// Whether the execution has been cancelled.
-    private var isCancelled: Bool = false
-
-    /// Optional shared context for orchestration.
-    private var context: AgentContext?
 
     // MARK: - Initialization
 
@@ -375,7 +359,7 @@ public actor ParallelGroup: Agent {
     ///   - configuration: Agent configuration. Default: .default
     public init(
         agents: [(name: String, agent: any Agent)],
-        mergeStrategy: any MergeStrategy = MergeStrategies.Concatenate(),
+        mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
         continueOnError: Bool = false,
         maxConcurrency: Int? = nil,
         configuration: AgentConfiguration = .default
@@ -399,7 +383,7 @@ public actor ParallelGroup: Agent {
     ///   - configuration: Agent configuration. Default: .default
     public init(
         agents: [any Agent],
-        mergeStrategy: any MergeStrategy = MergeStrategies.Concatenate(),
+        mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
         continueOnError: Bool = false,
         maxConcurrency: Int? = nil,
         configuration: AgentConfiguration = .default
@@ -445,7 +429,7 @@ public actor ParallelGroup: Agent {
         var errors: [String: Error] = [:]
 
         // Record start in context if available
-        if let context = context {
+        if let context {
             await context.recordExecution(agentName: "ParallelGroup")
         }
 
@@ -466,9 +450,9 @@ public actor ParallelGroup: Agent {
                         if let (completedName, result) = try await group.next() {
                             runningCount -= 1
                             switch result {
-                            case .success(let agentResult):
+                            case let .success(agentResult):
                                 results[completedName] = agentResult
-                            case .failure(let error):
+                            case let .failure(error):
                                 errors[completedName] = error
                                 if !continueOnError {
                                     throw error
@@ -493,9 +477,9 @@ public actor ParallelGroup: Agent {
             // Collect remaining results
             for try await (name, result) in group {
                 switch result {
-                case .success(let agentResult):
+                case let .success(agentResult):
                     results[name] = agentResult
-                case .failure(let error):
+                case let .failure(error):
                     errors[name] = error
                     if !continueOnError {
                         throw error
@@ -510,7 +494,7 @@ public actor ParallelGroup: Agent {
         }
 
         // If all agents failed, throw combined error
-        if results.isEmpty && !errors.isEmpty {
+        if results.isEmpty, !errors.isEmpty {
             let errorMessages = errors.map { "\($0.key): \($0.value.localizedDescription)" }
             throw OrchestrationError.allAgentsFailed(errors: errorMessages)
         }
@@ -523,7 +507,7 @@ public actor ParallelGroup: Agent {
         let mergedResult = try await mergeStrategy.merge(results)
 
         // Record result in context if available
-        if let context = context {
+        if let context {
             await context.setPreviousOutput(mergedResult)
         }
 
@@ -538,23 +522,28 @@ public actor ParallelGroup: Agent {
     /// - Parameter input: The input to send to all agents.
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    continuation.yield(.started(input: input))
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
 
-                    let result = try await run(input)
+            do {
+                continuation.yield(.started(input: input))
 
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch {
-                    if let agentError = error as? AgentError {
-                        continuation.yield(.failed(error: agentError))
-                    }
-                    continuation.finish(throwing: error)
+                let result = try await run(input)
+
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                if let agentError = error as? AgentError {
+                    continuation.yield(.failed(error: agentError))
                 }
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     /// Cancels the parallel execution.
@@ -564,13 +553,33 @@ public actor ParallelGroup: Agent {
     public func cancel() async {
         isCancelled = true
     }
+
+    // MARK: Private
+
+    // MARK: - Private State
+
+    /// The strategy for merging parallel results.
+    private let mergeStrategy: any ResultMergeStrategy
+
+    /// Whether to continue execution if some agents fail.
+    private let continueOnError: Bool
+
+    /// Maximum number of agents to run concurrently.
+    /// If nil, all agents run without limit.
+    private let maxConcurrency: Int?
+
+    /// Whether the execution has been cancelled.
+    private var isCancelled: Bool = false
+
+    /// Optional shared context for orchestration.
+    private var context: AgentContext?
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension ParallelGroup: CustomStringConvertible {
     nonisolated public var description: String {
-        let agentNames = agents.map { $0.name }.joined(separator: ", ")
+        let agentNames = agents.map(\.name).joined(separator: ", ")
         return "ParallelGroup(\(agents.count) agents: [\(agentNames)])"
     }
 }

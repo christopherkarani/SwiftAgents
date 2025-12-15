@@ -1,17 +1,16 @@
 // SlidingWindowMemoryTests.swift
 // SwiftAgents Framework
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 @Suite("SlidingWindowMemory Tests")
 struct SlidingWindowMemoryTests {
-
     // MARK: - Initialization Tests
 
     @Test("Creates with default configuration")
-    func testDefaultInit() async {
+    func defaultInit() async {
         let memory = SlidingWindowMemory()
 
         #expect(await memory.maxTokens == 4000)
@@ -20,14 +19,14 @@ struct SlidingWindowMemoryTests {
     }
 
     @Test("Creates with custom max tokens")
-    func testCustomMaxTokens() async {
+    func customMaxTokens() async {
         let memory = SlidingWindowMemory(maxTokens: 2000)
 
         #expect(await memory.maxTokens == 2000)
     }
 
     @Test("Enforces minimum max tokens of 100")
-    func testMinimumMaxTokens() async {
+    func minimumMaxTokens() async {
         let memory = SlidingWindowMemory(maxTokens: 50)
 
         #expect(await memory.maxTokens == 100)
@@ -36,7 +35,7 @@ struct SlidingWindowMemoryTests {
     // MARK: - Add Tests
 
     @Test("Adds message and updates token count")
-    func testAddUpdatesTokenCount() async {
+    func addUpdatesTokenCount() async {
         let memory = SlidingWindowMemory()
 
         await memory.add(.user("Hello"))
@@ -61,7 +60,7 @@ struct SlidingWindowMemoryTests {
     // MARK: - Token-Based Eviction Tests
 
     @Test("Evicts oldest messages when tokens exceeded")
-    func testTokenBasedEviction() async {
+    func tokenBasedEviction() async {
         let memory = SlidingWindowMemory(maxTokens: 200)
 
         // Add messages until we exceed the limit
@@ -75,7 +74,7 @@ struct SlidingWindowMemoryTests {
     }
 
     @Test("Keeps at least one message")
-    func testKeepsAtLeastOneMessage() async {
+    func keepsAtLeastOneMessage() async {
         let memory = SlidingWindowMemory(maxTokens: 100)
 
         // Add a very long message that exceeds the limit
@@ -86,7 +85,7 @@ struct SlidingWindowMemoryTests {
     }
 
     @Test("Near capacity flag works correctly")
-    func testNearCapacity() async {
+    func nearCapacity() async {
         let memory = SlidingWindowMemory(maxTokens: 100)
 
         #expect(await memory.isNearCapacity == false)
@@ -115,7 +114,7 @@ struct SlidingWindowMemoryTests {
     }
 
     @Test("Context respects both request limit and max tokens")
-    func testContextRespectsLimits() async {
+    func contextRespectsLimits() async {
         let memory = SlidingWindowMemory(maxTokens: 100)
 
         await memory.add(.user("Hello"))
@@ -159,7 +158,7 @@ struct SlidingWindowMemoryTests {
     }
 
     @Test("Gets messages within token budget")
-    func testGetMessagesWithinBudget() async {
+    func getMessagesWithinBudget() async {
         let memory = SlidingWindowMemory()
 
         for i in 1...10 {

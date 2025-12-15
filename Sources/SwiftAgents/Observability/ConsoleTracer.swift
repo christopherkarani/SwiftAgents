@@ -5,9 +5,8 @@
 // Provides both standard and pretty (emoji-enhanced) console tracers.
 
 import Foundation
-import os
 
-// MARK: - Console Tracer
+// MARK: - ConsoleTracer
 
 /// A console tracer that outputs formatted trace events to the terminal.
 ///
@@ -20,7 +19,8 @@ import os
 ///
 /// ## Features
 ///
-/// - **Color Coding**: Events are colored based on severity (trace=gray, debug=cyan, info=green, warning=yellow, error=red, critical=magenta)
+/// - **Color Coding**: Events are colored based on severity (trace=gray, debug=cyan, info=green, warning=yellow,
+/// error=red, critical=magenta)
 /// - **Filtering**: Only events at or above `minimumLevel` are displayed
 /// - **Timestamps**: Optional ISO8601 timestamps with configurable formatting
 /// - **Source Location**: Shows file:line information when enabled
@@ -43,20 +43,7 @@ import os
 /// // Output: [2024-12-12T10:30:45Z] [INFO] agentStart agent=MyAgent Agent started
 /// ```
 public actor ConsoleTracer: AgentTracer {
-    /// The minimum event level to display. Events below this level are filtered out.
-    private let minimumLevel: EventLevel
-
-    /// Whether to colorize output using ANSI escape codes.
-    private let colorized: Bool
-
-    /// Whether to include timestamps in output.
-    private let includeTimestamp: Bool
-
-    /// Whether to include source location (file:line) in output.
-    private let includeSource: Bool
-
-    /// The date formatter used for timestamps.
-    private let dateFormatter: ISO8601DateFormatter
+    // MARK: Public
 
     /// Creates a console tracer with the specified configuration.
     ///
@@ -77,8 +64,8 @@ public actor ConsoleTracer: AgentTracer {
         self.includeSource = includeSource
 
         // Configure ISO8601 date formatter
-        self.dateFormatter = ISO8601DateFormatter()
-        self.dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     }
 
     public func trace(_ event: TraceEvent) async {
@@ -127,7 +114,7 @@ public actor ConsoleTracer: AgentTracer {
 
         // Join parts and log
         let output = parts.joined(separator: " ")
-        Logger.tracing.info("\(output)")
+        Log.tracing.info("\(output)")
 
         // Print error details if present
         if let error = event.error {
@@ -140,6 +127,23 @@ public actor ConsoleTracer: AgentTracer {
         }
     }
 
+    // MARK: Private
+
+    /// The minimum event level to display. Events below this level are filtered out.
+    private let minimumLevel: EventLevel
+
+    /// Whether to colorize output using ANSI escape codes.
+    private let colorized: Bool
+
+    /// Whether to include timestamps in output.
+    private let includeTimestamp: Bool
+
+    /// Whether to include source location (file:line) in output.
+    private let includeSource: Bool
+
+    /// The date formatter used for timestamps.
+    private let dateFormatter: ISO8601DateFormatter
+
     // MARK: - Formatting Helpers
 
     /// Formats the event level with color coding.
@@ -148,20 +152,19 @@ public actor ConsoleTracer: AgentTracer {
 
         guard colorized else { return text }
 
-        let colorCode: String
-        switch level {
+        let colorCode = switch level {
         case .trace:
-            colorCode = "\u{001B}[37m" // gray
+            "\u{001B}[37m" // gray
         case .debug:
-            colorCode = "\u{001B}[36m" // cyan
+            "\u{001B}[36m" // cyan
         case .info:
-            colorCode = "\u{001B}[32m" // green
+            "\u{001B}[32m" // green
         case .warning:
-            colorCode = "\u{001B}[33m" // yellow
+            "\u{001B}[33m" // yellow
         case .error:
-            colorCode = "\u{001B}[31m" // red
+            "\u{001B}[31m" // red
         case .critical:
-            colorCode = "\u{001B}[35m" // magenta
+            "\u{001B}[35m" // magenta
         }
 
         let resetCode = "\u{001B}[0m"
@@ -170,38 +173,37 @@ public actor ConsoleTracer: AgentTracer {
 
     /// Formats the event kind with emoji indicators.
     private func formatKind(_ kind: EventKind) -> String {
-        let emoji: String
-        switch kind {
+        let emoji = switch kind {
         case .agentStart:
-            emoji = "▶️"
+            "▶️"
         case .agentComplete:
-            emoji = "✅"
+            "✅"
         case .agentError:
-            emoji = "❌"
+            "❌"
         case .agentCancelled:
-            emoji = "⏹️"
+            "⏹️"
         case .toolCall:
-            emoji = "🔧"
+            "🔧"
         case .toolResult:
-            emoji = "📦"
+            "📦"
         case .toolError:
-            emoji = "⚠️"
+            "⚠️"
         case .thought:
-            emoji = "💭"
+            "💭"
         case .decision:
-            emoji = "🎯"
+            "🎯"
         case .plan:
-            emoji = "📋"
+            "📋"
         case .memoryRead:
-            emoji = "📖"
+            "📖"
         case .memoryWrite:
-            emoji = "💾"
+            "💾"
         case .checkpoint:
-            emoji = "🏁"
+            "🏁"
         case .metric:
-            emoji = "📊"
+            "📊"
         case .custom:
-            emoji = "📌"
+            "📌"
         }
 
         return "\(emoji) \(kind.rawValue)"
@@ -212,17 +214,17 @@ public actor ConsoleTracer: AgentTracer {
         let prefix = colorized ? "\u{001B}[31m" : ""
         let reset = colorized ? "\u{001B}[0m" : ""
 
-        Logger.tracing.error("\(prefix)  Error: \(error.type)\(reset)")
-        Logger.tracing.error("\(prefix)  Message: \(error.message)\(reset)")
+        Log.tracing.error("\(prefix)  Error: \(error.type)\(reset)")
+        Log.tracing.error("\(prefix)  Message: \(error.message)\(reset)")
 
         if let underlyingError = error.underlyingError {
-            Logger.tracing.error("\(prefix)  Underlying: \(underlyingError)\(reset)")
+            Log.tracing.error("\(prefix)  Underlying: \(underlyingError)\(reset)")
         }
 
         if let stackTrace = error.stackTrace {
-            Logger.tracing.error("\(prefix)  Stack Trace:\(reset)")
+            Log.tracing.error("\(prefix)  Stack Trace:\(reset)")
             for frame in stackTrace {
-                Logger.tracing.error("\(prefix)    \(frame)\(reset)")
+                Log.tracing.error("\(prefix)    \(frame)\(reset)")
             }
         }
     }
@@ -232,14 +234,14 @@ public actor ConsoleTracer: AgentTracer {
         let prefix = colorized ? "\u{001B}[37m" : ""
         let reset = colorized ? "\u{001B}[0m" : ""
 
-        Logger.tracing.debug("\(prefix)  Metadata:\(reset)")
+        Log.tracing.debug("\(prefix)  Metadata:\(reset)")
         for (key, value) in metadata.sorted(by: { $0.key < $1.key }) {
-            Logger.tracing.debug("\(prefix)    \(key): \(value)\(reset)")
+            Log.tracing.debug("\(prefix)    \(key): \(value)\(reset)")
         }
     }
 }
 
-// MARK: - Pretty Console Tracer
+// MARK: - PrettyConsoleTracer
 
 /// An enhanced console tracer with emoji-rich output for better visual scanning.
 ///
@@ -272,20 +274,7 @@ public actor ConsoleTracer: AgentTracer {
 ///     search_time: 1.2
 /// ```
 public actor PrettyConsoleTracer: AgentTracer {
-    /// The minimum event level to display. Events below this level are filtered out.
-    private let minimumLevel: EventLevel
-
-    /// Whether to colorize output using ANSI escape codes.
-    private let colorized: Bool
-
-    /// Whether to include timestamps in output.
-    private let includeTimestamp: Bool
-
-    /// Whether to include source location (file:line) in output.
-    private let includeSource: Bool
-
-    /// The date formatter used for timestamps.
-    private let dateFormatter: ISO8601DateFormatter
+    // MARK: Public
 
     /// Creates a pretty console tracer with the specified configuration.
     ///
@@ -306,8 +295,8 @@ public actor PrettyConsoleTracer: AgentTracer {
         self.includeSource = includeSource
 
         // Configure ISO8601 date formatter
-        self.dateFormatter = ISO8601DateFormatter()
-        self.dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     }
 
     public func trace(_ event: TraceEvent) async {
@@ -331,8 +320,25 @@ public actor PrettyConsoleTracer: AgentTracer {
         }
 
         // Add blank line for visual separation
-        Logger.tracing.debug("")
+        Log.tracing.debug("")
     }
+
+    // MARK: Private
+
+    /// The minimum event level to display. Events below this level are filtered out.
+    private let minimumLevel: EventLevel
+
+    /// Whether to colorize output using ANSI escape codes.
+    private let colorized: Bool
+
+    /// Whether to include timestamps in output.
+    private let includeTimestamp: Bool
+
+    /// Whether to include source location (file:line) in output.
+    private let includeSource: Bool
+
+    /// The date formatter used for timestamps.
+    private let dateFormatter: ISO8601DateFormatter
 
     // MARK: - Pretty Formatting
 
@@ -360,79 +366,77 @@ public actor PrettyConsoleTracer: AgentTracer {
         // Add message
         parts.append(event.message)
 
-        Logger.tracing.info("\(parts.joined(separator: " "))")
+        Log.tracing.info("\(parts.joined(separator: " "))")
     }
 
     /// Prints event details with indentation.
     private func printDetails(_ event: TraceEvent) {
         // Print agent name if present
         if let agentName = event.agentName {
-            Logger.tracing.debug("  📛 Agent: \(agentName)")
+            Log.tracing.debug("  📛 Agent: \(agentName)")
         }
 
         // Print tool name if present
         if let toolName = event.toolName {
-            Logger.tracing.debug("  🔨 Tool: \(toolName)")
+            Log.tracing.debug("  🔨 Tool: \(toolName)")
         }
 
         // Print duration if present
         if let duration = event.duration {
-            Logger.tracing.debug("  ⏱️  Duration: \(String(format: "%.2f", duration * 1000))ms")
+            Log.tracing.debug("  ⏱️  Duration: \(String(format: "%.2f", duration * 1000))ms")
         }
 
         // Print trace ID
-        Logger.tracing.debug("  🆔 Trace: \(event.traceId)")
+        Log.tracing.debug("  🆔 Trace: \(event.traceId)")
 
         // Print span ID
-        Logger.tracing.debug("  📍 Span: \(event.spanId)")
+        Log.tracing.debug("  📍 Span: \(event.spanId)")
 
         // Print parent span ID if present
         if let parentSpanId = event.parentSpanId {
-            Logger.tracing.debug("  ⬆️  Parent: \(parentSpanId)")
+            Log.tracing.debug("  ⬆️  Parent: \(parentSpanId)")
         }
 
         // Print source location if enabled and present
         if includeSource, let source = event.source {
-            Logger.tracing.debug("  📂 Source: \(source.filename):\(source.line) - \(source.function)")
+            Log.tracing.debug("  📂 Source: \(source.filename):\(source.line) - \(source.function)")
         }
     }
 
     /// Formats the event level with color coding.
     private func formatLevel(_ level: EventLevel) -> String {
-        let emoji: String
-        switch level {
+        let emoji = switch level {
         case .trace:
-            emoji = "🔍"
+            "🔍"
         case .debug:
-            emoji = "🐛"
+            "🐛"
         case .info:
-            emoji = "ℹ️"
+            "ℹ️"
         case .warning:
-            emoji = "⚠️"
+            "⚠️"
         case .error:
-            emoji = "❗"
+            "❗"
         case .critical:
-            emoji = "🚨"
+            "🚨"
         }
 
         let text = "[\(level.description)]"
 
         guard colorized else { return "\(emoji) \(text)" }
 
-        let colorCode: String
-        switch level {
+        let colorCode = switch level {
         case .trace:
-            colorCode = "\u{001B}[37m" // gray
+            "\u{001B}[37m" // gray
         case .debug:
-            colorCode = "\u{001B}[36m" // cyan
+            "\u{001B}[36m" // cyan
         case .info:
-            colorCode = "\u{001B}[32m" // green
+            "\u{001B}[32m" // green
         case .warning:
-            colorCode = "\u{001B}[33m" // yellow
+            "\u{001B}[33m" // yellow
         case .error:
-            colorCode = "\u{001B}[31m" // red
+            "\u{001B}[31m" // red
         case .critical:
-            colorCode = "\u{001B}[35m" // magenta
+            "\u{001B}[35m" // magenta
         }
 
         let resetCode = "\u{001B}[0m"
@@ -500,18 +504,18 @@ public actor PrettyConsoleTracer: AgentTracer {
         let prefix = colorized ? "\u{001B}[31m" : ""
         let reset = colorized ? "\u{001B}[0m" : ""
 
-        Logger.tracing.error("\(prefix)  ❌ Error Details:\(reset)")
-        Logger.tracing.error("\(prefix)    🏷️  Type: \(error.type)\(reset)")
-        Logger.tracing.error("\(prefix)    💬 Message: \(error.message)\(reset)")
+        Log.tracing.error("\(prefix)  ❌ Error Details:\(reset)")
+        Log.tracing.error("\(prefix)    🏷️  Type: \(error.type)\(reset)")
+        Log.tracing.error("\(prefix)    💬 Message: \(error.message)\(reset)")
 
         if let underlyingError = error.underlyingError {
-            Logger.tracing.error("\(prefix)    ⚡ Underlying: \(underlyingError)\(reset)")
+            Log.tracing.error("\(prefix)    ⚡ Underlying: \(underlyingError)\(reset)")
         }
 
         if let stackTrace = error.stackTrace {
-            Logger.tracing.error("\(prefix)    📚 Stack Trace:\(reset)")
+            Log.tracing.error("\(prefix)    📚 Stack Trace:\(reset)")
             for frame in stackTrace {
-                Logger.tracing.error("\(prefix)      • \(frame)\(reset)")
+                Log.tracing.error("\(prefix)      • \(frame)\(reset)")
             }
         }
     }
@@ -521,9 +525,9 @@ public actor PrettyConsoleTracer: AgentTracer {
         let prefix = colorized ? "\u{001B}[37m" : ""
         let reset = colorized ? "\u{001B}[0m" : ""
 
-        Logger.tracing.debug("\(prefix)  📊 Metadata:\(reset)")
+        Log.tracing.debug("\(prefix)  📊 Metadata:\(reset)")
         for (key, value) in metadata.sorted(by: { $0.key < $1.key }) {
-            Logger.tracing.debug("\(prefix)    • \(key): \(value)\(reset)")
+            Log.tracing.debug("\(prefix)    • \(key): \(value)\(reset)")
         }
     }
 }

@@ -1,17 +1,16 @@
 // MemoryMessageTests.swift
 // SwiftAgents Framework
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 @Suite("MemoryMessage Tests")
 struct MemoryMessageTests {
-
     // MARK: - Initialization Tests
 
     @Test("Creates message with all parameters")
-    func testFullInitialization() {
+    func fullInitialization() {
         let id = UUID()
         let timestamp = Date()
         let metadata = ["key": "value"]
@@ -32,7 +31,7 @@ struct MemoryMessageTests {
     }
 
     @Test("Creates message with default parameters")
-    func testDefaultInitialization() {
+    func defaultInitialization() {
         let message = MemoryMessage(role: .assistant, content: "Hi there")
 
         #expect(message.role == .assistant)
@@ -45,7 +44,7 @@ struct MemoryMessageTests {
     // MARK: - Factory Methods Tests
 
     @Test("User factory method creates correct role")
-    func testUserFactory() {
+    func userFactory() {
         let message = MemoryMessage.user("Hello world")
 
         #expect(message.role == .user)
@@ -53,7 +52,7 @@ struct MemoryMessageTests {
     }
 
     @Test("Assistant factory method creates correct role")
-    func testAssistantFactory() {
+    func assistantFactory() {
         let message = MemoryMessage.assistant("I can help")
 
         #expect(message.role == .assistant)
@@ -61,7 +60,7 @@ struct MemoryMessageTests {
     }
 
     @Test("System factory method creates correct role")
-    func testSystemFactory() {
+    func systemFactory() {
         let message = MemoryMessage.system("You are helpful")
 
         #expect(message.role == .system)
@@ -69,7 +68,7 @@ struct MemoryMessageTests {
     }
 
     @Test("Tool factory method creates correct role and metadata")
-    func testToolFactory() {
+    func toolFactory() {
         let message = MemoryMessage.tool("Result: 42", toolName: "calculator")
 
         #expect(message.role == .tool)
@@ -78,7 +77,7 @@ struct MemoryMessageTests {
     }
 
     @Test("Factory methods accept metadata")
-    func testFactoryWithMetadata() {
+    func factoryWithMetadata() {
         let message = MemoryMessage.user("Hello", metadata: ["source": "test"])
 
         #expect(message.metadata["source"] == "test")
@@ -98,7 +97,7 @@ struct MemoryMessageTests {
     // MARK: - Role Tests
 
     @Test("All roles are accessible")
-    func testAllRoles() {
+    func allRoles() {
         let roles: [MemoryMessage.Role] = [.user, .assistant, .system, .tool]
 
         #expect(roles.count == 4)
@@ -106,7 +105,7 @@ struct MemoryMessageTests {
     }
 
     @Test("Role raw values are correct")
-    func testRoleRawValues() {
+    func roleRawValues() {
         #expect(MemoryMessage.Role.user.rawValue == "user")
         #expect(MemoryMessage.Role.assistant.rawValue == "assistant")
         #expect(MemoryMessage.Role.system.rawValue == "system")
@@ -116,7 +115,7 @@ struct MemoryMessageTests {
     // MARK: - Codable Tests
 
     @Test("Message encodes and decodes correctly")
-    func testCodable() throws {
+    func codable() throws {
         let original = MemoryMessage.user("Test message", metadata: ["key": "value"])
 
         let encoder = JSONEncoder()
@@ -134,7 +133,7 @@ struct MemoryMessageTests {
     // MARK: - Equatable Tests
 
     @Test("Messages with same ID are equal")
-    func testEquatable() {
+    func equatable() {
         let id = UUID()
         let timestamp = Date()
         let message1 = MemoryMessage(id: id, role: .user, content: "Hello", timestamp: timestamp)
@@ -144,7 +143,7 @@ struct MemoryMessageTests {
     }
 
     @Test("Messages with different IDs are not equal")
-    func testNotEqual() {
+    func notEqual() {
         let message1 = MemoryMessage.user("Hello")
         let message2 = MemoryMessage.user("Hello")
 
@@ -154,7 +153,7 @@ struct MemoryMessageTests {
     // MARK: - Hashable Tests
 
     @Test("Messages can be used in sets")
-    func testHashable() {
+    func hashable() {
         let message1 = MemoryMessage.user("Hello")
         let message2 = MemoryMessage.user("World")
 
@@ -178,7 +177,7 @@ struct MemoryMessageTests {
     }
 
     @Test("Description truncates long content")
-    func testDescriptionTruncation() {
+    func descriptionTruncation() {
         let longContent = String(repeating: "a", count: 100)
         let message = MemoryMessage.user(longContent)
         let description = message.description

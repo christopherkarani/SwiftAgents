@@ -3,15 +3,14 @@
 //
 // Tests for ToolResult type
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 // MARK: - ToolResult Tests
 
 @Suite("ToolResult Tests")
 struct ToolResultTests {
-
     // MARK: - Success Factory Method
 
     @Test("ToolResult.success factory")

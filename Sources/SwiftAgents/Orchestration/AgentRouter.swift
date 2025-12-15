@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Route Condition
+// MARK: - RouteCondition
 
 /// A condition that determines whether a route should be taken.
 ///
@@ -20,7 +20,7 @@ import Foundation
 ///     .or(.contextHas(key: "location"))
 /// ```
 public struct RouteCondition: Sendable {
-    private let evaluate: @Sendable (String, AgentContext?) async -> Bool
+    // MARK: Public
 
     /// Creates a new route condition.
     ///
@@ -38,11 +38,35 @@ public struct RouteCondition: Sendable {
     public func matches(input: String, context: AgentContext?) async -> Bool {
         await evaluate(input, context)
     }
+
+    // MARK: Private
+
+    private let evaluate: @Sendable (String, AgentContext?) async -> Bool
 }
 
 // MARK: - Built-in Conditions
 
-extension RouteCondition {
+public extension RouteCondition {
+    /// A condition that always matches.
+    ///
+    /// Useful as a fallback route or default condition.
+    ///
+    /// Example:
+    /// ```swift
+    /// Route(condition: .always, agent: fallbackAgent)
+    /// ```
+    static let always = RouteCondition { _, _ in true }
+
+    /// A condition that never matches.
+    ///
+    /// Useful for temporarily disabling routes during development.
+    ///
+    /// Example:
+    /// ```swift
+    /// Route(condition: .never, agent: debugAgent)
+    /// ```
+    static let never = RouteCondition { _, _ in false }
+
     /// A condition that checks if the input contains a substring.
     ///
     /// - Parameters:
@@ -54,12 +78,12 @@ extension RouteCondition {
     /// ```swift
     /// let condition = RouteCondition.contains("weather", caseSensitive: false)
     /// ```
-    public static func contains(_ substring: String, caseSensitive: Bool = false) -> RouteCondition {
+    static func contains(_ substring: String, caseSensitive: Bool = false) -> RouteCondition {
         RouteCondition { input, _ in
             if caseSensitive {
-                return input.contains(substring)
+                input.contains(substring)
             } else {
-                return input.localizedCaseInsensitiveContains(substring)
+                input.localizedCaseInsensitiveContains(substring)
             }
         }
     }
@@ -73,7 +97,7 @@ extension RouteCondition {
     /// ```swift
     /// let condition = RouteCondition.matches(pattern: #"\d{3}-\d{4}"#)
     /// ```
-    public static func matches(pattern: String) -> RouteCondition {
+    static func matches(pattern: String) -> RouteCondition {
         RouteCondition { input, _ in
             guard let regex = try? NSRegularExpression(pattern: pattern) else {
                 return false
@@ -92,7 +116,7 @@ extension RouteCondition {
     /// ```swift
     /// let condition = RouteCondition.startsWith("calculate")
     /// ```
-    public static func startsWith(_ prefix: String) -> RouteCondition {
+    static func startsWith(_ prefix: String) -> RouteCondition {
         RouteCondition { input, _ in
             input.lowercased().hasPrefix(prefix.lowercased())
         }
@@ -107,7 +131,7 @@ extension RouteCondition {
     /// ```swift
     /// let condition = RouteCondition.endsWith("?")
     /// ```
-    public static func endsWith(_ suffix: String) -> RouteCondition {
+    static func endsWith(_ suffix: String) -> RouteCondition {
         RouteCondition { input, _ in
             input.lowercased().hasSuffix(suffix.lowercased())
         }
@@ -122,7 +146,7 @@ extension RouteCondition {
     /// ```swift
     /// let condition = RouteCondition.lengthInRange(10...100)
     /// ```
-    public static func lengthInRange(_ range: ClosedRange<Int>) -> RouteCondition {
+    static func lengthInRange(_ range: ClosedRange<Int>) -> RouteCondition {
         RouteCondition { input, _ in
             range.contains(input.count)
         }
@@ -137,37 +161,31 @@ extension RouteCondition {
     /// ```swift
     /// let condition = RouteCondition.contextHas(key: "user_id")
     /// ```
-    public static func contextHas(key: String) -> RouteCondition {
+    static func contextHas(key: String) -> RouteCondition {
         RouteCondition { _, context in
-            guard let context = context else { return false }
+            guard let context else { return false }
             return await context.get(key) != nil
         }
     }
-
-    /// A condition that always matches.
-    ///
-    /// Useful as a fallback route or default condition.
-    ///
-    /// Example:
-    /// ```swift
-    /// Route(condition: .always, agent: fallbackAgent)
-    /// ```
-    public static let always = RouteCondition { _, _ in true }
-
-    /// A condition that never matches.
-    ///
-    /// Useful for temporarily disabling routes during development.
-    ///
-    /// Example:
-    /// ```swift
-    /// Route(condition: .never, agent: debugAgent)
-    /// ```
-    public static let never = RouteCondition { _, _ in false }
 }
 
 // MARK: - Condition Combinators
 
-extension RouteCondition {
+public extension RouteCondition {
+    /// Negates this condition.
+    ///
+    /// - Returns: A new condition that matches when this condition doesn't.
+    ///
+    /// Example:
+    /// ```swift
+    /// let condition = RouteCondition.contains("admin").not
+    /// ```
+    var not: RouteCondition {
+        RouteCondition { input, context in
+            await !(self.matches(input: input, context: context))
+        }
+    }
+
     /// Combines this condition with another using logical AND.
     ///
     /// - Parameter other: The condition to combine with.
@@ -178,7 +196,7 @@ extension RouteCondition {
     /// let condition = RouteCondition.contains("weather")
     ///     .and(.lengthInRange(10...100))
     /// ```
-    public func and(_ other: RouteCondition) -> RouteCondition {
+    func and(_ other: RouteCondition) -> RouteCondition {
         RouteCondition { input, context in
             let firstMatch = await self.matches(input: input, context: context)
             guard firstMatch else { return false }
@@ -197,26 +215,12 @@ extension RouteCondition {
     /// let condition = RouteCondition.contains("help")
     ///     .or(.contains("support"))
     /// ```
-    public func or(_ other: RouteCondition) -> RouteCondition {
+    func or(_ other: RouteCondition) -> RouteCondition {
         RouteCondition { input, context in
             let firstMatch = await self.matches(input: input, context: context)
             if firstMatch { return true }
             let secondMatch = await other.matches(input: input, context: context)
             return secondMatch
-        }
-    }
-
-    /// Negates this condition.
-    ///
-    /// - Returns: A new condition that matches when this condition doesn't.
-    ///
-    /// Example:
-    /// ```swift
-    /// let condition = RouteCondition.contains("admin").not
-    /// ```
-    public var not: RouteCondition {
-        RouteCondition { input, context in
-            !(await self.matches(input: input, context: context))
         }
     }
 }
@@ -260,7 +264,7 @@ public struct Route: Sendable {
     }
 }
 
-// MARK: - Route Builder
+// MARK: - RouteBuilder
 
 /// A result builder for constructing route arrays with DSL syntax.
 ///
@@ -301,11 +305,11 @@ public struct RouteBuilder {
 
     /// Builds a route array from nested arrays.
     public static func buildArray(_ routes: [[Route]]) -> [Route] {
-        routes.flatMap { $0 }
+        routes.flatMap(\.self)
     }
 }
 
-// MARK: - Agent Router
+// MARK: - AgentRouter
 
 /// An agent that routes requests to other agents based on conditions.
 ///
@@ -331,19 +335,16 @@ public struct RouteBuilder {
 /// let result = try await router.run("What's the weather?")
 /// ```
 public actor AgentRouter: Agent {
+    // MARK: Public
+
     // MARK: - Agent Protocol Properties
 
     nonisolated public let tools: [any Tool] = []
     nonisolated public let instructions: String
     nonisolated public let configuration: AgentConfiguration
+
     nonisolated public var memory: (any AgentMemory)? { nil }
     nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
-
-    // MARK: - Private Properties
-
-    private let routes: [Route]
-    private let fallbackAgent: (any Agent)?
-    private var isCancelled: Bool = false
 
     // MARK: - Initialization
 
@@ -364,7 +365,7 @@ public actor AgentRouter: Agent {
         self.routes = routes
         self.fallbackAgent = fallbackAgent
         self.configuration = configuration
-        self.instructions = "Routes requests to specialized agents based on conditions."
+        instructions = "Routes requests to specialized agents based on conditions."
     }
 
     /// Creates a new agent router using result builder syntax.
@@ -391,7 +392,7 @@ public actor AgentRouter: Agent {
         self.routes = routes()
         self.fallbackAgent = fallbackAgent
         self.configuration = configuration
-        self.instructions = "Routes requests to specialized agents based on conditions."
+        instructions = "Routes requests to specialized agents based on conditions."
     }
 
     // MARK: - Agent Protocol Methods
@@ -447,58 +448,71 @@ public actor AgentRouter: Agent {
     /// - Parameter input: The user's input/query.
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    continuation.yield(.started(input: input))
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
 
-                    if await self.isCancelled {
-                        continuation.yield(.cancelled)
-                        continuation.finish()
-                        return
-                    }
+            do {
+                continuation.yield(.started(input: input))
 
-                    // Find the first matching route
-                    let selectedRoute = await self.findMatchingRoute(input: input, context: nil)
-
-                    guard let route = selectedRoute else {
-                        // No route matched - try fallback
-                        if let fallback = fallbackAgent {
-                            for try await event in fallback.stream(input) {
-                                continuation.yield(event)
-                            }
-                        } else {
-                            let error = OrchestrationError.routingFailed(
-                                reason: "No route matched input and no fallback agent configured"
-                            )
-                            continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
-                        }
-                        continuation.finish()
-                        return
-                    }
-
-                    // Stream from the matched route's agent
-                    for try await event in route.agent.stream(input) {
-                        continuation.yield(event)
-                    }
-
+                if await isCancelled {
+                    continuation.yield(.cancelled)
                     continuation.finish()
-                } catch {
-                    if let agentError = error as? AgentError {
-                        continuation.yield(.failed(error: agentError))
+                    return
+                }
+
+                // Find the first matching route
+                let selectedRoute = await findMatchingRoute(input: input, context: nil)
+
+                guard let route = selectedRoute else {
+                    // No route matched - try fallback
+                    if let fallback = await fallbackAgent {
+                        for try await event in fallback.stream(input) {
+                            continuation.yield(event)
+                        }
                     } else {
+                        let error = OrchestrationError.routingFailed(
+                            reason: "No route matched input and no fallback agent configured"
+                        )
                         continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
                     }
                     continuation.finish()
+                    return
                 }
+
+                // Stream from the matched route's agent
+                for try await event in route.agent.stream(input) {
+                    continuation.yield(event)
+                }
+
+                continuation.finish()
+            } catch {
+                if let agentError = error as? AgentError {
+                    continuation.yield(.failed(error: agentError))
+                } else {
+                    continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
+                }
+                continuation.finish()
             }
         }
+        return stream
     }
 
     /// Cancels any ongoing routing execution.
     public func cancel() async {
         isCancelled = true
     }
+
+    // MARK: Private
+
+    // MARK: - Private Properties
+
+    private let routes: [Route]
+    private let fallbackAgent: (any Agent)?
+    private var isCancelled: Bool = false
 
     // MARK: - Private Methods
 
@@ -516,7 +530,7 @@ public actor AgentRouter: Agent {
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension AgentRouter: CustomStringConvertible {
     nonisolated public var description: String {

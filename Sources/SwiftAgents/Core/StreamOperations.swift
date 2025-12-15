@@ -17,7 +17,70 @@ public typealias ToolResultInfo = ToolResult
 
 // MARK: - AgentEvent Stream Operations
 
-extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
+public extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
+    // MARK: - Property Accessors
+
+    /// Extracts only thinking content from the stream.
+    ///
+    /// Example:
+    /// ```swift
+    /// for try await thought in stream.thoughts {
+    ///     print(thought)
+    /// }
+    /// ```
+    var thoughts: AsyncThrowingStream<String, Error> {
+        mapToThoughts()
+    }
+
+    /// Extracts tool calls from the stream.
+    ///
+    /// Example:
+    /// ```swift
+    /// for try await call in stream.toolCalls {
+    ///     print("Called tool: \(call.toolName)")
+    /// }
+    /// ```
+    var toolCalls: AsyncThrowingStream<ToolCall, Error> {
+        let (stream, continuation) = AsyncThrowingStream<ToolCall, Error>.makeStream()
+        Task { @Sendable in
+            do {
+                for try await event in self {
+                    if case let .toolCallStarted(call) = event {
+                        continuation.yield(call)
+                    }
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        return stream
+    }
+
+    /// Extracts tool results from the stream.
+    ///
+    /// Example:
+    /// ```swift
+    /// for try await result in stream.toolResults {
+    ///     print("Tool result: \(result)")
+    /// }
+    /// ```
+    var toolResults: AsyncThrowingStream<ToolResult, Error> {
+        let (stream, continuation) = AsyncThrowingStream<ToolResult, Error>.makeStream()
+        Task { @Sendable in
+            do {
+                for try await event in self {
+                    if case let .toolCallCompleted(_, result) = event {
+                        continuation.yield(result)
+                    }
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        return stream
+    }
 
     // MARK: - Filtering
 
@@ -29,7 +92,7 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     // Only thinking events
     /// }
     /// ```
-    public func filterThinking() -> AsyncThrowingStream<AgentEvent, Error> {
+    func filterThinking() -> AsyncThrowingStream<AgentEvent, Error> {
         filter { event in
             if case .thinking = event { return true }
             return false
@@ -44,13 +107,15 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     // Only tool call/result events
     /// }
     /// ```
-    public func filterToolEvents() -> AsyncThrowingStream<AgentEvent, Error> {
+    func filterToolEvents() -> AsyncThrowingStream<AgentEvent, Error> {
         filter { event in
             switch event {
-            case .toolCallStarted, .toolCallCompleted, .toolCallFailed:
-                return true
+            case .toolCallCompleted,
+                 .toolCallFailed,
+                 .toolCallStarted:
+                true
             default:
-                return false
+                false
             }
         }
     }
@@ -69,23 +134,21 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     return false
     /// }
     /// ```
-    public func filter(
+    func filter(
         _ predicate: @escaping @Sendable (AgentEvent) -> Bool
     ) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    for try await event in self {
-                        if predicate(event) {
-                            continuation.yield(event)
-                        }
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable in
+            do {
+                for try await event in self where predicate(event) {
+                    continuation.yield(event)
                 }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     // MARK: - Mapping
@@ -104,21 +167,21 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     return ""
     /// }
     /// ```
-    public func map<T: Sendable>(
+    func map<T: Sendable>(
         _ transform: @escaping @Sendable (AgentEvent) -> T
     ) -> AsyncThrowingStream<T, Error> {
-        AsyncThrowingStream<T, Error> { continuation in
-            Task {
-                do {
-                    for try await event in self {
-                        continuation.yield(transform(event))
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+        let (stream, continuation) = AsyncThrowingStream<T, Error>.makeStream()
+        Task { @Sendable in
+            do {
+                for try await event in self {
+                    continuation.yield(transform(event))
                 }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     /// Maps events to thought strings only.
@@ -131,85 +194,21 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     print("Agent thinking: \(thought)")
     /// }
     /// ```
-    public func mapToThoughts() -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream<String, Error> { continuation in
-            Task {
-                do {
-                    for try await event in self {
-                        if case .thinking(let thought) = event {
-                            continuation.yield(thought)
-                        }
+    func mapToThoughts() -> AsyncThrowingStream<String, Error> {
+        let (stream, continuation) = AsyncThrowingStream<String, Error>.makeStream()
+        Task { @Sendable in
+            do {
+                for try await event in self {
+                    if case let .thinking(thought) = event {
+                        continuation.yield(thought)
                     }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
                 }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
-    }
-
-    // MARK: - Property Accessors
-
-    /// Extracts only thinking content from the stream.
-    ///
-    /// Example:
-    /// ```swift
-    /// for try await thought in stream.thoughts {
-    ///     print(thought)
-    /// }
-    /// ```
-    public var thoughts: AsyncThrowingStream<String, Error> {
-        mapToThoughts()
-    }
-
-    /// Extracts tool calls from the stream.
-    ///
-    /// Example:
-    /// ```swift
-    /// for try await call in stream.toolCalls {
-    ///     print("Called tool: \(call.toolName)")
-    /// }
-    /// ```
-    public var toolCalls: AsyncThrowingStream<ToolCall, Error> {
-        AsyncThrowingStream<ToolCall, Error> { continuation in
-            Task {
-                do {
-                    for try await event in self {
-                        if case .toolCallStarted(let call) = event {
-                            continuation.yield(call)
-                        }
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
-    }
-
-    /// Extracts tool results from the stream.
-    ///
-    /// Example:
-    /// ```swift
-    /// for try await result in stream.toolResults {
-    ///     print("Tool result: \(result)")
-    /// }
-    /// ```
-    public var toolResults: AsyncThrowingStream<ToolResult, Error> {
-        AsyncThrowingStream<ToolResult, Error> { continuation in
-            Task {
-                do {
-                    for try await event in self {
-                        if case .toolCallCompleted(_, let result) = event {
-                            continuation.yield(result)
-                        }
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
+        return stream
     }
 
     // MARK: - Collection Operations
@@ -223,7 +222,7 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     /// ```swift
     /// let allEvents = try await stream.collect()
     /// ```
-    public func collect() async throws -> [AgentEvent] {
+    func collect() async throws -> [AgentEvent] {
         var results: [AgentEvent] = []
         for try await event in self {
             results.append(event)
@@ -241,7 +240,7 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     /// ```swift
     /// let firstFive = try await stream.collect(maxCount: 5)
     /// ```
-    public func collect(maxCount: Int) async throws -> [AgentEvent] {
+    func collect(maxCount: Int) async throws -> [AgentEvent] {
         var results: [AgentEvent] = []
         for try await event in self {
             results.append(event)
@@ -265,11 +264,11 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     return false
     /// }
     /// ```
-    public func first(
+    func first(
         where predicate: @escaping @Sendable (AgentEvent) -> Bool
     ) async throws -> AgentEvent? {
-        for try await event in self {
-            if predicate(event) { return event }
+        for try await event in self where predicate(event) {
+            return event
         }
         return nil
     }
@@ -285,7 +284,7 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     print("Last event: \(lastEvent)")
     /// }
     /// ```
-    public func last() async throws -> AgentEvent? {
+    func last() async throws -> AgentEvent? {
         var lastEvent: AgentEvent?
         for try await event in self {
             lastEvent = event
@@ -312,7 +311,7 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     return acc
     /// }
     /// ```
-    public func reduce<T: Sendable>(
+    func reduce<T: Sendable>(
         _ initial: T,
         _ combine: @escaping @Sendable (T, AgentEvent) -> T
     ) async throws -> T {
@@ -336,22 +335,22 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     // Only first 3 events
     /// }
     /// ```
-    public func take(_ count: Int) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    var taken = 0
-                    for try await event in self {
-                        continuation.yield(event)
-                        taken += 1
-                        if taken >= count { break }
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+    func take(_ count: Int) -> AsyncThrowingStream<AgentEvent, Error> {
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable in
+            do {
+                var taken = 0
+                for try await event in self {
+                    continuation.yield(event)
+                    taken += 1
+                    if taken >= count { break }
                 }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     /// Drops the first N events from the stream.
@@ -365,24 +364,24 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     // Events after the first 2
     /// }
     /// ```
-    public func drop(_ count: Int) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    var dropped = 0
-                    for try await event in self {
-                        if dropped < count {
-                            dropped += 1
-                            continue
-                        }
-                        continuation.yield(event)
+    func drop(_ count: Int) -> AsyncThrowingStream<AgentEvent, Error> {
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable in
+            do {
+                var dropped = 0
+                for try await event in self {
+                    if dropped < count {
+                        dropped += 1
+                        continue
                     }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+                    continuation.yield(event)
                 }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     // MARK: - Timeout
@@ -398,26 +397,26 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     // Throws after 30 seconds
     /// }
     /// ```
-    public func timeout(after duration: Duration) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            let timeoutTask = Task {
-                try await Task.sleep(for: duration)
-                continuation.finish(throwing: AgentError.timeout(duration: duration))
-            }
+    func timeout(after duration: Duration) -> AsyncThrowingStream<AgentEvent, Error> {
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        let timeoutTask = Task {
+            try await Task.sleep(for: duration)
+            continuation.finish(throwing: AgentError.timeout(duration: duration))
+        }
 
-            Task {
-                do {
-                    for try await event in self {
-                        continuation.yield(event)
-                    }
-                    timeoutTask.cancel()
-                    continuation.finish()
-                } catch {
-                    timeoutTask.cancel()
-                    continuation.finish(throwing: error)
+        Task { @Sendable in
+            do {
+                for try await event in self {
+                    continuation.yield(event)
                 }
+                timeoutTask.cancel()
+                continuation.finish()
+            } catch {
+                timeoutTask.cancel()
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     // MARK: - Side Effects
@@ -433,22 +432,22 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     print("Event: \(event)")
     /// }
     /// ```
-    public func onEach(
+    func onEach(
         _ action: @escaping @Sendable (AgentEvent) -> Void
     ) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    for try await event in self {
-                        action(event)
-                        continuation.yield(event)
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable in
+            do {
+                for try await event in self {
+                    action(event)
+                    continuation.yield(event)
                 }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     /// Executes a callback when a completion event occurs.
@@ -462,11 +461,11 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     print("Completed with: \(result.output)")
     /// }
     /// ```
-    public func onComplete(
+    func onComplete(
         _ action: @escaping @Sendable (AgentResult) -> Void
     ) -> AsyncThrowingStream<AgentEvent, Error> {
         onEach { event in
-            if case .completed(let result) = event {
+            if case let .completed(result) = event {
                 action(result)
             }
         }
@@ -483,11 +482,11 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     print("Error: \(error)")
     /// }
     /// ```
-    public func onError(
+    func onError(
         _ action: @escaping @Sendable (AgentError) -> Void
     ) -> AsyncThrowingStream<AgentEvent, Error> {
         onEach { event in
-            if case .failed(let error) = event {
+            if case let .failed(error) = event {
                 action(error)
             }
         }
@@ -506,22 +505,22 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     .failed(error: .internalError(reason: "Recovered"))
     /// }
     /// ```
-    public func catchErrors(
+    func catchErrors(
         _ handler: @escaping @Sendable (Error) -> AgentEvent
     ) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    for try await event in self {
-                        continuation.yield(event)
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.yield(handler(error))
-                    continuation.finish()
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable in
+            do {
+                for try await event in self {
+                    continuation.yield(event)
                 }
+                continuation.finish()
+            } catch {
+                continuation.yield(handler(error))
+                continuation.finish()
             }
         }
+        return stream
     }
 
     // MARK: - Debounce
@@ -537,50 +536,50 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     ///     // Rapid events are collapsed
     /// }
     /// ```
-    public func debounce(for duration: Duration) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                var lastEvent: AgentEvent?
-                var lastTime: ContinuousClock.Instant?
-                let durationSeconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+    func debounce(for duration: Duration) -> AsyncThrowingStream<AgentEvent, Error> {
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable in
+            var lastEvent: AgentEvent?
+            var lastTime: ContinuousClock.Instant?
+            let durationSeconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
 
-                do {
-                    for try await event in self {
-                        let now = ContinuousClock.now
+            do {
+                for try await event in self {
+                    let now = ContinuousClock.now
 
-                        if let last = lastTime {
-                            let elapsed = now - last
-                            let elapsedSeconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+                    if let last = lastTime {
+                        let elapsed = now - last
+                        let elapsedSeconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
 
-                            if elapsedSeconds >= durationSeconds {
-                                if let pending = lastEvent {
-                                    continuation.yield(pending)
-                                }
-                                lastEvent = event
-                            } else {
-                                lastEvent = event
+                        if elapsedSeconds >= durationSeconds {
+                            if let pending = lastEvent {
+                                continuation.yield(pending)
                             }
+                            lastEvent = event
                         } else {
                             lastEvent = event
                         }
-
-                        lastTime = now
+                    } else {
+                        lastEvent = event
                     }
 
-                    // Yield final event
-                    if let final = lastEvent {
-                        continuation.yield(final)
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+                    lastTime = now
                 }
+
+                // Yield final event
+                if let final = lastEvent {
+                    continuation.yield(final)
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 }
 
-// MARK: - AgentEventStream Namespace
+// MARK: - MergeErrorStrategy
 
 /// Strategy for handling errors when merging multiple streams.
 public enum MergeErrorStrategy: Sendable {
@@ -595,6 +594,8 @@ public enum MergeErrorStrategy: Sendable {
     /// Use with caution - errors will be silently swallowed.
     case ignoreErrors
 }
+
+// MARK: - AgentEventStream
 
 /// Namespace for stream utility functions.
 public enum AgentEventStream {
@@ -626,34 +627,34 @@ public enum AgentEventStream {
         _ streams: AsyncThrowingStream<AgentEvent, Error>...,
         errorStrategy: MergeErrorStrategy = .continueAndCollect
     ) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                await withTaskGroup(of: Void.self) { group in
-                    for stream in streams {
-                        group.addTask {
-                            do {
-                                for try await event in stream {
-                                    continuation.yield(event)
-                                }
-                            } catch {
-                                switch errorStrategy {
-                                case .failFast:
-                                    continuation.finish(throwing: error)
-                                case .continueAndCollect:
-                                    // Convert error to a failed event
-                                    let agentError = error as? AgentError ?? .internalError(reason: error.localizedDescription)
-                                    continuation.yield(.failed(error: agentError))
-                                case .ignoreErrors:
-                                    // Silently ignore - legacy behavior
-                                    break
-                                }
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable in
+            await withTaskGroup(of: Void.self) { group in
+                for stream in streams {
+                    group.addTask {
+                        do {
+                            for try await event in stream {
+                                continuation.yield(event)
+                            }
+                        } catch {
+                            switch errorStrategy {
+                            case .failFast:
+                                continuation.finish(throwing: error)
+                            case .continueAndCollect:
+                                // Convert error to a failed event
+                                let agentError = error as? AgentError ?? .internalError(reason: error.localizedDescription)
+                                continuation.yield(.failed(error: agentError))
+                            case .ignoreErrors:
+                                // Silently ignore - legacy behavior
+                                break
                             }
                         }
                     }
                 }
-                continuation.finish()
             }
+            continuation.finish()
         }
+        return stream
     }
 
     /// Creates an empty stream that completes immediately.

@@ -3,15 +3,14 @@
 //
 // Integration tests for AgentEvent event sequences
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 // MARK: - Integration Tests
 
 @Suite("AgentEvent Integration Tests")
 struct AgentEventIntegrationTests {
-
     @Test("Complete event sequence")
     func completeEventSequence() {
         // Simulate a complete agent execution event sequence
@@ -39,14 +38,14 @@ struct AgentEventIntegrationTests {
         #expect(events.count == 8)
 
         // Verify first event is started
-        if case .started(let input) = events[0] {
+        if case let .started(input) = events[0] {
             #expect(input == "Calculate 2+2")
         } else {
             Issue.record("Expected first event to be .started")
         }
 
         // Verify last event is completed
-        if case .completed(let result) = events[7] {
+        if case let .completed(result) = events[7] {
             #expect(result.output == "The answer is 4")
         } else {
             Issue.record("Expected last event to be .completed")
@@ -66,7 +65,7 @@ struct AgentEventIntegrationTests {
         #expect(events.count == 4)
 
         // Verify error event
-        if case .failed(let error) = events[3] {
+        if case let .failed(error) = events[3] {
             #expect(error == .toolNotFound(name: "missing_tool"))
         } else {
             Issue.record("Expected .failed event")
@@ -90,7 +89,7 @@ struct AgentEventIntegrationTests {
         // Verify all tokens
         var collectedTokens: [String] = []
         for event in events {
-            if case .outputToken(let token) = event {
+            if case let .outputToken(token) = event {
                 collectedTokens.append(token)
             }
         }

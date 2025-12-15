@@ -3,26 +3,25 @@
 //
 // Tests for CircuitBreaker resilience component using Swift Testing framework.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - CircuitBreaker Tests
+// MARK: - CircuitBreakerTests
 
 @Suite("CircuitBreaker Tests")
 struct CircuitBreakerTests {
-
     // MARK: - Initial State Tests
 
     @Test("Initial state is closed")
-    func testInitialStateClosed() async {
+    func initialStateClosed() async {
         let breaker = CircuitBreaker(name: "test")
         let state = await breaker.currentState()
         #expect(state == .closed)
     }
 
     @Test("Initial state allows requests")
-    func testInitialStateAllowsRequests() async {
+    func initialStateAllowsRequests() async {
         let breaker = CircuitBreaker(name: "test")
         let isAllowing = await breaker.isAllowingRequests()
         #expect(isAllowing == true)
@@ -31,7 +30,7 @@ struct CircuitBreakerTests {
     // MARK: - Circuit Opening Tests
 
     @Test("Circuit opens after failureThreshold failures")
-    func testCircuitOpensAfterFailures() async throws {
+    func circuitOpensAfterFailures() async throws {
         let breaker = CircuitBreaker(
             name: "test",
             failureThreshold: 3,
@@ -59,7 +58,7 @@ struct CircuitBreakerTests {
     }
 
     @Test("Circuit remains closed below failureThreshold")
-    func testCircuitRemainsClosedBelowThreshold() async throws {
+    func circuitRemainsClosedBelowThreshold() async throws {
         let breaker = CircuitBreaker(
             name: "test",
             failureThreshold: 5,
@@ -82,7 +81,7 @@ struct CircuitBreakerTests {
     }
 
     @Test("Open circuit throws circuitBreakerOpen error")
-    func testOpenCircuitThrowsError() async throws {
+    func openCircuitThrowsError() async throws {
         let breaker = CircuitBreaker(
             name: "payment-service",
             failureThreshold: 2,
@@ -107,7 +106,7 @@ struct CircuitBreakerTests {
             }
             Issue.record("Should have thrown circuitBreakerOpen")
         } catch let error as ResilienceError {
-            if case .circuitBreakerOpen(let serviceName) = error {
+            if case let .circuitBreakerOpen(serviceName) = error {
                 #expect(serviceName == "payment-service")
             } else {
                 Issue.record("Expected circuitBreakerOpen, got \(error)")
@@ -118,7 +117,7 @@ struct CircuitBreakerTests {
     // MARK: - Half-Open Transition Tests
 
     @Test("Circuit transitions to halfOpen after timeout")
-    func testCircuitTransitionsToHalfOpen() async throws {
+    func circuitTransitionsToHalfOpen() async throws {
         let breaker = CircuitBreaker(
             name: "test",
             failureThreshold: 2,
@@ -165,7 +164,7 @@ struct CircuitBreakerTests {
     // MARK: - Circuit Closing Tests
 
     @Test("Circuit closes after successThreshold successes in halfOpen")
-    func testCircuitClosesAfterSuccesses() async throws {
+    func circuitClosesAfterSuccesses() async throws {
         let breaker = CircuitBreaker(
             name: "test",
             failureThreshold: 2,
@@ -200,7 +199,7 @@ struct CircuitBreakerTests {
     }
 
     @Test("Single success in halfOpen keeps circuit halfOpen")
-    func testSingleSuccessInHalfOpen() async throws {
+    func singleSuccessInHalfOpen() async throws {
         let breaker = CircuitBreaker(
             name: "test",
             failureThreshold: 2,
@@ -212,7 +211,7 @@ struct CircuitBreakerTests {
         for _ in 1...2 {
             do {
                 _ = try await breaker.execute { throw TestError.network }
-            } catch { }
+            } catch {}
         }
 
         // Wait and transition to half-open
@@ -228,7 +227,7 @@ struct CircuitBreakerTests {
     // MARK: - Manual Control Tests
 
     @Test("Manual reset closes circuit")
-    func testManualReset() async throws {
+    func manualReset() async throws {
         let breaker = CircuitBreaker(
             name: "test",
             failureThreshold: 2,
@@ -254,7 +253,7 @@ struct CircuitBreakerTests {
     }
 
     @Test("Manual trip opens circuit")
-    func testManualTrip() async throws {
+    func manualTrip() async throws {
         let breaker = CircuitBreaker(name: "test")
 
         // Initially closed
@@ -313,7 +312,7 @@ struct CircuitBreakerTests {
         _ = try await breaker.execute { "ok" }
         do {
             _ = try await breaker.execute { throw TestError.network }
-        } catch { }
+        } catch {}
 
         let stats = await breaker.statistics()
         let rate = stats.successRate ?? 0.0
@@ -323,7 +322,7 @@ struct CircuitBreakerTests {
     // MARK: - HalfOpen Request Limiting Tests
 
     @Test("HalfOpen state limits concurrent requests")
-    func testHalfOpenRequestLimit() async throws {
+    func halfOpenRequestLimit() async throws {
         let breaker = CircuitBreaker(
             name: "test",
             failureThreshold: 2,
@@ -335,14 +334,14 @@ struct CircuitBreakerTests {
         for _ in 1...2 {
             do {
                 _ = try await breaker.execute { throw TestError.network }
-            } catch { }
+            } catch {}
         }
 
         // Wait for half-open transition
         try await Task.sleep(nanoseconds: 150_000_000)
 
         // First request should be allowed
-        let task = Task {
+        let task = Task { @Sendable in
             try await breaker.execute {
                 try await Task.sleep(nanoseconds: 100_000_000) // Slow operation
                 return "success"
@@ -371,13 +370,12 @@ struct CircuitBreakerTests {
     }
 }
 
-// MARK: - CircuitBreakerRegistry Tests
+// MARK: - CircuitBreakerRegistryTests
 
 @Suite("CircuitBreakerRegistry Tests")
 struct CircuitBreakerRegistryTests {
-
     @Test("Registry creates and returns circuit breakers")
-    func testRegistryCreatesBreakers() async {
+    func registryCreatesBreakers() async {
         let registry = CircuitBreakerRegistry()
 
         let breaker1 = await registry.breaker(named: "api")
@@ -391,7 +389,7 @@ struct CircuitBreakerRegistryTests {
     }
 
     @Test("Registry returns same instance for same name")
-    func testRegistryReturnsSameInstance() async {
+    func registryReturnsSameInstance() async {
         let registry = CircuitBreakerRegistry()
 
         let breaker1 = await registry.breaker(named: "service")
@@ -405,7 +403,7 @@ struct CircuitBreakerRegistryTests {
     }
 
     @Test("Registry applies custom configuration")
-    func testRegistryCustomConfiguration() async throws {
+    func registryCustomConfiguration() async throws {
         let registry = CircuitBreakerRegistry()
 
         let breaker = await registry.breaker(named: "custom") { config in
@@ -416,7 +414,7 @@ struct CircuitBreakerRegistryTests {
         for _ in 1...9 {
             do {
                 _ = try await breaker.execute { throw TestError.network }
-            } catch { }
+            } catch {}
         }
 
         let state = await breaker.currentState()
@@ -424,7 +422,7 @@ struct CircuitBreakerRegistryTests {
     }
 
     @Test("Registry resetAll resets all breakers")
-    func testRegistryResetAll() async throws {
+    func registryResetAll() async throws {
         let registry = CircuitBreakerRegistry()
 
         let breaker1 = await registry.breaker(named: "service1")

@@ -4,14 +4,13 @@
 // NoOpTracer tests
 
 import Foundation
-import Testing
 @testable import SwiftAgents
+import Testing
 
 // MARK: - NoOpTracer Tests
 
 @Suite("NoOpTracer Tests")
 struct NoOpTracerTests {
-
     @Test("NoOpTracer initializes successfully")
     func initializesSuccessfully() async {
         // When

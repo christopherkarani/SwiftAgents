@@ -5,14 +5,14 @@
 
 import Foundation
 
-// MARK: - AgentComponent Protocol
+// MARK: - AgentComponent
 
 /// Marker protocol for agent builder components.
 ///
 /// Components conforming to this protocol can be used within the `AgentBuilder` DSL.
 public protocol AgentComponent {}
 
-// MARK: - Component Types
+// MARK: - Instructions
 
 /// Instructions component for defining agent behavior.
 ///
@@ -34,6 +34,8 @@ public struct Instructions: AgentComponent {
     }
 }
 
+// MARK: - Tools
+
 /// Tools container component for providing agent capabilities.
 ///
 /// Example:
@@ -54,7 +56,7 @@ public struct Tools: AgentComponent {
     ///
     /// - Parameter content: A closure that builds the tool array.
     public init(@ToolArrayBuilder _ content: () -> [any Tool]) {
-        self.tools = content()
+        tools = content()
     }
 
     /// Creates a tools container from an array.
@@ -64,6 +66,8 @@ public struct Tools: AgentComponent {
         self.tools = tools
     }
 }
+
+// MARK: - AgentMemoryComponent
 
 /// Memory component for agent context management.
 ///
@@ -89,6 +93,8 @@ public struct AgentMemoryComponent: AgentComponent {
 /// Type alias for cleaner DSL syntax.
 public typealias Memory = AgentMemoryComponent
 
+// MARK: - Configuration
+
 /// Configuration component for agent settings.
 ///
 /// Example:
@@ -110,6 +116,8 @@ public struct Configuration: AgentComponent {
     }
 }
 
+// MARK: - InferenceProviderComponent
+
 /// Inference provider component for custom model backends.
 ///
 /// Example:
@@ -128,67 +136,6 @@ public struct InferenceProviderComponent: AgentComponent {
     /// - Parameter provider: The inference provider to use.
     public init(_ provider: any InferenceProvider) {
         self.provider = provider
-    }
-}
-
-// MARK: - ToolArrayBuilder
-
-/// A result builder for creating tool arrays declaratively.
-///
-/// Supports conditional inclusion and loops for dynamic tool configuration.
-///
-/// Example:
-/// ```swift
-/// Tools {
-///     CalculatorTool()
-///     if enableDebug {
-///         DebugTool()
-///     }
-///     for name in customToolNames {
-///         CustomTool(name: name)
-///     }
-/// }
-/// ```
-@resultBuilder
-public struct ToolArrayBuilder {
-    /// Builds a block of tools.
-    public static func buildBlock(_ tools: any Tool...) -> [any Tool] {
-        tools
-    }
-
-    /// Builds an empty block.
-    public static func buildBlock() -> [any Tool] {
-        []
-    }
-
-    /// Builds an optional tool.
-    public static func buildOptional(_ tool: [any Tool]?) -> [any Tool] {
-        tool ?? []
-    }
-
-    /// Builds the first branch of an if-else.
-    public static func buildEither(first tool: [any Tool]) -> [any Tool] {
-        tool
-    }
-
-    /// Builds the second branch of an if-else.
-    public static func buildEither(second tool: [any Tool]) -> [any Tool] {
-        tool
-    }
-
-    /// Builds an array of tools from a for-loop.
-    public static func buildArray(_ components: [[any Tool]]) -> [any Tool] {
-        components.flatMap { $0 }
-    }
-
-    /// Converts a single tool to an array.
-    public static func buildExpression(_ expression: any Tool) -> [any Tool] {
-        [expression]
-    }
-
-    /// Handles an array of tools.
-    public static func buildExpression(_ expression: [any Tool]) -> [any Tool] {
-        expression
     }
 }
 
@@ -219,6 +166,8 @@ public struct ToolArrayBuilder {
 /// ```
 @resultBuilder
 public struct AgentBuilder {
+    // MARK: Public
+
     /// The aggregated components from the builder.
     public struct Components {
         var instructions: String?
@@ -229,10 +178,23 @@ public struct AgentBuilder {
     }
 
     /// Builds a block of components.
-    public static func buildBlock(_ components: AgentComponent...) -> Components {
+    public static func buildBlock(_ components: Components...) -> Components {
         var result = Components()
         for component in components {
-            merge(component, into: &result)
+            // Merge each Components into the result
+            if let instructions = component.instructions {
+                result.instructions = instructions
+            }
+            result.tools.append(contentsOf: component.tools)
+            if let memory = component.memory {
+                result.memory = memory
+            }
+            if let configuration = component.configuration {
+                result.configuration = configuration
+            }
+            if let provider = component.inferenceProvider {
+                result.inferenceProvider = provider
+            }
         }
         return result
     }
@@ -264,6 +226,8 @@ public struct AgentBuilder {
         return result
     }
 
+    // MARK: Private
+
     /// Merges a component into the aggregated result.
     private static func merge(_ component: AgentComponent, into result: inout Components) {
         switch component {
@@ -285,7 +249,7 @@ public struct AgentBuilder {
 
 // MARK: - ReActAgent DSL Extension
 
-extension ReActAgent {
+public extension ReActAgent {
     /// Creates a ReActAgent using the declarative builder DSL.
     ///
     /// Example:
@@ -305,7 +269,7 @@ extension ReActAgent {
     /// ```
     ///
     /// - Parameter content: A closure that builds the agent components.
-    public init(@AgentBuilder _ content: () -> AgentBuilder.Components) {
+    init(@AgentBuilder _ content: () -> AgentBuilder.Components) {
         let components = content()
         self.init(
             tools: components.tools,
@@ -314,69 +278,5 @@ extension ReActAgent {
             memory: components.memory,
             inferenceProvider: components.inferenceProvider
         )
-    }
-}
-
-// MARK: - AgentConfiguration Fluent Extensions
-
-extension AgentConfiguration {
-    /// Returns a new configuration with the specified maximum iterations.
-    ///
-    /// - Parameter count: Maximum iterations before timeout.
-    /// - Returns: A modified configuration.
-    public func maxIterations(_ count: Int) -> AgentConfiguration {
-        var copy = self
-        copy.maxIterations = max(1, count)
-        return copy
-    }
-
-    /// Returns a new configuration with the specified temperature.
-    ///
-    /// - Parameter value: Temperature for generation (0.0-2.0).
-    /// - Returns: A modified configuration.
-    public func temperature(_ value: Double) -> AgentConfiguration {
-        var copy = self
-        copy.temperature = max(0.0, min(2.0, value))
-        return copy
-    }
-
-    /// Returns a new configuration with the specified timeout.
-    ///
-    /// - Parameter duration: Maximum execution time.
-    /// - Returns: A modified configuration.
-    public func timeout(_ duration: Duration) -> AgentConfiguration {
-        var copy = self
-        copy.timeout = duration
-        return copy
-    }
-
-    /// Returns a new configuration with streaming enabled or disabled.
-    ///
-    /// - Parameter enabled: Whether to enable streaming.
-    /// - Returns: A modified configuration.
-    public func enableStreaming(_ enabled: Bool) -> AgentConfiguration {
-        var copy = self
-        copy.enableStreaming = enabled
-        return copy
-    }
-
-    /// Returns a new configuration with the specified maximum tokens.
-    ///
-    /// - Parameter count: Maximum tokens for generation.
-    /// - Returns: A modified configuration.
-    public func maxTokens(_ count: Int) -> AgentConfiguration {
-        var copy = self
-        copy.maxTokens = count > 0 ? count : nil
-        return copy
-    }
-
-    /// Returns a new configuration with stop-on-error behavior.
-    ///
-    /// - Parameter stop: Whether to stop on tool errors.
-    /// - Returns: A modified configuration.
-    public func stopOnToolError(_ stop: Bool) -> AgentConfiguration {
-        var copy = self
-        copy.stopOnToolError = stop
-        return copy
     }
 }

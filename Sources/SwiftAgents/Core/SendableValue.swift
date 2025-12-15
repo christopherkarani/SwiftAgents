@@ -5,16 +5,59 @@
 
 import Foundation
 
+// MARK: - SendableValue
+
 /// A type-safe, Sendable container for dynamic values used in tool arguments and results.
 /// Replaces `[String: Any]` which cannot conform to `Sendable`.
 public enum SendableValue: Sendable, Equatable, Hashable, Codable {
-    case null
-    case bool(Bool)
-    case int(Int)
-    case double(Double)
-    case string(String)
-    case array([SendableValue])
-    case dictionary([String: SendableValue])
+    // MARK: Public
+
+    // MARK: - Type-Safe Accessors
+
+    /// Returns the Bool value if this is a `.bool`, otherwise nil.
+    public var boolValue: Bool? {
+        guard case let .bool(v) = self else { return nil }
+        return v
+    }
+
+    /// Returns the Int value if this is an `.int`, otherwise nil.
+    public var intValue: Int? {
+        guard case let .int(v) = self else { return nil }
+        return v
+    }
+
+    /// Returns the Double value if this is a `.double` or `.int`, otherwise nil.
+    public var doubleValue: Double? {
+        switch self {
+        case let .double(v): v
+        case let .int(v): Double(v)
+        default: nil
+        }
+    }
+
+    /// Returns the String value if this is a `.string`, otherwise nil.
+    public var stringValue: String? {
+        guard case let .string(v) = self else { return nil }
+        return v
+    }
+
+    /// Returns the array if this is an `.array`, otherwise nil.
+    public var arrayValue: [SendableValue]? {
+        guard case let .array(v) = self else { return nil }
+        return v
+    }
+
+    /// Returns the dictionary if this is a `.dictionary`, otherwise nil.
+    public var dictionaryValue: [String: SendableValue]? {
+        guard case let .dictionary(v) = self else { return nil }
+        return v
+    }
+
+    /// Returns true if this is `.null`.
+    public var isNull: Bool {
+        guard case .null = self else { return false }
+        return true
+    }
 
     // MARK: - Convenience Initializers
 
@@ -25,93 +68,66 @@ public enum SendableValue: Sendable, Equatable, Hashable, Codable {
     public init(_ value: [SendableValue]) { self = .array(value) }
     public init(_ value: [String: SendableValue]) { self = .dictionary(value) }
 
-    // MARK: - Type-Safe Accessors
-
-    /// Returns the Bool value if this is a `.bool`, otherwise nil.
-    public var boolValue: Bool? {
-        guard case .bool(let v) = self else { return nil }
-        return v
-    }
-
-    /// Returns the Int value if this is an `.int`, otherwise nil.
-    public var intValue: Int? {
-        guard case .int(let v) = self else { return nil }
-        return v
-    }
-
-    /// Returns the Double value if this is a `.double` or `.int`, otherwise nil.
-    public var doubleValue: Double? {
-        switch self {
-        case .double(let v): return v
-        case .int(let v): return Double(v)
-        default: return nil
-        }
-    }
-
-    /// Returns the String value if this is a `.string`, otherwise nil.
-    public var stringValue: String? {
-        guard case .string(let v) = self else { return nil }
-        return v
-    }
-
-    /// Returns the array if this is an `.array`, otherwise nil.
-    public var arrayValue: [SendableValue]? {
-        guard case .array(let v) = self else { return nil }
-        return v
-    }
-
-    /// Returns the dictionary if this is a `.dictionary`, otherwise nil.
-    public var dictionaryValue: [String: SendableValue]? {
-        guard case .dictionary(let v) = self else { return nil }
-        return v
-    }
-
-    /// Returns true if this is `.null`.
-    public var isNull: Bool {
-        guard case .null = self else { return false }
-        return true
-    }
-
     // MARK: - Subscript Access
 
     /// Access dictionary values by key.
     public subscript(key: String) -> SendableValue? {
-        guard case .dictionary(let dict) = self else { return nil }
+        guard case let .dictionary(dict) = self else { return nil }
         return dict[key]
     }
 
     /// Access array values by index.
     public subscript(index: Int) -> SendableValue? {
-        guard case .array(let arr) = self, index >= 0, index < arr.count else { return nil }
+        guard case let .array(arr) = self, index >= 0, index < arr.count else { return nil }
         return arr[index]
     }
+
+    case null
+    case bool(Bool)
+    case int(Int)
+    case double(Double)
+    case string(String)
+    case array([SendableValue])
+    case dictionary([String: SendableValue])
 }
 
-// MARK: - ExpressibleBy Literals
+// MARK: ExpressibleByNilLiteral
 
 extension SendableValue: ExpressibleByNilLiteral {
-    public init(nilLiteral: ()) { self = .null }
+    public init(nilLiteral _: ()) { self = .null }
 }
+
+// MARK: ExpressibleByBooleanLiteral
 
 extension SendableValue: ExpressibleByBooleanLiteral {
     public init(booleanLiteral value: Bool) { self = .bool(value) }
 }
 
+// MARK: ExpressibleByIntegerLiteral
+
 extension SendableValue: ExpressibleByIntegerLiteral {
     public init(integerLiteral value: Int) { self = .int(value) }
 }
+
+// MARK: ExpressibleByFloatLiteral
 
 extension SendableValue: ExpressibleByFloatLiteral {
     public init(floatLiteral value: Double) { self = .double(value) }
 }
 
+// MARK: ExpressibleByStringLiteral
+
 extension SendableValue: ExpressibleByStringLiteral {
     public init(stringLiteral value: String) { self = .string(value) }
 }
 
+// MARK: ExpressibleByArrayLiteral
+
 extension SendableValue: ExpressibleByArrayLiteral {
     public init(arrayLiteral elements: SendableValue...) { self = .array(elements) }
 }
+
+// MARK: ExpressibleByDictionaryLiteral
 
 extension SendableValue: ExpressibleByDictionaryLiteral {
     public init(dictionaryLiteral elements: (String, SendableValue)...) {
@@ -119,59 +135,63 @@ extension SendableValue: ExpressibleByDictionaryLiteral {
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension SendableValue: CustomStringConvertible {
     public var description: String {
         switch self {
         case .null: return "null"
-        case .bool(let v): return String(v)
-        case .int(let v): return String(v)
-        case .double(let v): return String(v)
-        case .string(let v): return "\"\(v)\""
-        case .array(let v): return "[\(v.map(\.description).joined(separator: ", "))]"
-        case .dictionary(let v):
+        case let .bool(v): return String(v)
+        case let .int(v): return String(v)
+        case let .double(v): return String(v)
+        case let .string(v): return "\"\(v)\""
+        case let .array(v): return "[\(v.map(\.description).joined(separator: ", "))]"
+        case let .dictionary(v):
             let pairs = v.map { "\"\($0)\": \($1.description)" }.joined(separator: ", ")
             return "{\(pairs)}"
         }
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension SendableValue: CustomDebugStringConvertible {
     public var debugDescription: String {
         switch self {
-        case .null: return "SendableValue.null"
-        case .bool(let v): return "SendableValue.bool(\(v))"
-        case .int(let v): return "SendableValue.int(\(v))"
-        case .double(let v): return "SendableValue.double(\(v))"
-        case .string(let v): return "SendableValue.string(\"\(v)\")"
-        case .array(let v): return "SendableValue.array(\(v.map(\.debugDescription)))"
-        case .dictionary(let v): return "SendableValue.dictionary(\(v))"
+        case .null: "SendableValue.null"
+        case let .bool(v): "SendableValue.bool(\(v))"
+        case let .int(v): "SendableValue.int(\(v))"
+        case let .double(v): "SendableValue.double(\(v))"
+        case let .string(v): "SendableValue.string(\"\(v)\")"
+        case let .array(v): "SendableValue.array(\(v.map(\.debugDescription)))"
+        case let .dictionary(v): "SendableValue.dictionary(\(v))"
         }
     }
 }
 
 // MARK: - Encodable Type Conversion
 
-extension SendableValue {
+public extension SendableValue {
+    // MARK: Internal
+
     /// Error thrown when encoding/decoding fails.
-    public enum ConversionError: Error, LocalizedError {
-        case encodingFailed(String)
-        case decodingFailed(String)
-        case unsupportedType(String)
+    enum ConversionError: Error, LocalizedError {
+        // MARK: Public
 
         public var errorDescription: String? {
             switch self {
-            case .encodingFailed(let message):
-                return "Failed to encode value: \(message)"
-            case .decodingFailed(let message):
-                return "Failed to decode value: \(message)"
-            case .unsupportedType(let type):
-                return "Unsupported type for conversion: \(type)"
+            case let .encodingFailed(message):
+                "Failed to encode value: \(message)"
+            case let .decodingFailed(message):
+                "Failed to decode value: \(message)"
+            case let .unsupportedType(type):
+                "Unsupported type for conversion: \(type)"
             }
         }
+
+        case encodingFailed(String)
+        case decodingFailed(String)
+        case unsupportedType(String)
     }
 
     /// Creates a SendableValue by encoding an Encodable value.
@@ -194,7 +214,7 @@ extension SendableValue {
     /// let sendable = try SendableValue(encoding: user)
     /// // Result: .dictionary(["name": .string("Alice"), "age": .int(30)])
     /// ```
-    public init<T: Encodable>(encoding value: T) throws {
+    init(encoding value: some Encodable) throws {
         // Handle primitive types directly for efficiency
         if let boolValue = value as? Bool {
             self = .bool(boolValue)
@@ -253,18 +273,22 @@ extension SendableValue {
     /// let user: UserInfo = try sendable.decode()
     /// // Result: UserInfo(name: "Alice", age: 30)
     /// ```
-    public func decode<T: Decodable>() throws -> T {
+    func decode<T: Decodable>() throws -> T {
         // Handle primitive types directly
         if T.self == Bool.self, let value = boolValue {
+            // swiftlint:disable:next force_cast
             return value as! T
         }
         if T.self == Int.self, let value = intValue {
+            // swiftlint:disable:next force_cast
             return value as! T
         }
         if T.self == Double.self, let value = doubleValue {
+            // swiftlint:disable:next force_cast
             return value as! T
         }
         if T.self == String.self, let value = stringValue {
+            // swiftlint:disable:next force_cast
             return value as! T
         }
 
@@ -278,6 +302,8 @@ extension SendableValue {
             throw ConversionError.decodingFailed(String(describing: error))
         }
     }
+
+    // MARK: Private
 
     /// Converts a JSON object to SendableValue.
     private static func fromJSONObject(_ object: Any) throws -> SendableValue {
@@ -298,7 +324,7 @@ extension SendableValue {
         case let string as String:
             return .string(string)
         case let array as [Any]:
-            return .array(try array.map { try fromJSONObject($0) })
+            return try .array(array.map { try fromJSONObject($0) })
         case let dict as [String: Any]:
             var result: [String: SendableValue] = [:]
             for (key, value) in dict {
@@ -315,17 +341,17 @@ extension SendableValue {
         switch self {
         case .null:
             return NSNull()
-        case .bool(let v):
+        case let .bool(v):
             return v
-        case .int(let v):
+        case let .int(v):
             return v
-        case .double(let v):
+        case let .double(v):
             return v
-        case .string(let v):
+        case let .string(v):
             return v
-        case .array(let v):
+        case let .array(v):
             return v.map { $0.toJSONObject() }
-        case .dictionary(let v):
+        case let .dictionary(v):
             var result: [String: Any] = [:]
             for (key, value) in v {
                 result[key] = value.toJSONObject()

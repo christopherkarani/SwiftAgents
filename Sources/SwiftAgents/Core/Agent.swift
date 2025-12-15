@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Agent Protocol
+// MARK: - Agent
 
 /// A protocol defining the core behavior of an AI agent.
 ///
@@ -24,19 +24,19 @@ import Foundation
 /// ```
 public protocol Agent: Sendable {
     /// The tools available to this agent.
-    var tools: [any Tool] { get }
+    nonisolated var tools: [any Tool] { get }
 
     /// Instructions that define the agent's behavior and role.
-    var instructions: String { get }
+    nonisolated var instructions: String { get }
 
     /// Configuration settings for the agent.
-    var configuration: AgentConfiguration { get }
+    nonisolated var configuration: AgentConfiguration { get }
 
     /// Optional memory system for context management.
-    var memory: (any AgentMemory)? { get }
+    nonisolated var memory: (any AgentMemory)? { get }
 
     /// Optional custom inference provider.
-    var inferenceProvider: (any InferenceProvider)? { get }
+    nonisolated var inferenceProvider: (any InferenceProvider)? { get }
 
     /// Executes the agent with the given input and returns a result.
     /// - Parameter input: The user's input/query.
@@ -55,15 +55,15 @@ public protocol Agent: Sendable {
 
 // MARK: - Agent Protocol Extensions
 
-extension Agent {
+public extension Agent {
     /// Default memory implementation (none).
-    public var memory: (any AgentMemory)? { nil }
+    var memory: (any AgentMemory)? { nil }
 
     /// Default inference provider (none, uses Foundation Models).
-    public var inferenceProvider: (any InferenceProvider)? { nil }
+    var inferenceProvider: (any InferenceProvider)? { nil }
 }
 
-// MARK: - InferenceProvider Protocol
+// MARK: - InferenceProvider
 
 /// Protocol for inference providers.
 ///
@@ -102,7 +102,7 @@ public protocol InferenceProvider: Sendable {
     ) async throws -> InferenceResponse
 }
 
-// MARK: - Inference Options
+// MARK: - InferenceOptions
 
 /// Options for inference generation.
 ///
@@ -117,6 +117,41 @@ public protocol InferenceProvider: Sendable {
 ///     .stopSequences("END", "STOP")
 /// ```
 public struct InferenceOptions: Sendable, Equatable {
+    /// Default inference options.
+    public static let `default` = InferenceOptions()
+
+    // MARK: - Preset Configurations
+
+    /// Creative preset with high temperature for diverse outputs.
+    public static var creative: InferenceOptions {
+        InferenceOptions(temperature: 1.2, topP: 0.95)
+    }
+
+    /// Precise preset with low temperature for deterministic outputs.
+    public static var precise: InferenceOptions {
+        InferenceOptions(temperature: 0.2, topP: 0.9)
+    }
+
+    /// Balanced preset for general use.
+    public static var balanced: InferenceOptions {
+        InferenceOptions(temperature: 0.7, topP: 0.9)
+    }
+
+    /// Code generation preset optimized for programming tasks.
+    public static var codeGeneration: InferenceOptions {
+        InferenceOptions(
+            temperature: 0.1,
+            maxTokens: 4000,
+            stopSequences: ["```", "###"],
+            topP: 0.95
+        )
+    }
+
+    /// Chat preset optimized for conversational interactions.
+    public static var chat: InferenceOptions {
+        InferenceOptions(temperature: 0.8, topP: 0.9, presencePenalty: 0.6)
+    }
+
     /// Temperature for generation (0.0 = deterministic, 2.0 = creative).
     public var temperature: Double
 
@@ -137,9 +172,6 @@ public struct InferenceOptions: Sendable, Equatable {
 
     /// Frequency penalty for reducing repetition.
     public var frequencyPenalty: Double?
-
-    /// Default inference options.
-    public static let `default` = InferenceOptions()
 
     /// Creates inference options.
     /// - Parameters:
@@ -267,56 +299,15 @@ public struct InferenceOptions: Sendable, Equatable {
         modifications(&copy)
         return copy
     }
-
-    // MARK: - Preset Configurations
-
-    /// Creative preset with high temperature for diverse outputs.
-    public static var creative: InferenceOptions {
-        InferenceOptions(temperature: 1.2, topP: 0.95)
-    }
-
-    /// Precise preset with low temperature for deterministic outputs.
-    public static var precise: InferenceOptions {
-        InferenceOptions(temperature: 0.2, topP: 0.9)
-    }
-
-    /// Balanced preset for general use.
-    public static var balanced: InferenceOptions {
-        InferenceOptions(temperature: 0.7, topP: 0.9)
-    }
-
-    /// Code generation preset optimized for programming tasks.
-    public static var codeGeneration: InferenceOptions {
-        InferenceOptions(
-            temperature: 0.1,
-            maxTokens: 4000,
-            stopSequences: ["```", "###"],
-            topP: 0.95
-        )
-    }
-
-    /// Chat preset optimized for conversational interactions.
-    public static var chat: InferenceOptions {
-        InferenceOptions(temperature: 0.8, topP: 0.9, presencePenalty: 0.6)
-    }
 }
 
-// MARK: - Inference Response
+// MARK: - InferenceResponse
 
 /// Response from an inference provider that may include tool calls.
 ///
 /// This captures the model's output which can be either direct text
 /// content, a request to call tools, or both.
 public struct InferenceResponse: Sendable, Equatable {
-    /// The text content of the response, if any.
-    public let content: String?
-
-    /// Tool calls requested by the model.
-    public let toolCalls: [ParsedToolCall]
-
-    /// The reason generation finished.
-    public let finishReason: FinishReason
-
     /// Why generation stopped.
     public enum FinishReason: String, Sendable, Codable {
         /// Generation completed normally.
@@ -348,6 +339,20 @@ public struct InferenceResponse: Sendable, Equatable {
         }
     }
 
+    /// The text content of the response, if any.
+    public let content: String?
+
+    /// Tool calls requested by the model.
+    public let toolCalls: [ParsedToolCall]
+
+    /// The reason generation finished.
+    public let finishReason: FinishReason
+
+    /// Whether this response includes tool calls.
+    public var hasToolCalls: Bool {
+        !toolCalls.isEmpty
+    }
+
     /// Creates an inference response.
     /// - Parameters:
     ///   - content: Text content. Default: nil
@@ -361,10 +366,5 @@ public struct InferenceResponse: Sendable, Equatable {
         self.content = content
         self.toolCalls = toolCalls
         self.finishReason = finishReason
-    }
-
-    /// Whether this response includes tool calls.
-    public var hasToolCalls: Bool {
-        !toolCalls.isEmpty
     }
 }

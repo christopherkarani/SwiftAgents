@@ -3,24 +3,23 @@
 //
 // Edge cases and advanced scoring tests for routing strategies
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 // MARK: - KeywordRoutingStrategy Edge Cases and Advanced Tests
 
 extension KeywordRoutingStrategyTests {
-
     // MARK: - Confidence Threshold Tests
 
     @Test("Minimum confidence threshold respected")
-    func testMinimumConfidenceThreshold() async throws {
+    func minimumConfidenceThreshold() async throws {
         let strategy = KeywordRoutingStrategy(minimumConfidence: 0.9)
         let agents = createTestAgents()
 
         // Weak match should fall below threshold
         let decision = try await strategy.selectAgent(
-            for: "calculator",  // Only name match, low score
+            for: "calculator", // Only name match, low score
             from: agents,
             context: nil
         )
@@ -31,7 +30,7 @@ extension KeywordRoutingStrategyTests {
     }
 
     @Test("Returns nil when no match meets threshold")
-    func testNoMatchMeetsThreshold() async throws {
+    func noMatchMeetsThreshold() async throws {
         let strategy = KeywordRoutingStrategy(minimumConfidence: 1.0)
         let agents = createTestAgents()
 
@@ -50,7 +49,7 @@ extension KeywordRoutingStrategyTests {
     // MARK: - Scoring Algorithm Tests
 
     @Test("Scoring algorithm verification - keyword worth 10 points")
-    func testScoringAlgorithmKeyword() async throws {
+    func scoringAlgorithmKeyword() async throws {
         let strategy = KeywordRoutingStrategy()
 
         let agents = [
@@ -79,7 +78,7 @@ extension KeywordRoutingStrategyTests {
     }
 
     @Test("Scoring algorithm verification - capability worth 5 points")
-    func testScoringAlgorithmCapability() async throws {
+    func scoringAlgorithmCapability() async throws {
         let strategy = KeywordRoutingStrategy()
 
         let agents = [
@@ -108,7 +107,7 @@ extension KeywordRoutingStrategyTests {
     }
 
     @Test("Scoring algorithm verification - name worth 3 points")
-    func testScoringAlgorithmName() async throws {
+    func scoringAlgorithmName() async throws {
         let strategy = KeywordRoutingStrategy()
 
         let agents = [
@@ -137,21 +136,21 @@ extension KeywordRoutingStrategyTests {
     }
 
     @Test("Scoring algorithm - keywords score higher than capabilities")
-    func testScoringKeywordScoreHigher() async throws {
+    func scoringKeywordScoreHigher() async throws {
         let strategy = KeywordRoutingStrategy()
 
         let agents = [
             AgentDescription(
                 name: "agent1",
                 description: "Test",
-                capabilities: ["match"],  // 5 points
+                capabilities: ["match"], // 5 points
                 keywords: []
             ),
             AgentDescription(
                 name: "agent2",
                 description: "Test",
                 capabilities: [],
-                keywords: ["match"]  // 10 points - keywords score higher
+                keywords: ["match"] // 10 points - keywords score higher
             )
         ]
 
@@ -168,7 +167,7 @@ extension KeywordRoutingStrategyTests {
     // MARK: - Multiple Matching Agents Tests
 
     @Test("Multiple matching agents - picks highest score")
-    func testMultipleMatchingAgentsPicksHighest() async throws {
+    func multipleMatchingAgentsPicksHighest() async throws {
         let strategy = KeywordRoutingStrategy()
 
         let agents = [
@@ -176,18 +175,18 @@ extension KeywordRoutingStrategyTests {
                 name: "agent1",
                 description: "Test",
                 capabilities: [],
-                keywords: ["test"]  // 10 points
+                keywords: ["test"] // 10 points
             ),
             AgentDescription(
                 name: "agent2",
                 description: "Test",
                 capabilities: [],
-                keywords: ["test", "example"]  // 20 points for "test example"
+                keywords: ["test", "example"] // 20 points for "test example"
             ),
             AgentDescription(
                 name: "agent3",
                 description: "Test",
-                capabilities: ["test"],  // 5 points
+                capabilities: ["test"], // 5 points
                 keywords: []
             )
         ]
@@ -204,7 +203,7 @@ extension KeywordRoutingStrategyTests {
     // MARK: - Edge Cases
 
     @Test("Empty agents array throws error")
-    func testEmptyAgentsArrayThrows() async throws {
+    func emptyAgentsArrayThrows() async throws {
         let strategy = KeywordRoutingStrategy()
 
         await #expect(throws: AgentError.self, performing: {
@@ -217,7 +216,7 @@ extension KeywordRoutingStrategyTests {
     }
 
     @Test("Single agent always selected")
-    func testSingleAgentAlwaysSelected() async throws {
+    func singleAgentAlwaysSelected() async throws {
         let strategy = KeywordRoutingStrategy()
 
         let agents = [
@@ -241,7 +240,7 @@ extension KeywordRoutingStrategyTests {
     }
 
     @Test("No keyword matches uses fallback")
-    func testNoKeywordMatchesUsesFallback() async throws {
+    func noKeywordMatchesUsesFallback() async throws {
         let strategy = KeywordRoutingStrategy()
         let agents = createTestAgents()
 
@@ -258,7 +257,7 @@ extension KeywordRoutingStrategyTests {
     }
 
     @Test("Empty input string")
-    func testEmptyInputString() async throws {
+    func emptyInputString() async throws {
         let strategy = KeywordRoutingStrategy()
         let agents = createTestAgents()
 
@@ -274,7 +273,7 @@ extension KeywordRoutingStrategyTests {
     }
 
     @Test("Whitespace-only input")
-    func testWhitespaceOnlyInput() async throws {
+    func whitespaceOnlyInput() async throws {
         let strategy = KeywordRoutingStrategy()
         let agents = createTestAgents()
 
@@ -290,7 +289,7 @@ extension KeywordRoutingStrategyTests {
     }
 
     @Test("Partial keyword matches")
-    func testPartialKeywordMatches() async throws {
+    func partialKeywordMatches() async throws {
         let strategy = KeywordRoutingStrategy()
         let agents = createTestAgents()
 
@@ -305,7 +304,7 @@ extension KeywordRoutingStrategyTests {
     }
 
     @Test("Confidence calculation with maximum score")
-    func testConfidenceCalculationMaxScore() async throws {
+    func confidenceCalculationMaxScore() async throws {
         let strategy = KeywordRoutingStrategy()
 
         let agents = [
@@ -333,7 +332,7 @@ extension KeywordRoutingStrategyTests {
     // MARK: - Context Parameter Tests
 
     @Test("Context parameter is optional and unused")
-    func testContextParameterUnused() async throws {
+    func contextParameterUnused() async throws {
         let strategy = KeywordRoutingStrategy()
         let agents = createTestAgents()
 

@@ -5,9 +5,8 @@
 // Provides counters, gauges, histograms, and timers for comprehensive observability.
 
 import Foundation
-import os
 
-// MARK: - Metrics Snapshot
+// MARK: - MetricsSnapshot
 
 /// A point-in-time snapshot of collected metrics.
 ///
@@ -164,7 +163,7 @@ public struct MetricsSnapshot: Sendable, Codable, Equatable {
     }
 }
 
-// MARK: - Metrics Collector
+// MARK: - MetricsCollector
 
 /// Actor-based metrics collector for aggregating agent execution data.
 ///
@@ -198,40 +197,7 @@ public struct MetricsSnapshot: Sendable, Codable, Equatable {
 /// await collector.reset()
 /// ```
 public actor MetricsCollector: AgentTracer {
-    // MARK: - Execution Counters
-
-    /// Total number of agent executions started.
-    private var totalExecutions: Int = 0
-
-    /// Number of successful agent executions.
-    private var successfulExecutions: Int = 0
-
-    /// Number of failed agent executions.
-    private var failedExecutions: Int = 0
-
-    /// Number of cancelled agent executions.
-    private var cancelledExecutions: Int = 0
-
-    // MARK: - Duration Tracking
-
-    /// Array of all execution durations (in seconds).
-    private var executionDurations: [TimeInterval] = []
-
-    // MARK: - Tool Metrics
-
-    /// Tool call counts by tool name.
-    private var toolCalls: [String: Int] = [:]
-
-    /// Tool error counts by tool name.
-    private var toolErrors: [String: Int] = [:]
-
-    /// Tool execution durations by tool name (in seconds).
-    private var toolDurations: [String: [TimeInterval]] = [:]
-
-    // MARK: - Span Tracking
-
-    /// Track start times for spans to calculate durations.
-    private var spanStartTimes: [UUID: Date] = [:]
+    // MARK: Public
 
     // MARK: - Initialization
 
@@ -299,7 +265,14 @@ public actor MetricsCollector: AgentTracer {
                 spanStartTimes.removeValue(forKey: event.spanId)
             }
 
-        case .thought, .decision, .plan, .memoryRead, .memoryWrite, .checkpoint, .metric, .custom:
+        case .checkpoint,
+             .custom,
+             .decision,
+             .memoryRead,
+             .memoryWrite,
+             .metric,
+             .plan,
+             .thought:
             // These events don't directly affect core metrics
             break
         }
@@ -389,9 +362,46 @@ public actor MetricsCollector: AgentTracer {
     public func getToolDurations() -> [String: [TimeInterval]] {
         toolDurations
     }
+
+    // MARK: Private
+
+    // MARK: - Execution Counters
+
+    /// Total number of agent executions started.
+    private var totalExecutions: Int = 0
+
+    /// Number of successful agent executions.
+    private var successfulExecutions: Int = 0
+
+    /// Number of failed agent executions.
+    private var failedExecutions: Int = 0
+
+    /// Number of cancelled agent executions.
+    private var cancelledExecutions: Int = 0
+
+    // MARK: - Duration Tracking
+
+    /// Array of all execution durations (in seconds).
+    private var executionDurations: [TimeInterval] = []
+
+    // MARK: - Tool Metrics
+
+    /// Tool call counts by tool name.
+    private var toolCalls: [String: Int] = [:]
+
+    /// Tool error counts by tool name.
+    private var toolErrors: [String: Int] = [:]
+
+    /// Tool execution durations by tool name (in seconds).
+    private var toolDurations: [String: [TimeInterval]] = [:]
+
+    // MARK: - Span Tracking
+
+    /// Track start times for spans to calculate durations.
+    private var spanStartTimes: [UUID: Date] = [:]
 }
 
-// MARK: - Metrics Reporter Protocol
+// MARK: - MetricsReporter
 
 /// Protocol for exporting metrics to external systems.
 ///
@@ -417,7 +427,7 @@ public protocol MetricsReporter: Sendable {
     func report(_ snapshot: MetricsSnapshot) async throws
 }
 
-// MARK: - JSON Metrics Reporter
+// MARK: - JSONMetricsReporter
 
 /// A metrics reporter that exports metrics as JSON.
 ///
@@ -474,7 +484,7 @@ public struct JSONMetricsReporter: MetricsReporter {
         } else {
             // Print to console
             if let jsonString = String(data: data, encoding: .utf8) {
-                Logger.metrics.info("\(jsonString)")
+                Log.metrics.info("\(jsonString)")
             }
         }
     }
@@ -511,7 +521,7 @@ public struct JSONMetricsReporter: MetricsReporter {
     }
 }
 
-// MARK: - Metrics Reporter Error
+// MARK: - MetricsReporterError
 
 /// Errors that can occur during metrics reporting.
 public enum MetricsReporterError: Error, Sendable {
@@ -520,7 +530,7 @@ public enum MetricsReporterError: Error, Sendable {
     case invalidPath(String)
 }
 
-// MARK: - MetricsSnapshot CustomStringConvertible
+// MARK: - MetricsSnapshot + CustomStringConvertible
 
 extension MetricsSnapshot: CustomStringConvertible {
     public var description: String {

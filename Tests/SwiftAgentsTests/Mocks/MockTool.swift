@@ -6,6 +6,8 @@
 import Foundation
 @testable import SwiftAgents
 
+// MARK: - MockTool
+
 /// A configurable mock tool for testing.
 ///
 /// Example:
@@ -17,11 +19,11 @@ import Foundation
 /// let result = try await tool.execute(arguments: ["location": "NYC"])
 /// ```
 public struct MockTool: Tool, Sendable {
+    // MARK: Public
+
     public let name: String
     public let description: String
     public let parameters: [ToolParameter]
-
-    private let resultHandler: @Sendable ([String: SendableValue]) async throws -> SendableValue
 
     /// Creates a mock tool with a fixed result.
     /// - Parameters:
@@ -38,7 +40,7 @@ public struct MockTool: Tool, Sendable {
         self.name = name
         self.description = description
         self.parameters = parameters
-        self.resultHandler = { _ in result }
+        resultHandler = { _ in result }
     }
 
     /// Creates a mock tool with a custom handler.
@@ -56,13 +58,19 @@ public struct MockTool: Tool, Sendable {
         self.name = name
         self.description = description
         self.parameters = parameters
-        self.resultHandler = handler
+        resultHandler = handler
     }
 
     public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         try await resultHandler(arguments)
     }
+
+    // MARK: Private
+
+    private let resultHandler: @Sendable ([String: SendableValue]) async throws -> SendableValue
 }
+
+// MARK: - FailingTool
 
 /// A tool that throws an error when executed.
 public struct FailingTool: Tool, Sendable {
@@ -80,52 +88,25 @@ public struct FailingTool: Tool, Sendable {
         error: Error = AgentError.toolExecutionFailed(toolName: "failing_tool", underlyingError: "Intentional failure")
     ) {
         self.name = name
-        self.description = "A tool that always fails"
-        self.parameters = []
+        description = "A tool that always fails"
+        parameters = []
         self.error = error
     }
 
-    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public func execute(arguments _: [String: SendableValue]) async throws -> SendableValue {
         throw error
     }
 }
 
+// MARK: - SpyTool
+
 /// A spy tool that records all invocations.
 public actor SpyTool: Tool {
+    // MARK: Public
+
     nonisolated public let name: String
     nonisolated public let description: String
     nonisolated public let parameters: [ToolParameter]
-
-    private var calls: [(arguments: [String: SendableValue], timestamp: Date)] = []
-    private let result: SendableValue
-    private let delay: Duration
-
-    /// Creates a spy tool.
-    /// - Parameters:
-    ///   - name: The tool name.
-    ///   - result: The result to return.
-    ///   - delay: Delay before returning.
-    public init(
-        name: String = "spy_tool",
-        result: SendableValue = .string("spy result"),
-        delay: Duration = .zero
-    ) {
-        self.name = name
-        self.description = "A spy tool that records calls"
-        self.parameters = []
-        self.result = result
-        self.delay = delay
-    }
-
-    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
-        calls.append((arguments, Date()))
-
-        if delay > .zero {
-            try await Task.sleep(for: delay)
-        }
-
-        return result
-    }
 
     /// The number of times the tool was called.
     public var callCount: Int {
@@ -142,6 +123,33 @@ public actor SpyTool: Tool {
         calls
     }
 
+    /// Creates a spy tool.
+    /// - Parameters:
+    ///   - name: The tool name.
+    ///   - result: The result to return.
+    ///   - delay: Delay before returning.
+    public init(
+        name: String = "spy_tool",
+        result: SendableValue = .string("spy result"),
+        delay: Duration = .zero
+    ) {
+        self.name = name
+        description = "A spy tool that records calls"
+        parameters = []
+        self.result = result
+        self.delay = delay
+    }
+
+    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        calls.append((arguments, Date()))
+
+        if delay > .zero {
+            try await Task.sleep(for: delay)
+        }
+
+        return result
+    }
+
     /// Resets the recorded calls.
     public func reset() {
         calls = []
@@ -153,7 +161,15 @@ public actor SpyTool: Tool {
             call.arguments[key] == value
         }
     }
+
+    // MARK: Private
+
+    private var calls: [(arguments: [String: SendableValue], timestamp: Date)] = []
+    private let result: SendableValue
+    private let delay: Duration
 }
+
+// MARK: - EchoTool
 
 /// A tool that returns the arguments it received (echo).
 public struct EchoTool: Tool, Sendable {

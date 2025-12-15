@@ -128,15 +128,18 @@ force_try: warning
 # File header format (matches project style)
 file_header:
   required_pattern: |
-    \/\/ [\w+]+\.swift\n\/\/ SwiftAgents Framework
+    \/\/ [\w+]+\.swift\n\/\/ SwiftAgents(Tests|Macros|MacrosTests| Framework)?
 
-# Modifier order (Swift 6 conventions)
+# Modifier order (Swift 6 conventions - matches SwiftFormat)
+# Valid groups: override, isolation, acl, setterACL, dynamic, mutators, lazy, final, required, convenience, typeMethods, owned
 modifier_order:
   preferred_modifier_order:
+    - override
+    - isolation
     - acl
     - setterACL
-    - override
-    - mutating
+    - dynamic
+    - mutators
     - lazy
     - final
     - required

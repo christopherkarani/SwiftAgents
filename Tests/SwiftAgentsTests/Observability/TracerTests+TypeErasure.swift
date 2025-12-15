@@ -4,14 +4,13 @@
 // AnyAgentTracer type erasure tests
 
 import Foundation
-import Testing
 @testable import SwiftAgents
+import Testing
 
 // MARK: - AnyAgentTracer Tests
 
 @Suite("AnyAgentTracer Tests")
 struct AnyAgentTracerTests {
-
     @Test("AnyAgentTracer wraps tracer correctly")
     func wrapsTracerCorrectly() async {
         // Given

@@ -24,9 +24,14 @@ import Foundation
 /// ```
 @resultBuilder
 public struct MemoryBuilder {
-    /// Builds a block of memory components.
+    /// Builds a block of memory components from variadic single components.
     public static func buildBlock(_ components: MemoryComponent...) -> [MemoryComponent] {
         components
+    }
+
+    /// Builds a block of memory components from variadic arrays (from buildExpression).
+    public static func buildBlock(_ components: [MemoryComponent]...) -> [MemoryComponent] {
+        components.flatMap(\.self)
     }
 
     /// Builds an empty block.
@@ -51,7 +56,7 @@ public struct MemoryBuilder {
 
     /// Builds an array of components from a for-loop.
     public static func buildArray(_ components: [[MemoryComponent]]) -> [MemoryComponent] {
-        components.flatMap { $0 }
+        components.flatMap(\.self)
     }
 
     /// Converts a single AgentMemory to a MemoryComponent array.
@@ -114,13 +119,15 @@ public struct MemoryComponent: Sendable {
 
 /// Priority level for memory components in composite memory.
 public enum MemoryPriority: Int, Sendable, Comparable {
-    case low = 0
-    case normal = 1
-    case high = 2
+    // MARK: Public
 
     public static func < (lhs: MemoryPriority, rhs: MemoryPriority) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
+
+    case low = 0
+    case normal = 1
+    case high = 2
 }
 
 // MARK: - RetrievalStrategy
@@ -140,10 +147,10 @@ public enum RetrievalStrategy: Sendable {
     case custom(@Sendable ([MemoryMessage], String) async -> [MemoryMessage])
 }
 
-// MARK: - MergeStrategy
+// MARK: - MemoryMergeStrategy
 
 /// Strategy for merging messages from multiple memory components.
-public enum MergeStrategy: Sendable {
+public enum MemoryMergeStrategy: Sendable {
     /// Concatenate messages from all components (primary first).
     case concatenate
 
@@ -184,23 +191,30 @@ public enum MergeStrategy: Sendable {
 /// let context = await memory.getContext(for: "greeting", tokenLimit: 2000)
 /// ```
 public actor CompositeMemory: AgentMemory {
-    // MARK: - Properties
-
-    /// The memory components sorted by priority.
-    private let components: [MemoryComponent]
-
-    /// Strategy for retrieving messages.
-    private let retrievalStrategy: RetrievalStrategy
-
-    /// Strategy for merging messages from multiple components.
-    private let mergeStrategy: MergeStrategy
-
-    /// Token estimator for context formatting.
-    private let tokenEstimator: any TokenEstimator
+    // MARK: Public
 
     /// Number of memory components.
-    public nonisolated var componentCount: Int {
+    nonisolated public var componentCount: Int {
         components.count
+    }
+
+    public var count: Int {
+        get async {
+            var total = 0
+            for component in components {
+                total += await component.memory.count
+            }
+            return total
+        }
+    }
+
+    public var isEmpty: Bool {
+        get async {
+            for component in components where await !component.memory.isEmpty {
+                return false
+            }
+            return true
+        }
     }
 
     // MARK: - Initialization
@@ -213,22 +227,9 @@ public actor CompositeMemory: AgentMemory {
         @MemoryBuilder _ content: () -> [MemoryComponent]
     ) {
         let builtComponents = content()
-        self.components = builtComponents.sorted { $0.priority > $1.priority }
-        self.retrievalStrategy = .recency
-        self.mergeStrategy = .concatenate
-        self.tokenEstimator = tokenEstimator
-    }
-
-    /// Internal initializer for configuration chaining.
-    private init(
-        components: [MemoryComponent],
-        retrievalStrategy: RetrievalStrategy,
-        mergeStrategy: MergeStrategy,
-        tokenEstimator: any TokenEstimator
-    ) {
-        self.components = components
-        self.retrievalStrategy = retrievalStrategy
-        self.mergeStrategy = mergeStrategy
+        components = builtComponents.sorted { $0.priority > $1.priority }
+        retrievalStrategy = .recency
+        mergeStrategy = .concatenate
         self.tokenEstimator = tokenEstimator
     }
 
@@ -238,7 +239,7 @@ public actor CompositeMemory: AgentMemory {
     ///
     /// - Parameter strategy: The retrieval strategy to use.
     /// - Returns: A new composite memory with the configured strategy.
-    public nonisolated func withRetrievalStrategy(_ strategy: RetrievalStrategy) -> CompositeMemory {
+    nonisolated public func withRetrievalStrategy(_ strategy: RetrievalStrategy) -> CompositeMemory {
         CompositeMemory(
             components: components,
             retrievalStrategy: strategy,
@@ -251,7 +252,7 @@ public actor CompositeMemory: AgentMemory {
     ///
     /// - Parameter strategy: The merge strategy to use.
     /// - Returns: A new composite memory with the configured strategy.
-    public nonisolated func withMergeStrategy(_ strategy: MergeStrategy) -> CompositeMemory {
+    nonisolated public func withMergeStrategy(_ strategy: MemoryMergeStrategy) -> CompositeMemory {
         CompositeMemory(
             components: components,
             retrievalStrategy: retrievalStrategy,
@@ -264,7 +265,7 @@ public actor CompositeMemory: AgentMemory {
     ///
     /// - Parameter estimator: The token estimator to use.
     /// - Returns: A new composite memory with the configured estimator.
-    public nonisolated func withTokenEstimator(_ estimator: any TokenEstimator) -> CompositeMemory {
+    nonisolated public func withTokenEstimator(_ estimator: any TokenEstimator) -> CompositeMemory {
         CompositeMemory(
             components: components,
             retrievalStrategy: retrievalStrategy,
@@ -303,16 +304,6 @@ public actor CompositeMemory: AgentMemory {
         }
     }
 
-    public var count: Int {
-        get async {
-            var total = 0
-            for component in components {
-                total += await component.memory.count
-            }
-            return total
-        }
-    }
-
     // MARK: - Extended API
 
     /// Adds a message to all components.
@@ -341,10 +332,39 @@ public actor CompositeMemory: AgentMemory {
         await getContext(for: "", tokenLimit: maxTokens)
     }
 
+    // MARK: Internal
+
+    /// Internal initializer for configuration chaining.
+    init(
+        components: [MemoryComponent],
+        retrievalStrategy: RetrievalStrategy,
+        mergeStrategy: MemoryMergeStrategy,
+        tokenEstimator: any TokenEstimator
+    ) {
+        self.components = components
+        self.retrievalStrategy = retrievalStrategy
+        self.mergeStrategy = mergeStrategy
+        self.tokenEstimator = tokenEstimator
+    }
+
+    // MARK: Private
+
+    /// The memory components sorted by priority.
+    private let components: [MemoryComponent]
+
+    /// Strategy for retrieving messages.
+    private let retrievalStrategy: RetrievalStrategy
+
+    /// Strategy for merging messages from multiple components.
+    private let mergeStrategy: MemoryMergeStrategy
+
+    /// Token estimator for context formatting.
+    private let tokenEstimator: any TokenEstimator
+
     // MARK: - Private Methods
 
     /// Retrieves messages using the configured strategy.
-    private func retrieveMessages(for query: String, limit: Int) async -> [MemoryMessage] {
+    private func retrieveMessages(for query: String, limit _: Int) async -> [MemoryMessage] {
         var allMessages: [[MemoryMessage]] = []
 
         for component in components {
@@ -369,7 +389,7 @@ public actor CompositeMemory: AgentMemory {
                     return score1 > score2
                 }
             }
-        case .hybrid(let recencyWeight, let relevanceWeight):
+        case let .hybrid(recencyWeight, relevanceWeight):
             if !query.isEmpty {
                 let queryTerms = Set(query.lowercased().split(separator: " ").map(String.init))
                 let indexed = merged.enumerated().map { ($0.offset, $0.element) }
@@ -381,9 +401,9 @@ public actor CompositeMemory: AgentMemory {
                     let score1 = recency1 * recencyWeight + relevance1 * relevanceWeight
                     let score2 = recency2 * recencyWeight + relevance2 * relevanceWeight
                     return score1 > score2
-                }.map { $0.1 }
+                }.map(\.1)
             }
-        case .custom(let retriever):
+        case let .custom(retriever):
             merged = await retriever(merged, query)
         }
 
@@ -394,11 +414,11 @@ public actor CompositeMemory: AgentMemory {
     private func mergeMessages(_ messageLists: [[MemoryMessage]]) -> [MemoryMessage] {
         switch mergeStrategy {
         case .concatenate:
-            return messageLists.flatMap { $0 }
+            return messageLists.flatMap(\.self)
 
         case .interleave:
             var result: [MemoryMessage] = []
-            var all = messageLists.flatMap { $0 }
+            var all = messageLists.flatMap(\.self)
             all.sort { $0.timestamp < $1.timestamp }
             result = all
             return result
@@ -420,7 +440,7 @@ public actor CompositeMemory: AgentMemory {
         case .primaryOnly:
             return messageLists.first ?? []
 
-        case .custom(let merger):
+        case let .custom(merger):
             return merger(messageLists)
         }
     }
@@ -429,10 +449,8 @@ public actor CompositeMemory: AgentMemory {
     private func relevanceScore(for message: MemoryMessage, query: Set<String>) -> Double {
         let content = message.content.lowercased()
         var matches = 0
-        for term in query {
-            if content.contains(term) {
-                matches += 1
-            }
+        for term in query where content.contains(term) {
+            matches += 1
         }
         return query.isEmpty ? 0 : Double(matches) / Double(query.count)
     }
@@ -440,12 +458,12 @@ public actor CompositeMemory: AgentMemory {
 
 // MARK: - ConversationMemory Fluent Extensions
 
-extension ConversationMemory {
+public extension ConversationMemory {
     /// Returns a memory component with summarization enabled.
     ///
     /// - Parameter messageCount: Number of messages after which to summarize.
     /// - Returns: A configured memory component.
-    public nonisolated func withSummarization(after messageCount: Int) -> MemoryComponent {
+    nonisolated func withSummarization(after _: Int) -> MemoryComponent {
         // Note: Actual summarization would require additional implementation
         // This returns a component wrapper that could be enhanced later
         MemoryComponent(memory: self)
@@ -455,7 +473,7 @@ extension ConversationMemory {
     ///
     /// - Parameter limit: Maximum tokens for context retrieval.
     /// - Returns: A configured memory component.
-    public nonisolated func withTokenLimit(_ limit: Int) -> MemoryComponent {
+    nonisolated func withTokenLimit(_: Int) -> MemoryComponent {
         MemoryComponent(memory: self)
     }
 
@@ -463,19 +481,19 @@ extension ConversationMemory {
     ///
     /// - Parameter priority: The priority level.
     /// - Returns: A configured memory component.
-    public nonisolated func priority(_ priority: MemoryPriority) -> MemoryComponent {
+    nonisolated func priority(_ priority: MemoryPriority) -> MemoryComponent {
         MemoryComponent(memory: self, priority: priority)
     }
 }
 
 // MARK: - SlidingWindowMemory Fluent Extensions
 
-extension SlidingWindowMemory {
+public extension SlidingWindowMemory {
     /// Returns a memory component with overlap configuration.
     ///
     /// - Parameter size: Number of messages to overlap when sliding.
     /// - Returns: A configured memory component.
-    public nonisolated func withOverlapSize(_ size: Int) -> MemoryComponent {
+    nonisolated func withOverlapSize(_: Int) -> MemoryComponent {
         MemoryComponent(memory: self)
     }
 
@@ -483,12 +501,12 @@ extension SlidingWindowMemory {
     ///
     /// - Parameter priority: The priority level.
     /// - Returns: A configured memory component.
-    public nonisolated func priority(_ priority: MemoryPriority) -> MemoryComponent {
+    nonisolated func priority(_ priority: MemoryPriority) -> MemoryComponent {
         MemoryComponent(memory: self, priority: priority)
     }
 }
 
-// MARK: - VectorMemoryConfiguration Protocol
+// MARK: - VectorMemoryConfigurable
 
 /// Protocol for vector memory configuration.
 public protocol VectorMemoryConfigurable: AgentMemory {
@@ -501,14 +519,14 @@ public protocol VectorMemoryConfigurable: AgentMemory {
 
 // MARK: - Default VectorMemoryConfigurable Implementation
 
-extension VectorMemoryConfigurable {
+public extension VectorMemoryConfigurable {
     /// Default implementation that wraps in a component.
-    public nonisolated func withSimilarityThreshold(_ threshold: Double) -> MemoryComponent {
+    nonisolated func withSimilarityThreshold(_: Double) -> MemoryComponent {
         MemoryComponent(memory: self)
     }
 
     /// Default implementation that wraps in a component.
-    public nonisolated func withMaxResults(_ max: Int) -> MemoryComponent {
+    nonisolated func withMaxResults(_: Int) -> MemoryComponent {
         MemoryComponent(memory: self)
     }
 }

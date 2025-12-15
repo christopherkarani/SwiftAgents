@@ -7,8 +7,8 @@
 // - Message passing tests
 // - Task distribution tests
 
-import Testing
 @testable import SwiftAgents
+import Testing
 
 @Suite("Orchestration Tests")
 struct OrchestrationTests {

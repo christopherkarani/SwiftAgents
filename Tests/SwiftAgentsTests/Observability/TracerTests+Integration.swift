@@ -4,14 +4,13 @@
 // Integration tests for tracer combinations
 
 import Foundation
-import Testing
 @testable import SwiftAgents
+import Testing
 
 // MARK: - Integration Tests
 
 @Suite("Tracer Integration Tests")
 struct TracerIntegrationTests {
-
     @Test("CompositeTracer with BufferedTracer children")
     func compositeWithBufferedChildren() async {
         // Given

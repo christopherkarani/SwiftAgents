@@ -3,15 +3,14 @@
 //
 // TraceEvent, SourceLocation, and ErrorInfo tests.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - TraceEvent Tests
+// MARK: - TraceEventTests
 
 @Suite("TraceEvent Tests")
 struct TraceEventTests {
-
     // MARK: - Builder Tests
 
     @Test("Builder creates events with required parameters")
@@ -167,7 +166,7 @@ struct TraceEventTests {
             .build()
 
         // Transfer event across async task boundary
-        let transferredEvent = await Task {
+        let transferredEvent = await Task { @Sendable in
             event
         }.value
 
@@ -302,11 +301,10 @@ struct TraceEventTests {
     }
 }
 
-// MARK: - SourceLocation Tests
+// MARK: - SourceLocationTests
 
 @Suite("SourceLocation Tests")
 struct SourceLocationTests {
-
     @Test("SourceLocation extracts filename from path")
     func sourceLocationFilename() {
         let location = SourceLocation(
@@ -330,11 +328,10 @@ struct SourceLocationTests {
     }
 }
 
-// MARK: - ErrorInfo Tests
+// MARK: - ErrorInfoTests
 
 @Suite("ErrorInfo Tests")
 struct ErrorInfoTests {
-
     @Test("ErrorInfo creates from Swift Error")
     func errorInfoFromError() {
         struct CustomError: Error, LocalizedError {

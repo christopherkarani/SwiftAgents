@@ -132,6 +132,12 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
+        // Only add extension for valid Tool declarations
+        // Must be a struct with a description argument
+        guard declaration.is(StructDeclSyntax.self),
+              extractDescription(from: node) != nil else {
+            return []
+        }
         // Add Tool and Sendable conformance
         let toolExtension = try ExtensionDeclSyntax("extension \(type): Tool, Sendable {}")
         return [toolExtension]
@@ -237,10 +243,8 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
     private static func extractParameterDefault(from attr: AttributeSyntax) -> String? {
         guard let arguments = attr.arguments?.as(LabeledExprListSyntax.self) else { return nil }
 
-        for arg in arguments {
-            if arg.label?.text == "default" {
-                return arg.expression.description
-            }
+        for arg in arguments where arg.label?.text == "default" {
+            return arg.expression.description
         }
         return nil
     }
@@ -267,10 +271,8 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
 
     /// Checks if the declaration already has an init.
     private static func hasInit(in declaration: some DeclGroupSyntax) -> Bool {
-        for member in declaration.memberBlock.members {
-            if member.decl.is(InitializerDeclSyntax.self) {
-                return true
-            }
+        for member in declaration.memberBlock.members where member.decl.is(InitializerDeclSyntax.self) {
+            return true
         }
         return false
     }
@@ -312,7 +314,7 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
         }
 
         // Clean up the type (remove Optional wrapper)
-        var cleanType = swiftType
+        let cleanType = swiftType
             .replacingOccurrences(of: "Optional<", with: "")
             .replacingOccurrences(of: ">", with: "")
             .replacingOccurrences(of: "?", with: "")
@@ -388,12 +390,12 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
 
         if hasUserExecute {
             // Generate property assignments
-            let propertyAssignments = parameters.map { "self.\($0.name) = \($0.name)" }.joined(separator: "\n            ")
+            let propertyAssignments = parameters.map { "self.\($0.name) = \($0.name)" }.joined(separator: "\n                    ")
 
             return """
                 public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
                     \(raw: extractionCode)
-            \(raw: propertyAssignments)
+                    \(raw: propertyAssignments)
                     let result = try await execute()
                     \(raw: conversionCode)
                 }

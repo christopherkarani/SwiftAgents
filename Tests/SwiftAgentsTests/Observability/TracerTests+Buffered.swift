@@ -4,14 +4,13 @@
 // BufferedTracer tests
 
 import Foundation
-import Testing
 @testable import SwiftAgents
+import Testing
 
 // MARK: - BufferedTracer Tests
 
 @Suite("BufferedTracer Tests")
 struct BufferedTracerTests {
-
     @Test("BufferedTracer initializes with destination tracer")
     func initializesWithDestination() async {
         // Given
@@ -96,7 +95,7 @@ struct BufferedTracerTests {
         let destination = SpyTracer()
         let buffered = BufferedTracer(
             destination: destination,
-            maxBufferSize: 5  // Small buffer for testing
+            maxBufferSize: 5 // Small buffer for testing
         )
 
         let traceId = UUID()

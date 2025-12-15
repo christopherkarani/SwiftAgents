@@ -9,6 +9,6 @@
 // - ObservabilityTests+Tracers.swift: ConsoleTracer and PrettyConsoleTracer tests
 // - ObservabilityTests+Metrics.swift: MetricsCollector and JSONMetricsReporter tests
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing

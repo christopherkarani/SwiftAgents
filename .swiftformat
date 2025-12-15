@@ -5,76 +5,69 @@
 --swiftversion 6.2
 
 # File options
---exclude .build,Package.swift
+--exclude .build,Package.swift,Sources/SwiftAgentsMacros
 
 # Indentation
 --indent 4
---tabwidth 4
---smarttabs enabled
---indentcase false
+--tab-width 4
+--smart-tabs enabled
+--indent-case false
 --ifdef indent
 
 # Braces and spacing
 --allman false
---brace-on-same-line true
---elseposition same-line
---guardelse same-line
+--else-position same-line
+--guard-else same-line
 
-# Wrapping
---wraparguments before-first
---wrapparameters before-first
---wrapcollections before-first
---wrapconditions after-first
---wrapreturntype preserve
---wrapeffects preserve
---maxwidth 120
---closingparen balanced
+# Wrapping - use preserve to avoid breaking valid code
+--wrap-arguments preserve
+--wrap-parameters preserve
+--wrap-collections preserve
+--wrap-conditions preserve
+--wrap-return-type preserve
+--wrap-effects preserve
+--max-width 120
+--closing-paren balanced
 
-# Spacing
---operatorfunc spaced
---nospaceoperators
---ranges spaced
---typedelimiter spaced
+# Spacing - use safe defaults
+--operator-func spaced
+--ranges preserve
+--type-delimiter space-after
 
 # Blank lines
---emptybraces no-space
---trimwhitespace always
+--empty-braces no-space
+--trim-whitespace always
 --linebreaks lf
 
 # Semicolons
 --semicolons never
 
 # Commas
---commas inline
+--trailing-commas never
 
-# Redundant
---redundanttype inferred
---redundantself remove
---redundantextensionacl on
---redundantlet remove
---redundantnil remove
---redundantpattern remove
---redundantinit remove
---redundantclosure remove
+# Types
+--property-types infer-locals-only
+--self remove
+--extension-acl on-extension
+--nil-init remove
 
 # Void
---voidtype void
+--void-type Void
 
 # Marks
---marktypes always
---markextensions always
---extensionmark "MARK: - %t + %c"
---groupedextension "MARK: %c"
+--mark-types always
+--mark-extensions always
+--extension-mark "MARK: - %t + %c"
+--grouped-extension "MARK: %c"
 
 # Imports
---importgrouping alpha
+--import-grouping alpha
 
 # Self
---self remove
---selfrequired
+--self-required
 
 # Modifiers
---modifierorder acl,setterACL,override,mutating,lazy,final,required,convenience,typeMethods,owned
+--modifier-order nonisolated,acl,setterACL,override,mutating,lazy,final,required,convenience,typeMethods,owned
 
 # Enabled rules
 --enable isEmpty
@@ -87,14 +80,17 @@
 --enable organizeDeclarations
 --enable sortImports
 
-# Disabled rules
+# Disabled rules - disable potentially breaking rules
 --disable trailingCommas
 --disable wrapMultilineStatementBraces
 --disable blankLineAfterImports
 --disable acronyms
+--disable wrap
+--disable wrapArguments
+--disable wrapConditionalBodies
 
 # Declaration organization (matches MARK style in codebase)
---organizetypes actor,class,enum,struct,extension,protocol
---organizationmode visibility
---visibilityorder public,internal,fileprivate,private
---typeorder beforeMarks,nestedType,staticProperty,staticPropertyWithBody,classPropertyWithBody,instanceProperty,instancePropertyWithBody,staticMethod,classMethod,instanceMethod,subscript
+--organize-types actor,class,enum,struct,extension,protocol
+--organization-mode visibility
+--visibility-order open,public,package,internal,fileprivate,private
+--type-order beforeMarks,nestedType,staticProperty,staticPropertyWithBody,classPropertyWithBody,instanceProperty,instancePropertyWithBody,instanceLifecycle,staticMethod,classMethod,instanceMethod

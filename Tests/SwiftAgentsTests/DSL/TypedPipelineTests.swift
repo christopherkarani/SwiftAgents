@@ -3,15 +3,14 @@
 //
 // Tests for typed Pipeline operators with generic input/output types.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - Typed Pipeline Tests
+// MARK: - TypedPipelineTests
 
 @Suite("Typed Pipeline Tests")
 struct TypedPipelineTests {
-
     // MARK: - Basic Pipeline Creation
 
     @Test("Create pipeline from closure")
@@ -127,26 +126,33 @@ struct TypedPipelineTests {
 
     @Test("Chained pipelines execute sequentially")
     func chainedPipelinesExecuteSequentially() async throws {
-        var executionOrder: [Int] = []
+        actor ExecutionRecorder {
+            var order: [Int] = []
+            func append(_ value: Int) { order.append(value) }
+            func getOrder() -> [Int] { order }
+        }
+
+        let recorder = ExecutionRecorder()
 
         let step1 = Pipeline<String, String> { input in
-            executionOrder.append(1)
+            await recorder.append(1)
             return input
         }
 
         let step2 = Pipeline<String, String> { input in
-            executionOrder.append(2)
+            await recorder.append(2)
             return input
         }
 
         let step3 = Pipeline<String, String> { input in
-            executionOrder.append(3)
+            await recorder.append(3)
             return input
         }
 
         let combined = step1 >>> step2 >>> step3
         _ = try await combined.execute("test")
 
+        let executionOrder = await recorder.getOrder()
         #expect(executionOrder == [1, 2, 3])
     }
 
@@ -155,27 +161,33 @@ struct TypedPipelineTests {
     @Test("Pipeline propagates errors")
     func pipelinePropagatesErrors() async {
         let failingPipeline = Pipeline<String, String> { _ in
-            throw TestError.intentionalFailure
+            throw PipelineTestError.intentionalFailure
         }
 
         do {
             _ = try await failingPipeline.execute("test")
             Issue.record("Expected error")
         } catch {
-            #expect(error is TestError)
+            #expect(error is PipelineTestError)
         }
     }
 
     @Test("Error in chain stops execution")
     func errorInChainStopsExecution() async {
-        var step2Executed = false
+        actor TestFlag {
+            var value = false
+            func set() { value = true }
+            func get() -> Bool { value }
+        }
+
+        let flag = TestFlag()
 
         let step1 = Pipeline<String, String> { _ in
-            throw TestError.intentionalFailure
+            throw PipelineTestError.intentionalFailure
         }
 
         let step2 = Pipeline<String, String> { input in
-            step2Executed = true
+            await flag.set()
             return input
         }
 
@@ -185,6 +197,7 @@ struct TypedPipelineTests {
             _ = try await combined.execute("test")
             Issue.record("Expected error")
         } catch {
+            let step2Executed = await flag.get()
             #expect(!step2Executed)
         }
     }
@@ -197,7 +210,7 @@ struct TypedPipelineTests {
             result.output.uppercased()
         }
 
-        let result = AgentResult(output: "hello", toolCalls: [], toolResults: [], iterationCount: 1, duration: 0, tokenUsage: nil, metadata: [:])
+        let result = AgentResult(output: "hello", toolCalls: [], toolResults: [], iterationCount: 1, duration: .zero, tokenUsage: nil, metadata: [:])
         let transformed = try await transform.execute(result)
 
         #expect(transformed == "HELLO")
@@ -239,9 +252,11 @@ struct TypedPipelineTests {
 
     @Test("Pipeline composition is associative")
     func pipelineCompositionIsAssociative() async throws {
+        // swiftlint:disable identifier_name
         let f = Pipeline<Int, Int> { $0 + 1 }
         let g = Pipeline<Int, Int> { $0 * 2 }
         let h = Pipeline<Int, Int> { $0 - 3 }
+        // swiftlint:enable identifier_name
 
         // (f >>> g) >>> h should equal f >>> (g >>> h)
         let leftAssoc = (f >>> g) >>> h
@@ -254,19 +269,10 @@ struct TypedPipelineTests {
     }
 }
 
-// MARK: - Test Support Types
+// MARK: - PipelineTestError
 
-enum TestError: Error {
+enum PipelineTestError: Error {
     case intentionalFailure
-}
-
-/// Extension to make Agent work as Pipeline (to be implemented)
-extension Agent {
-    func asPipeline() -> Pipeline<String, AgentResult> {
-        Pipeline { input in
-            try await self.run(input)
-        }
-    }
 }
 
 /// Helper function to create transform pipelines
@@ -274,49 +280,4 @@ func transformPipeline<Input, Output>(
     _ transform: @escaping @Sendable (Input) async throws -> Output
 ) -> Pipeline<Input, Output> {
     Pipeline(transform)
-}
-
-// MARK: - Pipeline Type (to be implemented in main source)
-
-/// Type-safe pipeline with explicit input/output types
-struct Pipeline<Input: Sendable, Output: Sendable>: Sendable {
-    let execute: @Sendable (Input) async throws -> Output
-
-    init(_ execute: @escaping @Sendable (Input) async throws -> Output) {
-        self.execute = execute
-    }
-
-    func map<NewOutput: Sendable>(
-        _ transform: @escaping @Sendable (Output) async throws -> NewOutput
-    ) -> Pipeline<Input, NewOutput> {
-        Pipeline<Input, NewOutput> { input in
-            let output = try await self.execute(input)
-            return try await transform(output)
-        }
-    }
-
-    func flatMap<NewOutput: Sendable>(
-        _ transform: @escaping @Sendable (Output) async throws -> Pipeline<Output, NewOutput>
-    ) -> Pipeline<Input, NewOutput> {
-        Pipeline<Input, NewOutput> { input in
-            let output = try await self.execute(input)
-            let nextPipeline = try await transform(output)
-            return try await nextPipeline.execute(output)
-        }
-    }
-
-    static var identity: Pipeline<Input, Input> where Input == Output {
-        Pipeline<Input, Input> { $0 }
-    }
-}
-
-/// Operator for chaining pipelines
-func >>> <A: Sendable, B: Sendable, C: Sendable>(
-    lhs: Pipeline<A, B>,
-    rhs: Pipeline<B, C>
-) -> Pipeline<A, C> {
-    Pipeline { input in
-        let intermediate = try await lhs.execute(input)
-        return try await rhs.execute(intermediate)
-    }
 }

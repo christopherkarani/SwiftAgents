@@ -3,15 +3,14 @@
 //
 // Tests for agent composition operators (+, >>>, |).
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - Agent Composition Tests
+// MARK: - AgentCompositionTests
 
 @Suite("Agent Composition Operator Tests")
 struct AgentCompositionTests {
-
     // MARK: - Parallel Composition (+)
 
     @Test("Parallel composition with + operator")
@@ -56,7 +55,7 @@ struct AgentCompositionTests {
         let agent1 = ReActAgent(tools: [], instructions: "Agent 1", inferenceProvider: provider1)
         let agent2 = ReActAgent(tools: [], instructions: "Agent 2", inferenceProvider: provider2)
 
-        let parallel = (agent1 + agent2).withMergeStrategy(.concatenate(separator: " | "))
+        let parallel = await (agent1 + agent2).withMergeStrategy(.concatenate(separator: " | "))
 
         let result = try await parallel.run("Test")
 
@@ -238,7 +237,7 @@ struct AgentCompositionTests {
         let success = ReActAgent(tools: [], instructions: "Success", inferenceProvider: successProvider)
         let failing = ReActAgent(tools: [], instructions: "Failing", inferenceProvider: failingProvider)
 
-        let parallel = (success + failing).withErrorHandling(.continueOnPartialFailure)
+        let parallel = await (success + failing).withErrorHandling(.continueOnPartialFailure)
 
         let result = try await parallel.run("Test")
 
@@ -277,54 +276,84 @@ func | (lhs: any Agent, rhs: any Agent) -> ConditionalRouter {
     ConditionalRouter(primary: lhs, fallback: rhs)
 }
 
-// MARK: - Composition Types (to be implemented)
+// MARK: - ParallelComposition
 
 /// Parallel composition of agents
 actor ParallelComposition: Agent {
+    // MARK: Internal
+
     nonisolated let tools: [any Tool] = []
     nonisolated let instructions: String = "Parallel composition"
     nonisolated let configuration: AgentConfiguration = .default
+
     nonisolated var memory: (any AgentMemory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
-    private let agents: [any Agent]
-    private var mergeStrategy: ParallelMergeStrategy = .firstSuccess
-    private var errorHandling: ErrorHandlingStrategy = .failFast
-
-    init(agents: [any Agent]) {
+    init(agents: [any Agent], mergeStrategy: ParallelMergeStrategy = .firstSuccess, errorHandling: ErrorHandlingStrategy = .failFast) {
         self.agents = agents
+        self.mergeStrategy = mergeStrategy
+        self.errorHandling = errorHandling
     }
 
     func run(_ input: String) async throws -> AgentResult {
-        // Run all agents in parallel and merge results
-        try await withThrowingTaskGroup(of: AgentResult.self) { group in
+        // Run all agents in parallel and collect results
+        await withTaskGroup(of: Result<AgentResult, Error>.self) { group in
             for agent in agents {
                 group.addTask {
-                    try await agent.run(input)
+                    do {
+                        return try await .success(agent.run(input))
+                    } catch {
+                        return .failure(error)
+                    }
                 }
             }
 
-            var results: [AgentResult] = []
-            for try await result in group {
-                results.append(result)
+            var successes: [AgentResult] = []
+            var failures: [Error] = []
+
+            for await result in group {
+                switch result {
+                case let .success(agentResult):
+                    successes.append(agentResult)
+                case let .failure(error):
+                    failures.append(error)
+                }
             }
 
-            return mergeResults(results)
+            // Handle based on error handling strategy
+            if successes.isEmpty, let firstError = failures.first {
+                // All failed - create error result
+                return AgentResult(
+                    output: "All agents failed: \(firstError)",
+                    toolCalls: [],
+                    toolResults: [],
+                    iterationCount: 0,
+                    duration: .zero,
+                    tokenUsage: nil,
+                    metadata: [:]
+                )
+            }
+
+            return mergeResults(successes)
         }
     }
 
     nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    let result = try await self.run(input)
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                let result = try await run(input)
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     func cancel() async {
@@ -333,37 +362,76 @@ actor ParallelComposition: Agent {
         }
     }
 
+    func withMergeStrategy(_ strategy: ParallelMergeStrategy) -> ParallelComposition {
+        ParallelComposition(agents: agents, mergeStrategy: strategy, errorHandling: errorHandling)
+    }
+
+    func withErrorHandling(_ strategy: ErrorHandlingStrategy) -> ParallelComposition {
+        ParallelComposition(agents: agents, mergeStrategy: mergeStrategy, errorHandling: strategy)
+    }
+
+    // MARK: Private
+
+    private let agents: [any Agent]
+    private let mergeStrategy: ParallelMergeStrategy
+    private let errorHandling: ErrorHandlingStrategy
+
     private func mergeResults(_ results: [AgentResult]) -> AgentResult {
-        let combinedOutput = results.map { $0.output }.joined(separator: "\n")
+        switch mergeStrategy {
+        case .firstSuccess:
+            // Return first non-empty result (or first if all empty)
+            if let first = results.first(where: { !$0.output.isEmpty }) ?? results.first {
+                return first
+            }
+            return makeEmptyResult()
+        case .all:
+            // Concatenate all results with newline
+            return combineResults(results, separator: "\n")
+        case let .concatenate(separator):
+            return combineResults(results, separator: separator)
+        case let .custom(merger):
+            return merger(results)
+        }
+    }
+
+    private func combineResults(_ results: [AgentResult], separator: String) -> AgentResult {
+        let combinedOutput = results.map(\.output).joined(separator: separator)
         return AgentResult(
             output: combinedOutput,
-            toolCalls: results.flatMap { $0.toolCalls },
-            toolResults: results.flatMap { $0.toolResults },
-            iterationCount: results.map { $0.iterationCount }.max() ?? 1,
-            duration: results.map { $0.duration }.max() ?? 0,
+            toolCalls: results.flatMap(\.toolCalls),
+            toolResults: results.flatMap(\.toolResults),
+            iterationCount: results.map(\.iterationCount).max() ?? 1,
+            duration: results.map(\.duration).max() ?? .zero,
             tokenUsage: nil,
             metadata: [:]
         )
     }
 
-    nonisolated func withMergeStrategy(_ strategy: ParallelMergeStrategy) -> ParallelComposition {
-        self
-    }
-
-    nonisolated func withErrorHandling(_ strategy: ErrorHandlingStrategy) -> ParallelComposition {
-        self
+    private func makeEmptyResult() -> AgentResult {
+        AgentResult(
+            output: "",
+            toolCalls: [],
+            toolResults: [],
+            iterationCount: 0,
+            duration: .zero,
+            tokenUsage: nil,
+            metadata: [:]
+        )
     }
 }
 
+// MARK: - SequentialComposition
+
 /// Sequential composition of agents
 actor SequentialComposition: Agent {
+    // MARK: Internal
+
     nonisolated let tools: [any Tool] = []
     nonisolated let instructions: String = "Sequential composition"
     nonisolated let configuration: AgentConfiguration = .default
+
     nonisolated var memory: (any AgentMemory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
-
-    private let agents: [any Agent]
 
     init(agents: [any Agent]) {
         self.agents = agents
@@ -379,21 +447,25 @@ actor SequentialComposition: Agent {
             lastResult = result
         }
 
-        return lastResult ?? AgentResult(output: "", toolCalls: [], toolResults: [], iterationCount: 0, duration: 0, tokenUsage: nil, metadata: [:])
+        return lastResult ?? AgentResult(output: "", toolCalls: [], toolResults: [], iterationCount: 0, duration: .zero, tokenUsage: nil, metadata: [:])
     }
 
     nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    let result = try await self.run(input)
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                let result = try await run(input)
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     func cancel() async {
@@ -401,18 +473,24 @@ actor SequentialComposition: Agent {
             await agent.cancel()
         }
     }
+
+    // MARK: Private
+
+    private let agents: [any Agent]
 }
+
+// MARK: - ConditionalRouter
 
 /// Conditional router with fallback
 actor ConditionalRouter: Agent {
+    // MARK: Internal
+
     nonisolated let tools: [any Tool] = []
     nonisolated let instructions: String = "Conditional router"
     nonisolated let configuration: AgentConfiguration = .default
+
     nonisolated var memory: (any AgentMemory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
-
-    private let primary: any Agent
-    private let fallback: any Agent
 
     init(primary: any Agent, fallback: any Agent) {
         self.primary = primary
@@ -428,53 +506,67 @@ actor ConditionalRouter: Agent {
     }
 
     nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    let result = try await self.run(input)
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                let result = try await run(input)
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     func cancel() async {
         await primary.cancel()
         await fallback.cancel()
     }
+
+    // MARK: Private
+
+    private let primary: any Agent
+    private let fallback: any Agent
 }
 
-// MARK: - Supporting Types
+// MARK: - ParallelMergeStrategy
 
-enum ParallelMergeStrategy {
+enum ParallelMergeStrategy: Sendable {
     case firstSuccess
     case all
     case concatenate(separator: String)
-    case custom((([AgentResult]) -> AgentResult))
+    case custom(@Sendable ([AgentResult]) -> AgentResult)
 }
 
-enum ErrorHandlingStrategy {
+// MARK: - ErrorHandlingStrategy
+
+enum ErrorHandlingStrategy: Sendable {
     case failFast
     case continueOnPartialFailure
     case collectErrors
 }
+
+// MARK: - EmptyAgent
 
 /// Empty agent (identity for parallel composition)
 struct EmptyAgent: Agent {
     let tools: [any Tool] = []
     let instructions: String = ""
     let configuration: AgentConfiguration = .default
+
     var memory: (any AgentMemory)? { nil }
     var inferenceProvider: (any InferenceProvider)? { nil }
 
-    func run(_ input: String) async throws -> AgentResult {
-        AgentResult(output: "", toolCalls: [], toolResults: [], iterationCount: 0, duration: 0, tokenUsage: nil, metadata: [:])
+    func run(_: String) async throws -> AgentResult {
+        AgentResult(output: "", toolCalls: [], toolResults: [], iterationCount: 0, duration: .zero, tokenUsage: nil, metadata: [:])
     }
 
-    func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    func stream(_: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             continuation.finish()
         }

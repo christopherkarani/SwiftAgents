@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Tool Protocol
+// MARK: - Tool
 
 /// A tool that can be used by an agent to perform actions.
 ///
@@ -48,16 +48,16 @@ public protocol Tool: Sendable {
 
 // MARK: - Tool Protocol Extensions
 
-extension Tool {
+public extension Tool {
     /// Creates a ToolDefinition from this tool.
-    public var definition: ToolDefinition {
+    var definition: ToolDefinition {
         ToolDefinition(from: self)
     }
 
     /// Validates that the given arguments match this tool's parameters.
     /// - Parameter arguments: The arguments to validate.
     /// - Throws: `AgentError.invalidToolArguments` if validation fails.
-    public func validateArguments(_ arguments: [String: SendableValue]) throws {
+    func validateArguments(_ arguments: [String: SendableValue]) throws {
         for param in parameters where param.isRequired {
             guard arguments[param.name] != nil else {
                 throw AgentError.invalidToolArguments(
@@ -74,7 +74,7 @@ extension Tool {
     ///   - arguments: The arguments dictionary.
     /// - Returns: The string value.
     /// - Throws: `AgentError.invalidToolArguments` if missing or wrong type.
-    public func requiredString(_ key: String, from arguments: [String: SendableValue]) throws -> String {
+    func requiredString(_ key: String, from arguments: [String: SendableValue]) throws -> String {
         guard let value = arguments[key]?.stringValue else {
             throw AgentError.invalidToolArguments(
                 toolName: name,
@@ -90,15 +90,42 @@ extension Tool {
     ///   - arguments: The arguments dictionary.
     ///   - defaultValue: The default value if not present.
     /// - Returns: The string value or default.
-    public func optionalString(_ key: String, from arguments: [String: SendableValue], default defaultValue: String? = nil) -> String? {
+    func optionalString(_ key: String, from arguments: [String: SendableValue], default defaultValue: String? = nil) -> String? {
         arguments[key]?.stringValue ?? defaultValue
     }
 }
 
-// MARK: - Tool Parameter
+// MARK: - ToolParameter
 
 /// Describes a parameter that a tool accepts.
 public struct ToolParameter: Sendable, Equatable {
+    /// The type of a tool parameter.
+    indirect public enum ParameterType: Sendable, Equatable, CustomStringConvertible {
+        // MARK: Public
+
+        public var description: String {
+            switch self {
+            case .string: "string"
+            case .int: "integer"
+            case .double: "number"
+            case .bool: "boolean"
+            case let .array(elementType): "array<\(elementType)>"
+            case .object: "object"
+            case let .oneOf(options): "oneOf(\(options.joined(separator: "|")))"
+            case .any: "any"
+            }
+        }
+
+        case string
+        case int
+        case double
+        case bool
+        case array(elementType: ParameterType)
+        case object(properties: [ToolParameter])
+        case oneOf([String])
+        case any
+    }
+
     /// The name of the parameter.
     public let name: String
 
@@ -134,34 +161,9 @@ public struct ToolParameter: Sendable, Equatable {
         self.isRequired = isRequired
         self.defaultValue = defaultValue
     }
-
-    /// The type of a tool parameter.
-    public indirect enum ParameterType: Sendable, Equatable, CustomStringConvertible {
-        case string
-        case int
-        case double
-        case bool
-        case array(elementType: ParameterType)
-        case object(properties: [ToolParameter])
-        case oneOf([String])
-        case any
-
-        public var description: String {
-            switch self {
-            case .string: return "string"
-            case .int: return "integer"
-            case .double: return "number"
-            case .bool: return "boolean"
-            case .array(let elementType): return "array<\(elementType)>"
-            case .object: return "object"
-            case .oneOf(let options): return "oneOf(\(options.joined(separator: "|")))"
-            case .any: return "any"
-            }
-        }
-    }
 }
 
-// MARK: - Tool Definition
+// MARK: - ToolDefinition
 
 /// A definition of a tool that can be included in model prompts.
 ///
@@ -191,13 +193,13 @@ public struct ToolDefinition: Sendable, Equatable {
     /// Creates a ToolDefinition from a Tool.
     /// - Parameter tool: The tool to create a definition from.
     public init(from tool: any Tool) {
-        self.name = tool.name
-        self.description = tool.description
-        self.parameters = tool.parameters
+        name = tool.name
+        description = tool.description
+        parameters = tool.parameters
     }
 }
 
-// MARK: - Tool Registry
+// MARK: - ToolRegistry
 
 /// A registry for managing available tools.
 ///
@@ -206,11 +208,32 @@ public struct ToolDefinition: Sendable, Equatable {
 ///
 /// Example:
 /// ```swift
-/// let registry = ToolRegistry(tools: [CalculatorTool(), DateTimeTool()])
-/// let result = try await registry.execute(toolNamed: "calculator", arguments: ["expression": "2+2"])
+/// // Note: CalculatorTool is only available on Apple platforms
+/// let registry = ToolRegistry(tools: [DateTimeTool(), StringTool()])
+/// let result = try await registry.execute(toolNamed: "datetime", arguments: ["format": "iso8601"])
 /// ```
 public actor ToolRegistry {
-    private var tools: [String: any Tool] = [:]
+    // MARK: Public
+
+    /// Gets all registered tools.
+    public var allTools: [any Tool] {
+        Array(tools.values)
+    }
+
+    /// Gets all tool names.
+    public var toolNames: [String] {
+        Array(tools.keys)
+    }
+
+    /// Gets all tool definitions.
+    public var definitions: [ToolDefinition] {
+        tools.values.map { ToolDefinition(from: $0) }
+    }
+
+    /// The number of registered tools.
+    public var count: Int {
+        tools.count
+    }
 
     /// Creates an empty tool registry.
     public init() {}
@@ -257,26 +280,6 @@ public actor ToolRegistry {
         tools[name] != nil
     }
 
-    /// Gets all registered tools.
-    public var allTools: [any Tool] {
-        Array(tools.values)
-    }
-
-    /// Gets all tool names.
-    public var toolNames: [String] {
-        Array(tools.keys)
-    }
-
-    /// Gets all tool definitions.
-    public var definitions: [ToolDefinition] {
-        tools.values.map { ToolDefinition(from: $0) }
-    }
-
-    /// The number of registered tools.
-    public var count: Int {
-        tools.count
-    }
-
     /// Executes a tool by name with the given arguments.
     /// - Parameters:
     ///   - name: The name of the tool to execute.
@@ -303,4 +306,8 @@ public actor ToolRegistry {
             )
         }
     }
+
+    // MARK: Private
+
+    private var tools: [String: any Tool] = [:]
 }

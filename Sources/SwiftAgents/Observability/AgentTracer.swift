@@ -6,7 +6,7 @@
 
 import Foundation
 
-// MARK: - Agent Tracer Protocol
+// MARK: - AgentTracer
 
 /// Protocol defining the contract for tracing agent execution events.
 ///
@@ -65,16 +65,16 @@ public protocol AgentTracer: Actor, Sendable {
 
 // MARK: - Default Implementation
 
-extension AgentTracer {
+public extension AgentTracer {
     /// Default flush implementation that does nothing.
     ///
     /// Override this method in your tracer if you need to flush buffered events.
-    public func flush() async {
+    func flush() async {
         // Default: no-op
     }
 }
 
-// MARK: - Composite Tracer
+// MARK: - CompositeTracer
 
 /// A tracer that forwards events to multiple child tracers.
 ///
@@ -99,14 +99,7 @@ extension AgentTracer {
 /// await tracer.trace(event) // Forwards to all three tracers in parallel
 /// ```
 public actor CompositeTracer: AgentTracer {
-    /// The child tracers to forward events to.
-    private let tracers: [any AgentTracer]
-
-    /// The minimum event level to forward. Events below this level are discarded.
-    private let minimumLevel: EventLevel
-
-    /// Whether to forward events in parallel (true) or sequentially (false).
-    private let parallel: Bool
+    // MARK: Public
 
     /// Creates a composite tracer.
     ///
@@ -162,9 +155,20 @@ public actor CompositeTracer: AgentTracer {
             }
         }
     }
+
+    // MARK: Private
+
+    /// The child tracers to forward events to.
+    private let tracers: [any AgentTracer]
+
+    /// The minimum event level to forward. Events below this level are discarded.
+    private let minimumLevel: EventLevel
+
+    /// Whether to forward events in parallel (true) or sequentially (false).
+    private let parallel: Bool
 }
 
-// MARK: - No-Op Tracer
+// MARK: - NoOpTracer
 
 /// A tracer that discards all events.
 ///
@@ -184,7 +188,7 @@ public actor NoOpTracer: AgentTracer {
     public init() {}
 
     /// Discards the event without processing.
-    public func trace(_ event: TraceEvent) async {
+    public func trace(_: TraceEvent) async {
         // Intentionally empty - discard all events
     }
 
@@ -194,7 +198,7 @@ public actor NoOpTracer: AgentTracer {
     }
 }
 
-// MARK: - Buffered Tracer
+// MARK: - BufferedTracer
 
 /// A tracer that buffers events and flushes them in batches to a destination tracer.
 ///
@@ -227,23 +231,7 @@ public actor NoOpTracer: AgentTracer {
 /// await buffered.flush()
 /// ```
 public actor BufferedTracer: AgentTracer {
-    /// The buffered events waiting to be flushed.
-    private var buffer: [TraceEvent] = []
-
-    /// The maximum number of events to buffer before auto-flushing.
-    private let maxBufferSize: Int
-
-    /// The time interval between automatic flushes.
-    private let flushInterval: Duration
-
-    /// The destination tracer to forward events to.
-    private let destination: any AgentTracer
-
-    /// The task that handles periodic flushing.
-    private var flushTask: Task<Void, Never>?
-
-    /// The last time the buffer was flushed.
-    private var lastFlushTime: ContinuousClock.Instant
+    // MARK: Public
 
     /// Creates a buffered tracer.
     ///
@@ -259,8 +247,8 @@ public actor BufferedTracer: AgentTracer {
         self.destination = destination
         self.maxBufferSize = maxBufferSize
         self.flushInterval = flushInterval
-        self.lastFlushTime = ContinuousClock.now
-        self.flushTask = nil
+        lastFlushTime = ContinuousClock.now
+        flushTask = nil
     }
 
     /// Starts the periodic flush task. Call this after initialization.
@@ -269,11 +257,6 @@ public actor BufferedTracer: AgentTracer {
         flushTask = Task { [weak self] in
             await self?.periodicFlush()
         }
-    }
-
-    deinit {
-        // Cancel the periodic flush task
-        flushTask?.cancel()
     }
 
     public func trace(_ event: TraceEvent) async {
@@ -302,6 +285,33 @@ public actor BufferedTracer: AgentTracer {
         await destination.flush()
     }
 
+    // MARK: Internal
+
+    deinit {
+        // Cancel the periodic flush task
+        flushTask?.cancel()
+    }
+
+    // MARK: Private
+
+    /// The buffered events waiting to be flushed.
+    private var buffer: [TraceEvent] = []
+
+    /// The maximum number of events to buffer before auto-flushing.
+    private let maxBufferSize: Int
+
+    /// The time interval between automatic flushes.
+    private let flushInterval: Duration
+
+    /// The destination tracer to forward events to.
+    private let destination: any AgentTracer
+
+    /// The task that handles periodic flushing.
+    private var flushTask: Task<Void, Never>?
+
+    /// The last time the buffer was flushed.
+    private var lastFlushTime: ContinuousClock.Instant
+
     /// Periodically flushes the buffer based on the flush interval.
     private func periodicFlush() async {
         while !Task.isCancelled {
@@ -326,35 +336,34 @@ public actor BufferedTracer: AgentTracer {
 
 // MARK: - Convenience Extensions
 
-extension AgentTracer {
+public extension AgentTracer {
     /// Traces multiple events sequentially.
     ///
     /// - Parameter events: The events to trace.
-    public func trace(_ events: [TraceEvent]) async {
+    func trace(_ events: [TraceEvent]) async {
         for event in events {
             await trace(event)
         }
     }
 }
 
-// MARK: - Type Erasure
+// MARK: - AnyAgentTracer
 
 /// Type-erased wrapper for `AgentTracer` protocol.
 ///
 /// This allows storing heterogeneous tracers in collections while maintaining
 /// the actor-based interface.
 public actor AnyAgentTracer: AgentTracer {
-    private let _trace: @Sendable (TraceEvent) async -> Void
-    private let _flush: @Sendable () async -> Void
+    // MARK: Public
 
     /// Creates a type-erased tracer.
     ///
     /// - Parameter tracer: The tracer to wrap.
-    public init<T: AgentTracer>(_ tracer: T) {
-        self._trace = { event in
+    public init(_ tracer: some AgentTracer) {
+        _trace = { event in
             await tracer.trace(event)
         }
-        self._flush = {
+        _flush = {
             await tracer.flush()
         }
     }
@@ -366,4 +375,9 @@ public actor AnyAgentTracer: AgentTracer {
     public func flush() async {
         await _flush()
     }
+
+    // MARK: Private
+
+    private let _trace: @Sendable (TraceEvent) async -> Void
+    private let _flush: @Sendable () async -> Void
 }

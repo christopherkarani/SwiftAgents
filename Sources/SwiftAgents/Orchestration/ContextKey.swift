@@ -38,96 +38,96 @@ public struct ContextKey<Value: Sendable>: Hashable, Sendable {
         self.name = name
     }
 
-    // MARK: - Hashable
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(name)
-    }
-
     // MARK: - Equatable
 
     public static func == (lhs: ContextKey<Value>, rhs: ContextKey<Value>) -> Bool {
         lhs.name == rhs.name
     }
+
+    // MARK: - Hashable
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+    }
 }
 
 // MARK: - Standard String Keys
 
-extension ContextKey where Value == String {
+public extension ContextKey where Value == String {
     /// User identifier key.
-    public static let userID = ContextKey("user_id")
+    static let userID = ContextKey("user_id")
 
     /// Session identifier key.
-    public static let sessionID = ContextKey("session_id")
+    static let sessionID = ContextKey("session_id")
 
     /// Correlation ID for tracing.
-    public static let correlationID = ContextKey("correlation_id")
+    static let correlationID = ContextKey("correlation_id")
 
     /// Current language/locale.
-    public static let language = ContextKey("language")
+    static let language = ContextKey("language")
 
     /// API version being used.
-    public static let apiVersion = ContextKey("api_version")
+    static let apiVersion = ContextKey("api_version")
 }
 
 // MARK: - Standard Int Keys
 
-extension ContextKey where Value == Int {
+public extension ContextKey where Value == Int {
     /// Request counter key.
-    public static let requestCount = ContextKey("request_count")
+    static let requestCount = ContextKey("request_count")
 
     /// Retry counter key.
-    public static let retryCount = ContextKey("retry_count")
+    static let retryCount = ContextKey("retry_count")
 
     /// Iteration counter key.
-    public static let iterationCount = ContextKey("iteration_count")
+    static let iterationCount = ContextKey("iteration_count")
 
     /// Current depth in orchestration.
-    public static let depth = ContextKey("depth")
+    static let depth = ContextKey("depth")
 }
 
 // MARK: - Standard Bool Keys
 
-extension ContextKey where Value == Bool {
+public extension ContextKey where Value == Bool {
     /// Whether the user is authenticated.
-    public static let isAuthenticated = ContextKey("is_authenticated")
+    static let isAuthenticated = ContextKey("is_authenticated")
 
     /// Whether debug mode is enabled.
-    public static let isDebugMode = ContextKey("is_debug_mode")
+    static let isDebugMode = ContextKey("is_debug_mode")
 
     /// Whether to enable verbose logging.
-    public static let verboseLogging = ContextKey("verbose_logging")
+    static let verboseLogging = ContextKey("verbose_logging")
 
     /// Whether the request is a dry run.
-    public static let isDryRun = ContextKey("is_dry_run")
+    static let isDryRun = ContextKey("is_dry_run")
 }
 
 // MARK: - Standard Array Keys
 
-extension ContextKey where Value == [String] {
+public extension ContextKey where Value == [String] {
     /// User permissions/roles.
-    public static let permissions = ContextKey("permissions")
+    static let permissions = ContextKey("permissions")
 
     /// Tags associated with the request.
-    public static let tags = ContextKey("tags")
+    static let tags = ContextKey("tags")
 
     /// Feature flags enabled.
-    public static let featureFlags = ContextKey("feature_flags")
+    static let featureFlags = ContextKey("feature_flags")
 }
 
 // MARK: - Standard Date Keys
 
-extension ContextKey where Value == Date {
+public extension ContextKey where Value == Date {
     /// Request timestamp.
-    public static let timestamp = ContextKey("timestamp")
+    static let timestamp = ContextKey("timestamp")
 
     /// Expiration time.
-    public static let expiresAt = ContextKey("expires_at")
+    static let expiresAt = ContextKey("expires_at")
 }
 
 // MARK: - AgentContext Typed Extensions
 
-extension AgentContext {
+public extension AgentContext {
     /// Sets a typed value in the context.
     ///
     /// - Parameters:
@@ -139,7 +139,7 @@ extension AgentContext {
     /// await context.setTyped(.userID, value: "user-123")
     /// await context.setTyped(.isAuthenticated, value: true)
     /// ```
-    public func setTyped<T: Sendable & Encodable>(_ key: ContextKey<T>, value: T) {
+    func setTyped<T: Sendable & Encodable>(_ key: ContextKey<T>, value: T) {
         do {
             let sendableValue = try SendableValue(encoding: value)
             set(key.name, value: sendableValue)
@@ -159,7 +159,7 @@ extension AgentContext {
     /// let userID: String? = await context.getTyped(.userID)
     /// let isAuth: Bool? = await context.getTyped(.isAuthenticated)
     /// ```
-    public func getTyped<T: Sendable & Decodable>(_ key: ContextKey<T>) -> T? {
+    func getTyped<T: Sendable & Decodable>(_ key: ContextKey<T>) -> T? {
         guard let sendableValue = get(key.name) else {
             return nil
         }
@@ -181,7 +181,7 @@ extension AgentContext {
         // Handle arrays
         if T.self == [String].self {
             if let array = sendableValue.arrayValue {
-                let strings = array.compactMap { $0.stringValue }
+                let strings = array.compactMap(\.stringValue)
                 return strings as? T
             }
         }
@@ -212,7 +212,7 @@ extension AgentContext {
     /// ```swift
     /// let count = await context.getTyped(.retryCount, default: 0)
     /// ```
-    public func getTyped<T: Sendable & Decodable>(_ key: ContextKey<T>, default defaultValue: T) -> T {
+    func getTyped<T: Sendable & Decodable>(_ key: ContextKey<T>, default defaultValue: T) -> T {
         getTyped(key) ?? defaultValue
     }
 
@@ -224,7 +224,7 @@ extension AgentContext {
     /// ```swift
     /// await context.removeTyped(.userID)
     /// ```
-    public func removeTyped<T: Sendable>(_ key: ContextKey<T>) {
+    func removeTyped(_ key: ContextKey<some Sendable>) {
         _ = remove(key.name)
     }
 
@@ -239,14 +239,14 @@ extension AgentContext {
     ///     // User ID is set
     /// }
     /// ```
-    public func hasTyped<T: Sendable>(_ key: ContextKey<T>) -> Bool {
+    func hasTyped(_ key: ContextKey<some Sendable>) -> Bool {
         get(key.name) != nil
     }
 }
 
 // MARK: - RouteCondition Typed Extensions
 
-extension RouteCondition {
+public extension RouteCondition {
     /// Creates a condition that checks if a typed context value equals the expected value.
     ///
     /// - Parameters:
@@ -258,12 +258,12 @@ extension RouteCondition {
     /// ```swift
     /// let condition = RouteCondition.contextHasTyped(.isAuthenticated, equalTo: true)
     /// ```
-    public static func contextHasTyped<T: Sendable & Decodable & Equatable>(
+    static func contextHasTyped<T: Sendable & Decodable & Equatable>(
         _ key: ContextKey<T>,
         equalTo value: T
     ) -> RouteCondition {
         RouteCondition { _, context in
-            guard let context = context else { return false }
+            guard let context else { return false }
             let stored: T? = await context.getTyped(key)
             return stored == value
         }
@@ -278,9 +278,9 @@ extension RouteCondition {
     /// ```swift
     /// let condition = RouteCondition.contextHasTyped(.userID)
     /// ```
-    public static func contextHasTyped<T: Sendable>(_ key: ContextKey<T>) -> RouteCondition {
+    static func contextHasTyped(_ key: ContextKey<some Sendable>) -> RouteCondition {
         RouteCondition { _, context in
-            guard let context = context else { return false }
+            guard let context else { return false }
             return await context.hasTyped(key)
         }
     }
@@ -296,12 +296,12 @@ extension RouteCondition {
     /// ```swift
     /// let condition = RouteCondition.contextContains(.userID, substring: "admin")
     /// ```
-    public static func contextContains(
+    static func contextContains(
         _ key: ContextKey<String>,
         substring: String
     ) -> RouteCondition {
         RouteCondition { _, context in
-            guard let context = context else { return false }
+            guard let context else { return false }
             let stored: String? = await context.getTyped(key)
             return stored?.contains(substring) ?? false
         }
@@ -318,12 +318,12 @@ extension RouteCondition {
     /// ```swift
     /// let condition = RouteCondition.contextArrayContains(.permissions, element: "admin")
     /// ```
-    public static func contextArrayContains(
+    static func contextArrayContains(
         _ key: ContextKey<[String]>,
         element: String
     ) -> RouteCondition {
         RouteCondition { _, context in
-            guard let context = context else { return false }
+            guard let context else { return false }
             let stored: [String]? = await context.getTyped(key)
             return stored?.contains(element) ?? false
         }
@@ -340,12 +340,12 @@ extension RouteCondition {
     /// ```swift
     /// let condition = RouteCondition.contextInRange(.retryCount, range: 0...3)
     /// ```
-    public static func contextInRange(
+    static func contextInRange(
         _ key: ContextKey<Int>,
         range: ClosedRange<Int>
     ) -> RouteCondition {
         RouteCondition { _, context in
-            guard let context = context else { return false }
+            guard let context else { return false }
             let stored: Int? = await context.getTyped(key)
             guard let value = stored else { return false }
             return range.contains(value)

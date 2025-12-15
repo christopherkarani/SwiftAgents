@@ -3,15 +3,14 @@
 //
 // Tests for fluent InferenceOptions builder methods.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - InferenceOptions Builder Tests
+// MARK: - InferenceOptionsBuilderTests
 
 @Suite("InferenceOptions Builder Tests")
 struct InferenceOptionsBuilderTests {
-
     // MARK: - Basic Fluent Methods
 
     @Test("Set temperature with fluent method")
@@ -124,7 +123,7 @@ struct InferenceOptionsBuilderTests {
         let options = InferenceOptions.creative
 
         #expect(options.temperature >= 1.0)
-        #expect(options.topP >= 0.9)
+        #expect((options.topP ?? 0) >= 0.9)
     }
 
     @Test("Precise preset")
@@ -261,85 +260,10 @@ struct InferenceOptionsBuilderTests {
     }
 }
 
-// MARK: - InferenceOptions Extensions (to be implemented)
+// MARK: - InferenceOptions Test Extensions
 
 extension InferenceOptions {
-    // Extended properties (to be added to main source)
-    var topP: Double? { nil }
-    var topK: Int? { nil }
-    var presencePenalty: Double? { nil }
-    var frequencyPenalty: Double? { nil }
-
-    // Fluent setters
-    func temperature(_ value: Double) -> InferenceOptions {
-        var copy = self
-        copy.temperature = max(0.0, min(2.0, value))
-        return copy
-    }
-
-    func maxTokens(_ value: Int) -> InferenceOptions {
-        var copy = self
-        copy.maxTokens = value > 0 ? value : nil
-        return copy
-    }
-
-    func stopSequences(_ sequences: String...) -> InferenceOptions {
-        var copy = self
-        copy.stopSequences = sequences
-        return copy
-    }
-
-    func addStopSequence(_ sequence: String) -> InferenceOptions {
-        var copy = self
-        copy.stopSequences.append(sequence)
-        return copy
-    }
-
-    func clearStopSequences() -> InferenceOptions {
-        var copy = self
-        copy.stopSequences = []
-        return copy
-    }
-
-    // Extended fluent methods (require extended properties)
-    func topP(_ value: Double) -> InferenceOptions {
-        // Would set topP property
-        self
-    }
-
-    func topK(_ value: Int) -> InferenceOptions {
-        // Would set topK property
-        self
-    }
-
-    func presencePenalty(_ value: Double) -> InferenceOptions {
-        // Would set presencePenalty property
-        self
-    }
-
-    func frequencyPenalty(_ value: Double) -> InferenceOptions {
-        // Would set frequencyPenalty property
-        self
-    }
-
-    // Presets
-    static var creative: InferenceOptions {
-        InferenceOptions(temperature: 1.2, maxTokens: nil, stopSequences: [])
-    }
-
-    static var precise: InferenceOptions {
-        InferenceOptions(temperature: 0.2, maxTokens: nil, stopSequences: [])
-    }
-
-    static var balanced: InferenceOptions {
-        InferenceOptions(temperature: 0.7, maxTokens: nil, stopSequences: [])
-    }
-
-    static var codeGeneration: InferenceOptions {
-        InferenceOptions(temperature: 0.1, maxTokens: 4000, stopSequences: ["```", "###"])
-    }
-
-    // Copy with modifications
+    /// Copy with modifications helper for tests
     func with(_ modifications: (inout InferenceOptions) -> Void) -> InferenceOptions {
         var copy = self
         modifications(&copy)
@@ -347,17 +271,11 @@ extension InferenceOptions {
     }
 }
 
-// MARK: - InferenceOptionsBuilder Class
+// MARK: - InferenceOptionsBuilder
 
 /// Builder class for constructing InferenceOptions
 class InferenceOptionsBuilder {
-    private var temperature: Double = 1.0
-    private var maxTokens: Int?
-    private var stopSequences: [String] = []
-    private var topP: Double?
-    private var topK: Int?
-    private var presencePenalty: Double?
-    private var frequencyPenalty: Double?
+    // MARK: Internal
 
     func setTemperature(_ value: Double) -> InferenceOptionsBuilder {
         temperature = value
@@ -398,7 +316,21 @@ class InferenceOptionsBuilder {
         InferenceOptions(
             temperature: temperature,
             maxTokens: maxTokens,
-            stopSequences: stopSequences
+            stopSequences: stopSequences,
+            topP: topP,
+            topK: topK,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty
         )
     }
+
+    // MARK: Private
+
+    private var temperature: Double = 1.0
+    private var maxTokens: Int?
+    private var stopSequences: [String] = []
+    private var topP: Double?
+    private var topK: Int?
+    private var presencePenalty: Double?
+    private var frequencyPenalty: Double?
 }

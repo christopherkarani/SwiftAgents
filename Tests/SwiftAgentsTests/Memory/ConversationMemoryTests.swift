@@ -1,17 +1,16 @@
 // ConversationMemoryTests.swift
 // SwiftAgents Framework
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 @Suite("ConversationMemory Tests")
 struct ConversationMemoryTests {
-
     // MARK: - Initialization Tests
 
     @Test("Creates with default configuration")
-    func testDefaultInit() async {
+    func defaultInit() async {
         let memory = ConversationMemory()
 
         #expect(await memory.maxMessages == 100)
@@ -19,14 +18,14 @@ struct ConversationMemoryTests {
     }
 
     @Test("Creates with custom max messages")
-    func testCustomMaxMessages() async {
+    func customMaxMessages() async {
         let memory = ConversationMemory(maxMessages: 50)
 
         #expect(await memory.maxMessages == 50)
     }
 
     @Test("Enforces minimum max messages of 1")
-    func testMinimumMaxMessages() async {
+    func minimumMaxMessages() async {
         let memory = ConversationMemory(maxMessages: 0)
 
         #expect(await memory.maxMessages == 1)
@@ -35,7 +34,7 @@ struct ConversationMemoryTests {
     // MARK: - Add Tests
 
     @Test("Adds single message")
-    func testAddSingleMessage() async {
+    func addSingleMessage() async {
         let memory = ConversationMemory()
         let message = MemoryMessage.user("Hello")
 
@@ -45,7 +44,7 @@ struct ConversationMemoryTests {
     }
 
     @Test("Adds multiple messages")
-    func testAddMultipleMessages() async {
+    func addMultipleMessages() async {
         let memory = ConversationMemory()
 
         await memory.add(.user("Hello"))
@@ -56,7 +55,7 @@ struct ConversationMemoryTests {
     }
 
     @Test("Maintains message order")
-    func testMessageOrder() async {
+    func messageOrder() async {
         let memory = ConversationMemory()
 
         await memory.add(.user("First"))
@@ -73,7 +72,7 @@ struct ConversationMemoryTests {
     // MARK: - FIFO Behavior Tests
 
     @Test("Removes oldest messages when limit exceeded")
-    func testFIFOBehavior() async {
+    func fIFOBehavior() async {
         let memory = ConversationMemory(maxMessages: 3)
 
         await memory.add(.user("1"))
@@ -89,7 +88,7 @@ struct ConversationMemoryTests {
     }
 
     @Test("Never exceeds max messages")
-    func testNeverExceedsMax() async {
+    func neverExceedsMax() async {
         let memory = ConversationMemory(maxMessages: 5)
 
         for i in 1...20 {
@@ -115,7 +114,7 @@ struct ConversationMemoryTests {
     }
 
     @Test("Respects token limit in context")
-    func testContextTokenLimit() async {
+    func contextTokenLimit() async {
         let memory = ConversationMemory()
 
         // Add many messages
@@ -209,7 +208,7 @@ struct ConversationMemoryTests {
     }
 
     @Test("Gets messages by role")
-    func testMessagesByRole() async {
+    func messagesByRole() async {
         let memory = ConversationMemory()
 
         await memory.add(.user("Hello"))
@@ -225,7 +224,7 @@ struct ConversationMemoryTests {
     }
 
     @Test("Gets last and first message")
-    func testLastAndFirstMessage() async {
+    func lastAndFirstMessage() async {
         let memory = ConversationMemory()
 
         await memory.add(.user("First"))

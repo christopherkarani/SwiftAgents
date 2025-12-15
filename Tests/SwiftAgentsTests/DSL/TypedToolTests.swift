@@ -3,15 +3,14 @@
 //
 // Tests for TypedTool generic protocol with type-safe outputs.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - TypedTool Protocol Tests
+// MARK: - TypedToolTests
 
 @Suite("TypedTool Protocol Tests")
 struct TypedToolTests {
-
     // MARK: - Basic TypedTool Usage
 
     @Test("TypedTool returns strongly typed output")
@@ -64,7 +63,7 @@ struct TypedToolTests {
             Issue.record("Expected error for missing location")
         } catch let error as AgentError {
             switch error {
-            case .invalidToolArguments(let toolName, _):
+            case let .invalidToolArguments(toolName, _):
                 #expect(toolName == "weather_typed")
             default:
                 Issue.record("Expected invalidToolArguments error")
@@ -118,7 +117,7 @@ struct TypedToolTests {
             "query": .string("swift programming")
         ])
 
-        #expect(results.count > 0)
+        #expect(!results.isEmpty)
         #expect(results.first?.title.contains("Swift") == true)
     }
 
@@ -131,8 +130,8 @@ struct TypedToolTests {
         ])
 
         #expect(order.id == "ORD-123")
-        #expect(order.items.count > 0)
-        #expect(order.customer.name.isEmpty == false)
+        #expect(!order.items.isEmpty)
+        #expect(!order.customer.name.isEmpty)
     }
 
     // MARK: - TypedTool Output Type Inference
@@ -153,7 +152,7 @@ struct TypedToolTests {
     }
 }
 
-// MARK: - Test Support Types
+// MARK: - WeatherData
 
 /// Weather data returned by WeatherTypedTool
 struct WeatherData: Sendable, Codable, Equatable {
@@ -161,6 +160,8 @@ struct WeatherData: Sendable, Codable, Equatable {
     let condition: String
     let location: String
 }
+
+// MARK: - WeatherTypedTool
 
 /// Mock TypedTool for weather
 struct WeatherTypedTool: TypedTool {
@@ -180,12 +181,16 @@ struct WeatherTypedTool: TypedTool {
     }
 }
 
+// MARK: - UserInfo
+
 /// User info returned by UserInfoTypedTool
 struct UserInfo: Sendable, Codable, Equatable {
     let id: String
     let name: String
     let email: String?
 }
+
+// MARK: - UserInfoTypedTool
 
 /// Mock TypedTool for user info
 struct UserInfoTypedTool: TypedTool {
@@ -205,6 +210,8 @@ struct UserInfoTypedTool: TypedTool {
     }
 }
 
+// MARK: - CalculatorTypedTool
+
 /// Calculator with typed output
 struct CalculatorTypedTool: TypedTool {
     typealias Output = CalculationResult
@@ -223,10 +230,14 @@ struct CalculatorTypedTool: TypedTool {
     }
 }
 
+// MARK: - CalculationResult
+
 struct CalculationResult: Sendable, Codable, Equatable {
     let expression: String
     let result: Double
 }
+
+// MARK: - SearchResultsTypedTool
 
 /// Search results tool
 struct SearchResultsTypedTool: TypedTool {
@@ -238,18 +249,22 @@ struct SearchResultsTypedTool: TypedTool {
         ToolParameter(name: "query", description: "Search query", type: .string)
     ]
 
-    func executeTyped(arguments: [String: SendableValue]) async throws -> [SearchResult] {
-        return [
+    func executeTyped(arguments _: [String: SendableValue]) async throws -> [SearchResult] {
+        [
             SearchResult(title: "Swift Programming Guide", url: "https://example.com/1"),
             SearchResult(title: "Swift Best Practices", url: "https://example.com/2")
         ]
     }
 }
 
+// MARK: - SearchResult
+
 struct SearchResult: Sendable, Codable, Equatable {
     let title: String
     let url: String
 }
+
+// MARK: - OrderTypedTool
 
 /// Order with nested types
 struct OrderTypedTool: TypedTool {
@@ -262,7 +277,7 @@ struct OrderTypedTool: TypedTool {
     ]
 
     func executeTyped(arguments: [String: SendableValue]) async throws -> Order {
-        return Order(
+        Order(
             id: arguments["orderId"]?.stringValue ?? "unknown",
             items: [OrderItem(productId: "P1", quantity: 2, price: 29.99)],
             customer: Customer(name: "John Doe", email: "john@example.com")
@@ -270,17 +285,23 @@ struct OrderTypedTool: TypedTool {
     }
 }
 
+// MARK: - Order
+
 struct Order: Sendable, Codable, Equatable {
     let id: String
     let items: [OrderItem]
     let customer: Customer
 }
 
+// MARK: - OrderItem
+
 struct OrderItem: Sendable, Codable, Equatable {
     let productId: String
     let quantity: Int
     let price: Double
 }
+
+// MARK: - Customer
 
 struct Customer: Sendable, Codable, Equatable {
     let name: String

@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Handoff Request
+// MARK: - HandoffRequest
 
 /// A request to transfer execution from one agent to another.
 ///
@@ -65,7 +65,7 @@ public struct HandoffRequest: Sendable {
     }
 }
 
-// MARK: - Handoff Result
+// MARK: - HandoffResult
 
 /// The result of a completed agent handoff.
 ///
@@ -119,7 +119,7 @@ public struct HandoffResult: Sendable, Equatable {
     }
 }
 
-// MARK: - Handoff Receiver Protocol
+// MARK: - HandoffReceiver
 
 /// A protocol for agents that can receive handoffs from other agents.
 ///
@@ -179,7 +179,7 @@ public protocol HandoffReceiver: Agent {
 
 // MARK: - HandoffReceiver Default Implementation
 
-extension HandoffReceiver {
+public extension HandoffReceiver {
     /// Default implementation of handoff handling.
     ///
     /// This implementation:
@@ -194,7 +194,7 @@ extension HandoffReceiver {
     ///   - context: The shared orchestration context.
     /// - Returns: The agent's execution result.
     /// - Throws: `AgentError` if execution fails.
-    public func handleHandoff(
+    func handleHandoff(
         _ request: HandoffRequest,
         context: AgentContext
     ) async throws -> AgentResult {
@@ -221,7 +221,7 @@ extension HandoffReceiver {
     }
 }
 
-// MARK: - Handoff Coordinator
+// MARK: - HandoffCoordinator
 
 /// Coordinates agent handoffs in a multi-agent system.
 ///
@@ -249,10 +249,14 @@ extension HandoffReceiver {
 /// print(result.result.output)
 /// ```
 public actor HandoffCoordinator {
-    // MARK: - Private Storage
+    // MARK: Public
 
-    /// Registry of agents by name.
-    private var agents: [String: any Agent] = [:]
+    /// Returns the names of all registered agents.
+    ///
+    /// - Returns: Array of agent names in no particular order.
+    public var registeredAgents: [String] {
+        Array(agents.keys)
+    }
 
     // MARK: - Initialization
 
@@ -286,13 +290,6 @@ public actor HandoffCoordinator {
     /// - Returns: The agent, or nil if not found.
     public func agent(named name: String) -> (any Agent)? {
         agents[name]
-    }
-
-    /// Returns the names of all registered agents.
-    ///
-    /// - Returns: Array of agent names in no particular order.
-    public var registeredAgents: [String] {
-        Array(agents.keys)
     }
 
     // MARK: - Handoff Execution
@@ -362,9 +359,16 @@ public actor HandoffCoordinator {
             timestamp: Date()
         )
     }
+
+    // MARK: Private
+
+    // MARK: - Private Storage
+
+    /// Registry of agents by name.
+    private var agents: [String: any Agent] = [:]
 }
 
-// MARK: - CustomStringConvertible
+// MARK: - HandoffRequest + CustomStringConvertible
 
 extension HandoffRequest: CustomStringConvertible {
     public var description: String {
@@ -378,6 +382,8 @@ extension HandoffRequest: CustomStringConvertible {
         """
     }
 }
+
+// MARK: - HandoffResult + CustomStringConvertible
 
 extension HandoffResult: CustomStringConvertible {
     public var description: String {

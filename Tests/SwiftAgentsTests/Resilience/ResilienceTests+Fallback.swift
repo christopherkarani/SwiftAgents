@@ -3,19 +3,18 @@
 //
 // Tests for FallbackChain resilience component using Swift Testing framework.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 // MARK: - FallbackChain Tests
 
 @Suite("FallbackChain Tests")
 struct FallbackChainTests {
-
     // MARK: - Success Tests
 
     @Test("First attempt succeeds without fallback")
-    func testFirstAttemptSucceeds() async throws {
+    func firstAttemptSucceeds() async throws {
         let primaryFlag = TestFlag()
         let fallbackFlag = TestFlag()
 
@@ -36,7 +35,7 @@ struct FallbackChainTests {
     }
 
     @Test("Immediate success with single step")
-    func testImmediateSingleStepSuccess() async throws {
+    func immediateSingleStepSuccess() async throws {
         let chain = FallbackChain<Int>()
             .attempt(name: "Only") {
                 42
@@ -49,7 +48,7 @@ struct FallbackChainTests {
     // MARK: - Fallback Tests
 
     @Test("Fallback to second option on failure")
-    func testFallbackOnFailure() async throws {
+    func fallbackOnFailure() async throws {
         let primaryFlag = TestFlag()
         let secondaryFlag = TestFlag()
 
@@ -70,7 +69,7 @@ struct FallbackChainTests {
     }
 
     @Test("Multiple fallbacks cascade correctly")
-    func testMultipleFallbacksCascade() async throws {
+    func multipleFallbacksCascade() async throws {
         let recorder = TestRecorder<String>()
 
         let result = try await FallbackChain<String>()
@@ -95,7 +94,7 @@ struct FallbackChainTests {
     // MARK: - All Fallbacks Fail Tests
 
     @Test("All fallbacks fail throws ResilienceError.allFallbacksFailed")
-    func testAllFallbacksFail() async throws {
+    func allFallbacksFail() async throws {
         do {
             _ = try await FallbackChain<String>()
                 .attempt(name: "First") {
@@ -108,7 +107,7 @@ struct FallbackChainTests {
 
             Issue.record("Should have thrown allFallbacksFailed")
         } catch let error as ResilienceError {
-            if case .allFallbacksFailed(let errors) = error {
+            if case let .allFallbacksFailed(errors) = error {
                 #expect(errors.count == 2)
                 #expect(errors[0].contains("First"))
                 #expect(errors[1].contains("Second"))
@@ -119,14 +118,14 @@ struct FallbackChainTests {
     }
 
     @Test("Empty chain throws allFallbacksFailed")
-    func testEmptyChainFails() async throws {
+    func emptyChainFails() async throws {
         let chain = FallbackChain<String>()
 
         do {
             _ = try await chain.execute()
             Issue.record("Should have thrown error")
         } catch let error as ResilienceError {
-            if case .allFallbacksFailed(let errors) = error {
+            if case let .allFallbacksFailed(errors) = error {
                 #expect(errors.count == 1)
                 #expect(errors[0].contains("No steps configured"))
             } else {
@@ -138,7 +137,7 @@ struct FallbackChainTests {
     // MARK: - Final Fallback Tests
 
     @Test("Final fallback always succeeds with value")
-    func testFinalFallbackValue() async throws {
+    func finalFallbackValue() async throws {
         let result = try await FallbackChain<String>()
             .attempt(name: "Primary") {
                 throw TestError.network
@@ -153,7 +152,7 @@ struct FallbackChainTests {
     }
 
     @Test("Final fallback always succeeds with operation")
-    func testFinalFallbackOperation() async throws {
+    func finalFallbackOperation() async throws {
         let flag = TestFlag()
 
         let result = try await FallbackChain<Int>()
@@ -173,7 +172,7 @@ struct FallbackChainTests {
     // MARK: - executeWithResult Tests
 
     @Test("executeWithResult returns diagnostic info")
-    func testExecuteWithResultDiagnostics() async throws {
+    func executeWithResultDiagnostics() async throws {
         let result = try await FallbackChain<String>()
             .attempt(name: "Primary") {
                 throw TestError.network
@@ -194,7 +193,7 @@ struct FallbackChainTests {
     }
 
     @Test("executeWithResult captures error details")
-    func testExecuteWithResultErrorDetails() async throws {
+    func executeWithResultErrorDetails() async throws {
         let result = try await FallbackChain<String>()
             .attempt(name: "First") {
                 throw TestError.network
@@ -210,7 +209,7 @@ struct FallbackChainTests {
     }
 
     @Test("executeWithResult with immediate success has no errors")
-    func testExecuteWithResultNoErrors() async throws {
+    func executeWithResultNoErrors() async throws {
         let result = try await FallbackChain<String>()
             .attempt(name: "Only") {
                 "success"
@@ -224,8 +223,8 @@ struct FallbackChainTests {
     // MARK: - Conditional Fallback Tests
 
     @Test("Conditional fallback with attemptIf")
-    func testConditionalFallbackTrue() async throws {
-        let shouldUseSecondary = true  // Use let for constants
+    func conditionalFallbackTrue() async throws {
+        let shouldUseSecondary = true // Use let for constants
 
         let result = try await FallbackChain<String>()
             .attempt(name: "Primary") {
@@ -242,8 +241,8 @@ struct FallbackChainTests {
     }
 
     @Test("Conditional fallback skipped when condition false")
-    func testConditionalFallbackFalse() async throws {
-        let shouldSkip = false  // Use let for constants
+    func conditionalFallbackFalse() async throws {
+        let shouldSkip = false // Use let for constants
 
         let result = try await FallbackChain<String>()
             .attempt(name: "Primary") {
@@ -266,7 +265,7 @@ struct FallbackChainTests {
     // MARK: - onFailure Callback Tests
 
     @Test("onFailure callback invoked for each failure")
-    func testOnFailureCallback() async throws {
+    func onFailureCallback() async throws {
         let recorder = TestRecorder<String>()
 
         _ = try await FallbackChain<String>()
@@ -288,7 +287,7 @@ struct FallbackChainTests {
     }
 
     @Test("onFailure not called on success")
-    func testOnFailureNotCalledOnSuccess() async throws {
+    func onFailureNotCalledOnSuccess() async throws {
         let flag = TestFlag()
 
         _ = try await FallbackChain<String>()
@@ -306,7 +305,7 @@ struct FallbackChainTests {
     // MARK: - Static Convenience Tests
 
     @Test("Static from constructor creates chain")
-    func testStaticFromConstructor() async throws {
+    func staticFromConstructor() async throws {
         let result = try await FallbackChain.from(
             (name: "First", operation: {
                 throw TestError.network

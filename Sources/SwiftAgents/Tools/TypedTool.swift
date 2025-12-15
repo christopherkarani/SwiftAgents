@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - TypedTool Protocol
+// MARK: - TypedTool
 
 /// A tool with a strongly-typed output.
 ///
@@ -46,12 +46,12 @@ public protocol TypedTool<Output>: Tool {
 
 // MARK: - TypedTool Default Implementation
 
-extension TypedTool {
+public extension TypedTool {
     /// Default implementation that bridges `executeTyped` to `execute`.
     ///
     /// This allows `TypedTool` to be used anywhere a `Tool` is expected,
     /// automatically converting the typed output to `SendableValue`.
-    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         let result = try await executeTyped(arguments: arguments)
         return try SendableValue(encoding: result)
     }
@@ -59,7 +59,7 @@ extension TypedTool {
 
 // MARK: - TypedTool Registry Extensions
 
-extension ToolRegistry {
+public extension ToolRegistry {
     /// Executes a typed tool and returns its strongly-typed output.
     ///
     /// - Parameters:
@@ -68,12 +68,12 @@ extension ToolRegistry {
     /// - Returns: The typed result of the tool execution.
     /// - Throws: `AgentError.toolNotFound` if the tool doesn't exist,
     ///           or `AgentError.toolExecutionFailed` if execution fails.
-    public func executeTyped<T: TypedTool>(
-        _ toolType: T.Type,
+    func executeTyped<T: TypedTool>(
+        _: T.Type,
         toolNamed name: String,
         arguments: [String: SendableValue]
     ) async throws -> T.Output {
-        guard let tool = await self.tool(named: name) as? T else {
+        guard let tool = tool(named: name) as? T else {
             throw AgentError.toolNotFound(name: name)
         }
         return try await tool.executeTyped(arguments: arguments)

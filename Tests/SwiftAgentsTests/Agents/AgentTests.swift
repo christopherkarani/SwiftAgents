@@ -3,15 +3,14 @@
 //
 // Tests for agent implementations.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - ReActAgent Tests
+// MARK: - ReActAgentTests
 
 @Suite("ReActAgent Tests")
 struct ReActAgentTests {
-
     @Test("Simple query returns final answer")
     func simpleQuery() async throws {
         // Create a mock provider that immediately returns a final answer
@@ -90,7 +89,7 @@ struct ReActAgentTests {
             Issue.record("Expected maxIterationsExceeded error but succeeded")
         } catch let error as AgentError {
             switch error {
-            case .maxIterationsExceeded(let iterations):
+            case let .maxIterationsExceeded(iterations):
                 #expect(iterations == 1)
             default:
                 Issue.record("Expected maxIterationsExceeded but got: \(error)")
@@ -101,23 +100,24 @@ struct ReActAgentTests {
     }
 }
 
-// MARK: - Built-in Tools Tests
+// MARK: - BuiltInToolsTests
 
 @Suite("Built-in Tools Tests")
 struct BuiltInToolsTests {
+    #if canImport(Darwin)
+        @Test("Calculator tool")
+        func calculatorTool() async throws {
+            let calculator = CalculatorTool()
 
-    @Test("Calculator tool")
-    func calculatorTool() async throws {
-        let calculator = CalculatorTool()
+            // Test basic arithmetic with operator precedence
+            let result = try await calculator.execute(arguments: [
+                "expression": .string("2+3*4")
+            ])
 
-        // Test basic arithmetic with operator precedence
-        let result = try await calculator.execute(arguments: [
-            "expression": .string("2+3*4")
-        ])
-
-        // Verify result (3*4=12, 12+2=14)
-        #expect(result == .double(14.0))
-    }
+            // Verify result (3*4=12, 12+2=14)
+            #expect(result == .double(14.0))
+        }
+    #endif
 
     @Test("DateTime tool")
     func dateTimeTool() async throws {
@@ -130,7 +130,7 @@ struct BuiltInToolsTests {
 
         // Verify we get a double (unix timestamp)
         switch result {
-        case .double(let timestamp):
+        case let .double(timestamp):
             // Verify it's a reasonable timestamp (not zero, not too far in the past/future)
             #expect(timestamp > 0)
             #expect(timestamp < Date.distantFuture.timeIntervalSince1970)
@@ -154,11 +154,10 @@ struct BuiltInToolsTests {
     }
 }
 
-// MARK: - Tool Registry Tests
+// MARK: - ToolRegistryTests
 
 @Suite("Tool Registry Tests")
 struct ToolRegistryTests {
-
     @Test("Register and lookup tools")
     func registerAndLookup() async {
         // Create an empty registry

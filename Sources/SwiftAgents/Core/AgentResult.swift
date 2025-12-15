@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Agent Result
+// MARK: - AgentResult
 
 /// The result of an agent execution.
 ///
@@ -70,7 +70,7 @@ public struct AgentResult: Sendable, Equatable {
     }
 }
 
-// MARK: - Token Usage
+// MARK: - TokenUsage
 
 /// Token usage statistics for a generation.
 ///
@@ -98,9 +98,9 @@ public struct TokenUsage: Sendable, Equatable, Codable {
     }
 }
 
-// MARK: - Result Builder
+// MARK: - AgentResult.Builder
 
-extension AgentResult {
+public extension AgentResult {
     /// Builder for constructing AgentResult incrementally during execution.
     ///
     /// Use this builder to accumulate results as an agent runs, then
@@ -114,15 +114,8 @@ extension AgentResult {
     /// _ = builder.setOutput("Final answer")
     /// let result = builder.build()
     /// ```
-    public final class Builder: @unchecked Sendable {
-        private var output: String = ""
-        private var toolCalls: [ToolCall] = []
-        private var toolResults: [ToolResult] = []
-        private var iterationCount: Int = 0
-        private var startTime: ContinuousClock.Instant?
-        private var tokenUsage: TokenUsage?
-        private var metadata: [String: SendableValue] = [:]
-        private let lock = NSLock()
+    final class Builder: @unchecked Sendable {
+        // MARK: Public
 
         /// Creates a new result builder.
         public init() {}
@@ -235,11 +228,10 @@ extension AgentResult {
             lock.lock()
             defer { lock.unlock() }
 
-            let duration: Duration
-            if let start = startTime {
-                duration = ContinuousClock.now - start
+            let duration: Duration = if let start = startTime {
+                ContinuousClock.now - start
             } else {
-                duration = .zero
+                .zero
             }
 
             return AgentResult(
@@ -252,10 +244,21 @@ extension AgentResult {
                 metadata: metadata
             )
         }
+
+        // MARK: Private
+
+        private var output: String = ""
+        private var toolCalls: [ToolCall] = []
+        private var toolResults: [ToolResult] = []
+        private var iterationCount: Int = 0
+        private var startTime: ContinuousClock.Instant?
+        private var tokenUsage: TokenUsage?
+        private var metadata: [String: SendableValue] = [:]
+        private let lock = NSLock()
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: - AgentResult + CustomStringConvertible
 
 extension AgentResult: CustomStringConvertible {
     public var description: String {
@@ -269,6 +272,8 @@ extension AgentResult: CustomStringConvertible {
         """
     }
 }
+
+// MARK: - TokenUsage + CustomStringConvertible
 
 extension TokenUsage: CustomStringConvertible {
     public var description: String {

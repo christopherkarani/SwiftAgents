@@ -10,10 +10,10 @@
 // - TracerTests+EdgeCases.swift
 
 import Foundation
-import Testing
 @testable import SwiftAgents
+import Testing
 
-// MARK: - Test Spy Tracer
+// MARK: - SpyTracer
 
 /// Spy tracer that records all traced events for verification.
 /// This is shared across all test files via internal access.
@@ -49,11 +49,10 @@ actor SpyTracer: AgentTracer {
     }
 }
 
-// MARK: - CompositeTracer Tests
+// MARK: - CompositeTracerTests
 
 @Suite("CompositeTracer Tests")
 struct CompositeTracerTests {
-
     @Test("CompositeTracer initializes with multiple tracers")
     func initializesWithMultipleTracers() async {
         // Given
@@ -115,7 +114,7 @@ struct CompositeTracerTests {
         let spy = SpyTracer()
         let composite = CompositeTracer(
             tracers: [spy],
-            minimumLevel: .warning  // Only warning and above
+            minimumLevel: .warning // Only warning and above
         )
 
         let traceId = UUID()
@@ -195,7 +194,7 @@ struct CompositeTracerTests {
         let spy2 = SpyTracer()
         let composite = CompositeTracer(
             tracers: [spy1, spy2],
-            parallel: false  // Sequential
+            parallel: false // Sequential
         )
 
         let traceId = UUID()
@@ -246,7 +245,7 @@ struct CompositeTracerTests {
         let spy2 = SpyTracer()
         let composite = CompositeTracer(
             tracers: [spy1, spy2],
-            parallel: false  // Sequential
+            parallel: false // Sequential
         )
 
         // When

@@ -19,22 +19,22 @@ public enum ResilienceError: Error, Sendable, Equatable {
     case allFallbacksFailed(errors: [String])
 }
 
-// MARK: - LocalizedError Conformance
+// MARK: LocalizedError
 
 extension ResilienceError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case .retriesExhausted(let attempts, let lastError):
-            return "Retries exhausted after \(attempts) attempts. Last error: \(lastError)"
-        case .circuitBreakerOpen(let serviceName):
-            return "Circuit breaker is open for service: \(serviceName)"
-        case .allFallbacksFailed(let errors):
-            return "All fallback strategies failed. Errors: \(errors.joined(separator: "; "))"
+        case let .retriesExhausted(attempts, lastError):
+            "Retries exhausted after \(attempts) attempts. Last error: \(lastError)"
+        case let .circuitBreakerOpen(serviceName):
+            "Circuit breaker is open for service: \(serviceName)"
+        case let .allFallbacksFailed(errors):
+            "All fallback strategies failed. Errors: \(errors.joined(separator: "; "))"
         }
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension ResilienceError: CustomDebugStringConvertible {
     public var debugDescription: String {
@@ -46,6 +46,46 @@ extension ResilienceError: CustomDebugStringConvertible {
 
 /// Strategies for calculating retry delays.
 public enum BackoffStrategy: Sendable {
+    // MARK: Public
+
+    /// Calculate the delay for a given retry attempt.
+    /// - Parameter attempt: The attempt number (1-indexed).
+    /// - Returns: The delay in seconds before the next retry.
+    public func delay(forAttempt attempt: Int) -> TimeInterval {
+        switch self {
+        case let .fixed(delay):
+            return delay
+
+        case let .linear(initial, increment, maxDelay):
+            let delay = initial + (increment * Double(attempt - 1))
+            return min(delay, maxDelay)
+
+        case let .exponential(base, multiplier, maxDelay):
+            let delay = base * pow(multiplier, Double(attempt - 1))
+            return min(delay, maxDelay)
+
+        case let .exponentialWithJitter(base, multiplier, maxDelay):
+            let exponentialDelay = base * pow(multiplier, Double(attempt - 1))
+            let cappedDelay = min(exponentialDelay, maxDelay)
+            // Add random jitter between 0 and the calculated delay
+            let jitter = Double.random(in: 0...cappedDelay)
+            return jitter
+
+        case let .decorrelatedJitter(base, maxDelay):
+            // Decorrelated jitter: sleep = min(cap, random_between(base, sleep * 3))
+            // For the first attempt, use base as the previous sleep
+            let previousSleep = attempt == 1 ? base : base * pow(3.0, Double(attempt - 2))
+            let delay = Double.random(in: base...(previousSleep * 3.0))
+            return min(delay, maxDelay)
+
+        case .immediate:
+            return 0
+
+        case let .custom(calculator):
+            return calculator(attempt)
+        }
+    }
+
     /// Fixed delay between retries.
     case fixed(delay: TimeInterval)
 
@@ -66,68 +106,30 @@ public enum BackoffStrategy: Sendable {
 
     /// Custom delay calculation.
     case custom(@Sendable (Int) -> TimeInterval)
-
-    /// Calculate the delay for a given retry attempt.
-    /// - Parameter attempt: The attempt number (1-indexed).
-    /// - Returns: The delay in seconds before the next retry.
-    public func delay(forAttempt attempt: Int) -> TimeInterval {
-        switch self {
-        case .fixed(let delay):
-            return delay
-
-        case .linear(let initial, let increment, let maxDelay):
-            let delay = initial + (increment * Double(attempt - 1))
-            return min(delay, maxDelay)
-
-        case .exponential(let base, let multiplier, let maxDelay):
-            let delay = base * pow(multiplier, Double(attempt - 1))
-            return min(delay, maxDelay)
-
-        case .exponentialWithJitter(let base, let multiplier, let maxDelay):
-            let exponentialDelay = base * pow(multiplier, Double(attempt - 1))
-            let cappedDelay = min(exponentialDelay, maxDelay)
-            // Add random jitter between 0 and the calculated delay
-            let jitter = Double.random(in: 0...cappedDelay)
-            return jitter
-
-        case .decorrelatedJitter(let base, let maxDelay):
-            // Decorrelated jitter: sleep = min(cap, random_between(base, sleep * 3))
-            // For the first attempt, use base as the previous sleep
-            let previousSleep = attempt == 1 ? base : base * pow(3.0, Double(attempt - 2))
-            let delay = Double.random(in: base...(previousSleep * 3.0))
-            return min(delay, maxDelay)
-
-        case .immediate:
-            return 0
-
-        case .custom(let calculator):
-            return calculator(attempt)
-        }
-    }
 }
 
-// MARK: - Equatable Conformance for BackoffStrategy
+// MARK: Equatable
 
 extension BackoffStrategy: Equatable {
     public static func == (lhs: BackoffStrategy, rhs: BackoffStrategy) -> Bool {
         switch (lhs, rhs) {
-        case (.fixed(let lDelay), .fixed(let rDelay)):
-            return lDelay == rDelay
-        case (.linear(let lInitial, let lIncrement, let lMax), .linear(let rInitial, let rIncrement, let rMax)):
-            return lInitial == rInitial && lIncrement == rIncrement && lMax == rMax
-        case (.exponential(let lBase, let lMult, let lMax), .exponential(let rBase, let rMult, let rMax)):
-            return lBase == rBase && lMult == rMult && lMax == rMax
-        case (.exponentialWithJitter(let lBase, let lMult, let lMax), .exponentialWithJitter(let rBase, let rMult, let rMax)):
-            return lBase == rBase && lMult == rMult && lMax == rMax
-        case (.decorrelatedJitter(let lBase, let lMax), .decorrelatedJitter(let rBase, let rMax)):
-            return lBase == rBase && lMax == rMax
+        case let (.fixed(lDelay), .fixed(rDelay)):
+            lDelay == rDelay
+        case let (.linear(lInitial, lIncrement, lMax), .linear(rInitial, rIncrement, rMax)):
+            lInitial == rInitial && lIncrement == rIncrement && lMax == rMax
+        case let (.exponential(lBase, lMult, lMax), .exponential(rBase, rMult, rMax)):
+            lBase == rBase && lMult == rMult && lMax == rMax
+        case let (.exponentialWithJitter(lBase, lMult, lMax), .exponentialWithJitter(rBase, rMult, rMax)):
+            lBase == rBase && lMult == rMult && lMax == rMax
+        case let (.decorrelatedJitter(lBase, lMax), .decorrelatedJitter(rBase, rMax)):
+            lBase == rBase && lMax == rMax
         case (.immediate, .immediate):
-            return true
+            true
         case (.custom, .custom):
             // Cannot compare closures, return false
-            return false
+            false
         default:
-            return false
+            false
         }
     }
 }
@@ -136,6 +138,23 @@ extension BackoffStrategy: Equatable {
 
 /// Configurable retry policy with backoff strategies.
 public struct RetryPolicy: Sendable {
+    // MARK: - Static Conveniences
+
+    /// No retry policy - fails immediately on first error.
+    public static let noRetry = RetryPolicy(maxAttempts: 0)
+
+    /// Standard retry policy with exponential backoff (3 retries, max 60s delay).
+    public static let standard = RetryPolicy(
+        maxAttempts: 3,
+        backoff: .exponential(base: 1.0, multiplier: 2.0, maxDelay: 60.0)
+    )
+
+    /// Aggressive retry policy with more attempts and jitter (5 retries, max 30s delay).
+    public static let aggressive = RetryPolicy(
+        maxAttempts: 5,
+        backoff: .exponentialWithJitter(base: 0.5, multiplier: 2.0, maxDelay: 30.0)
+    )
+
     /// Maximum number of retry attempts (excluding the initial attempt).
     public let maxAttempts: Int
 
@@ -173,7 +192,8 @@ public struct RetryPolicy: Sendable {
     /// Executes an operation with retry logic.
     /// - Parameter operation: The async operation to execute.
     /// - Returns: The result of the operation.
-    /// - Throws: `ResilienceError.retriesExhausted` if all attempts fail, or the original error if retries are disabled.
+    /// - Throws: `ResilienceError.retriesExhausted` if all attempts fail, or the original error if retries are
+    /// disabled.
     public func execute<T: Sendable>(
         _ operation: @Sendable () async throws -> T
     ) async throws -> T {
@@ -213,26 +233,9 @@ public struct RetryPolicy: Sendable {
             lastError: lastError?.localizedDescription ?? "Unknown error"
         )
     }
-
-    // MARK: - Static Conveniences
-
-    /// No retry policy - fails immediately on first error.
-    public static let noRetry = RetryPolicy(maxAttempts: 0)
-
-    /// Standard retry policy with exponential backoff (3 retries, max 60s delay).
-    public static let standard = RetryPolicy(
-        maxAttempts: 3,
-        backoff: .exponential(base: 1.0, multiplier: 2.0, maxDelay: 60.0)
-    )
-
-    /// Aggressive retry policy with more attempts and jitter (5 retries, max 30s delay).
-    public static let aggressive = RetryPolicy(
-        maxAttempts: 5,
-        backoff: .exponentialWithJitter(base: 0.5, multiplier: 2.0, maxDelay: 30.0)
-    )
 }
 
-// MARK: - Equatable Conformance
+// MARK: Equatable
 
 extension RetryPolicy: Equatable {
     public static func == (lhs: RetryPolicy, rhs: RetryPolicy) -> Bool {

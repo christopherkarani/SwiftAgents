@@ -3,15 +3,14 @@
 //
 // Tests for AgentBuilder DSL for declarative agent construction.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 // MARK: - AgentBuilder Tests
 
 @Suite("AgentBuilder DSL Tests")
 struct AgentBuilderTests {
-
     // MARK: - Basic Agent Building
 
     @Test("Build agent with instructions")
@@ -48,7 +47,7 @@ struct AgentBuilderTests {
         }
 
         #expect(agent.tools.count == 3)
-        #expect(agent.tools.map { $0.name } == ["calculator", "weather", "search"])
+        #expect(agent.tools.map(\.name) == ["calculator", "weather", "search"])
     }
 
     @Test("Build agent with memory")
@@ -144,19 +143,21 @@ struct AgentBuilderTests {
 
     // MARK: - Tools Array Building
 
-    @Test("Tools block builds array of tools")
-    func toolsBlockBuildsArray() async throws {
-        let agent = ReActAgent {
-            Instructions("Multi-tool agent.")
-            Tools {
-                CalculatorTool()
-                DateTimeTool()
-                StringTool()
+    #if canImport(Darwin)
+        @Test("Tools block builds array of tools")
+        func toolsBlockBuildsArray() async throws {
+            let agent = ReActAgent {
+                Instructions("Multi-tool agent.")
+                Tools {
+                    CalculatorTool()
+                    DateTimeTool()
+                    StringTool()
+                }
             }
-        }
 
-        #expect(agent.tools.count == 3)
-    }
+            #expect(agent.tools.count == 3)
+        }
+    #endif
 
     @Test("Tools block with loop")
     func toolsBlockWithLoop() async throws {
@@ -172,7 +173,7 @@ struct AgentBuilderTests {
         }
 
         #expect(agent.tools.count == 3)
-        #expect(agent.tools.map { $0.name } == ["a", "b", "c"])
+        #expect(agent.tools.map(\.name) == ["a", "b", "c"])
     }
 
     // MARK: - Memory Configuration
@@ -182,8 +183,10 @@ struct AgentBuilderTests {
         let agent = ReActAgent {
             Instructions("Hybrid memory agent.")
             Memory(HybridMemory(
-                conversationMemory: ConversationMemory(maxMessages: 50),
-                summaryMemory: SummaryMemory(maxTokens: 2000)
+                configuration: .init(
+                    shortTermMaxMessages: 50,
+                    longTermSummaryTokens: 2000
+                )
             ))
         }
 
@@ -275,80 +278,5 @@ struct AgentBuilderTests {
     }
 }
 
-// MARK: - Component Types for Builder
-
-/// Instructions component for AgentBuilder
-struct Instructions: AgentComponent {
-    let text: String
-
-    init(_ text: String) {
-        self.text = text
-    }
-}
-
-/// Tools container component for AgentBuilder
-struct Tools: AgentComponent {
-    let tools: [any Tool]
-
-    init(@ToolArrayBuilder _ content: () -> [any Tool]) {
-        self.tools = content()
-    }
-}
-
-/// Memory component for AgentBuilder
-struct Memory: AgentComponent {
-    let memory: any AgentMemory
-
-    init(_ memory: any AgentMemory) {
-        self.memory = memory
-    }
-}
-
-/// Configuration component for AgentBuilder
-struct Configuration: AgentComponent {
-    let configuration: AgentConfiguration
-
-    init(_ configuration: AgentConfiguration) {
-        self.configuration = configuration
-    }
-}
-
-/// Inference provider component for AgentBuilder
-struct InferenceProviderComponent: AgentComponent {
-    let provider: any InferenceProvider
-
-    init(_ provider: any InferenceProvider) {
-        self.provider = provider
-    }
-}
-
-// MARK: - Protocols
-
-/// Marker protocol for agent builder components
-protocol AgentComponent {}
-
-// MARK: - Result Builders (to be implemented)
-
-/// Result builder for tool arrays
-@resultBuilder
-struct ToolArrayBuilder {
-    static func buildBlock(_ tools: any Tool...) -> [any Tool] {
-        tools
-    }
-
-    static func buildOptional(_ tool: (any Tool)?) -> [any Tool] {
-        tool.map { [$0] } ?? []
-    }
-
-    static func buildEither(first tool: any Tool) -> [any Tool] {
-        [tool]
-    }
-
-    static func buildEither(second tool: any Tool) -> [any Tool] {
-        [tool]
-    }
-
-    static func buildArray(_ arrays: [[any Tool]]) -> [any Tool] {
-        arrays.flatMap { $0 }
-    }
-}
+// NOTE: AgentComponent, Instructions, Tools, Memory, Configuration, InferenceProviderComponent,
+// and ToolArrayBuilder are now public types exported from SwiftAgents.

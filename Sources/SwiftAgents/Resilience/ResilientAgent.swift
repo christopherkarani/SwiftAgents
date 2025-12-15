@@ -23,30 +23,16 @@ import Foundation
 /// let result = try await resilientAgent.run("process request")
 /// ```
 public actor ResilientAgent: Agent {
+    // MARK: Public
+
     // MARK: - Agent Protocol (nonisolated)
 
-    public nonisolated let tools: [any Tool]
-    public nonisolated let instructions: String
-    public nonisolated let configuration: AgentConfiguration
-    public nonisolated var memory: (any AgentMemory)? { baseMemory }
-    public nonisolated var inferenceProvider: (any InferenceProvider)? { baseInferenceProvider }
+    nonisolated public let tools: [any Tool]
+    nonisolated public let instructions: String
+    nonisolated public let configuration: AgentConfiguration
 
-    // MARK: - Stored Properties (nonisolated)
-
-    private nonisolated let baseMemory: (any AgentMemory)?
-    private nonisolated let baseInferenceProvider: (any InferenceProvider)?
-
-    // MARK: - Resilience Configuration
-
-    private nonisolated let base: any Agent
-    private nonisolated let retryPolicy: RetryPolicy?
-    private nonisolated let circuitBreaker: CircuitBreaker?
-    private nonisolated let fallbackAgent: (any Agent)?
-    private nonisolated let timeoutDuration: Duration?
-
-    // MARK: - Private State
-
-    private var isCancelled = false
+    nonisolated public var memory: (any AgentMemory)? { baseMemory }
+    nonisolated public var inferenceProvider: (any InferenceProvider)? { baseInferenceProvider }
 
     // MARK: - Initialization
 
@@ -66,41 +52,15 @@ public actor ResilientAgent: Agent {
         timeout: Duration? = nil
     ) {
         self.base = base
-        self.tools = base.tools
-        self.instructions = base.instructions
-        self.configuration = base.configuration
-        self.baseMemory = base.memory
-        self.baseInferenceProvider = base.inferenceProvider
+        tools = base.tools
+        instructions = base.instructions
+        configuration = base.configuration
+        baseMemory = base.memory
+        baseInferenceProvider = base.inferenceProvider
         self.retryPolicy = retryPolicy
         self.circuitBreaker = circuitBreaker
         self.fallbackAgent = fallbackAgent
-        self.timeoutDuration = timeout
-    }
-
-    // MARK: - Internal Initialization for Chaining
-
-    /// Internal initializer for chaining resilience patterns.
-    nonisolated init(
-        wrapping resilient: ResilientAgent,
-        retryPolicy: RetryPolicy? = nil,
-        circuitBreaker: CircuitBreaker? = nil,
-        fallbackAgent: (any Agent)? = nil,
-        timeout: Duration? = nil
-    ) {
-        // Get base values synchronously from nonisolated properties
-        let baseAgent = resilient.base
-        self.base = baseAgent
-        self.tools = resilient.tools
-        self.instructions = resilient.instructions
-        self.configuration = resilient.configuration
-        self.baseMemory = resilient.baseMemory
-        self.baseInferenceProvider = resilient.baseInferenceProvider
-
-        // Merge resilience configurations
-        self.retryPolicy = retryPolicy ?? resilient.retryPolicy
-        self.circuitBreaker = circuitBreaker ?? resilient.circuitBreaker
-        self.fallbackAgent = fallbackAgent ?? resilient.fallbackAgent
-        self.timeoutDuration = timeout ?? resilient.timeoutDuration
+        timeoutDuration = timeout
     }
 
     // MARK: - Fluent Configuration
@@ -109,7 +69,7 @@ public actor ResilientAgent: Agent {
     ///
     /// - Parameter policy: The retry policy to apply.
     /// - Returns: A new resilient agent with retry enabled.
-    public nonisolated func withRetry(_ policy: RetryPolicy) -> ResilientAgent {
+    nonisolated public func withRetry(_ policy: RetryPolicy) -> ResilientAgent {
         ResilientAgent(
             base: base,
             retryPolicy: policy,
@@ -125,9 +85,9 @@ public actor ResilientAgent: Agent {
     ///   - threshold: Number of failures before opening the circuit.
     ///   - resetTimeout: Time to wait before attempting recovery.
     /// - Returns: A new resilient agent with circuit breaker enabled.
-    public nonisolated func withCircuitBreaker(threshold: Int, resetTimeout: Duration) -> ResilientAgent {
+    nonisolated public func withCircuitBreaker(threshold: Int, resetTimeout: Duration) -> ResilientAgent {
         let breaker = CircuitBreaker(
-            name: "agent-\(ObjectIdentifier(base))",
+            name: "agent-\(UUID().uuidString)",
             failureThreshold: threshold,
             resetTimeout: resetTimeout.timeInterval
         )
@@ -144,7 +104,7 @@ public actor ResilientAgent: Agent {
     ///
     /// - Parameter fallback: The agent to use when the primary fails.
     /// - Returns: A new resilient agent with fallback enabled.
-    public nonisolated func withFallback(_ fallback: any Agent) -> ResilientAgent {
+    nonisolated public func withFallback(_ fallback: any Agent) -> ResilientAgent {
         ResilientAgent(
             base: base,
             retryPolicy: retryPolicy,
@@ -158,7 +118,7 @@ public actor ResilientAgent: Agent {
     ///
     /// - Parameter duration: Maximum execution time.
     /// - Returns: A new resilient agent with timeout enabled.
-    public nonisolated func withTimeout(_ duration: Duration) -> ResilientAgent {
+    nonisolated public func withTimeout(_ duration: Duration) -> ResilientAgent {
         ResilientAgent(
             base: base,
             retryPolicy: retryPolicy,
@@ -179,11 +139,10 @@ public actor ResilientAgent: Agent {
 
         do {
             // Apply timeout if configured
-            let result: AgentResult
-            if let timeout = timeoutDuration {
-                result = try await executeWithTimeout(input, timeout: timeout)
+            let result: AgentResult = if let timeout = timeoutDuration {
+                try await executeWithTimeout(input, timeout: timeout)
             } else {
-                result = try await executeWithResilience(input)
+                try await executeWithResilience(input)
             }
 
             // Add resilience metadata
@@ -205,24 +164,28 @@ public actor ResilientAgent: Agent {
         }
     }
 
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    continuation.yield(.started(input: input))
-                    let result = try await self.run(input)
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch {
-                    if let agentError = error as? AgentError {
-                        continuation.yield(.failed(error: agentError))
-                    } else {
-                        continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
-                    }
-                    continuation.finish()
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                continuation.yield(.started(input: input))
+                let result = try await run(input)
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                if let agentError = error as? AgentError {
+                    continuation.yield(.failed(error: agentError))
+                } else {
+                    continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
                 }
+                continuation.finish()
             }
         }
+        return stream
     }
 
     public func cancel() async {
@@ -232,6 +195,53 @@ public actor ResilientAgent: Agent {
             await fallback.cancel()
         }
     }
+
+    // MARK: Internal
+
+    // MARK: - Internal Initialization for Chaining
+
+    /// Internal initializer for chaining resilience patterns.
+    init(
+        wrapping resilient: ResilientAgent,
+        retryPolicy: RetryPolicy? = nil,
+        circuitBreaker: CircuitBreaker? = nil,
+        fallbackAgent: (any Agent)? = nil,
+        timeout: Duration? = nil
+    ) {
+        // Get base values synchronously from nonisolated properties
+        let baseAgent = resilient.base
+        base = baseAgent
+        tools = resilient.tools
+        instructions = resilient.instructions
+        configuration = resilient.configuration
+        baseMemory = resilient.baseMemory
+        baseInferenceProvider = resilient.baseInferenceProvider
+
+        // Merge resilience configurations
+        self.retryPolicy = retryPolicy ?? resilient.retryPolicy
+        self.circuitBreaker = circuitBreaker ?? resilient.circuitBreaker
+        self.fallbackAgent = fallbackAgent ?? resilient.fallbackAgent
+        timeoutDuration = timeout ?? resilient.timeoutDuration
+    }
+
+    // MARK: Private
+
+    // MARK: - Stored Properties (nonisolated)
+
+    nonisolated private let baseMemory: (any AgentMemory)?
+    nonisolated private let baseInferenceProvider: (any InferenceProvider)?
+
+    // MARK: - Resilience Configuration
+
+    nonisolated private let base: any Agent
+    nonisolated private let retryPolicy: RetryPolicy?
+    nonisolated private let circuitBreaker: CircuitBreaker?
+    nonisolated private let fallbackAgent: (any Agent)?
+    nonisolated private let timeoutDuration: Duration?
+
+    // MARK: - Private State
+
+    private var isCancelled = false
 
     // MARK: - Private Methods
 
@@ -260,29 +270,29 @@ public actor ResilientAgent: Agent {
     private func executeWithResilience(_ input: String) async throws -> AgentResult {
         // Wrap execution in circuit breaker if configured
         if let breaker = circuitBreaker {
-            return try await breaker.execute {
+            try await breaker.execute {
                 try await self.executeWithRetry(input)
             }
         } else {
-            return try await executeWithRetry(input)
+            try await executeWithRetry(input)
         }
     }
 
     /// Executes the agent with retry protection.
     private func executeWithRetry(_ input: String) async throws -> AgentResult {
         if let policy = retryPolicy {
-            return try await policy.execute {
+            try await policy.execute {
                 try await self.base.run(input)
             }
         } else {
-            return try await base.run(input)
+            try await base.run(input)
         }
     }
 
     /// Adds resilience metadata to the result.
     private func addResilienceMetadata(
         to result: AgentResult,
-        duration: ContinuousClock.Instant.Duration,
+        duration _: ContinuousClock.Instant.Duration,
         usedFallback: Bool,
         primaryError: Error? = nil
     ) -> AgentResult {
@@ -314,7 +324,7 @@ public actor ResilientAgent: Agent {
 
 // MARK: - Agent Resilience Extensions
 
-extension Agent {
+public extension Agent {
     /// Wraps this agent with retry behavior.
     ///
     /// - Parameter policy: The retry policy to apply.
@@ -324,7 +334,7 @@ extension Agent {
     /// ```swift
     /// let resilient = myAgent.withRetry(.exponentialBackoff(maxAttempts: 3))
     /// ```
-    public func withRetry(_ policy: RetryPolicy) -> ResilientAgent {
+    func withRetry(_ policy: RetryPolicy) -> ResilientAgent {
         if let resilient = self as? ResilientAgent {
             return resilient.withRetry(policy)
         }
@@ -342,12 +352,12 @@ extension Agent {
     /// ```swift
     /// let resilient = myAgent.withCircuitBreaker(threshold: 5, resetTimeout: .seconds(60))
     /// ```
-    public func withCircuitBreaker(threshold: Int, resetTimeout: Duration) -> ResilientAgent {
+    func withCircuitBreaker(threshold: Int, resetTimeout: Duration) -> ResilientAgent {
         if let resilient = self as? ResilientAgent {
             return resilient.withCircuitBreaker(threshold: threshold, resetTimeout: resetTimeout)
         }
         let breaker = CircuitBreaker(
-            name: "agent-\(ObjectIdentifier(self))",
+            name: "agent-\(UUID().uuidString)",
             failureThreshold: threshold,
             resetTimeout: resetTimeout.timeInterval
         )
@@ -363,7 +373,7 @@ extension Agent {
     /// ```swift
     /// let resilient = primaryAgent.withFallback(backupAgent)
     /// ```
-    public func withFallback(_ fallback: any Agent) -> ResilientAgent {
+    func withFallback(_ fallback: any Agent) -> ResilientAgent {
         if let resilient = self as? ResilientAgent {
             return resilient.withFallback(fallback)
         }
@@ -379,7 +389,7 @@ extension Agent {
     /// ```swift
     /// let resilient = myAgent.withTimeout(.seconds(30))
     /// ```
-    public func withTimeout(_ timeout: Duration) -> ResilientAgent {
+    func withTimeout(_ timeout: Duration) -> ResilientAgent {
         if let resilient = self as? ResilientAgent {
             return resilient.withTimeout(timeout)
         }
@@ -389,7 +399,7 @@ extension Agent {
 
 // MARK: - RetryPolicy Fluent Extensions
 
-extension RetryPolicy {
+public extension RetryPolicy {
     /// Creates a retry policy with fixed delay between attempts.
     ///
     /// - Parameters:
@@ -401,7 +411,7 @@ extension RetryPolicy {
     /// ```swift
     /// let policy = RetryPolicy.fixed(maxAttempts: 3, delay: .seconds(1))
     /// ```
-    public static func fixed(maxAttempts: Int, delay: Duration) -> RetryPolicy {
+    static func fixed(maxAttempts: Int, delay: Duration) -> RetryPolicy {
         RetryPolicy(
             maxAttempts: maxAttempts,
             backoff: .fixed(delay: delay.timeInterval)
@@ -427,22 +437,21 @@ extension RetryPolicy {
     ///     multiplier: 2.0
     /// )
     /// ```
-    public static func exponentialBackoff(
+    static func exponentialBackoff(
         maxAttempts: Int,
         baseDelay: Duration = .seconds(1),
         maxDelay: Duration = .seconds(60),
         multiplier: Double = 2.0,
         jitter: Double = 0.0
     ) -> RetryPolicy {
-        let backoff: BackoffStrategy
-        if jitter > 0 {
-            backoff = .exponentialWithJitter(
+        let backoff: BackoffStrategy = if jitter > 0 {
+            .exponentialWithJitter(
                 base: baseDelay.timeInterval,
                 multiplier: multiplier,
                 maxDelay: maxDelay.timeInterval
             )
         } else {
-            backoff = .exponential(
+            .exponential(
                 base: baseDelay.timeInterval,
                 multiplier: multiplier,
                 maxDelay: maxDelay.timeInterval
@@ -468,7 +477,7 @@ extension RetryPolicy {
     ///     maxDelay: .seconds(10)
     /// )
     /// ```
-    public static func decorrelatedJitter(
+    static func decorrelatedJitter(
         maxAttempts: Int,
         baseDelay: Duration = .milliseconds(100),
         maxDelay: Duration = .seconds(10)
@@ -497,7 +506,7 @@ extension RetryPolicy {
     ///     maxDelay: .seconds(30)
     /// )
     /// ```
-    public static func linear(
+    static func linear(
         maxAttempts: Int,
         initialDelay: Duration = .seconds(1),
         increment: Duration = .seconds(1),
@@ -522,17 +531,7 @@ extension RetryPolicy {
     /// ```swift
     /// let policy = RetryPolicy.immediate(maxAttempts: 3)
     /// ```
-    public static func immediate(maxAttempts: Int) -> RetryPolicy {
+    static func immediate(maxAttempts: Int) -> RetryPolicy {
         RetryPolicy(maxAttempts: maxAttempts, backoff: .immediate)
-    }
-}
-
-// MARK: - Duration Extension
-
-extension Duration {
-    /// Converts Duration to TimeInterval (seconds).
-    var timeInterval: TimeInterval {
-        let (seconds, attoseconds) = components
-        return Double(seconds) + Double(attoseconds) / 1e18
     }
 }

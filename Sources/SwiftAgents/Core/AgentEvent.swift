@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Agent Event
+// MARK: - AgentEvent
 
 /// Events emitted during agent execution, used for streaming responses.
 ///
@@ -80,7 +80,7 @@ public enum AgentEvent: Sendable {
     case iterationCompleted(number: Int)
 }
 
-// MARK: - Tool Call
+// MARK: - ToolCall
 
 /// Represents a tool call made by the agent.
 ///
@@ -118,7 +118,7 @@ public struct ToolCall: Sendable, Equatable, Identifiable, Codable {
     }
 }
 
-// MARK: - Tool Result
+// MARK: - ToolResult
 
 /// Represents the result of a tool execution.
 ///
@@ -182,7 +182,7 @@ public struct ToolResult: Sendable, Equatable, Codable {
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: - ToolCall + CustomStringConvertible
 
 extension ToolCall: CustomStringConvertible {
     public var description: String {
@@ -190,12 +190,14 @@ extension ToolCall: CustomStringConvertible {
     }
 }
 
+// MARK: - ToolResult + CustomStringConvertible
+
 extension ToolResult: CustomStringConvertible {
     public var description: String {
         if isSuccess {
-            return "ToolResult(success: \(output), duration: \(duration))"
+            "ToolResult(success: \(output), duration: \(duration))"
         } else {
-            return "ToolResult(failure: \(errorMessage ?? "unknown"), duration: \(duration))"
+            "ToolResult(failure: \(errorMessage ?? "unknown"), duration: \(duration))"
         }
     }
 }

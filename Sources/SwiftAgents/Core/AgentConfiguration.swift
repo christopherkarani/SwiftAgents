@@ -5,6 +5,8 @@
 
 import Foundation
 
+// MARK: - AgentConfiguration
+
 /// Configuration settings for agent execution.
 ///
 /// Use this struct to customize agent behavior including iteration limits,
@@ -18,6 +20,11 @@ import Foundation
 ///     .timeout(.seconds(120))
 /// ```
 public struct AgentConfiguration: Sendable, Equatable {
+    // MARK: - Default Configuration
+
+    /// Default configuration with sensible defaults.
+    public static let `default` = AgentConfiguration()
+
     // MARK: - Iteration Limits
 
     /// Maximum number of reasoning iterations before stopping.
@@ -59,11 +66,6 @@ public struct AgentConfiguration: Sendable, Equatable {
     /// Whether to include the agent's reasoning in events.
     /// Default: true
     public var includeReasoning: Bool
-
-    // MARK: - Default Configuration
-
-    /// Default configuration with sensible defaults.
-    public static let `default` = AgentConfiguration()
 
     // MARK: - Initialization
 
@@ -184,7 +186,7 @@ public struct AgentConfiguration: Sendable, Equatable {
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension AgentConfiguration: CustomStringConvertible {
     public var description: String {

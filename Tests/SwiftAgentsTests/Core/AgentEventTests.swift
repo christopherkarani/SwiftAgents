@@ -3,15 +3,14 @@
 //
 // Comprehensive tests for AgentEvent, ToolCall, and ToolResult types.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 // MARK: - AgentEvent Tests
 
 @Suite("AgentEvent Tests")
 struct AgentEventTests {
-
     // MARK: - Lifecycle Events
 
     @Test("AgentEvent.started creation")
@@ -19,7 +18,7 @@ struct AgentEventTests {
         let event = AgentEvent.started(input: "What is 2+2?")
 
         // Verify the event can be pattern-matched
-        if case .started(let input) = event {
+        if case let .started(input) = event {
             #expect(input == "What is 2+2?")
         } else {
             Issue.record("Expected .started event")
@@ -37,7 +36,7 @@ struct AgentEventTests {
         let event = AgentEvent.completed(result: result)
 
         // Verify the event can be pattern-matched
-        if case .completed(let capturedResult) = event {
+        if case let .completed(capturedResult) = event {
             #expect(capturedResult.output == "The answer is 4")
             #expect(capturedResult.iterationCount == 2)
         } else {
@@ -51,7 +50,7 @@ struct AgentEventTests {
         let event = AgentEvent.failed(error: error)
 
         // Verify the event can be pattern-matched
-        if case .failed(let capturedError) = event {
+        if case let .failed(capturedError) = event {
             #expect(capturedError == error)
         } else {
             Issue.record("Expected .failed event")
@@ -77,7 +76,7 @@ struct AgentEventTests {
         let event = AgentEvent.thinking(thought: "I need to calculate 2+2")
 
         // Verify the event can be pattern-matched
-        if case .thinking(let thought) = event {
+        if case let .thinking(thought) = event {
             #expect(thought == "I need to calculate 2+2")
         } else {
             Issue.record("Expected .thinking event")
@@ -89,7 +88,7 @@ struct AgentEventTests {
         let event = AgentEvent.thinkingPartial(partialThought: "I need to")
 
         // Verify the event can be pattern-matched
-        if case .thinkingPartial(let partial) = event {
+        if case let .thinkingPartial(partial) = event {
             #expect(partial == "I need to")
         } else {
             Issue.record("Expected .thinkingPartial event")
@@ -108,7 +107,7 @@ struct AgentEventTests {
         let event = AgentEvent.toolCallStarted(call: toolCall)
 
         // Verify the event can be pattern-matched
-        if case .toolCallStarted(let call) = event {
+        if case let .toolCallStarted(call) = event {
             #expect(call.toolName == "calculator")
             #expect(call.arguments["expression"] == .string("2+2"))
         } else {
@@ -132,7 +131,7 @@ struct AgentEventTests {
         let event = AgentEvent.toolCallCompleted(call: toolCall, result: result)
 
         // Verify the event can be pattern-matched
-        if case .toolCallCompleted(let call, let capturedResult) = event {
+        if case let .toolCallCompleted(call, capturedResult) = event {
             #expect(call.toolName == "calculator")
             #expect(capturedResult.isSuccess == true)
             #expect(capturedResult.output == .int(4))
@@ -156,7 +155,7 @@ struct AgentEventTests {
         let event = AgentEvent.toolCallFailed(call: toolCall, error: error)
 
         // Verify the event can be pattern-matched
-        if case .toolCallFailed(let call, let capturedError) = event {
+        if case let .toolCallFailed(call, capturedError) = event {
             #expect(call.toolName == "calculator")
             #expect(capturedError == error)
         } else {
@@ -171,7 +170,7 @@ struct AgentEventTests {
         let event = AgentEvent.outputToken(token: "Hello")
 
         // Verify the event can be pattern-matched
-        if case .outputToken(let token) = event {
+        if case let .outputToken(token) = event {
             #expect(token == "Hello")
         } else {
             Issue.record("Expected .outputToken event")
@@ -183,7 +182,7 @@ struct AgentEventTests {
         let event = AgentEvent.outputChunk(chunk: "Hello, world!")
 
         // Verify the event can be pattern-matched
-        if case .outputChunk(let chunk) = event {
+        if case let .outputChunk(chunk) = event {
             #expect(chunk == "Hello, world!")
         } else {
             Issue.record("Expected .outputChunk event")
@@ -197,7 +196,7 @@ struct AgentEventTests {
         let event = AgentEvent.iterationStarted(number: 1)
 
         // Verify the event can be pattern-matched
-        if case .iterationStarted(let number) = event {
+        if case let .iterationStarted(number) = event {
             #expect(number == 1)
         } else {
             Issue.record("Expected .iterationStarted event")
@@ -209,7 +208,7 @@ struct AgentEventTests {
         let event = AgentEvent.iterationCompleted(number: 5)
 
         // Verify the event can be pattern-matched
-        if case .iterationCompleted(let number) = event {
+        if case let .iterationCompleted(number) = event {
             #expect(number == 5)
         } else {
             Issue.record("Expected .iterationCompleted event")

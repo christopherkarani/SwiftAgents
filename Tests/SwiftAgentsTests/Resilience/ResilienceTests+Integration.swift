@@ -3,17 +3,16 @@
 //
 // Integration tests for combining multiple resilience components.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 // MARK: - Integration Tests
 
 @Suite("Resilience Integration Tests")
 struct ResilienceIntegrationTests {
-
     @Test("RetryPolicy with CircuitBreaker integration")
-    func testRetryWithCircuitBreaker() async throws {
+    func retryWithCircuitBreaker() async throws {
         let breaker = CircuitBreaker(
             name: "api",
             failureThreshold: 3,
@@ -50,7 +49,7 @@ struct ResilienceIntegrationTests {
     }
 
     @Test("FallbackChain with RetryPolicy per step")
-    func testFallbackWithRetryPerStep() async throws {
+    func fallbackWithRetryPerStep() async throws {
         let primaryCounter = TestCounter()
         let secondaryCounter = TestCounter()
 

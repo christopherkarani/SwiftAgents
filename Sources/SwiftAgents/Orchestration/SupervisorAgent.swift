@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Routing Strategy Protocol
+// MARK: - RoutingStrategy
 
 /// Protocol for agent routing strategies used by SupervisorAgent.
 ///
@@ -38,7 +38,7 @@ public protocol RoutingStrategy: Sendable {
     ) async throws -> RoutingDecision
 }
 
-// MARK: - Agent Description
+// MARK: - AgentDescription
 
 /// Describes an agent's capabilities for routing decisions.
 ///
@@ -87,7 +87,7 @@ public struct AgentDescription: Sendable, Equatable {
     }
 }
 
-// MARK: - Routing Decision
+// MARK: - RoutingDecision
 
 /// The result of a routing decision.
 ///
@@ -129,7 +129,7 @@ public struct RoutingDecision: Sendable, Equatable {
     }
 }
 
-// MARK: - LLM Routing Strategy
+// MARK: - LLMRoutingStrategy
 
 /// Routes requests using an LLM to analyze input and select the best agent.
 ///
@@ -145,6 +145,8 @@ public struct RoutingDecision: Sendable, Equatable {
 /// )
 /// ```
 public struct LLMRoutingStrategy: RoutingStrategy {
+    // MARK: Public
+
     /// The inference provider to use for routing decisions.
     public let inferenceProvider: any InferenceProvider
 
@@ -219,6 +221,8 @@ public struct LLMRoutingStrategy: RoutingStrategy {
             }
         }
     }
+
+    // MARK: Private
 
     /// Builds the routing prompt for the LLM.
     private func buildRoutingPrompt(input: String, agents: [AgentDescription]) -> String {
@@ -299,7 +303,7 @@ public struct LLMRoutingStrategy: RoutingStrategy {
     }
 }
 
-// MARK: - Keyword Routing Strategy
+// MARK: - KeywordRoutingStrategy
 
 /// Routes requests using simple keyword matching.
 ///
@@ -336,7 +340,7 @@ public struct KeywordRoutingStrategy: RoutingStrategy {
     public func selectAgent(
         for input: String,
         from agents: [AgentDescription],
-        context: AgentContext?
+        context _: AgentContext?
     ) async throws -> RoutingDecision {
         guard !agents.isEmpty else {
             throw AgentError.internalError(reason: "No agents available for routing")
@@ -396,7 +400,7 @@ public struct KeywordRoutingStrategy: RoutingStrategy {
 
         // Calculate confidence based on score
         let maxPossibleScore = best.agent.keywords.count * 10 +
-                               best.agent.capabilities.count * 5 + 3
+            best.agent.capabilities.count * 5 + 3
         let confidence = min(Double(best.score) / Double(max(maxPossibleScore, 1)), 1.0)
 
         guard confidence >= minimumConfidence else {
@@ -416,7 +420,7 @@ public struct KeywordRoutingStrategy: RoutingStrategy {
     }
 }
 
-// MARK: - Supervisor Agent
+// MARK: - SupervisorAgent
 
 /// A supervisor agent that routes requests to specialized sub-agents.
 ///
@@ -442,27 +446,23 @@ public struct KeywordRoutingStrategy: RoutingStrategy {
 /// let result = try await supervisor.run("What's 2+2?")
 /// ```
 public actor SupervisorAgent: Agent {
+    // MARK: Public
+
     // MARK: - Agent Protocol Properties
 
     nonisolated public let tools: [any Tool] = []
     nonisolated public let instructions: String
     nonisolated public let configuration: AgentConfiguration
+
     nonisolated public var memory: (any AgentMemory)? { nil }
     nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
-    // MARK: - Supervisor Properties
+    // MARK: - Supervisor-Specific Methods
 
-    /// Registry of sub-agents with their descriptions.
-    private let agentRegistry: [(name: String, agent: any Agent, description: AgentDescription)]
-
-    /// Strategy for routing requests to agents.
-    private let routingStrategy: any RoutingStrategy
-
-    /// Optional fallback agent when routing fails.
-    private let fallbackAgent: (any Agent)?
-
-    /// Whether to track execution in a shared context.
-    private let enableContextTracking: Bool
+    /// Gets the list of available agents.
+    public var availableAgents: [String] {
+        agentRegistry.map(\.name)
+    }
 
     // MARK: - Initialization
 
@@ -483,14 +483,14 @@ public actor SupervisorAgent: Agent {
         instructions: String? = nil,
         enableContextTracking: Bool = true
     ) {
-        self.agentRegistry = agents
+        agentRegistry = agents
         self.routingStrategy = routingStrategy
         self.fallbackAgent = fallbackAgent
         self.configuration = configuration
         self.enableContextTracking = enableContextTracking
 
         // Generate instructions if not provided
-        if let instructions = instructions {
+        if let instructions {
             self.instructions = instructions
         } else {
             var generatedInstructions = "You are a supervisor agent that routes requests to specialized agents.\n\nAvailable agents:\n"
@@ -509,7 +509,7 @@ public actor SupervisorAgent: Agent {
 
         do {
             // Get agent descriptions for routing
-            let descriptions = agentRegistry.map { $0.description }
+            let descriptions = agentRegistry.map(\.description)
 
             // Create context if tracking is enabled
             let context: AgentContext? = enableContextTracking ? AgentContext(input: input) : nil
@@ -538,7 +538,7 @@ public actor SupervisorAgent: Agent {
             }
 
             // Track execution in context
-            if let context = context {
+            if let context {
                 await context.recordExecution(agentName: decision.selectedAgentName)
             }
 
@@ -546,7 +546,7 @@ public actor SupervisorAgent: Agent {
             let result = try await selectedEntry.agent.run(input)
 
             // Update context with result
-            if let context = context {
+            if let context {
                 await context.setPreviousOutput(result)
             }
 
@@ -583,89 +583,90 @@ public actor SupervisorAgent: Agent {
     }
 
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task {
-                do {
-                    continuation.yield(.started(input: input))
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
 
-                    // Get agent descriptions for routing
-                    let descriptions = agentRegistry.map { $0.description }
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
 
-                    // Create context if tracking is enabled
-                    let context: AgentContext? = enableContextTracking ? AgentContext(input: input) : nil
+            do {
+                continuation.yield(.started(input: input))
 
-                    // Select the appropriate agent
-                    let decision = try await routingStrategy.selectAgent(
-                        for: input,
-                        from: descriptions,
-                        context: context
-                    )
+                // Get agent descriptions for routing
+                let descriptions = await agentRegistry.map(\.description)
 
-                    // Emit routing decision
-                    continuation.yield(.thinking(
-                        thought: "Routing to agent: \(decision.selectedAgentName) (confidence: \(decision.confidence))"
-                    ))
+                // Create context if tracking is enabled
+                let trackingEnabled = await enableContextTracking
+                let context: AgentContext? = trackingEnabled ? AgentContext(input: input) : nil
 
-                    // Find the selected agent
-                    guard let selectedEntry = agentRegistry.first(where: { $0.name == decision.selectedAgentName }) else {
-                        // Agent not found, use fallback if available
-                        if let fallback = fallbackAgent {
-                            for try await event in fallback.stream(input) {
-                                continuation.yield(event)
-                            }
-                            continuation.finish()
-                            return
-                        } else {
-                            throw AgentError.internalError(
-                                reason: "Selected agent '\(decision.selectedAgentName)' not found and no fallback configured"
-                            )
+                // Select the appropriate agent
+                let strategy = await routingStrategy
+                let decision = try await strategy.selectAgent(
+                    for: input,
+                    from: descriptions,
+                    context: context
+                )
+
+                // Emit routing decision
+                continuation.yield(.thinking(
+                    thought: "Routing to agent: \(decision.selectedAgentName) (confidence: \(decision.confidence))"
+                ))
+
+                // Find the selected agent
+                let registry = await agentRegistry
+                guard let selectedEntry = registry.first(where: { $0.name == decision.selectedAgentName }) else {
+                    // Agent not found, use fallback if available
+                    let fallback = await fallbackAgent
+                    if let fallback {
+                        for try await event in fallback.stream(input) {
+                            continuation.yield(event)
                         }
-                    }
-
-                    // Track execution in context
-                    if let context = context {
-                        await context.recordExecution(agentName: decision.selectedAgentName)
-                    }
-
-                    // Stream from the selected agent
-                    for try await event in selectedEntry.agent.stream(input) {
-                        continuation.yield(event)
-                    }
-
-                    continuation.finish()
-
-                } catch {
-                    // If routing fails and we have a fallback, use it
-                    if let fallback = fallbackAgent {
-                        do {
-                            for try await event in fallback.stream(input) {
-                                continuation.yield(event)
-                            }
-                            continuation.finish()
-                        } catch {
-                            continuation.finish(throwing: error)
-                        }
+                        continuation.finish()
+                        return
                     } else {
-                        continuation.finish(throwing: error)
+                        throw AgentError.internalError(
+                            reason: "Selected agent '\(decision.selectedAgentName)' not found and no fallback configured"
+                        )
                     }
                 }
-            }
 
-            continuation.onTermination = { @Sendable _ in
-                task.cancel()
+                // Track execution in context
+                if let context {
+                    await context.recordExecution(agentName: decision.selectedAgentName)
+                }
+
+                // Stream from the selected agent
+                for try await event in selectedEntry.agent.stream(input) {
+                    continuation.yield(event)
+                }
+
+                continuation.finish()
+
+            } catch {
+                // If routing fails and we have a fallback, use it
+                let fallback = await fallbackAgent
+                if let fallback {
+                    do {
+                        for try await event in fallback.stream(input) {
+                            continuation.yield(event)
+                        }
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                } else {
+                    continuation.finish(throwing: error)
+                }
             }
         }
+
+        return stream
     }
 
     public func cancel() async {
         // Cancellation is handled via continuation.onTermination
-    }
-
-    // MARK: - Supervisor-Specific Methods
-
-    /// Gets the list of available agents.
-    public var availableAgents: [String] {
-        agentRegistry.map { $0.name }
     }
 
     /// Gets the description for a specific agent.
@@ -690,14 +691,30 @@ public actor SupervisorAgent: Agent {
 
         return try await entry.agent.run(input)
     }
+
+    // MARK: Private
+
+    // MARK: - Supervisor Properties
+
+    /// Registry of sub-agents with their descriptions.
+    private let agentRegistry: [(name: String, agent: any Agent, description: AgentDescription)]
+
+    /// Strategy for routing requests to agents.
+    private let routingStrategy: any RoutingStrategy
+
+    /// Optional fallback agent when routing fails.
+    private let fallbackAgent: (any Agent)?
+
+    /// Whether to track execution in a shared context.
+    private let enableContextTracking: Bool
 }
 
-// MARK: - CustomStringConvertible
+// MARK: - RoutingDecision + CustomStringConvertible
 
 extension RoutingDecision: CustomStringConvertible {
     public var description: String {
         var desc = "RoutingDecision(agent: \(selectedAgentName), confidence: \(confidence)"
-        if let reasoning = reasoning {
+        if let reasoning {
             desc += ", reasoning: \(reasoning)"
         }
         desc += ")"

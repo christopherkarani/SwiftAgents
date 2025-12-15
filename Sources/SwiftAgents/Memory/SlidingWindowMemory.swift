@@ -5,6 +5,8 @@
 
 import Foundation
 
+// MARK: - SlidingWindowMemory
+
 /// A token-aware memory that maintains messages within a token budget.
 ///
 /// `SlidingWindowMemory` automatically manages the context window by
@@ -25,60 +27,10 @@ import Foundation
 /// By default uses character-based estimation (chars / 4).
 /// For production use with specific models, provide a custom `TokenEstimator`.
 public actor SlidingWindowMemory: AgentMemory {
+    // MARK: Public
+
     /// Maximum tokens to retain.
     public let maxTokens: Int
-
-    /// Token estimator for counting.
-    private let tokenEstimator: any TokenEstimator
-
-    /// Internal message storage.
-    private var messages: [MemoryMessage] = []
-
-    /// Current estimated token count.
-    private var currentTokenCount: Int = 0
-
-    /// Creates a new sliding window memory.
-    ///
-    /// - Parameters:
-    ///   - maxTokens: Maximum tokens to retain (default: 4000).
-    ///   - tokenEstimator: Estimator for token counting.
-    public init(
-        maxTokens: Int = 4000,
-        tokenEstimator: any TokenEstimator = CharacterBasedTokenEstimator.shared
-    ) {
-        self.maxTokens = max(100, maxTokens)
-        self.tokenEstimator = tokenEstimator
-    }
-
-    // MARK: - AgentMemory Conformance
-
-    public func add(_ message: MemoryMessage) async {
-        let messageTokens = tokenEstimator.estimateTokens(for: message.formattedContent)
-
-        messages.append(message)
-        currentTokenCount += messageTokens
-
-        // Remove oldest messages until within budget
-        while currentTokenCount > maxTokens && messages.count > 1 {
-            let removed = messages.removeFirst()
-            let removedTokens = tokenEstimator.estimateTokens(for: removed.formattedContent)
-            currentTokenCount -= removedTokens
-        }
-    }
-
-    public func getContext(for query: String, tokenLimit: Int) async -> String {
-        let effectiveLimit = min(tokenLimit, maxTokens)
-        return formatMessagesForContext(messages, tokenLimit: effectiveLimit, tokenEstimator: tokenEstimator)
-    }
-
-    public func getAllMessages() async -> [MemoryMessage] {
-        messages
-    }
-
-    public func clear() async {
-        messages.removeAll()
-        currentTokenCount = 0
-    }
 
     public var count: Int {
         messages.count
@@ -103,15 +55,69 @@ public actor SlidingWindowMemory: AgentMemory {
     public var isNearCapacity: Bool {
         Double(currentTokenCount) / Double(maxTokens) > 0.9
     }
+
+    /// Creates a new sliding window memory.
+    ///
+    /// - Parameters:
+    ///   - maxTokens: Maximum tokens to retain (default: 4000).
+    ///   - tokenEstimator: Estimator for token counting.
+    public init(
+        maxTokens: Int = 4000,
+        tokenEstimator: any TokenEstimator = CharacterBasedTokenEstimator.shared
+    ) {
+        self.maxTokens = max(100, maxTokens)
+        self.tokenEstimator = tokenEstimator
+    }
+
+    // MARK: - AgentMemory Conformance
+
+    public func add(_ message: MemoryMessage) async {
+        let messageTokens = tokenEstimator.estimateTokens(for: message.formattedContent)
+
+        messages.append(message)
+        currentTokenCount += messageTokens
+
+        // Remove oldest messages until within budget
+        while currentTokenCount > maxTokens, messages.count > 1 {
+            let removed = messages.removeFirst()
+            let removedTokens = tokenEstimator.estimateTokens(for: removed.formattedContent)
+            currentTokenCount -= removedTokens
+        }
+    }
+
+    public func getContext(for _: String, tokenLimit: Int) async -> String {
+        let effectiveLimit = min(tokenLimit, maxTokens)
+        return formatMessagesForContext(messages, tokenLimit: effectiveLimit, tokenEstimator: tokenEstimator)
+    }
+
+    public func getAllMessages() async -> [MemoryMessage] {
+        messages
+    }
+
+    public func clear() async {
+        messages.removeAll()
+        currentTokenCount = 0
+    }
+
+    // MARK: Private
+
+    /// Token estimator for counting.
+    private let tokenEstimator: any TokenEstimator
+
+    /// Internal message storage.
+    private var messages: [MemoryMessage] = []
+
+    /// Current estimated token count.
+    private var currentTokenCount: Int = 0
 }
 
 // MARK: - Batch Operations
 
-extension SlidingWindowMemory {
+public extension SlidingWindowMemory {
     /// Adds multiple messages at once.
     ///
     /// - Parameter newMessages: Messages to add in order.
-    public func addAll(_ newMessages: [MemoryMessage]) async {
+    func addAll(_ newMessages: [MemoryMessage]) async {
         for message in newMessages {
             await add(message)
         }
@@ -121,7 +127,7 @@ extension SlidingWindowMemory {
     ///
     /// - Parameter tokenBudget: Maximum tokens to include.
     /// - Returns: Recent messages fitting within the budget.
-    public func getMessages(withinTokenBudget tokenBudget: Int) async -> [MemoryMessage] {
+    func getMessages(withinTokenBudget tokenBudget: Int) async -> [MemoryMessage] {
         var result: [MemoryMessage] = []
         var usedTokens = 0
 
@@ -141,9 +147,9 @@ extension SlidingWindowMemory {
 
 // MARK: - Diagnostic Information
 
-extension SlidingWindowMemory {
+public extension SlidingWindowMemory {
     /// Returns diagnostic information about memory state.
-    public func diagnostics() async -> SlidingWindowDiagnostics {
+    func diagnostics() async -> SlidingWindowDiagnostics {
         SlidingWindowDiagnostics(
             messageCount: messages.count,
             currentTokens: currentTokenCount,
@@ -154,6 +160,8 @@ extension SlidingWindowMemory {
         )
     }
 }
+
+// MARK: - SlidingWindowDiagnostics
 
 /// Diagnostic information for sliding window memory.
 public struct SlidingWindowDiagnostics: Sendable {
@@ -173,12 +181,12 @@ public struct SlidingWindowDiagnostics: Sendable {
 
 // MARK: - Recalculation
 
-extension SlidingWindowMemory {
+public extension SlidingWindowMemory {
     /// Recalculates the token count from scratch.
     ///
     /// Useful if the token estimator has changed or if you suspect
     /// the count has drifted due to estimation errors.
-    public func recalculateTokenCount() async {
+    func recalculateTokenCount() async {
         currentTokenCount = messages.reduce(0) { total, message in
             total + tokenEstimator.estimateTokens(for: message.formattedContent)
         }

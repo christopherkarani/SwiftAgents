@@ -34,6 +34,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
 
     // MARK: - MemberMacro
 
+    // swiftlint:disable:next function_body_length
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -168,23 +169,27 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
         if !existingMembers.contains("stream") {
             members.append("""
                 public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-                    AsyncThrowingStream { continuation in
-                        Task {
-                            do {
-                                continuation.yield(.started(input: input))
-                                let result = try await self.run(input)
-                                continuation.yield(.completed(result: result))
-                                continuation.finish()
-                            } catch let error as AgentError {
-                                continuation.yield(.failed(error: error))
-                                continuation.finish(throwing: error)
-                            } catch {
-                                let agentError = AgentError.internalError(reason: error.localizedDescription)
-                                continuation.yield(.failed(error: agentError))
-                                continuation.finish(throwing: agentError)
-                            }
+                    let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+                    Task { @Sendable [weak self] in
+                        guard let self else {
+                            continuation.finish()
+                            return
+                        }
+                        do {
+                            continuation.yield(.started(input: input))
+                            let result = try await self.run(input)
+                            continuation.yield(.completed(result: result))
+                            continuation.finish()
+                        } catch let error as AgentError {
+                            continuation.yield(.failed(error: error))
+                            continuation.finish(throwing: error)
+                        } catch {
+                            let agentError = AgentError.internalError(reason: error.localizedDescription)
+                            continuation.yield(.failed(error: agentError))
+                            continuation.finish(throwing: agentError)
                         }
                     }
+                    return stream
                 }
                 """)
         }
@@ -210,6 +215,10 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
+        // Only add extension for actors
+        guard declaration.is(ActorDeclSyntax.self) else {
+            return []
+        }
         let agentExtension = try ExtensionDeclSyntax("extension \(type): Agent {}")
         return [agentExtension]
     }
@@ -248,10 +257,8 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
 
     /// Checks if the declaration has an init.
     private static func hasInit(in declaration: some DeclGroupSyntax) -> Bool {
-        for member in declaration.memberBlock.members {
-            if member.decl.is(InitializerDeclSyntax.self) {
-                return true
-            }
+        for member in declaration.memberBlock.members where member.decl.is(InitializerDeclSyntax.self) {
+            return true
         }
         return false
     }

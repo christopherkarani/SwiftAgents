@@ -30,6 +30,8 @@ import Foundation
 /// }
 /// ```
 public actor CircuitBreaker {
+    // MARK: Public
+
     // MARK: - State
 
     /// Circuit breaker state.
@@ -43,8 +45,6 @@ public actor CircuitBreaker {
         /// Circuit is half-open, allowing limited test operations.
         case halfOpen
     }
-
-    // MARK: - Properties
 
     /// Unique name for this circuit breaker.
     public let name: String
@@ -60,27 +60,6 @@ public actor CircuitBreaker {
 
     /// Maximum number of requests allowed in half-open state.
     public let halfOpenMaxRequests: Int
-
-    /// Current state of the circuit breaker.
-    private var state: State = .closed
-
-    /// Count of consecutive failures.
-    private var consecutiveFailures = 0
-
-    /// Count of consecutive successes in half-open state.
-    private var consecutiveSuccesses = 0
-
-    /// Total failure count (lifetime).
-    private var totalFailures = 0
-
-    /// Total success count (lifetime).
-    private var totalSuccesses = 0
-
-    /// Number of requests currently in flight in half-open state.
-    private var halfOpenRequestsInFlight = 0
-
-    /// Timestamp of last failure.
-    private var lastFailureTime: Date?
 
     // MARK: - Initialization
 
@@ -169,6 +148,29 @@ public actor CircuitBreaker {
         )
     }
 
+    // MARK: Private
+
+    /// Current state of the circuit breaker.
+    private var state: State = .closed
+
+    /// Count of consecutive failures.
+    private var consecutiveFailures = 0
+
+    /// Count of consecutive successes in half-open state.
+    private var consecutiveSuccesses = 0
+
+    /// Total failure count (lifetime).
+    private var totalFailures = 0
+
+    /// Total success count (lifetime).
+    private var totalSuccesses = 0
+
+    /// Number of requests currently in flight in half-open state.
+    private var halfOpenRequestsInFlight = 0
+
+    /// Timestamp of last failure.
+    private var lastFailureTime: Date?
+
     // MARK: - Private Helpers
 
     /// Executes the operation and handles state transitions based on success/failure.
@@ -198,7 +200,8 @@ public actor CircuitBreaker {
                 state = .closed
                 consecutiveSuccesses = 0
             }
-        case .closed, .open:
+        case .closed,
+             .open:
             consecutiveSuccesses = 0
         }
     }
@@ -229,7 +232,7 @@ public actor CircuitBreaker {
 
     /// Checks if the circuit should transition from open to half-open based on timeout.
     private func checkAndTransitionState() async throws {
-        guard case .open(let until) = state else {
+        guard case let .open(until) = state else {
             return
         }
 
@@ -290,6 +293,8 @@ public struct Statistics: Sendable, Equatable {
 /// let dbBreaker = await registry.breaker(named: "database")
 /// ```
 public actor CircuitBreakerRegistry {
+    // MARK: Public
+
     // MARK: - Configuration
 
     /// Configuration for creating a circuit breaker.
@@ -308,14 +313,6 @@ public actor CircuitBreakerRegistry {
 
         public init() {}
     }
-
-    // MARK: - Properties
-
-    /// Registry of circuit breakers by name.
-    private var breakers: [String: CircuitBreaker] = [:]
-
-    /// Default configuration for new circuit breakers.
-    private let defaultConfiguration: Configuration
 
     // MARK: - Initialization
 
@@ -389,18 +386,27 @@ public actor CircuitBreakerRegistry {
         }
         return stats
     }
+
+    // MARK: Private
+
+    /// Registry of circuit breakers by name.
+    private var breakers: [String: CircuitBreaker] = [:]
+
+    /// Default configuration for new circuit breakers.
+    private let defaultConfiguration: Configuration
 }
 
 // MARK: - Convenience Extensions
 
-extension CircuitBreaker {
+public extension CircuitBreaker {
     /// Returns whether the circuit is currently allowing requests.
-    public func isAllowingRequests() -> Bool {
+    func isAllowingRequests() -> Bool {
         switch state {
-        case .closed, .halfOpen:
-            return true
+        case .closed,
+             .halfOpen:
+            true
         case .open:
-            return false
+            false
         }
     }
 }

@@ -87,20 +87,22 @@ swift package plugin --allow-writing-to-package-directory swiftformat  # Format 
 - `SummaryMemory`: Compressed conversation history
 
 ### Logging
-- Use `Logger` from `os` framework (Apple's unified logging system)
+- Use `swift-log` for cross-platform compatibility (Apple platforms + Linux servers)
+- Call `Log.bootstrap()` once at application startup to configure logging
 - Never use `print()` statements in production code
 - Use category-specific loggers:
-  - `Logger.agents`: Agent lifecycle and execution
-  - `Logger.memory`: Memory system operations
-  - `Logger.tracing`: Observability and tracing events
-  - `Logger.metrics`: Performance and usage metrics
-  - `Logger.orchestration`: Multi-agent coordination
-- Choose appropriate log levels: `.trace`, `.debug`, `.info`, `.notice`, `.warning`, `.error`, `.fault`
-- Apply privacy annotations to protect sensitive data:
-  - `privacy: .private` for user data, error details, conversation content
-  - `privacy: .public` for non-sensitive metadata, counts, IDs
-  - Default behavior (no annotation) treats data as private
-- Example: `Logger.memory.error("Failed to save: \(error, privacy: .private)")`
+  - `Log.agents`: Agent lifecycle and execution
+  - `Log.memory`: Memory system operations
+  - `Log.tracing`: Observability and tracing events
+  - `Log.metrics`: Performance and usage metrics
+  - `Log.orchestration`: Multi-agent coordination
+- Choose appropriate log levels: `.trace`, `.debug`, `.info`, `.notice`, `.warning`, `.error`, `.critical`
+- **Privacy Note**: Unlike `os.Logger`, swift-log does not support `privacy:` parameter annotations
+  - Do not log sensitive user data, credentials, or PII in production
+  - Configure log handlers to redact sensitive information at runtime
+  - Default behavior logs all interpolated values as-is
+- Example: `Log.memory.error("Failed to save: \(error.localizedDescription)")`
+- For Apple-only code, `OSLogTracer` is available with privacy annotations wrapped in `#if canImport(os)`
 
 ### Testing Strategy
 - Foundation Models unavailable in simulators—use mock protocols

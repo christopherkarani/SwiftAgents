@@ -3,15 +3,14 @@
 //
 // MetricsCollector and JSONMetricsReporter tests.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - MetricsCollector Tests
+// MARK: - MetricsCollectorTests
 
 @Suite("MetricsCollector Tests")
 struct MetricsCollectorTests {
-
     // MARK: - Execution Tracking Tests
 
     @Test("MetricsCollector tracks agent start")
@@ -314,11 +313,10 @@ struct MetricsCollectorTests {
     }
 }
 
-// MARK: - JSONMetricsReporter Tests
+// MARK: - JSONMetricsReporterTests
 
 @Suite("JSONMetricsReporter Tests")
 struct JSONMetricsReporterTests {
-
     @Test("JSONMetricsReporter encodes snapshot to JSON")
     func jsonReporterEncodesSnapshot() throws {
         let snapshot = MetricsSnapshot(

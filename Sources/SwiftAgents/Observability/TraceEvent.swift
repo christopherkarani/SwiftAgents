@@ -6,23 +6,25 @@
 
 import Foundation
 
-// MARK: - Event Level
+// MARK: - EventLevel
 
 /// The severity level of a trace event.
 public enum EventLevel: Int, Sendable, Codable, Comparable, CaseIterable {
+    // MARK: Public
+
+    public static func < (lhs: EventLevel, rhs: EventLevel) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
     case trace = 0
     case debug = 1
     case info = 2
     case warning = 3
     case error = 4
     case critical = 5
-
-    public static func < (lhs: EventLevel, rhs: EventLevel) -> Bool {
-        lhs.rawValue < rhs.rawValue
-    }
 }
 
-// MARK: - Event Kind
+// MARK: - EventKind
 
 /// The kind of event being traced.
 public enum EventKind: String, Sendable, Codable, CaseIterable {
@@ -62,13 +64,23 @@ public enum EventKind: String, Sendable, Codable, CaseIterable {
     case custom
 }
 
-// MARK: - Source Location
+// MARK: - SourceLocation
 
 /// Source code location information for debugging.
 public struct SourceLocation: Sendable, Codable, Equatable, Hashable {
     public let file: String
     public let function: String
     public let line: Int
+
+    /// Returns just the filename without the full path.
+    public var filename: String {
+        (file as NSString).lastPathComponent
+    }
+
+    /// Returns a formatted string representation.
+    public var formatted: String {
+        "\(filename):\(line) - \(function)"
+    }
 
     /// Creates a source location with the provided information.
     public init(
@@ -80,19 +92,9 @@ public struct SourceLocation: Sendable, Codable, Equatable, Hashable {
         self.function = function
         self.line = line
     }
-
-    /// Returns just the filename without the full path.
-    public var filename: String {
-        (file as NSString).lastPathComponent
-    }
-
-    /// Returns a formatted string representation.
-    public var formatted: String {
-        "\(filename):\(line) - \(function)"
-    }
 }
 
-// MARK: - Error Info
+// MARK: - ErrorInfo
 
 /// Detailed error information for trace events.
 public struct ErrorInfo: Sendable, Codable, Equatable, Hashable {
@@ -116,20 +118,20 @@ public struct ErrorInfo: Sendable, Codable, Equatable, Hashable {
 
     /// Creates error information from a Swift Error.
     public init(from error: Error) {
-        self.type = String(reflecting: Swift.type(of: error))
-        self.message = error.localizedDescription
-        self.stackTrace = nil
+        type = String(reflecting: Swift.type(of: error))
+        message = error.localizedDescription
+        stackTrace = nil
 
         // Attempt to extract underlying error
         if let underlyingError = (error as NSError).userInfo[NSUnderlyingErrorKey] as? Error {
             self.underlyingError = String(describing: underlyingError)
         } else {
-            self.underlyingError = nil
+            underlyingError = nil
         }
     }
 }
 
-// MARK: - Trace Event
+// MARK: - TraceEvent
 
 /// A detailed trace event for agent execution monitoring.
 public struct TraceEvent: Sendable, Codable, Identifiable, Equatable, Hashable {
@@ -209,25 +211,12 @@ public struct TraceEvent: Sendable, Codable, Identifiable, Equatable, Hashable {
     }
 }
 
-// MARK: - Trace Event Builder
+// MARK: TraceEvent.Builder
 
-extension TraceEvent {
+public extension TraceEvent {
     /// Fluent builder for creating trace events.
-    public final class Builder: @unchecked Sendable {
-        private let id: UUID
-        private let traceId: UUID
-        private let spanId: UUID
-        private var parentSpanId: UUID?
-        private var timestamp: Date
-        private var duration: TimeInterval?
-        private var kind: EventKind
-        private var level: EventLevel
-        private var message: String
-        private var metadata: [String: SendableValue]
-        private var agentName: String?
-        private var toolName: String?
-        private var error: ErrorInfo?
-        private var source: SourceLocation?
+    final class Builder: @unchecked Sendable {
+        // MARK: Public
 
         /// Creates a new builder with required parameters.
         public init(
@@ -246,20 +235,20 @@ extension TraceEvent {
             self.kind = kind
             self.level = level
             self.message = message
-            self.metadata = [:]
+            metadata = [:]
         }
 
         /// Sets the parent span ID.
         @discardableResult
         public func parentSpan(_ id: UUID) -> Builder {
-            self.parentSpanId = id
+            parentSpanId = id
             return self
         }
 
         /// Sets the timestamp.
         @discardableResult
         public func timestamp(_ date: Date) -> Builder {
-            self.timestamp = date
+            timestamp = date
             return self
         }
 
@@ -287,7 +276,7 @@ extension TraceEvent {
         /// Adds a metadata key-value pair.
         @discardableResult
         public func metadata(key: String, value: SendableValue) -> Builder {
-            self.metadata[key] = value
+            metadata[key] = value
             return self
         }
 
@@ -301,21 +290,21 @@ extension TraceEvent {
         /// Adds multiple metadata entries.
         @discardableResult
         public func addingMetadata(_ additional: [String: SendableValue]) -> Builder {
-            self.metadata.merge(additional) { _, new in new }
+            metadata.merge(additional) { _, new in new }
             return self
         }
 
         /// Sets the agent name.
         @discardableResult
         public func agent(_ name: String) -> Builder {
-            self.agentName = name
+            agentName = name
             return self
         }
 
         /// Sets the tool name.
         @discardableResult
         public func tool(_ name: String) -> Builder {
-            self.toolName = name
+            toolName = name
             return self
         }
 
@@ -329,7 +318,7 @@ extension TraceEvent {
         /// Sets error information directly.
         @discardableResult
         public func error(_ errorInfo: ErrorInfo) -> Builder {
-            self.error = errorInfo
+            error = errorInfo
             return self
         }
 
@@ -340,14 +329,14 @@ extension TraceEvent {
             function: String = #function,
             line: Int = #line
         ) -> Builder {
-            self.source = SourceLocation(file: file, function: function, line: line)
+            source = SourceLocation(file: file, function: function, line: line)
             return self
         }
 
         /// Sets the source location directly.
         @discardableResult
         public func source(_ location: SourceLocation) -> Builder {
-            self.source = location
+            source = location
             return self
         }
 
@@ -370,14 +359,31 @@ extension TraceEvent {
                 source: source
             )
         }
+
+        // MARK: Private
+
+        private let id: UUID
+        private let traceId: UUID
+        private let spanId: UUID
+        private var parentSpanId: UUID?
+        private var timestamp: Date
+        private var duration: TimeInterval?
+        private var kind: EventKind
+        private var level: EventLevel
+        private var message: String
+        private var metadata: [String: SendableValue]
+        private var agentName: String?
+        private var toolName: String?
+        private var error: ErrorInfo?
+        private var source: SourceLocation?
     }
 }
 
 // MARK: - Convenience Constructors
 
-extension TraceEvent {
+public extension TraceEvent {
     /// Creates an agent start event.
-    public static func agentStart(
+    static func agentStart(
         traceId: UUID,
         spanId: UUID = UUID(),
         agentName: String,
@@ -392,7 +398,7 @@ extension TraceEvent {
     }
 
     /// Creates an agent complete event.
-    public static func agentComplete(
+    static func agentComplete(
         traceId: UUID,
         spanId: UUID,
         agentName: String,
@@ -409,7 +415,7 @@ extension TraceEvent {
     }
 
     /// Creates an agent error event.
-    public static func agentError(
+    static func agentError(
         traceId: UUID,
         spanId: UUID,
         agentName: String,
@@ -426,7 +432,7 @@ extension TraceEvent {
     }
 
     /// Creates a tool call event.
-    public static func toolCall(
+    static func toolCall(
         traceId: UUID,
         spanId: UUID = UUID(),
         parentSpanId: UUID?,
@@ -443,7 +449,7 @@ extension TraceEvent {
     }
 
     /// Creates a tool result event.
-    public static func toolResult(
+    static func toolResult(
         traceId: UUID,
         spanId: UUID,
         toolName: String,
@@ -460,7 +466,7 @@ extension TraceEvent {
     }
 
     /// Creates a thought event.
-    public static func thought(
+    static func thought(
         traceId: UUID,
         spanId: UUID,
         agentName: String,
@@ -479,7 +485,7 @@ extension TraceEvent {
     }
 
     /// Creates a custom event.
-    public static func custom(
+    static func custom(
         traceId: UUID,
         spanId: UUID = UUID(),
         message: String,
@@ -494,7 +500,7 @@ extension TraceEvent {
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension TraceEvent: CustomStringConvertible {
     public var description: String {
@@ -521,15 +527,17 @@ extension TraceEvent: CustomStringConvertible {
     }
 }
 
+// MARK: - EventLevel + CustomStringConvertible
+
 extension EventLevel: CustomStringConvertible {
     public var description: String {
         switch self {
-        case .trace: return "TRACE"
-        case .debug: return "DEBUG"
-        case .info: return "INFO"
-        case .warning: return "WARN"
-        case .error: return "ERROR"
-        case .critical: return "CRITICAL"
+        case .trace: "TRACE"
+        case .debug: "DEBUG"
+        case .info: "INFO"
+        case .warning: "WARN"
+        case .error: "ERROR"
+        case .critical: "CRITICAL"
         }
     }
 }

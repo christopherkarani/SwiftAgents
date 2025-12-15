@@ -5,6 +5,8 @@
 
 import Foundation
 
+// MARK: - OrchestrationError
+
 /// Errors that can occur during multi-agent orchestration.
 public enum OrchestrationError: Error, Sendable, Equatable {
     // MARK: - Agent Registration Errors
@@ -37,31 +39,31 @@ public enum OrchestrationError: Error, Sendable, Equatable {
     case allAgentsFailed(errors: [String])
 }
 
-// MARK: - LocalizedError Conformance
+// MARK: LocalizedError
 
 extension OrchestrationError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case .agentNotFound(let name):
+        case let .agentNotFound(name):
             return "Agent not found: \(name)"
         case .noAgentsConfigured:
             return "No agents configured in orchestrator"
-        case .handoffFailed(let source, let target, let reason):
+        case let .handoffFailed(source, target, reason):
             return "Handoff failed from '\(source)' to '\(target)': \(reason)"
-        case .routingFailed(let reason):
+        case let .routingFailed(reason):
             return "Routing decision failed: \(reason)"
-        case .invalidRouteCondition(let reason):
+        case let .invalidRouteCondition(reason):
             return "Invalid route condition: \(reason)"
-        case .mergeStrategyFailed(let reason):
+        case let .mergeStrategyFailed(reason):
             return "Merge strategy failed: \(reason)"
-        case .allAgentsFailed(let errors):
+        case let .allAgentsFailed(errors):
             let errorList = errors.joined(separator: ", ")
             return "All parallel agents failed: [\(errorList)]"
         }
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension OrchestrationError: CustomDebugStringConvertible {
     public var debugDescription: String {

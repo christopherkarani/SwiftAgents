@@ -3,15 +3,14 @@
 //
 // Tests for ToolCall type
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 // MARK: - ToolCall Tests
 
 @Suite("ToolCall Tests")
 struct ToolCallTests {
-
     // MARK: - Initialization
 
     @Test("ToolCall default initialization")
@@ -32,7 +31,7 @@ struct ToolCallTests {
     @Test("ToolCall custom initialization")
     func customInitialization() {
         let id = UUID()
-        let timestamp = Date(timeIntervalSince1970: 1000000)
+        let timestamp = Date(timeIntervalSince1970: 1_000_000)
         let arguments: [String: SendableValue] = [
             "query": .string("search term"),
             "limit": .int(10),
@@ -90,7 +89,7 @@ struct ToolCallTests {
     @Test("ToolCall Equatable - same values")
     func equatableSameValues() {
         let id = UUID()
-        let timestamp = Date(timeIntervalSince1970: 1000000)
+        let timestamp = Date(timeIntervalSince1970: 1_000_000)
         let arguments: [String: SendableValue] = ["key": .string("value")]
 
         let toolCall1 = ToolCall(
@@ -112,7 +111,7 @@ struct ToolCallTests {
 
     @Test("ToolCall Equatable - different IDs")
     func equatableDifferentIds() {
-        let timestamp = Date(timeIntervalSince1970: 1000000)
+        let timestamp = Date(timeIntervalSince1970: 1_000_000)
 
         let toolCall1 = ToolCall(
             id: UUID(),
@@ -134,7 +133,7 @@ struct ToolCallTests {
     @Test("ToolCall Equatable - different tool names")
     func equatableDifferentToolNames() {
         let id = UUID()
-        let timestamp = Date(timeIntervalSince1970: 1000000)
+        let timestamp = Date(timeIntervalSince1970: 1_000_000)
 
         let toolCall1 = ToolCall(
             id: id,
@@ -156,7 +155,7 @@ struct ToolCallTests {
     @Test("ToolCall Equatable - different arguments")
     func equatableDifferentArguments() {
         let id = UUID()
-        let timestamp = Date(timeIntervalSince1970: 1000000)
+        let timestamp = Date(timeIntervalSince1970: 1_000_000)
 
         let toolCall1 = ToolCall(
             id: id,
@@ -183,14 +182,14 @@ struct ToolCallTests {
             id: id,
             toolName: "test",
             arguments: [:],
-            timestamp: Date(timeIntervalSince1970: 1000000)
+            timestamp: Date(timeIntervalSince1970: 1_000_000)
         )
 
         let toolCall2 = ToolCall(
             id: id,
             toolName: "test",
             arguments: [:],
-            timestamp: Date(timeIntervalSince1970: 2000000)
+            timestamp: Date(timeIntervalSince1970: 2_000_000)
         )
 
         #expect(toolCall1 != toolCall2)
@@ -224,7 +223,7 @@ struct ToolCallTests {
                 "verbose": .bool(true),
                 "precision": .int(2)
             ],
-            timestamp: Date(timeIntervalSince1970: 1000000)
+            timestamp: Date(timeIntervalSince1970: 1_000_000)
         )
 
         let encoder = JSONEncoder()

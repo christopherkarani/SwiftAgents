@@ -5,12 +5,13 @@
 
 import XCTest
 
+// MARK: - MacroIntegrationTests
+
 /// Integration tests for SwiftAgents macros.
 ///
 /// These tests demonstrate how the macros would be used in real-world scenarios
 /// and verify the generated code compiles and functions correctly.
 final class MacroIntegrationTests: XCTestCase {
-
     // MARK: - Tool Macro Integration
 
     /// Tests that a tool created with @Tool macro works correctly.
@@ -180,7 +181,7 @@ final class MacroIntegrationTests: XCTestCase {
     }
 }
 
-// MARK: - Example Tool for Testing
+// MARK: - ManualCalculatorTool
 
 /// A manually implemented tool for comparison with macro-generated tools.
 struct ManualCalculatorTool: Tool, Sendable {
@@ -207,12 +208,21 @@ struct ManualCalculatorTool: Tool, Sendable {
     }
 }
 
-// MARK: - Import Helpers
+// MARK: - ToolParameter
 
 // These would normally come from the SwiftAgents module
 // For testing, we use placeholder types
 
 struct ToolParameter: Sendable, Equatable {
+    indirect enum ParameterType: Sendable, Equatable {
+        case string
+        case int
+        case double
+        case bool
+        case array(elementType: ParameterType)
+        case oneOf([String])
+    }
+
     let name: String
     let description: String
     let type: ParameterType
@@ -226,23 +236,19 @@ struct ToolParameter: Sendable, Equatable {
         self.isRequired = isRequired
         self.defaultValue = defaultValue
     }
-
-    enum ParameterType: Sendable, Equatable {
-        case string
-        case int
-        case double
-        case bool
-        case array(elementType: ParameterType)
-        case oneOf([String])
-    }
 }
+
+// MARK: - Tool
 
 protocol Tool: Sendable {
     var name: String { get }
     var description: String { get }
     var parameters: [ToolParameter] { get }
+
     func execute(arguments: [String: SendableValue]) async throws -> SendableValue
 }
+
+// MARK: - SendableValue
 
 enum SendableValue: Sendable, Equatable {
     case string(String)
@@ -254,53 +260,42 @@ enum SendableValue: Sendable, Equatable {
     case object([String: SendableValue])
 
     var stringValue: String? {
-        if case .string(let v) = self { return v }
+        if case let .string(v) = self { return v }
         return nil
     }
 
     var intValue: Int? {
-        if case .int(let v) = self { return v }
+        if case let .int(v) = self { return v }
         return nil
     }
 
     var doubleValue: Double? {
-        if case .double(let v) = self { return v }
+        if case let .double(v) = self { return v }
         return nil
     }
 
     var boolValue: Bool? {
-        if case .bool(let v) = self { return v }
+        if case let .bool(v) = self { return v }
         return nil
     }
 }
+
+// MARK: - AgentError
 
 enum AgentError: Error {
     case invalidToolArguments(toolName: String, reason: String)
     case invalidInput(reason: String)
 }
 
+// MARK: - PromptString
+
 /// PromptString for testing (copy of the implementation)
 struct PromptString: Sendable, ExpressibleByStringLiteral, ExpressibleByStringInterpolation, CustomStringConvertible {
-    let content: String
-    let interpolations: [String]
-
-    init(content: String, interpolations: [String] = []) {
-        self.content = content
-        self.interpolations = interpolations
-    }
-
-    init(stringLiteral value: String) {
-        self.content = value
-        self.interpolations = []
-    }
-
-    var description: String { content }
-
     struct StringInterpolation: StringInterpolationProtocol {
         var content: String = ""
         var interpolations: [String] = []
 
-        init(literalCapacity: Int, interpolationCount: Int) {
+        init(literalCapacity: Int, interpolationCount _: Int) {
             content.reserveCapacity(literalCapacity)
         }
 
@@ -308,7 +303,7 @@ struct PromptString: Sendable, ExpressibleByStringLiteral, ExpressibleByStringIn
             content += literal
         }
 
-        mutating func appendInterpolation<T>(_ value: T) {
+        mutating func appendInterpolation(_ value: some Any) {
             content += String(describing: value)
             interpolations.append(String(describing: type(of: value)))
         }
@@ -324,8 +319,23 @@ struct PromptString: Sendable, ExpressibleByStringLiteral, ExpressibleByStringIn
         }
     }
 
+    let content: String
+    let interpolations: [String]
+
+    var description: String { content }
+
+    init(content: String, interpolations: [String] = []) {
+        self.content = content
+        self.interpolations = interpolations
+    }
+
+    init(stringLiteral value: String) {
+        content = value
+        interpolations = []
+    }
+
     init(stringInterpolation: StringInterpolation) {
-        self.content = stringInterpolation.content
-        self.interpolations = stringInterpolation.interpolations
+        content = stringInterpolation.content
+        interpolations = stringInterpolation.interpolations
     }
 }

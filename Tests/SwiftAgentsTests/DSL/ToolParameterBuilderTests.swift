@@ -3,15 +3,14 @@
 //
 // Tests for ToolParameterBuilder DSL result builder.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - ToolParameterBuilder Tests
+// MARK: - ToolParameterBuilderTests
 
 @Suite("ToolParameterBuilder DSL Tests")
 struct ToolParameterBuilderTests {
-
     // MARK: - Basic Builder Usage
 
     @Test("Build single parameter")
@@ -163,7 +162,7 @@ struct ToolParameterBuilderTests {
 
         let params = makeParams()
         #expect(params.count == 1)
-        if case .object(let properties) = params[0].type {
+        if case let .object(properties) = params[0].type {
             #expect(properties.count == 3)
         } else {
             Issue.record("Expected object type")
@@ -253,11 +252,11 @@ struct ToolParameterBuilderTests {
 
         let params = makeParams()
         #expect(params.count == 3)
-        #expect(params.map { $0.name } == ["action", "token", "adminKey"])
+        #expect(params.map(\.name) == ["action", "token", "adminKey"])
     }
 }
 
-// MARK: - Test Support Types
+// MARK: - BuilderBasedTool
 
 /// A tool that uses ToolParameterBuilder for its parameters
 struct BuilderBasedTool: Tool {
@@ -271,12 +270,14 @@ struct BuilderBasedTool: Tool {
         Parameter("filters", description: "Search filters", type: .array(elementType: .string), required: false)
     }
 
-    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    func execute(arguments _: [String: SendableValue]) async throws -> SendableValue {
         .string("executed")
     }
 }
 
 // MARK: - Parameter Factory Function (to be implemented)
+
+// swiftlint:disable identifier_name
 
 /// Convenience function for creating ToolParameter with builder DSL syntax
 /// This needs to be implemented in the main source
@@ -329,3 +330,5 @@ func Parameter(
         defaultValue: .string(defaultValue)
     )
 }
+
+// swiftlint:enable identifier_name

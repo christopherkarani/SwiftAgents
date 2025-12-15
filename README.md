@@ -1,27 +1,27 @@
 # SwiftAgents
 
 [![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange.svg)](https://swift.org)
-[![Platforms](https://img.shields.io/badge/Platforms-iOS%2026%20|%20macOS%2026%20|%20watchOS%2026%20|%20tvOS%2026%20|%20visionOS%2026-blue.svg)](https://developer.apple.com)
+[![Platforms](https://img.shields.io/badge/Platforms-iOS%2017%2B%20|%20macOS%2014%2B%20|%20Linux-blue.svg)](https://swift.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Swift Package Manager](https://img.shields.io/badge/SPM-compatible-brightgreen.svg)](https://swift.org/package-manager/)
 
-**LangChain for Apple Platforms** — A comprehensive Swift framework for building autonomous AI agents
+**LangChain for Apple Platforms and Linux Servers** — A comprehensive Swift framework for building autonomous AI agents
 
-SwiftAgents provides the agent orchestration layer on top of SwiftAI SDK, enabling autonomous reasoning, intelligent tool use, persistent memory systems, and sophisticated multi-agent coordination—all built natively for Apple platforms with Swift 6.2's strict concurrency safety.
+SwiftAgents provides the agent orchestration layer on top of SwiftAI SDK, enabling autonomous reasoning, intelligent tool use, persistent memory systems, and sophisticated multi-agent coordination—built natively for Apple platforms and Linux servers with Swift 6.2's strict concurrency safety.
 
 ---
 
 ## Features
 
 - 🤖 **Agent Framework** - ReAct pattern with Thought-Action-Observation loops for autonomous reasoning
-- 🧠 **Memory Systems** - Conversation, sliding window, summary, hybrid, and SwiftData-backed persistence
+- 🧠 **Memory Systems** - Conversation, sliding window, summary, hybrid, and pluggable persistence backends
 - 🛠️ **Tool Integration** - Type-safe tool protocol with fluent builder API and built-in utilities
 - 🎭 **Multi-Agent Orchestration** - Supervisor-worker patterns, sequential chains, parallel execution, and intelligent routing
-- 📊 **Observability** - Built-in tracing (Console, OSLog), metrics collection, and event streaming
+- 📊 **Observability** - Cross-platform tracing with swift-log, metrics collection, and event streaming
 - 🔄 **Resilience** - Circuit breakers, retry policies with exponential backoff, and fallback chains
-- 🎨 **SwiftUI Components** - Ready-to-use chat views and agent status indicators
+- 🐧 **Cross-Platform** - Full support for Apple platforms (iOS 17+, macOS 14+) and Linux servers
 - ⚡️ **Swift 6.2 Native** - Full actor isolation, Sendable types, and structured concurrency throughout
-- 🍎 **LLM Agnostic** - Designed for Use with any LLM, local, cloud or Foundation Models
+- 🍎 **LLM Agnostic** - Designed for use with any LLM, local, cloud or Foundation Models
 - 🪄 **Swift Macros** - `@Tool`, `@Agent`, `@Parameter` macros eliminate boilerplate
 - 🔗 **DSL & Operators** - Fluent APIs, result builders, and composition operators (`>>>`, `&+`, `~>`)
 
@@ -29,7 +29,8 @@ SwiftAgents provides the agent orchestration layer on top of SwiftAI SDK, enabli
 
 ## Requirements
 - **Swift 6.2+**
-- **Xcode 26.0+**
+- **Apple Platforms**: Xcode 16.0+, iOS 17+, macOS 14+, watchOS 10+, tvOS 17+, visionOS 1+
+- **Linux**: Ubuntu 22.04+ or compatible distribution with Swift 6.2
 
 ---
 
@@ -51,8 +52,7 @@ Then add the dependency to your target:
 .target(
     name: "YourApp",
     dependencies: [
-        .product(name: "SwiftAgents", package: "SwiftAgents"),
-        .product(name: "SwiftAgentsUI", package: "SwiftAgents")  // Optional: SwiftUI components
+        .product(name: "SwiftAgents", package: "SwiftAgents")
     ]
 )
 ```
@@ -66,6 +66,17 @@ Then add the dependency to your target:
 ---
 
 ## Quick Start
+
+### Setup Logging (Required)
+
+SwiftAgents uses swift-log for cross-platform logging. Bootstrap logging once at application startup:
+
+```swift
+import SwiftAgents
+
+// Bootstrap with default console logging
+Log.bootstrap()
+```
 
 ### Basic Agent
 
@@ -267,11 +278,18 @@ let hybridMemory = HybridMemory(
     summaryMemory: summaryMemory
 )
 
-// SwiftData-backed persistence
-let swiftDataMemory = SwiftDataMemory(
-    modelContainer: myModelContainer,
+// SwiftData-backed persistence (Apple platforms only)
+#if canImport(SwiftData)
+let backend = try SwiftDataBackend.persistent()
+let persistentMemory = PersistentMemory(
+    backend: backend,
     conversationId: "user_123"
 )
+#endif
+
+// Or use InMemoryBackend for cross-platform ephemeral storage
+let inMemoryBackend = InMemoryBackend()
+let memory = PersistentMemory(backend: inMemoryBackend, conversationId: "user_123")
 
 let agent = ReActAgent.Builder()
     .inferenceProvider(provider)
@@ -279,14 +297,13 @@ let agent = ReActAgent.Builder()
     .build()
 ```
 
-### SwiftUI Integration
+### SwiftUI Integration (Apple Platforms)
 
-Build chat interfaces with included UI components:
+Build chat interfaces with SwiftAgents:
 
 ```swift
 import SwiftUI
 import SwiftAgents
-import SwiftAgentsUI
 
 struct ChatView: View {
     @State private var agent: ReActAgent
@@ -601,10 +618,10 @@ let custom = InferenceOptions.default
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Your Application                         │
-│                  (iOS, macOS, watchOS, tvOS, visionOS)          │
+│         (iOS, macOS, watchOS, tvOS, visionOS, Linux)            │
 ├─────────────────────────────────────────────────────────────────┤
-│                         UI                                      │
-│                  (Chat Views, Status Indicators)                │
+│                    UI Layer (Apple Platforms)                   │
+│                  (SwiftUI Chat Views, Custom UIs)               │
 ├─────────────────────────────────────────────────────────────────┤
 │                          SwiftAgents                            │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
@@ -630,10 +647,17 @@ let custom = InferenceOptions.default
 
 ### Layer Responsibilities
 
-- **Application Layer**: Your iOS/macOS/etc. app using SwiftAgents
-- **SwiftAgentsUI**: Pre-built SwiftUI components for common agent UIs
-- **SwiftAgents Core**: Agent implementations, memory, tools, orchestration
+- **Application Layer**: Your iOS/macOS/Linux app using SwiftAgents
+- **UI Layer**: SwiftUI components for Apple platforms (build your own or use custom views)
+- **SwiftAgents Core**: Agent implementations, memory, tools, orchestration (cross-platform)
 - **InferenceProvider**: Abstraction for LLM backends (implement for your model)
+
+### Cross-Platform Features
+
+- **Logging**: Uses swift-log for unified logging across Apple platforms and Linux
+- **Memory Backends**: Pluggable architecture supporting custom storage (PostgreSQL, Redis, etc.)
+- **Concurrency**: Swift 6.2 actors and structured concurrency work identically on all platforms
+- **Platform-Specific**: SwiftData backend and OSLog tracer available on Apple platforms via conditional compilation
 
 ---
 
@@ -718,13 +742,15 @@ public protocol AgentMemory: Actor, Sendable {
 
 **Available Memory Systems:**
 
-| Memory Type | Description | Use Case |
-|-------------|-------------|----------|
-| `ConversationMemory` | Simple FIFO with token limit | Basic chat applications |
-| `SlidingWindowMemory` | Fixed-size window (last N messages) | Bounded memory requirements |
-| `SummaryMemory` | Automatic summarization of old messages | Long conversations |
-| `HybridMemory` | Combines conversation + summary | Best of both: recency + history |
-| `SwiftDataMemory` | SwiftData-backed persistence | Cross-session persistence |
+| Memory Type | Description | Platforms | Use Case |
+|-------------|-------------|-----------|----------|
+| `ConversationMemory` | Simple FIFO with token limit | All | Basic chat applications |
+| `SlidingWindowMemory` | Fixed-size window (last N messages) | All | Bounded memory requirements |
+| `SummaryMemory` | Automatic summarization of old messages | All | Long conversations |
+| `HybridMemory` | Combines conversation + summary | All | Best of both: recency + history |
+| `PersistentMemory` | Pluggable backend architecture | All | Custom storage backends |
+| `InMemoryBackend` | Ephemeral in-memory storage | All | Testing, temporary storage |
+| `SwiftDataBackend` | SwiftData-backed persistence | Apple only | Cross-session persistence on Apple platforms |
 
 **Message Types:**
 

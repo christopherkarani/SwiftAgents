@@ -4,14 +4,13 @@
 // Edge case tests for tracers
 
 import Foundation
-import Testing
 @testable import SwiftAgents
+import Testing
 
 // MARK: - Edge Case Tests
 
 @Suite("Tracer Edge Case Tests")
 struct TracerEdgeCaseTests {
-
     @Test("CompositeTracer with single tracer")
     func compositeWithSingleTracer() async {
         // Given
@@ -57,7 +56,7 @@ struct TracerEdgeCaseTests {
         let spy = SpyTracer()
         let composite = CompositeTracer(
             tracers: [spy],
-            minimumLevel: .trace  // Accept all levels
+            minimumLevel: .trace // Accept all levels
         )
 
         let traceId = UUID()

@@ -40,9 +40,14 @@ public struct ToolParameterBuilder {
         components
     }
 
+    /// Builds an empty parameter array for empty builder bodies.
+    public static func buildBlock() -> [ToolParameter] {
+        []
+    }
+
     /// Builds a parameter array from an array of parameters.
     public static func buildBlock(_ components: [ToolParameter]...) -> [ToolParameter] {
-        components.flatMap { $0 }
+        components.flatMap(\.self)
     }
 
     /// Builds a parameter array from an optional parameter.
@@ -62,7 +67,7 @@ public struct ToolParameterBuilder {
 
     /// Builds a parameter array from a for-in loop.
     public static func buildArray(_ components: [[ToolParameter]]) -> [ToolParameter] {
-        components.flatMap { $0 }
+        components.flatMap(\.self)
     }
 
     /// Converts a single parameter to an array.
@@ -87,6 +92,8 @@ public struct ToolParameterBuilder {
 }
 
 // MARK: - Parameter Factory Functions
+
+// swiftlint:disable identifier_name
 
 /// Creates a tool parameter with the specified configuration.
 ///
@@ -225,6 +232,8 @@ public func Parameter(
     )
 }
 
+// swiftlint:enable identifier_name
+
 // MARK: - ToolArrayBuilder
 
 /// A result builder for constructing arrays of tools.
@@ -251,7 +260,7 @@ public struct ToolArrayBuilder {
 
     /// Builds a tool array from arrays of tools.
     public static func buildBlock(_ components: [any Tool]...) -> [any Tool] {
-        components.flatMap { $0 }
+        components.flatMap(\.self)
     }
 
     /// Builds a tool array from an optional tool.
@@ -271,7 +280,7 @@ public struct ToolArrayBuilder {
 
     /// Builds a tool array from a for-in loop.
     public static func buildArray(_ components: [[any Tool]]) -> [any Tool] {
-        components.flatMap { $0 }
+        components.flatMap(\.self)
     }
 
     /// Converts a single tool to an array.

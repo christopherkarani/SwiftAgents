@@ -10,40 +10,43 @@ import SwiftSyntaxMacrosTestSupport
 import XCTest
 
 #if canImport(SwiftAgentsMacros)
-import SwiftAgentsMacros
+    import SwiftAgentsMacros
 
-let traceableMacros: [String: Macro.Type] = [
-    "Traceable": TraceableMacro.self
-]
+    let traceableMacros: [String: Macro.Type] = [
+        "Traceable": TraceableMacro.self
+    ]
 #endif
 
-final class TraceableMacroTests: XCTestCase {
+// MARK: - TraceableMacroTests
 
+final class TraceableMacroTests: XCTestCase {
     // MARK: - Basic Traceable Tests
 
+    // swiftlint:disable:next function_body_length
     func testTraceableMacroExpansion() throws {
         #if canImport(SwiftAgentsMacros)
-        assertMacroExpansion(
-            """
-            @Traceable
-            struct WeatherTool: Tool {
-                let name = "weather"
-                let description = "Gets weather"
-                let parameters: [ToolParameter] = []
+            assertMacroExpansion(
+                """
+                @Traceable
+                struct WeatherTool: Tool {
+                    let name = "weather"
+                    let description = "Gets weather"
+                    let parameters: [ToolParameter] = []
 
-                func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
-                    return .string("Sunny")
+                    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+                        return .string("Sunny")
+                    }
                 }
-            }
-            """,
-            expandedSource: """
-            struct WeatherTool: Tool {
-                let name = "weather"
-                let description = "Gets weather"
-                let parameters: [ToolParameter] = []
+                """,
+                expandedSource: """
+                struct WeatherTool: Tool {
+                    let name = "weather"
+                    let description = "Gets weather"
+                    let parameters: [ToolParameter] = []
 
-                func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
-                    return .string("Sunny")
+                    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+                        return .string("Sunny")
+                    }
                 }
 
                 /// Executes the tool with tracing enabled.
@@ -111,12 +114,11 @@ final class TraceableMacroTests: XCTestCase {
                         throw error
                     }
                 }
-            }
-            """,
-            macros: traceableMacros
-        )
+                """,
+                macros: traceableMacros
+            )
         #else
-        throw XCTSkip("macros are only supported when running tests for the host platform")
+            throw XCTSkip("macros are only supported when running tests for the host platform")
         #endif
     }
 
@@ -124,23 +126,23 @@ final class TraceableMacroTests: XCTestCase {
 
     func testTraceableOnlyAppliesToStruct() throws {
         #if canImport(SwiftAgentsMacros)
-        assertMacroExpansion(
-            """
-            @Traceable
-            class InvalidTool {
-            }
-            """,
-            expandedSource: """
-            class InvalidTool {
-            }
-            """,
-            diagnostics: [
-                DiagnosticSpec(message: "@Traceable can only be applied to structs", line: 1, column: 1)
-            ],
-            macros: traceableMacros
-        )
+            assertMacroExpansion(
+                """
+                @Traceable
+                class InvalidTool {
+                }
+                """,
+                expandedSource: """
+                class InvalidTool {
+                }
+                """,
+                diagnostics: [
+                    DiagnosticSpec(message: "@Traceable can only be applied to structs", line: 1, column: 1)
+                ],
+                macros: traceableMacros
+            )
         #else
-        throw XCTSkip("macros are only supported when running tests for the host platform")
+            throw XCTSkip("macros are only supported when running tests for the host platform")
         #endif
     }
 }

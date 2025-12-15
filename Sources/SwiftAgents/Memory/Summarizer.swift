@@ -5,11 +5,16 @@
 
 import Foundation
 
+// MARK: - Summarizer
+
 /// Protocol for text summarization services.
 ///
 /// Abstracts the summarization capability to support multiple backends
 /// including Foundation Models, remote APIs, or mock implementations for testing.
 public protocol Summarizer: Sendable {
+    /// Whether this summarizer is currently available.
+    var isAvailable: Bool { get async }
+
     /// Summarizes the given text.
     ///
     /// - Parameters:
@@ -18,15 +23,27 @@ public protocol Summarizer: Sendable {
     /// - Returns: A summarized version of the text.
     /// - Throws: `SummarizerError` if summarization fails.
     func summarize(_ text: String, maxTokens: Int) async throws -> String
-
-    /// Whether this summarizer is currently available.
-    var isAvailable: Bool { get async }
 }
 
-// MARK: - Errors
+// MARK: - SummarizerError
 
 /// Error types for summarization operations.
 public enum SummarizerError: Error, Sendable, CustomStringConvertible {
+    // MARK: Public
+
+    public var description: String {
+        switch self {
+        case .unavailable:
+            "Summarizer is not available"
+        case let .summarizationFailed(error):
+            "Summarization failed: \(error.localizedDescription)"
+        case .inputTooShort:
+            "Input text is too short to summarize"
+        case .timeout:
+            "Summarization operation timed out"
+        }
+    }
+
     /// The summarizer is not available (e.g., no LLM access).
     case unavailable
     /// Summarization failed with an underlying error.
@@ -35,22 +52,9 @@ public enum SummarizerError: Error, Sendable, CustomStringConvertible {
     case inputTooShort
     /// The operation timed out.
     case timeout
-
-    public var description: String {
-        switch self {
-        case .unavailable:
-            return "Summarizer is not available"
-        case .summarizationFailed(let error):
-            return "Summarization failed: \(error.localizedDescription)"
-        case .inputTooShort:
-            return "Input text is too short to summarize"
-        case .timeout:
-            return "Summarization operation timed out"
-        }
-    }
 }
 
-// MARK: - Truncating Summarizer
+// MARK: - TruncatingSummarizer
 
 /// A summarizer that truncates text instead of true summarization.
 ///
@@ -64,20 +68,20 @@ public enum SummarizerError: Error, Sendable, CustomStringConvertible {
 /// let summary = try await summarizer.summarize(longText, maxTokens: 500)
 /// ```
 public struct TruncatingSummarizer: Summarizer, Sendable {
+    // MARK: Public
+
     /// Shared instance for convenience.
     public static let shared = TruncatingSummarizer()
 
-    private let tokenEstimator: any TokenEstimator
+    public var isAvailable: Bool {
+        get async { true }
+    }
 
     /// Creates a truncating summarizer.
     ///
     /// - Parameter tokenEstimator: Token estimator for measuring text length.
     public init(tokenEstimator: any TokenEstimator = CharacterBasedTokenEstimator.shared) {
         self.tokenEstimator = tokenEstimator
-    }
-
-    public var isAvailable: Bool {
-        get async { true }
     }
 
     public func summarize(_ text: String, maxTokens: Int) async throws -> String {
@@ -101,94 +105,109 @@ public struct TruncatingSummarizer: Summarizer, Sendable {
 
         return truncated + "..."
     }
+
+    // MARK: Private
+
+    private let tokenEstimator: any TokenEstimator
 }
 
 // MARK: - Foundation Models Summarizer
 
 #if canImport(FoundationModels)
-import FoundationModels
+    import FoundationModels
 
-/// Foundation Models-based summarizer.
-///
-/// Uses Apple's on-device language models for summarization.
-/// Only available on physical devices with iOS/macOS 26+.
-///
-/// ## Availability
-///
-/// This summarizer checks for model availability before each operation.
-/// If models are unavailable (e.g., on simulator), use `TruncatingSummarizer` as fallback.
-///
-/// ## Usage
-///
-/// ```swift
-/// let summarizer = FoundationModelsSummarizer()
-/// if await summarizer.isAvailable {
-///     let summary = try await summarizer.summarize(longText, maxTokens: 500)
-/// }
-/// ```
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public actor FoundationModelsSummarizer: Summarizer {
-    private var session: LanguageModelSession?
+    /// Foundation Models-based summarizer.
+    ///
+    /// Uses Apple's on-device language models for summarization.
+    /// Only available on physical devices with iOS/macOS 26+.
+    ///
+    /// ## Availability
+    ///
+    /// This summarizer checks for model availability before each operation.
+    /// If models are unavailable (e.g., on simulator), use `TruncatingSummarizer` as fallback.
+    ///
+    /// ## Usage
+    ///
+    /// ```swift
+    /// let summarizer = FoundationModelsSummarizer()
+    /// if await summarizer.isAvailable {
+    ///     let summary = try await summarizer.summarize(longText, maxTokens: 500)
+    /// }
+    /// ```
+    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    public actor FoundationModelsSummarizer: Summarizer {
+        // MARK: Public
 
-    /// Creates a Foundation Models summarizer.
-    public init() {}
-
-    public var isAvailable: Bool {
-        get async {
-            let model = SystemLanguageModel.default
-            let availability = model.availability
-            return availability == .available
+        public var isAvailable: Bool {
+            get async {
+                let model = SystemLanguageModel.default
+                let availability = model.availability
+                return availability == .available
+            }
         }
+
+        /// Creates a Foundation Models summarizer.
+        public init() {}
+
+        public func summarize(_ text: String, maxTokens _: Int) async throws -> String {
+            guard await isAvailable else {
+                throw SummarizerError.unavailable
+            }
+
+            // Initialize session if needed
+            if session == nil {
+                session = LanguageModelSession()
+            }
+
+            guard let session else {
+                throw SummarizerError.unavailable
+            }
+
+            let prompt = """
+            Summarize the following conversation concisely, preserving key information and context. \
+            Keep the summary brief and focused on the most important points.
+
+            Conversation:
+            \(text)
+
+            Summary:
+            """
+
+            do {
+                let response = try await session.respond(to: prompt)
+                return response.content
+            } catch {
+                throw SummarizerError.summarizationFailed(underlying: error)
+            }
+        }
+
+        /// Resets the language model session.
+        public func resetSession() {
+            session = nil
+        }
+
+        // MARK: Private
+
+        private var session: LanguageModelSession?
     }
-
-    public func summarize(_ text: String, maxTokens: Int) async throws -> String {
-        guard await isAvailable else {
-            throw SummarizerError.unavailable
-        }
-
-        // Initialize session if needed
-        if session == nil {
-            session = LanguageModelSession()
-        }
-
-        guard let session = session else {
-            throw SummarizerError.unavailable
-        }
-
-        let prompt = """
-        Summarize the following conversation concisely, preserving key information and context. \
-        Keep the summary brief and focused on the most important points.
-
-        Conversation:
-        \(text)
-
-        Summary:
-        """
-
-        do {
-            let response = try await session.respond(to: prompt)
-            return response.content
-        } catch {
-            throw SummarizerError.summarizationFailed(underlying: error)
-        }
-    }
-
-    /// Resets the language model session.
-    public func resetSession() {
-        session = nil
-    }
-}
 #endif
 
-// MARK: - Composite Summarizer
+// MARK: - FallbackSummarizer
 
 /// A summarizer that tries multiple summarizers in order.
 ///
 /// Attempts the primary summarizer first, falling back to alternatives
 /// if the primary fails or is unavailable.
 public struct FallbackSummarizer: Summarizer, Sendable {
-    private let primary: any Summarizer
-    private let fallback: any Summarizer
+    // MARK: Public
+
+    public var isAvailable: Bool {
+        get async {
+            let primaryAvailable = await primary.isAvailable
+            let fallbackAvailable = await fallback.isAvailable
+            return primaryAvailable || fallbackAvailable
+        }
+    }
 
     /// Creates a fallback summarizer.
     ///
@@ -198,14 +217,6 @@ public struct FallbackSummarizer: Summarizer, Sendable {
     public init(primary: any Summarizer, fallback: any Summarizer = TruncatingSummarizer.shared) {
         self.primary = primary
         self.fallback = fallback
-    }
-
-    public var isAvailable: Bool {
-        get async {
-            let primaryAvailable = await primary.isAvailable
-            let fallbackAvailable = await fallback.isAvailable
-            return primaryAvailable || fallbackAvailable
-        }
     }
 
     public func summarize(_ text: String, maxTokens: Int) async throws -> String {
@@ -225,4 +236,9 @@ public struct FallbackSummarizer: Summarizer, Sendable {
 
         throw SummarizerError.unavailable
     }
+
+    // MARK: Private
+
+    private let primary: any Summarizer
+    private let fallback: any Summarizer
 }

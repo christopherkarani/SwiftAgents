@@ -1,17 +1,16 @@
 // HybridMemoryTests.swift
 // SwiftAgents Framework
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 @Suite("HybridMemory Tests")
 struct HybridMemoryTests {
-
     // MARK: - Initialization Tests
 
     @Test("Creates with default configuration")
-    func testDefaultInit() async {
+    func defaultInit() async {
         let memory = HybridMemory()
 
         let config = await memory.configuration
@@ -21,7 +20,7 @@ struct HybridMemoryTests {
     }
 
     @Test("Creates with custom configuration")
-    func testCustomConfiguration() async {
+    func customConfiguration() async {
         let config = HybridMemory.Configuration(
             shortTermMaxMessages: 20,
             longTermSummaryTokens: 500,
@@ -36,7 +35,7 @@ struct HybridMemoryTests {
     }
 
     @Test("Configuration enforces bounds")
-    func testConfigurationBounds() async {
+    func configurationBounds() async {
         let config = HybridMemory.Configuration(
             shortTermMaxMessages: 5,
             longTermSummaryTokens: 50,
@@ -52,7 +51,7 @@ struct HybridMemoryTests {
     // MARK: - Add Tests
 
     @Test("Adds messages to short-term memory")
-    func testAddToShortTerm() async {
+    func addToShortTerm() async {
         let memory = HybridMemory()
 
         await memory.add(.user("Hello"))
@@ -75,7 +74,7 @@ struct HybridMemoryTests {
     // MARK: - Summarization Tests
 
     @Test("Triggers summarization at threshold")
-    func testSummarizationTrigger() async {
+    func summarizationTrigger() async {
         let mockSummarizer = MockSummarizer()
         await mockSummarizer.stub(result: "Hybrid summary")
 
@@ -97,7 +96,7 @@ struct HybridMemoryTests {
     }
 
     @Test("Creates long-term summary")
-    func testCreatesLongTermSummary() async {
+    func createsLongTermSummary() async {
         let mockSummarizer = MockSummarizer()
         await mockSummarizer.stub(result: "Long-term summary content")
 
@@ -121,7 +120,7 @@ struct HybridMemoryTests {
     // MARK: - Context Retrieval Tests
 
     @Test("Context includes recent messages without summary")
-    func testContextWithoutSummary() async {
+    func contextWithoutSummary() async {
         let memory = HybridMemory()
 
         await memory.add(.user("Hello"))
@@ -134,7 +133,7 @@ struct HybridMemoryTests {
     }
 
     @Test("Context includes both summary and recent messages")
-    func testContextWithSummaryAndRecent() async {
+    func contextWithSummaryAndRecent() async {
         let mockSummarizer = MockSummarizer()
         await mockSummarizer.stub(result: "Summary of history")
 
@@ -159,7 +158,7 @@ struct HybridMemoryTests {
     }
 
     @Test("Context respects token budget allocation")
-    func testTokenBudgetAllocation() async {
+    func tokenBudgetAllocation() async {
         let memory = HybridMemory(
             configuration: .init(summaryTokenRatio: 0.3)
         )

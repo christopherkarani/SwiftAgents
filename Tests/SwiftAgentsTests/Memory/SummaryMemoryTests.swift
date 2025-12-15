@@ -1,17 +1,16 @@
 // SummaryMemoryTests.swift
 // SwiftAgents Framework
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 @Suite("SummaryMemory Tests")
 struct SummaryMemoryTests {
-
     // MARK: - Initialization Tests
 
     @Test("Creates with default configuration")
-    func testDefaultInit() async {
+    func defaultInit() async {
         let memory = SummaryMemory()
 
         let config = await memory.configuration
@@ -21,7 +20,7 @@ struct SummaryMemoryTests {
     }
 
     @Test("Creates with custom configuration")
-    func testCustomConfiguration() async {
+    func customConfiguration() async {
         let config = SummaryMemory.Configuration(
             recentMessageCount: 10,
             summarizationThreshold: 30,
@@ -35,7 +34,7 @@ struct SummaryMemoryTests {
     }
 
     @Test("Configuration enforces minimums")
-    func testConfigurationMinimums() async {
+    func configurationMinimums() async {
         let config = SummaryMemory.Configuration(
             recentMessageCount: 1,
             summarizationThreshold: 5,
@@ -50,7 +49,7 @@ struct SummaryMemoryTests {
     // MARK: - Add Tests
 
     @Test("Adds messages before threshold")
-    func testAddBeforeThreshold() async {
+    func addBeforeThreshold() async {
         let memory = SummaryMemory(
             configuration: .init(summarizationThreshold: 100)
         )
@@ -63,7 +62,7 @@ struct SummaryMemoryTests {
     }
 
     @Test("Tracks total messages added")
-    func testTotalMessagesTracking() async {
+    func totalMessagesTracking() async {
         let memory = SummaryMemory()
 
         await memory.add(.user("1"))
@@ -76,7 +75,7 @@ struct SummaryMemoryTests {
     // MARK: - Summarization Tests
 
     @Test("Triggers summarization at threshold")
-    func testSummarizationTrigger() async {
+    func summarizationTrigger() async {
         let mockSummarizer = MockSummarizer()
         await mockSummarizer.stub(result: "Test summary")
 
@@ -101,7 +100,7 @@ struct SummaryMemoryTests {
     }
 
     @Test("Keeps recent messages after summarization")
-    func testKeepsRecentMessages() async {
+    func keepsRecentMessages() async {
         let mockSummarizer = MockSummarizer()
         await mockSummarizer.stub(result: "Summary of old messages")
 
@@ -124,7 +123,7 @@ struct SummaryMemoryTests {
     }
 
     @Test("Creates summary from old messages")
-    func testCreatesSummary() async {
+    func createsSummary() async {
         let mockSummarizer = MockSummarizer()
         await mockSummarizer.stub(result: "This is the summary")
 
@@ -149,7 +148,7 @@ struct SummaryMemoryTests {
     // MARK: - Fallback Tests
 
     @Test("Falls back when summarizer unavailable")
-    func testFallbackWhenUnavailable() async {
+    func fallbackWhenUnavailable() async {
         let unavailableSummarizer = MockSummarizer()
         await unavailableSummarizer.stub(available: false)
 
@@ -176,7 +175,7 @@ struct SummaryMemoryTests {
     }
 
     @Test("Handles summarization failure gracefully")
-    func testHandlesSummarizationFailure() async {
+    func handlesSummarizationFailure() async {
         let failingSummarizer = MockSummarizer()
         await failingSummarizer.stub(error: SummarizerError.unavailable)
 
@@ -204,7 +203,7 @@ struct SummaryMemoryTests {
     // MARK: - Context Retrieval Tests
 
     @Test("Context includes summary when present")
-    func testContextIncludesSummary() async {
+    func contextIncludesSummary() async {
         let mockSummarizer = MockSummarizer()
         await mockSummarizer.stub(result: "Summary content")
 

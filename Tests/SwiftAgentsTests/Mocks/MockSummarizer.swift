@@ -6,6 +6,8 @@
 import Foundation
 @testable import SwiftAgents
 
+// MARK: - MockSummarizer
+
 /// Mock summarizer for testing.
 ///
 /// Provides controllable summarization behavior for unit tests.
@@ -41,6 +43,22 @@ public actor MockSummarizer: Summarizer {
     /// Delay before returning (for testing async behavior).
     public var responseDelay: Duration
 
+    // MARK: - Summarizer Protocol
+
+    public var isAvailable: Bool {
+        get async { isAvailableValue }
+    }
+
+    /// Returns the most recent summarize call, if any.
+    public var lastCall: (text: String, maxTokens: Int)? {
+        summarizeCalls.last
+    }
+
+    /// Returns the number of times summarize was called.
+    public var callCount: Int {
+        summarizeCalls.count
+    }
+
     /// Creates a new mock summarizer with configurable initial state.
     ///
     /// - Parameters:
@@ -56,17 +74,11 @@ public actor MockSummarizer: Summarizer {
         error: Error = SummarizerError.unavailable,
         delay: Duration = .zero
     ) {
-        self.isAvailableValue = isAvailable
-        self.summarizeResult = result
+        isAvailableValue = isAvailable
+        summarizeResult = result
         self.shouldThrow = shouldThrow
-        self.errorToThrow = error
-        self.responseDelay = delay
-    }
-
-    // MARK: - Summarizer Protocol
-
-    public var isAvailable: Bool {
-        get async { isAvailableValue }
+        errorToThrow = error
+        responseDelay = delay
     }
 
     public func summarize(_ text: String, maxTokens: Int) async throws -> String {
@@ -95,16 +107,6 @@ public actor MockSummarizer: Summarizer {
         responseDelay = .zero
     }
 
-    /// Returns the most recent summarize call, if any.
-    public var lastCall: (text: String, maxTokens: Int)? {
-        summarizeCalls.last
-    }
-
-    /// Returns the number of times summarize was called.
-    public var callCount: Int {
-        summarizeCalls.count
-    }
-
     /// Configures the mock to return a specific result.
     public func stub(result: String) {
         summarizeResult = result
@@ -125,19 +127,19 @@ public actor MockSummarizer: Summarizer {
 
 // MARK: - Convenience Factory
 
-extension MockSummarizer {
+public extension MockSummarizer {
     /// Creates a mock that always succeeds with a given result.
-    public static func succeeding(with result: String = "Mock summary") -> MockSummarizer {
+    static func succeeding(with result: String = "Mock summary") -> MockSummarizer {
         MockSummarizer(result: result)
     }
 
     /// Creates a mock that always fails with a given error.
-    public static func failing(with error: Error = SummarizerError.unavailable) -> MockSummarizer {
+    static func failing(with error: Error = SummarizerError.unavailable) -> MockSummarizer {
         MockSummarizer(shouldThrow: true, error: error)
     }
 
     /// Creates a mock that reports as unavailable.
-    public static func unavailable() -> MockSummarizer {
+    static func unavailable() -> MockSummarizer {
         MockSummarizer(isAvailable: false)
     }
 }

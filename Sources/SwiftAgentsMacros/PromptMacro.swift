@@ -75,9 +75,17 @@ public struct PromptMacro: ExpressionMacro {
         // Build the result string with proper formatting
         let combinedString = parts.joined()
 
-        // Return a validated string literal
+        // Escape special characters for regular string literal
+        // Note: Don't escape backslashes as they're used for interpolation markers
+        let escapedString = combinedString
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\t", with: "\\t")
+
+        // Return a validated string literal using regular quotes
         return """
-            PromptString(content: \"\"\"\(raw: combinedString)\"\"\", interpolations: [\(raw: interpolations.map { "\"\($0)\"" }.joined(separator: ", "))])
+            PromptString(content: "\(raw: escapedString)", interpolations: [\(raw: interpolations.map { "\"\($0)\"" }.joined(separator: ", "))])
             """
     }
 }

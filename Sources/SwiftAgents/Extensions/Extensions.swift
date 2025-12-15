@@ -14,7 +14,7 @@ import Foundation
 
 // MARK: - Duration Extensions
 
-extension Duration {
+public extension Duration {
     /// Converts a Duration to TimeInterval (seconds as Double).
     ///
     /// This is useful for interoperability with APIs that expect TimeInterval,
@@ -31,11 +31,14 @@ extension Duration {
     /// let veryLong: Duration = .seconds(Int64.max)
     /// let infinite: TimeInterval = veryLong.timeInterval  // .infinity
     /// ```
-    public var timeInterval: TimeInterval {
-        let (seconds, attoseconds) = self.components
+    var timeInterval: TimeInterval {
+        let (seconds, attoseconds) = components
 
         // Handle overflow for very large durations
-        guard seconds <= Int64(Double.greatestFiniteMagnitude) else {
+        // Int64 values beyond 2^53 lose precision when converted to Double,
+        // and extremely large durations should be treated as infinity
+        let maxSafeSeconds: Int64 = 1 << 53 // 9_007_199_254_740_992
+        guard seconds < maxSafeSeconds else {
             return .infinity
         }
 

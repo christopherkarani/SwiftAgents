@@ -6,6 +6,8 @@
 import Foundation
 @testable import SwiftAgents
 
+// MARK: - MockAgentMemory
+
 /// Mock memory for testing agents and orchestration.
 ///
 /// Provides controllable memory behavior for unit tests.
@@ -47,6 +49,28 @@ public actor MockAgentMemory: AgentMemory {
     /// Whether operations should simulate a delay.
     public var responseDelay: Duration
 
+    public var count: Int {
+        get async {
+            messages.count
+        }
+    }
+
+    public var isEmpty: Bool {
+        get async {
+            messages.isEmpty
+        }
+    }
+
+    /// Returns the last message added, if any.
+    public var lastAddedMessage: MemoryMessage? {
+        addCalls.last
+    }
+
+    /// Returns the last getContext call parameters, if any.
+    public var lastGetContextCall: (query: String, tokenLimit: Int)? {
+        getContextCalls.last
+    }
+
     /// Creates a new mock memory with configurable initial state.
     ///
     /// - Parameters:
@@ -59,8 +83,8 @@ public actor MockAgentMemory: AgentMemory {
         delay: Duration = .zero
     ) {
         self.messages = messages
-        self.contextToReturn = context
-        self.responseDelay = delay
+        contextToReturn = context
+        responseDelay = delay
     }
 
     // MARK: - AgentMemory Protocol
@@ -105,18 +129,6 @@ public actor MockAgentMemory: AgentMemory {
         messages.removeAll()
     }
 
-    public var count: Int {
-        get async {
-            messages.count
-        }
-    }
-
-    public var isEmpty: Bool {
-        get async {
-            messages.isEmpty
-        }
-    }
-
     // MARK: - Test Helpers
 
     /// Resets all state to defaults.
@@ -145,16 +157,6 @@ public actor MockAgentMemory: AgentMemory {
         contextToReturn = context
     }
 
-    /// Returns the last message added, if any.
-    public var lastAddedMessage: MemoryMessage? {
-        addCalls.last
-    }
-
-    /// Returns the last getContext call parameters, if any.
-    public var lastGetContextCall: (query: String, tokenLimit: Int)? {
-        getContextCalls.last
-    }
-
     /// Verifies that add was called with a message containing the given content.
     public func wasAddedMessageContaining(_ content: String) -> Bool {
         addCalls.contains { $0.content.contains(content) }
@@ -168,43 +170,43 @@ public actor MockAgentMemory: AgentMemory {
 
 // MARK: - Convenience Factory
 
-extension MockAgentMemory {
+public extension MockAgentMemory {
     /// Creates a mock pre-seeded with messages.
-    public static func seeded(with messages: [MemoryMessage]) -> MockAgentMemory {
+    static func seeded(with messages: [MemoryMessage]) -> MockAgentMemory {
         MockAgentMemory(messages: messages)
     }
 
     /// Creates a mock that returns a fixed context.
-    public static func returning(context: String) -> MockAgentMemory {
+    static func returning(context: String) -> MockAgentMemory {
         MockAgentMemory(context: context)
     }
 
     /// Creates a mock with a simulated response delay.
-    public static func withDelay(_ delay: Duration) -> MockAgentMemory {
+    static func withDelay(_ delay: Duration) -> MockAgentMemory {
         MockAgentMemory(delay: delay)
     }
 }
 
 // MARK: - Assertions Helpers
 
-extension MockAgentMemory {
+public extension MockAgentMemory {
     /// Returns true if no add() calls have been made.
-    public var wasNeverAdded: Bool {
+    var wasNeverAdded: Bool {
         addCalls.isEmpty
     }
 
     /// Returns true if no getContext() calls have been made.
-    public var wasNeverQueried: Bool {
+    var wasNeverQueried: Bool {
         getContextCalls.isEmpty
     }
 
     /// Returns true if clear() was never called.
-    public var wasNeverCleared: Bool {
+    var wasNeverCleared: Bool {
         clearCalls == 0
     }
 
     /// Returns total number of operations performed.
-    public var totalOperations: Int {
+    var totalOperations: Int {
         addCalls.count + getContextCalls.count + getAllMessagesCalls + clearCalls
     }
 }

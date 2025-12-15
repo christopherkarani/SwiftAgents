@@ -5,6 +5,8 @@
 
 import Foundation
 
+// MARK: - SummaryMemory
+
 /// Memory that automatically summarizes old messages to compress history.
 ///
 /// `SummaryMemory` maintains a summary of older conversation history
@@ -32,8 +34,13 @@ import Foundation
 /// // When messages exceed 50, older ones are summarized
 /// ```
 public actor SummaryMemory: AgentMemory {
+    // MARK: Public
+
     /// Configuration for summary memory behavior.
     public struct Configuration: Sendable {
+        /// Default configuration.
+        public static let `default` = Configuration()
+
         /// Number of recent messages to keep unsummarized.
         public let recentMessageCount: Int
 
@@ -59,34 +66,34 @@ public actor SummaryMemory: AgentMemory {
             self.summarizationThreshold = max(enforcedRecentCount + 10, summarizationThreshold)
             self.summaryTokenTarget = max(100, summaryTokenTarget)
         }
-
-        /// Default configuration.
-        public static let `default` = Configuration()
     }
 
     /// Current configuration.
     public let configuration: Configuration
 
-    /// Summarization service.
-    private let summarizer: any Summarizer
+    public var count: Int {
+        recentMessages.count
+    }
 
-    /// Fallback summarizer when primary unavailable.
-    private let fallbackSummarizer: any Summarizer
+    /// Whether the memory is empty (no recent messages and no summary).
+    public var isEmpty: Bool { recentMessages.isEmpty && summary.isEmpty }
 
-    /// Token estimator.
-    private let tokenEstimator: any TokenEstimator
+    // MARK: - Summary Information
 
-    /// Compressed summary of old messages.
-    private var summary: String = ""
+    /// Current summary text.
+    public var currentSummary: String {
+        summary
+    }
 
-    /// Recent messages not yet summarized.
-    private var recentMessages: [MemoryMessage] = []
+    /// Whether a summary exists.
+    public var hasSummary: Bool {
+        !summary.isEmpty
+    }
 
-    /// Total messages ever added (for tracking).
-    private var totalMessagesAdded: Int = 0
-
-    /// Number of summarization operations performed.
-    private var summarizationCount: Int = 0
+    /// Total messages processed (including summarized ones).
+    public var totalMessages: Int {
+        totalMessagesAdded
+    }
 
     /// Creates a new summary memory.
     ///
@@ -119,7 +126,7 @@ public actor SummaryMemory: AgentMemory {
         }
     }
 
-    public func getContext(for query: String, tokenLimit: Int) async -> String {
+    public func getContext(for _: String, tokenLimit: Int) async -> String {
         var components: [String] = []
         var remainingTokens = tokenLimit
 
@@ -158,29 +165,28 @@ public actor SummaryMemory: AgentMemory {
         totalMessagesAdded = 0
     }
 
-    public var count: Int {
-        recentMessages.count
-    }
+    // MARK: Private
 
-    /// Whether the memory is empty (no recent messages and no summary).
-    public var isEmpty: Bool { recentMessages.isEmpty && summary.isEmpty }
+    /// Summarization service.
+    private let summarizer: any Summarizer
 
-    // MARK: - Summary Information
+    /// Fallback summarizer when primary unavailable.
+    private let fallbackSummarizer: any Summarizer
 
-    /// Current summary text.
-    public var currentSummary: String {
-        summary
-    }
+    /// Token estimator.
+    private let tokenEstimator: any TokenEstimator
 
-    /// Whether a summary exists.
-    public var hasSummary: Bool {
-        !summary.isEmpty
-    }
+    /// Compressed summary of old messages.
+    private var summary: String = ""
 
-    /// Total messages processed (including summarized ones).
-    public var totalMessages: Int {
-        totalMessagesAdded
-    }
+    /// Recent messages not yet summarized.
+    private var recentMessages: [MemoryMessage] = []
+
+    /// Total messages ever added (for tracking).
+    private var totalMessagesAdded: Int = 0
+
+    /// Number of summarization operations performed.
+    private var summarizationCount: Int = 0
 
     // MARK: - Private Methods
 
@@ -193,11 +199,10 @@ public actor SummaryMemory: AgentMemory {
         guard !toSummarize.isEmpty else { return }
 
         // Combine with existing summary
-        let textToSummarize: String
-        if summary.isEmpty {
-            textToSummarize = toSummarize.map(\.formattedContent).joined(separator: "\n")
+        let textToSummarize: String = if summary.isEmpty {
+            toSummarize.map(\.formattedContent).joined(separator: "\n")
         } else {
-            textToSummarize = """
+            """
             Previous summary:
             \(summary)
 
@@ -231,12 +236,12 @@ public actor SummaryMemory: AgentMemory {
 
 // MARK: - Manual Summarization
 
-extension SummaryMemory {
+public extension SummaryMemory {
     /// Forces summarization even if threshold not reached.
     ///
     /// Useful when you know a conversation break is happening
     /// and want to compress before continuing.
-    public func forceSummarize() async {
+    func forceSummarize() async {
         guard recentMessages.count > configuration.recentMessageCount else { return }
         await performSummarization()
     }
@@ -244,16 +249,16 @@ extension SummaryMemory {
     /// Sets a custom summary, replacing any existing one.
     ///
     /// - Parameter newSummary: The summary text to use.
-    public func setSummary(_ newSummary: String) async {
+    func setSummary(_ newSummary: String) async {
         summary = newSummary
     }
 }
 
 // MARK: - Diagnostics
 
-extension SummaryMemory {
+public extension SummaryMemory {
     /// Returns diagnostic information about memory state.
-    public func diagnostics() async -> SummaryMemoryDiagnostics {
+    func diagnostics() async -> SummaryMemoryDiagnostics {
         SummaryMemoryDiagnostics(
             recentMessageCount: recentMessages.count,
             totalMessagesProcessed: totalMessagesAdded,
@@ -264,6 +269,8 @@ extension SummaryMemory {
         )
     }
 }
+
+// MARK: - SummaryMemoryDiagnostics
 
 /// Diagnostic information for summary memory.
 public struct SummaryMemoryDiagnostics: Sendable {

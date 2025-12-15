@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Agent Context Key
+// MARK: - AgentContextKey
 
 /// Predefined keys for common agent context values.
 ///
@@ -36,10 +36,10 @@ public enum AgentContextKey: String, Sendable {
     case startTime = "start_time"
 
     /// General metadata storage.
-    case metadata = "metadata"
+    case metadata
 }
 
-// MARK: - Agent Context
+// MARK: - AgentContext
 
 /// Thread-safe shared context for multi-agent orchestration.
 ///
@@ -67,7 +67,7 @@ public enum AgentContextKey: String, Sendable {
 /// // ["DataFetcher", "Analyzer"]
 /// ```
 public actor AgentContext {
-    // MARK: - Properties
+    // MARK: Public
 
     /// The original input that started orchestration.
     nonisolated public let originalInput: String
@@ -78,16 +78,18 @@ public actor AgentContext {
     /// When this context was created.
     nonisolated public let createdAt: Date
 
-    // MARK: - Private Storage
+    /// All current keys in the context.
+    public var allKeys: [String] {
+        Array(values.keys)
+    }
 
-    /// Key-value storage for arbitrary data.
-    private var values: [String: SendableValue]
-
-    /// Message history for conversation continuity.
-    private var messages: [MemoryMessage]
-
-    /// List of agent names that have executed.
-    private var executionPath: [String]
+    /// A snapshot copy of all values.
+    ///
+    /// Returns a copy of the current key-value storage.
+    /// Changes to the returned dictionary do not affect the context.
+    public var snapshot: [String: SendableValue] {
+        values
+    }
 
     // MARK: - Initialization
 
@@ -97,16 +99,16 @@ public actor AgentContext {
     ///   - input: The original input that started orchestration.
     ///   - initialValues: Optional initial key-value pairs. Default: [:]
     public init(input: String, initialValues: [String: SendableValue] = [:]) {
-        self.originalInput = input
-        self.executionId = UUID()
-        self.createdAt = Date()
-        self.values = initialValues
-        self.messages = []
-        self.executionPath = []
+        originalInput = input
+        executionId = UUID()
+        createdAt = Date()
+        values = initialValues
+        messages = []
+        executionPath = []
 
         // Store original input in values
-        self.values[AgentContextKey.originalInput.rawValue] = .string(input)
-        self.values[AgentContextKey.startTime.rawValue] = .double(createdAt.timeIntervalSince1970)
+        values[AgentContextKey.originalInput.rawValue] = .string(input)
+        values[AgentContextKey.startTime.rawValue] = .double(createdAt.timeIntervalSince1970)
     }
 
     // MARK: - Key-Value Storage
@@ -152,19 +154,6 @@ public actor AgentContext {
     @discardableResult
     public func remove(_ key: String) -> SendableValue? {
         values.removeValue(forKey: key)
-    }
-
-    /// All current keys in the context.
-    public var allKeys: [String] {
-        Array(values.keys)
-    }
-
-    /// A snapshot copy of all values.
-    ///
-    /// Returns a copy of the current key-value storage.
-    /// Changes to the returned dictionary do not affect the context.
-    public var snapshot: [String: SendableValue] {
-        values
     }
 
     // MARK: - Message Management
@@ -301,9 +290,22 @@ public actor AgentContext {
 
         return newContext
     }
+
+    // MARK: Private
+
+    // MARK: - Private Storage
+
+    /// Key-value storage for arbitrary data.
+    private var values: [String: SendableValue]
+
+    /// Message history for conversation continuity.
+    private var messages: [MemoryMessage]
+
+    /// List of agent names that have executed.
+    private var executionPath: [String]
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension AgentContext: CustomStringConvertible {
     nonisolated public var description: String {
@@ -317,7 +319,7 @@ extension AgentContext: CustomStringConvertible {
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension AgentContext: CustomDebugStringConvertible {
     nonisolated public var debugDescription: String {

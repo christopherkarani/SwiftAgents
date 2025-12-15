@@ -3,15 +3,14 @@
 //
 // Comprehensive tests for ToolParameter, ToolParameter.ParameterType, ToolDefinition, and Tool protocol extensions
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - ToolParameter Tests
+// MARK: - ToolParameterTests
 
 @Suite("ToolParameter Tests")
 struct ToolParameterTests {
-    
     @Test("Basic initialization with required parameter")
     func basicRequiredInitialization() {
         let param = ToolParameter(
@@ -19,14 +18,14 @@ struct ToolParameterTests {
             description: "The city name",
             type: .string
         )
-        
+
         #expect(param.name == "location")
         #expect(param.description == "The city name")
         #expect(param.type == .string)
         #expect(param.isRequired == true)
         #expect(param.defaultValue == nil)
     }
-    
+
     @Test("Initialization with optional parameter")
     func optionalParameterInitialization() {
         let param = ToolParameter(
@@ -35,14 +34,14 @@ struct ToolParameterTests {
             type: .string,
             isRequired: false
         )
-        
+
         #expect(param.name == "units")
         #expect(param.description == "Temperature units")
         #expect(param.type == .string)
         #expect(param.isRequired == false)
         #expect(param.defaultValue == nil)
     }
-    
+
     @Test("Initialization with default value")
     func defaultValueInitialization() {
         let param = ToolParameter(
@@ -52,14 +51,14 @@ struct ToolParameterTests {
             isRequired: false,
             defaultValue: .int(10)
         )
-        
+
         #expect(param.name == "limit")
         #expect(param.description == "Maximum results")
         #expect(param.type == .int)
         #expect(param.isRequired == false)
         #expect(param.defaultValue == .int(10))
     }
-    
+
     @Test("All parameter types initialization")
     func allTypesInitialization() {
         let stringParam = ToolParameter(name: "str", description: "String param", type: .string)
@@ -70,7 +69,7 @@ struct ToolParameterTests {
         let objectParam = ToolParameter(name: "obj", description: "Object param", type: .object(properties: []))
         let oneOfParam = ToolParameter(name: "choice", description: "OneOf param", type: .oneOf(["A", "B"]))
         let anyParam = ToolParameter(name: "any", description: "Any param", type: .any)
-        
+
         #expect(stringParam.type == .string)
         #expect(intParam.type == .int)
         #expect(doubleParam.type == .double)
@@ -80,7 +79,7 @@ struct ToolParameterTests {
         #expect(oneOfParam.type == .oneOf(["A", "B"]))
         #expect(anyParam.type == .any)
     }
-    
+
     @Test("Equatable conformance: equal instances")
     func equatableEqual() {
         let param1 = ToolParameter(
@@ -97,92 +96,91 @@ struct ToolParameterTests {
             isRequired: true,
             defaultValue: .string("default")
         )
-        
+
         #expect(param1 == param2)
     }
-    
+
     @Test("Equatable conformance: different name")
     func equatableDifferentName() {
         let param1 = ToolParameter(name: "name1", description: "Desc", type: .string)
         let param2 = ToolParameter(name: "name2", description: "Desc", type: .string)
-        
+
         #expect(param1 != param2)
     }
-    
+
     @Test("Equatable conformance: different description")
     func equatableDifferentDescription() {
         let param1 = ToolParameter(name: "test", description: "Desc1", type: .string)
         let param2 = ToolParameter(name: "test", description: "Desc2", type: .string)
-        
+
         #expect(param1 != param2)
     }
-    
+
     @Test("Equatable conformance: different type")
     func equatableDifferentType() {
         let param1 = ToolParameter(name: "test", description: "Desc", type: .string)
         let param2 = ToolParameter(name: "test", description: "Desc", type: .int)
-        
+
         #expect(param1 != param2)
     }
-    
+
     @Test("Equatable conformance: different isRequired")
     func equatableDifferentIsRequired() {
         let param1 = ToolParameter(name: "test", description: "Desc", type: .string, isRequired: true)
         let param2 = ToolParameter(name: "test", description: "Desc", type: .string, isRequired: false)
-        
+
         #expect(param1 != param2)
     }
-    
+
     @Test("Equatable conformance: different defaultValue")
     func equatableDifferentDefaultValue() {
         let param1 = ToolParameter(name: "test", description: "Desc", type: .int, defaultValue: .int(1))
         let param2 = ToolParameter(name: "test", description: "Desc", type: .int, defaultValue: .int(2))
-        
+
         #expect(param1 != param2)
     }
 }
 
-// MARK: - ParameterType Tests
+// MARK: - ParameterTypeTests
 
 @Suite("ParameterType Tests")
 struct ParameterTypeTests {
-    
     @Test("String type description")
     func stringTypeDescription() {
         let type = ToolParameter.ParameterType.string
         #expect(type.description == "string")
     }
-    
+
     @Test("Int type description")
     func intTypeDescription() {
         let type = ToolParameter.ParameterType.int
         #expect(type.description == "integer")
     }
-    
+
     @Test("Double type description")
     func doubleTypeDescription() {
         let type = ToolParameter.ParameterType.double
         #expect(type.description == "number")
     }
-    
+
     @Test("Bool type description")
     func boolTypeDescription() {
         let type = ToolParameter.ParameterType.bool
         #expect(type.description == "boolean")
     }
-    
+
     @Test("Array type description")
     func arrayTypeDescription() {
         let type = ToolParameter.ParameterType.array(elementType: .string)
         #expect(type.description == "array<string>")
     }
-    
+
     @Test("Nested array type description")
     func nestedArrayTypeDescription() {
         let type = ToolParameter.ParameterType.array(elementType: .array(elementType: .int))
         #expect(type.description == "array<array<integer>>")
     }
-    
+
     @Test("Object type description")
     func objectTypeDescription() {
         let properties = [
@@ -191,25 +189,25 @@ struct ParameterTypeTests {
         let type = ToolParameter.ParameterType.object(properties: properties)
         #expect(type.description == "object")
     }
-    
+
     @Test("OneOf type description with single option")
     func oneOfSingleOptionDescription() {
         let type = ToolParameter.ParameterType.oneOf(["option1"])
         #expect(type.description == "oneOf(option1)")
     }
-    
+
     @Test("OneOf type description with multiple options")
     func oneOfMultipleOptionsDescription() {
         let type = ToolParameter.ParameterType.oneOf(["celsius", "fahrenheit", "kelvin"])
         #expect(type.description == "oneOf(celsius|fahrenheit|kelvin)")
     }
-    
+
     @Test("Any type description")
     func anyTypeDescription() {
         let type = ToolParameter.ParameterType.any
         #expect(type.description == "any")
     }
-    
+
     @Test("All parameter types are equatable")
     func allTypesEquatable() {
         #expect(ToolParameter.ParameterType.string == .string)
@@ -217,46 +215,45 @@ struct ParameterTypeTests {
         #expect(ToolParameter.ParameterType.double == .double)
         #expect(ToolParameter.ParameterType.bool == .bool)
         #expect(ToolParameter.ParameterType.any == .any)
-        
+
         // Array equality
         #expect(ToolParameter.ParameterType.array(elementType: .string) == .array(elementType: .string))
         #expect(ToolParameter.ParameterType.array(elementType: .string) != .array(elementType: .int))
-        
+
         // OneOf equality
         #expect(ToolParameter.ParameterType.oneOf(["A", "B"]) == .oneOf(["A", "B"]))
         #expect(ToolParameter.ParameterType.oneOf(["A", "B"]) != .oneOf(["A", "C"]))
     }
-    
+
     @Test("Object type equality with properties")
     func objectTypeEquality() {
         let prop1 = ToolParameter(name: "field", description: "Desc", type: .string)
         let prop2 = ToolParameter(name: "field", description: "Desc", type: .string)
         let prop3 = ToolParameter(name: "other", description: "Desc", type: .string)
-        
+
         let type1 = ToolParameter.ParameterType.object(properties: [prop1])
         let type2 = ToolParameter.ParameterType.object(properties: [prop2])
         let type3 = ToolParameter.ParameterType.object(properties: [prop3])
-        
+
         #expect(type1 == type2)
         #expect(type1 != type3)
     }
-    
+
     @Test("Complex nested type description")
     func complexNestedTypeDescription() {
         let innerObject = ToolParameter.ParameterType.object(properties: [
             ToolParameter(name: "inner", description: "Inner field", type: .string)
         ])
         let arrayOfObjects = ToolParameter.ParameterType.array(elementType: innerObject)
-        
+
         #expect(arrayOfObjects.description == "array<object>")
     }
 }
 
-// MARK: - ToolDefinition Tests
+// MARK: - ToolDefinitionTests
 
 @Suite("ToolDefinition Tests")
 struct ToolDefinitionTests {
-    
     @Test("Direct initialization")
     func directInitialization() {
         let params = [
@@ -267,13 +264,13 @@ struct ToolDefinitionTests {
             description: "Search the web",
             parameters: params
         )
-        
+
         #expect(definition.name == "search")
         #expect(definition.description == "Search the web")
         #expect(definition.parameters.count == 1)
         #expect(definition.parameters[0].name == "query")
     }
-    
+
     @Test("Initialization from Tool protocol")
     func initializationFromTool() {
         let tool = MockTool(
@@ -283,15 +280,15 @@ struct ToolDefinitionTests {
                 ToolParameter(name: "expression", description: "Math expression", type: .string)
             ]
         )
-        
+
         let definition = ToolDefinition(from: tool)
-        
+
         #expect(definition.name == "calculator")
         #expect(definition.description == "Performs calculations")
         #expect(definition.parameters.count == 1)
         #expect(definition.parameters[0].name == "expression")
     }
-    
+
     @Test("Initialization with empty parameters")
     func emptyParametersInitialization() {
         let definition = ToolDefinition(
@@ -299,12 +296,12 @@ struct ToolDefinitionTests {
             description: "Gets the current time",
             parameters: []
         )
-        
+
         #expect(definition.name == "getCurrentTime")
         #expect(definition.description == "Gets the current time")
         #expect(definition.parameters.isEmpty)
     }
-    
+
     @Test("Initialization with multiple parameters")
     func multipleParametersInitialization() {
         let params = [
@@ -317,13 +314,13 @@ struct ToolDefinitionTests {
             description: "Gets weather information",
             parameters: params
         )
-        
+
         #expect(definition.parameters.count == 3)
         #expect(definition.parameters[0].name == "location")
         #expect(definition.parameters[1].name == "units")
         #expect(definition.parameters[2].name == "detailed")
     }
-    
+
     @Test("Equatable conformance: equal instances")
     func equatableEqual() {
         let params = [
@@ -331,10 +328,10 @@ struct ToolDefinitionTests {
         ]
         let def1 = ToolDefinition(name: "test", description: "Test tool", parameters: params)
         let def2 = ToolDefinition(name: "test", description: "Test tool", parameters: params)
-        
+
         #expect(def1 == def2)
     }
-    
+
     @Test("Equatable conformance: different name")
     func equatableDifferentName() {
         let params = [
@@ -342,10 +339,10 @@ struct ToolDefinitionTests {
         ]
         let def1 = ToolDefinition(name: "tool1", description: "Test tool", parameters: params)
         let def2 = ToolDefinition(name: "tool2", description: "Test tool", parameters: params)
-        
+
         #expect(def1 != def2)
     }
-    
+
     @Test("Equatable conformance: different description")
     func equatableDifferentDescription() {
         let params = [
@@ -353,10 +350,10 @@ struct ToolDefinitionTests {
         ]
         let def1 = ToolDefinition(name: "test", description: "Description 1", parameters: params)
         let def2 = ToolDefinition(name: "test", description: "Description 2", parameters: params)
-        
+
         #expect(def1 != def2)
     }
-    
+
     @Test("Equatable conformance: different parameters")
     func equatableDifferentParameters() {
         let params1 = [
@@ -367,18 +364,17 @@ struct ToolDefinitionTests {
         ]
         let def1 = ToolDefinition(name: "test", description: "Test tool", parameters: params1)
         let def2 = ToolDefinition(name: "test", description: "Test tool", parameters: params2)
-        
+
         #expect(def1 != def2)
     }
 }
 
-// MARK: - Tool Protocol Extension Tests
+// MARK: - ToolProtocolExtensionTests
 
 @Suite("Tool Protocol Extension Tests")
 struct ToolProtocolExtensionTests {
-    
     // MARK: - definition property
-    
+
     @Test("Tool definition property creates ToolDefinition")
     func toolDefinitionProperty() {
         let tool = MockTool(
@@ -388,17 +384,17 @@ struct ToolProtocolExtensionTests {
                 ToolParameter(name: "param1", description: "First param", type: .string)
             ]
         )
-        
+
         let definition = tool.definition
-        
+
         #expect(definition.name == "testTool")
         #expect(definition.description == "A test tool")
         #expect(definition.parameters.count == 1)
         #expect(definition.parameters[0].name == "param1")
     }
-    
+
     // MARK: - validateArguments
-    
+
     @Test("validateArguments succeeds with all required parameters")
     func validateArgumentsSuccess() throws {
         let tool = MockTool(
@@ -408,15 +404,15 @@ struct ToolProtocolExtensionTests {
                 ToolParameter(name: "units", description: "Units", type: .string, isRequired: false)
             ]
         )
-        
+
         let arguments: [String: SendableValue] = [
             "location": .string("New York")
         ]
-        
+
         // Should not throw
         try tool.validateArguments(arguments)
     }
-    
+
     @Test("validateArguments succeeds with all parameters including optional")
     func validateArgumentsWithOptional() throws {
         let tool = MockTool(
@@ -426,16 +422,16 @@ struct ToolProtocolExtensionTests {
                 ToolParameter(name: "units", description: "Units", type: .string, isRequired: false)
             ]
         )
-        
+
         let arguments: [String: SendableValue] = [
             "location": .string("New York"),
             "units": .string("celsius")
         ]
-        
+
         // Should not throw
         try tool.validateArguments(arguments)
     }
-    
+
     @Test("validateArguments fails when required parameter is missing")
     func validateArgumentsMissingRequired() {
         let tool = MockTool(
@@ -445,11 +441,11 @@ struct ToolProtocolExtensionTests {
                 ToolParameter(name: "units", description: "Units", type: .string, isRequired: false)
             ]
         )
-        
+
         let arguments: [String: SendableValue] = [
             "units": .string("celsius")
         ]
-        
+
         var thrownError: AgentError?
         do {
             try tool.validateArguments(arguments)
@@ -458,13 +454,13 @@ struct ToolProtocolExtensionTests {
         } catch {
             #expect(Bool(false), "Expected AgentError")
         }
-        
+
         #expect(thrownError == .invalidToolArguments(
             toolName: "weather",
             reason: "Missing required parameter: location"
         ))
     }
-    
+
     @Test("validateArguments succeeds with no required parameters")
     func validateArgumentsNoRequiredParams() throws {
         let tool = MockTool(
@@ -473,13 +469,13 @@ struct ToolProtocolExtensionTests {
                 ToolParameter(name: "format", description: "Time format", type: .string, isRequired: false)
             ]
         )
-        
+
         let arguments: [String: SendableValue] = [:]
-        
+
         // Should not throw
         try tool.validateArguments(arguments)
     }
-    
+
     @Test("validateArguments fails with multiple missing required parameters")
     func validateArgumentsMultipleMissing() {
         let tool = MockTool(
@@ -490,11 +486,11 @@ struct ToolProtocolExtensionTests {
                 ToolParameter(name: "param3", description: "Third param", type: .bool, isRequired: false)
             ]
         )
-        
+
         let arguments: [String: SendableValue] = [
             "param3": .bool(true)
         ]
-        
+
         var caughtError = false
         do {
             try tool.validateArguments(arguments)
@@ -502,29 +498,29 @@ struct ToolProtocolExtensionTests {
             caughtError = true
             // Should throw for the first missing required parameter it finds
         }
-        
+
         #expect(caughtError)
     }
-    
+
     // MARK: - requiredString
-    
+
     @Test("requiredString extracts string value")
     func requiredStringSuccess() throws {
         let tool = MockTool(name: "test")
         let arguments: [String: SendableValue] = [
             "location": .string("San Francisco")
         ]
-        
+
         let value = try tool.requiredString("location", from: arguments)
-        
+
         #expect(value == "San Francisco")
     }
-    
+
     @Test("requiredString throws when parameter is missing")
     func requiredStringMissing() {
         let tool = MockTool(name: "test")
         let arguments: [String: SendableValue] = [:]
-        
+
         var thrownError: AgentError?
         do {
             _ = try tool.requiredString("location", from: arguments)
@@ -533,20 +529,20 @@ struct ToolProtocolExtensionTests {
         } catch {
             #expect(Bool(false), "Expected AgentError")
         }
-        
+
         #expect(thrownError == .invalidToolArguments(
             toolName: "test",
             reason: "Missing or invalid string parameter: location"
         ))
     }
-    
+
     @Test("requiredString throws when parameter is wrong type")
     func requiredStringWrongType() {
         let tool = MockTool(name: "test")
         let arguments: [String: SendableValue] = [
             "count": .int(42)
         ]
-        
+
         var thrownError: AgentError?
         do {
             _ = try tool.requiredString("count", from: arguments)
@@ -555,13 +551,13 @@ struct ToolProtocolExtensionTests {
         } catch {
             #expect(Bool(false), "Expected AgentError")
         }
-        
+
         #expect(thrownError == .invalidToolArguments(
             toolName: "test",
             reason: "Missing or invalid string parameter: count"
         ))
     }
-    
+
     @Test("requiredString extracts from nested dictionary")
     func requiredStringFromDictionary() throws {
         let tool = MockTool(name: "test")
@@ -570,89 +566,89 @@ struct ToolProtocolExtensionTests {
             "age": .int(30),
             "active": .bool(true)
         ]
-        
+
         let name = try tool.requiredString("name", from: arguments)
-        
+
         #expect(name == "Alice")
     }
-    
+
     // MARK: - optionalString
-    
+
     @Test("optionalString returns string value when present")
     func optionalStringPresent() {
         let tool = MockTool(name: "test")
         let arguments: [String: SendableValue] = [
             "message": .string("Hello World")
         ]
-        
+
         let value = tool.optionalString("message", from: arguments)
-        
+
         #expect(value == "Hello World")
     }
-    
+
     @Test("optionalString returns nil when parameter is missing")
     func optionalStringMissing() {
         let tool = MockTool(name: "test")
         let arguments: [String: SendableValue] = [:]
-        
+
         let value = tool.optionalString("message", from: arguments)
-        
+
         #expect(value == nil)
     }
-    
+
     @Test("optionalString returns default value when parameter is missing")
     func optionalStringMissingWithDefault() {
         let tool = MockTool(name: "test")
         let arguments: [String: SendableValue] = [:]
-        
+
         let value = tool.optionalString("units", from: arguments, default: "celsius")
-        
+
         #expect(value == "celsius")
     }
-    
+
     @Test("optionalString returns nil when parameter is wrong type")
     func optionalStringWrongType() {
         let tool = MockTool(name: "test")
         let arguments: [String: SendableValue] = [
             "count": .int(42)
         ]
-        
+
         let value = tool.optionalString("count", from: arguments)
-        
+
         #expect(value == nil)
     }
-    
+
     @Test("optionalString returns default when parameter is wrong type")
     func optionalStringWrongTypeWithDefault() {
         let tool = MockTool(name: "test")
         let arguments: [String: SendableValue] = [
             "count": .int(42)
         ]
-        
+
         let value = tool.optionalString("count", from: arguments, default: "defaultValue")
-        
+
         #expect(value == "defaultValue")
     }
-    
+
     @Test("optionalString with nil default explicitly")
     func optionalStringNilDefault() {
         let tool = MockTool(name: "test")
         let arguments: [String: SendableValue] = [:]
-        
+
         let value = tool.optionalString("missing", from: arguments, default: nil)
-        
+
         #expect(value == nil)
     }
-    
+
     @Test("optionalString prefers actual value over default")
     func optionalStringPrefersActualValue() {
         let tool = MockTool(name: "test")
         let arguments: [String: SendableValue] = [
             "units": .string("fahrenheit")
         ]
-        
+
         let value = tool.optionalString("units", from: arguments, default: "celsius")
-        
+
         #expect(value == "fahrenheit")
     }
 }

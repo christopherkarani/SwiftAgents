@@ -31,12 +31,12 @@ public struct StepError: Sendable, Equatable {
 
     public static func == (lhs: StepError, rhs: StepError) -> Bool {
         lhs.stepName == rhs.stepName &&
-        lhs.stepIndex == rhs.stepIndex &&
-        lhs.error.localizedDescription == rhs.error.localizedDescription
+            lhs.stepIndex == rhs.stepIndex &&
+            lhs.error.localizedDescription == rhs.error.localizedDescription
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension StepError: CustomDebugStringConvertible {
     public var debugDescription: String {
@@ -85,7 +85,7 @@ public struct ExecutionResult<Output: Sendable>: Sendable {
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension ExecutionResult: CustomDebugStringConvertible {
     public var debugDescription: String {
@@ -113,61 +113,27 @@ extension ExecutionResult: CustomDebugStringConvertible {
 ///     .execute()
 /// ```
 public struct FallbackChain<Output: Sendable>: Sendable {
-    // MARK: - Step
-
-    /// Represents a single step in the fallback chain.
-    struct Step: Sendable {
-        /// The name of the step for debugging/logging.
-        let name: String
-
-        /// The operation to execute.
-        let operation: @Sendable () async throws -> Output
-
-        /// Optional condition that must be true for this step to execute.
-        let condition: (@Sendable () async -> Bool)?
-
-        /// Whether this step is a guaranteed-success fallback.
-        let isGuaranteedFallback: Bool
-
-        /// Creates a new step.
-        /// - Parameters:
-        ///   - name: The name of the step.
-        ///   - operation: The operation to execute.
-        ///   - condition: Optional condition for execution.
-        ///   - isGuaranteedFallback: Whether this step always succeeds.
-        init(
-            name: String,
-            operation: @escaping @Sendable () async throws -> Output,
-            condition: (@Sendable () async -> Bool)? = nil,
-            isGuaranteedFallback: Bool = false
-        ) {
-            self.name = name
-            self.operation = operation
-            self.condition = condition
-            self.isGuaranteedFallback = isGuaranteedFallback
-        }
-    }
-
-    // MARK: - Properties
-
-    /// The immutable array of steps to execute.
-    private let steps: [Step]
-
-    /// Optional callback invoked when a step fails.
-    private let failureCallback: (@Sendable (String, Error) async -> Void)?
+    // MARK: Public
 
     // MARK: - Initialization
 
     /// Creates an empty fallback chain.
     public init() {
-        self.steps = []
-        self.failureCallback = nil
+        steps = []
+        failureCallback = nil
     }
 
-    /// Internal initializer for chaining.
-    private init(steps: [Step], failureCallback: (@Sendable (String, Error) async -> Void)?) {
-        self.steps = steps
-        self.failureCallback = failureCallback
+    // MARK: - Static Conveniences
+
+    /// Creates a fallback chain from a list of operations.
+    /// - Parameter operations: Named operations to execute in order.
+    /// - Returns: A configured fallback chain.
+    public static func from(_ operations: (name: String, operation: @Sendable () async throws -> Output)...) -> FallbackChain<Output> {
+        var chain = FallbackChain<Output>()
+        for (name, operation) in operations {
+            chain = chain.attempt(name: name, operation)
+        }
+        return chain
     }
 
     // MARK: - Builder Methods
@@ -321,21 +287,59 @@ public struct FallbackChain<Output: Sendable>: Sendable {
         )
     }
 
-    // MARK: - Static Conveniences
+    // MARK: Internal
 
-    /// Creates a fallback chain from a list of operations.
-    /// - Parameter operations: Named operations to execute in order.
-    /// - Returns: A configured fallback chain.
-    public static func from(_ operations: (name: String, operation: @Sendable () async throws -> Output)...) -> FallbackChain<Output> {
-        var chain = FallbackChain<Output>()
-        for (name, operation) in operations {
-            chain = chain.attempt(name: name, operation)
+    // MARK: - Step
+
+    /// Represents a single step in the fallback chain.
+    struct Step: Sendable {
+        /// The name of the step for debugging/logging.
+        let name: String
+
+        /// The operation to execute.
+        let operation: @Sendable () async throws -> Output
+
+        /// Optional condition that must be true for this step to execute.
+        let condition: (@Sendable () async -> Bool)?
+
+        /// Whether this step is a guaranteed-success fallback.
+        let isGuaranteedFallback: Bool
+
+        /// Creates a new step.
+        /// - Parameters:
+        ///   - name: The name of the step.
+        ///   - operation: The operation to execute.
+        ///   - condition: Optional condition for execution.
+        ///   - isGuaranteedFallback: Whether this step always succeeds.
+        init(
+            name: String,
+            operation: @escaping @Sendable () async throws -> Output,
+            condition: (@Sendable () async -> Bool)? = nil,
+            isGuaranteedFallback: Bool = false
+        ) {
+            self.name = name
+            self.operation = operation
+            self.condition = condition
+            self.isGuaranteedFallback = isGuaranteedFallback
         }
-        return chain
+    }
+
+    // MARK: Private
+
+    /// The immutable array of steps to execute.
+    private let steps: [Step]
+
+    /// Optional callback invoked when a step fails.
+    private let failureCallback: (@Sendable (String, Error) async -> Void)?
+
+    /// Internal initializer for chaining.
+    private init(steps: [Step], failureCallback: (@Sendable (String, Error) async -> Void)?) {
+        self.steps = steps
+        self.failureCallback = failureCallback
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension FallbackChain: CustomDebugStringConvertible {
     public var debugDescription: String {

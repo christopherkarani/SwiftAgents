@@ -5,6 +5,8 @@
 
 import Foundation
 
+// MARK: - HybridMemory
+
 /// Combines multiple memory types for comprehensive context management.
 ///
 /// `HybridMemory` maintains both short-term (conversation) and long-term
@@ -41,8 +43,13 @@ import Foundation
 /// let context = await memory.getContext(for: "question", tokenLimit: 4000)
 /// ```
 public actor HybridMemory: AgentMemory {
+    // MARK: Public
+
     /// Configuration for hybrid memory behavior.
     public struct Configuration: Sendable {
+        /// Default configuration.
+        public static let `default` = Configuration()
+
         /// Maximum messages in short-term memory.
         public let shortTermMaxMessages: Int
 
@@ -73,34 +80,38 @@ public actor HybridMemory: AgentMemory {
             self.summaryTokenRatio = min(max(0.1, summaryTokenRatio), 0.5)
             self.summarizationThreshold = max(shortTermMaxMessages * 2, summarizationThreshold)
         }
-
-        /// Default configuration.
-        public static let `default` = Configuration()
     }
 
     /// Current configuration.
     public let configuration: Configuration
 
-    /// Short-term memory component.
-    private let shortTermMemory: ConversationMemory
+    public var count: Int {
+        get async {
+            await shortTermMemory.count
+        }
+    }
 
-    /// Long-term summary storage.
-    private var longTermSummary: String = ""
+    /// Whether the memory is empty (no short-term messages and no summary).
+    public var isEmpty: Bool {
+        get async { await shortTermMemory.isEmpty && longTermSummary.isEmpty }
+    }
 
-    /// Summarization service.
-    private let summarizer: any Summarizer
+    // MARK: - Summary Information
 
-    /// Token estimator.
-    private let tokenEstimator: any TokenEstimator
+    /// Current long-term summary.
+    public var summary: String {
+        longTermSummary
+    }
 
-    /// Messages pending summarization.
-    private var pendingMessages: [MemoryMessage] = []
+    /// Whether a long-term summary exists.
+    public var hasSummary: Bool {
+        !longTermSummary.isEmpty
+    }
 
     /// Total messages processed.
-    private var totalMessagesAdded: Int = 0
-
-    /// Number of summarizations performed.
-    private var summarizationCount: Int = 0
+    public var totalMessages: Int {
+        totalMessagesAdded
+    }
 
     /// Creates a new hybrid memory.
     ///
@@ -114,7 +125,7 @@ public actor HybridMemory: AgentMemory {
         tokenEstimator: any TokenEstimator = CharacterBasedTokenEstimator.shared
     ) {
         self.configuration = configuration
-        self.shortTermMemory = ConversationMemory(
+        shortTermMemory = ConversationMemory(
             maxMessages: configuration.shortTermMaxMessages,
             tokenEstimator: tokenEstimator
         )
@@ -180,33 +191,28 @@ public actor HybridMemory: AgentMemory {
         totalMessagesAdded = 0
     }
 
-    public var count: Int {
-        get async {
-            await shortTermMemory.count
-        }
-    }
+    // MARK: Private
 
-    /// Whether the memory is empty (no short-term messages and no summary).
-    public var isEmpty: Bool {
-        get async { await shortTermMemory.isEmpty && longTermSummary.isEmpty }
-    }
+    /// Short-term memory component.
+    private let shortTermMemory: ConversationMemory
 
-    // MARK: - Summary Information
+    /// Long-term summary storage.
+    private var longTermSummary: String = ""
 
-    /// Current long-term summary.
-    public var summary: String {
-        longTermSummary
-    }
+    /// Summarization service.
+    private let summarizer: any Summarizer
 
-    /// Whether a long-term summary exists.
-    public var hasSummary: Bool {
-        !longTermSummary.isEmpty
-    }
+    /// Token estimator.
+    private let tokenEstimator: any TokenEstimator
+
+    /// Messages pending summarization.
+    private var pendingMessages: [MemoryMessage] = []
 
     /// Total messages processed.
-    public var totalMessages: Int {
-        totalMessagesAdded
-    }
+    private var totalMessagesAdded: Int = 0
+
+    /// Number of summarizations performed.
+    private var summarizationCount: Int = 0
 
     // MARK: - Private Methods
 
@@ -218,11 +224,10 @@ public actor HybridMemory: AgentMemory {
 
         let newContent = messagesToSummarize.map(\.formattedContent).joined(separator: "\n")
 
-        let textToSummarize: String
-        if longTermSummary.isEmpty {
-            textToSummarize = newContent
+        let textToSummarize: String = if longTermSummary.isEmpty {
+            newContent
         } else {
-            textToSummarize = """
+            """
             Existing summary:
             \(longTermSummary)
 
@@ -257,9 +262,9 @@ public actor HybridMemory: AgentMemory {
 
 // MARK: - Manual Operations
 
-extension HybridMemory {
+public extension HybridMemory {
     /// Forces summarization even if threshold not reached.
-    public func forceSummarize() async {
+    func forceSummarize() async {
         guard !pendingMessages.isEmpty else { return }
         await updateLongTermSummary()
     }
@@ -267,12 +272,12 @@ extension HybridMemory {
     /// Sets a custom long-term summary.
     ///
     /// - Parameter newSummary: The summary text to use.
-    public func setSummary(_ newSummary: String) async {
+    func setSummary(_ newSummary: String) async {
         longTermSummary = newSummary
     }
 
     /// Clears only the long-term summary, keeping recent messages.
-    public func clearSummary() async {
+    func clearSummary() async {
         longTermSummary = ""
         pendingMessages.removeAll()
     }
@@ -280,11 +285,11 @@ extension HybridMemory {
 
 // MARK: - Diagnostics
 
-extension HybridMemory {
+public extension HybridMemory {
     /// Returns diagnostic information about memory state.
-    public func diagnostics() async -> HybridMemoryDiagnostics {
-        HybridMemoryDiagnostics(
-            shortTermMessageCount: await shortTermMemory.count,
+    func diagnostics() async -> HybridMemoryDiagnostics {
+        await HybridMemoryDiagnostics(
+            shortTermMessageCount: shortTermMemory.count,
             shortTermMaxMessages: configuration.shortTermMaxMessages,
             pendingMessages: pendingMessages.count,
             totalMessagesProcessed: totalMessagesAdded,
@@ -295,6 +300,8 @@ extension HybridMemory {
         )
     }
 }
+
+// MARK: - HybridMemoryDiagnostics
 
 /// Diagnostic information for hybrid memory.
 public struct HybridMemoryDiagnostics: Sendable {

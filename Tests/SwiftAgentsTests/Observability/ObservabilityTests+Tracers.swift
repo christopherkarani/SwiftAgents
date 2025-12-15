@@ -3,15 +3,14 @@
 //
 // ConsoleTracer and PrettyConsoleTracer tests.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - ConsoleTracer Tests
+// MARK: - ConsoleTracerTests
 
 @Suite("ConsoleTracer Tests")
 struct ConsoleTracerTests {
-
     @Test("ConsoleTracer respects minimum level filtering")
     func consoleTracerMinimumLevel() async {
         let tracer = ConsoleTracer(minimumLevel: .warning)
@@ -94,11 +93,10 @@ struct ConsoleTracerTests {
     }
 }
 
-// MARK: - PrettyConsoleTracer Tests
+// MARK: - PrettyConsoleTracerTests
 
 @Suite("PrettyConsoleTracer Tests")
 struct PrettyConsoleTracerTests {
-
     @Test("PrettyConsoleTracer formats all event kinds")
     func prettyConsoleTracerFormatsAllKinds() async {
         let tracer = PrettyConsoleTracer(minimumLevel: .trace, colorized: false)

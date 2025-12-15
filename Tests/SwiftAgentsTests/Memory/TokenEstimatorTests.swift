@@ -1,48 +1,46 @@
 // TokenEstimatorTests.swift
 // SwiftAgents Framework
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 @Suite("TokenEstimator Tests")
 struct TokenEstimatorTests {
-
     // MARK: - CharacterBasedTokenEstimator Tests
 
     @Suite("CharacterBasedTokenEstimator")
     struct CharacterBasedTests {
-
         @Test("Creates with default charactersPerToken")
-        func testDefaultInit() {
+        func defaultInit() {
             let estimator = CharacterBasedTokenEstimator()
 
             #expect(estimator.charactersPerToken == 4)
         }
 
         @Test("Creates with custom charactersPerToken")
-        func testCustomCharactersPerToken() {
+        func customCharactersPerToken() {
             let estimator = CharacterBasedTokenEstimator(charactersPerToken: 3)
 
             #expect(estimator.charactersPerToken == 3)
         }
 
         @Test("Enforces minimum charactersPerToken of 1")
-        func testMinimumCharactersPerToken() {
+        func minimumCharactersPerToken() {
             let estimator = CharacterBasedTokenEstimator(charactersPerToken: 0)
 
             #expect(estimator.charactersPerToken == 1)
         }
 
         @Test("Shared instance exists")
-        func testSharedInstance() {
+        func sharedInstance() {
             let shared = CharacterBasedTokenEstimator.shared
 
             #expect(shared.charactersPerToken == 4)
         }
 
         @Test("Estimates tokens for empty string")
-        func testEmptyString() {
+        func emptyString() {
             let estimator = CharacterBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "")
@@ -51,7 +49,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimates tokens for single character")
-        func testSingleCharacter() {
+        func singleCharacter() {
             let estimator = CharacterBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "A")
@@ -60,7 +58,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimates tokens for short text")
-        func testShortText() {
+        func shortText() {
             let estimator = CharacterBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "Hello, world!") // 13 chars
@@ -69,7 +67,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimates tokens for exact multiple")
-        func testExactMultiple() {
+        func exactMultiple() {
             let estimator = CharacterBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "1234567890123456") // 16 chars
@@ -78,7 +76,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimates tokens for very long text")
-        func testVeryLongText() {
+        func veryLongText() {
             let estimator = CharacterBasedTokenEstimator()
             let longText = String(repeating: "a", count: 10000)
 
@@ -88,7 +86,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Uses custom ratio correctly")
-        func testCustomRatio() {
+        func customRatio() {
             let estimator = CharacterBasedTokenEstimator(charactersPerToken: 2)
 
             let tokens = estimator.estimateTokens(for: "12345678") // 8 chars
@@ -97,7 +95,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Handles unicode characters")
-        func testUnicodeCharacters() {
+        func unicodeCharacters() {
             let estimator = CharacterBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "🚀🎉✨🌟") // 4 chars
@@ -106,7 +104,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Handles multiline text")
-        func testMultilineText() {
+        func multilineText() {
             let estimator = CharacterBasedTokenEstimator()
             let text = """
             Line 1
@@ -124,7 +122,6 @@ struct TokenEstimatorTests {
 
     @Suite("WordBasedTokenEstimator")
     struct WordBasedTests {
-
         @Test("Creates with default tokensPerWord")
         func testDefaultInit() {
             let estimator = WordBasedTokenEstimator()
@@ -133,14 +130,14 @@ struct TokenEstimatorTests {
         }
 
         @Test("Creates with custom tokensPerWord")
-        func testCustomTokensPerWord() {
+        func customTokensPerWord() {
             let estimator = WordBasedTokenEstimator(tokensPerWord: 1.5)
 
             #expect(estimator.tokensPerWord == 1.5)
         }
 
         @Test("Enforces minimum tokensPerWord of 0.1")
-        func testMinimumTokensPerWord() {
+        func minimumTokensPerWord() {
             let estimator = WordBasedTokenEstimator(tokensPerWord: 0.05)
 
             #expect(estimator.tokensPerWord == 0.1)
@@ -163,7 +160,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimates tokens for single word")
-        func testSingleWord() {
+        func singleWord() {
             let estimator = WordBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "Hello")
@@ -172,7 +169,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimates tokens for two words")
-        func testTwoWords() {
+        func twoWords() {
             let estimator = WordBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "Hello world")
@@ -181,7 +178,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimates tokens for multiple words")
-        func testMultipleWords() {
+        func multipleWords() {
             let estimator = WordBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "The quick brown fox jumps") // 5 words
@@ -190,7 +187,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Handles multiple spaces")
-        func testMultipleSpaces() {
+        func multipleSpaces() {
             let estimator = WordBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "Hello    world") // Still 2 words
@@ -199,7 +196,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Handles newlines as separators")
-        func testNewlineSeparators() {
+        func newlineSeparators() {
             let estimator = WordBasedTokenEstimator()
             let text = """
             Hello
@@ -212,7 +209,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Handles mixed whitespace")
-        func testMixedWhitespace() {
+        func mixedWhitespace() {
             let estimator = WordBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "Hello\tworld\ntest") // 3 words
@@ -230,7 +227,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Handles punctuation attached to words")
-        func testPunctuation() {
+        func punctuation() {
             let estimator = WordBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "Hello, world!") // 2 words
@@ -254,9 +251,8 @@ struct TokenEstimatorTests {
 
     @Suite("AveragingTokenEstimator")
     struct AveragingTests {
-
         @Test("Creates with multiple estimators")
-        func testInitWithEstimators() {
+        func initWithEstimators() {
             let char = CharacterBasedTokenEstimator()
             let word = WordBasedTokenEstimator()
             let averaging = AveragingTokenEstimator(estimators: [char, word])
@@ -270,7 +266,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Falls back to character estimator when empty array")
-        func testEmptyEstimatorsArray() {
+        func emptyEstimatorsArray() {
             let averaging = AveragingTokenEstimator(estimators: [])
 
             let tokens = averaging.estimateTokens(for: "12345678") // 8 chars
@@ -311,7 +307,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Averages three estimators")
-        func testThreeEstimators() {
+        func threeEstimators() {
             let char4 = CharacterBasedTokenEstimator(charactersPerToken: 4)
             let char3 = CharacterBasedTokenEstimator(charactersPerToken: 3)
             let word = WordBasedTokenEstimator(tokensPerWord: 1.0)
@@ -327,7 +323,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Handles single estimator")
-        func testSingleEstimator() {
+        func singleEstimator() {
             let char = CharacterBasedTokenEstimator()
             let averaging = AveragingTokenEstimator(estimators: [char])
 
@@ -341,12 +337,11 @@ struct TokenEstimatorTests {
 
     @Suite("TokenEstimator Protocol Extensions")
     struct ProtocolExtensionTests {
-
         @Test("Estimates tokens for array of strings with character estimator")
-        func testBatchEstimationCharacter() {
+        func batchEstimationCharacter() {
             let estimator = CharacterBasedTokenEstimator()
             let texts = [
-                "1234",     // 1 token
+                "1234", // 1 token
                 "12345678", // 2 tokens
                 "123456789012" // 3 tokens
             ]
@@ -357,12 +352,12 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimates tokens for array of strings with word estimator")
-        func testBatchEstimationWord() {
+        func batchEstimationWord() {
             let estimator = WordBasedTokenEstimator()
             let texts = [
-                "one",           // 1 word -> 1 token
-                "one two",       // 2 words -> 2 tokens
-                "one two three"  // 3 words -> 3 tokens
+                "one", // 1 word -> 1 token
+                "one two", // 2 words -> 2 tokens
+                "one two three" // 3 words -> 3 tokens
             ]
 
             let total = estimator.estimateTokens(for: texts)
@@ -371,7 +366,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimates tokens for empty array")
-        func testEmptyArray() {
+        func emptyArray() {
             let estimator = CharacterBasedTokenEstimator()
 
             let total = estimator.estimateTokens(for: [])
@@ -380,7 +375,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimates tokens for array with empty strings")
-        func testArrayWithEmptyStrings() {
+        func arrayWithEmptyStrings() {
             let estimator = CharacterBasedTokenEstimator()
 
             let total = estimator.estimateTokens(for: ["", "", ""])
@@ -389,7 +384,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimates tokens for large array")
-        func testLargeArray() {
+        func largeArray() {
             let estimator = WordBasedTokenEstimator()
             let texts = Array(repeating: "one two three", count: 10)
 
@@ -399,7 +394,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Batch estimation with averaging estimator")
-        func testBatchWithAveraging() {
+        func batchWithAveraging() {
             let averaging = AveragingTokenEstimator.shared
             let texts = [
                 "Hello world",
@@ -417,9 +412,8 @@ struct TokenEstimatorTests {
 
     @Suite("Edge Cases")
     struct EdgeCaseTests {
-
         @Test("All estimators handle empty string consistently")
-        func testEmptyStringConsistency() {
+        func emptyStringConsistency() {
             let char = CharacterBasedTokenEstimator()
             let word = WordBasedTokenEstimator()
             let avg = AveragingTokenEstimator.shared
@@ -430,7 +424,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimators return consistent types")
-        func testReturnTypeConsistency() {
+        func returnTypeConsistency() {
             let char = CharacterBasedTokenEstimator()
             let word = WordBasedTokenEstimator()
 
@@ -444,7 +438,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Character estimator handles special characters")
-        func testSpecialCharacters() {
+        func specialCharacters() {
             let estimator = CharacterBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "!@#$%^&*()") // 10 chars
@@ -453,7 +447,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Word estimator handles hyphenated words")
-        func testHyphenatedWords() {
+        func hyphenatedWords() {
             let estimator = WordBasedTokenEstimator()
 
             let tokens = estimator.estimateTokens(for: "well-known") // 1 word
@@ -462,7 +456,7 @@ struct TokenEstimatorTests {
         }
 
         @Test("Sendable conformance allows concurrent access")
-        func testSendableConformance() async {
+        func sendableConformance() async {
             let estimator = CharacterBasedTokenEstimator.shared
 
             await withTaskGroup(of: Int.self) { group in
@@ -482,13 +476,13 @@ struct TokenEstimatorTests {
         }
 
         @Test("Estimators work with real-world text")
-        func testRealWorldText() {
+        func realWorldText() {
             let text = """
             SwiftAgents is an open-source Swift framework providing comprehensive
             agent development capabilities built on Apple's Foundation Models.
             It complements SwiftAI SDK by providing the agent layer.
             """
-            
+
             let char = CharacterBasedTokenEstimator.shared
             let word = WordBasedTokenEstimator.shared
             let avg = AveragingTokenEstimator.shared
@@ -499,16 +493,16 @@ struct TokenEstimatorTests {
 
             // Character: ~200 chars / 4 = ~50 tokens
             #expect(charTokens >= 45 && charTokens <= 55)
-            
+
             // Word: 25 words * 1.3 = 32.5 -> 32 tokens
             #expect(wordTokens >= 30 && wordTokens <= 35)
-            
+
             // Average should be between the two
             #expect(avgTokens >= 38 && avgTokens <= 44)
         }
 
         @Test("Zero and negative values are handled")
-        func testBoundaryValues() {
+        func boundaryValues() {
             let char0 = CharacterBasedTokenEstimator(charactersPerToken: 0)
             let charNeg = CharacterBasedTokenEstimator(charactersPerToken: -5)
             let word0 = WordBasedTokenEstimator(tokensPerWord: 0.0)

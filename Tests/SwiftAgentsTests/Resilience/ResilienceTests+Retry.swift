@@ -3,19 +3,18 @@
 //
 // Tests for RetryPolicy resilience component using Swift Testing framework.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 // MARK: - RetryPolicy Tests
 
 @Suite("RetryPolicy Tests")
 struct RetryPolicyTests {
-
     // MARK: - Successful Execution Tests
 
     @Test("Successful execution without retry")
-    func testSuccessfulExecutionWithoutRetry() async throws {
+    func successfulExecutionWithoutRetry() async throws {
         let policy = RetryPolicy(maxAttempts: 3, backoff: .immediate)
         let counter = TestCounter()
 
@@ -29,7 +28,7 @@ struct RetryPolicyTests {
     }
 
     @Test("Immediate success with no retry attempts")
-    func testImmediateSuccess() async throws {
+    func immediateSuccess() async throws {
         let policy = RetryPolicy.standard
         let counter = TestCounter()
 
@@ -45,7 +44,7 @@ struct RetryPolicyTests {
     // MARK: - Retry Until Success Tests
 
     @Test("Retry until success on transient errors")
-    func testRetryUntilSuccess() async throws {
+    func retryUntilSuccess() async throws {
         let policy = RetryPolicy(maxAttempts: 3, backoff: .immediate)
         let counter = TestCounter()
 
@@ -62,7 +61,7 @@ struct RetryPolicyTests {
     }
 
     @Test("First retry succeeds after initial failure")
-    func testFirstRetrySucceeds() async throws {
+    func firstRetrySucceeds() async throws {
         let policy = RetryPolicy(maxAttempts: 2, backoff: .immediate)
         let counter = TestCounter()
 
@@ -81,7 +80,7 @@ struct RetryPolicyTests {
     // MARK: - Retry Exhaustion Tests
 
     @Test("Retry exhaustion throws ResilienceError.retriesExhausted")
-    func testRetryExhaustion() async throws {
+    func retryExhaustion() async throws {
         let policy = RetryPolicy(maxAttempts: 2, backoff: .immediate)
         let counter = TestCounter()
 
@@ -92,7 +91,7 @@ struct RetryPolicyTests {
             }
             Issue.record("Should have thrown ResilienceError.retriesExhausted")
         } catch let error as ResilienceError {
-            if case .retriesExhausted(let attempts, let lastError) = error {
+            if case let .retriesExhausted(attempts, lastError) = error {
                 #expect(attempts == 3) // initial + 2 retries
                 #expect(lastError.contains("Permanent"))
             } else {
@@ -104,7 +103,7 @@ struct RetryPolicyTests {
     }
 
     @Test("All retries fail with consistent error")
-    func testAllRetriesFail() async throws {
+    func allRetriesFail() async throws {
         let policy = RetryPolicy(maxAttempts: 3, backoff: .immediate)
         let counter = TestCounter()
 
@@ -124,7 +123,7 @@ struct RetryPolicyTests {
     // MARK: - BackoffStrategy Tests
 
     @Test("BackoffStrategy.fixed returns constant delay")
-    func testFixedBackoff() {
+    func fixedBackoff() {
         let strategy = BackoffStrategy.fixed(delay: 1.5)
 
         #expect(strategy.delay(forAttempt: 1) == 1.5)
@@ -133,28 +132,28 @@ struct RetryPolicyTests {
     }
 
     @Test("BackoffStrategy.exponential calculates correct delays")
-    func testExponentialBackoff() {
+    func exponentialBackoff() {
         let strategy = BackoffStrategy.exponential(base: 1.0, multiplier: 2.0, maxDelay: 10.0)
 
-        #expect(strategy.delay(forAttempt: 1) == 1.0)  // 1.0 * 2^0
-        #expect(strategy.delay(forAttempt: 2) == 2.0)  // 1.0 * 2^1
-        #expect(strategy.delay(forAttempt: 3) == 4.0)  // 1.0 * 2^2
-        #expect(strategy.delay(forAttempt: 4) == 8.0)  // 1.0 * 2^3
+        #expect(strategy.delay(forAttempt: 1) == 1.0) // 1.0 * 2^0
+        #expect(strategy.delay(forAttempt: 2) == 2.0) // 1.0 * 2^1
+        #expect(strategy.delay(forAttempt: 3) == 4.0) // 1.0 * 2^2
+        #expect(strategy.delay(forAttempt: 4) == 8.0) // 1.0 * 2^3
         #expect(strategy.delay(forAttempt: 5) == 10.0) // capped at maxDelay
     }
 
     @Test("BackoffStrategy.linear calculates correct delays")
-    func testLinearBackoff() {
+    func linearBackoff() {
         let strategy = BackoffStrategy.linear(initial: 1.0, increment: 0.5, maxDelay: 5.0)
 
-        #expect(strategy.delay(forAttempt: 1) == 1.0)  // 1.0 + 0.5 * 0
-        #expect(strategy.delay(forAttempt: 2) == 1.5)  // 1.0 + 0.5 * 1
-        #expect(strategy.delay(forAttempt: 3) == 2.0)  // 1.0 + 0.5 * 2
+        #expect(strategy.delay(forAttempt: 1) == 1.0) // 1.0 + 0.5 * 0
+        #expect(strategy.delay(forAttempt: 2) == 1.5) // 1.0 + 0.5 * 1
+        #expect(strategy.delay(forAttempt: 3) == 2.0) // 1.0 + 0.5 * 2
         #expect(strategy.delay(forAttempt: 10) == 5.0) // capped at maxDelay
     }
 
     @Test("BackoffStrategy.immediate returns zero delay")
-    func testImmediateBackoff() {
+    func immediateBackoff() {
         let strategy = BackoffStrategy.immediate
 
         #expect(strategy.delay(forAttempt: 1) == 0)
@@ -162,7 +161,7 @@ struct RetryPolicyTests {
     }
 
     @Test("BackoffStrategy.custom uses provided calculator")
-    func testCustomBackoff() {
+    func customBackoff() {
         let strategy = BackoffStrategy.custom { attempt in
             Double(attempt) * 10.0
         }
@@ -175,7 +174,7 @@ struct RetryPolicyTests {
     // MARK: - shouldRetry Predicate Tests
 
     @Test("shouldRetry predicate controls retry behavior")
-    func testShouldRetryPredicate() async throws {
+    func shouldRetryPredicate() async throws {
         let policy = RetryPolicy(
             maxAttempts: 3,
             backoff: .immediate,
@@ -205,7 +204,7 @@ struct RetryPolicyTests {
     }
 
     @Test("shouldRetry allows selective error retry")
-    func testSelectiveRetry() async throws {
+    func selectiveRetry() async throws {
         let transientCounter = TestCounter()
         let permanentCounter = TestCounter()
 
@@ -243,7 +242,7 @@ struct RetryPolicyTests {
     // MARK: - onRetry Callback Tests
 
     @Test("onRetry callback is invoked before each retry")
-    func testOnRetryCallback() async throws {
+    func onRetryCallback() async throws {
         let recorder = TestRecorder<(Int, String)>()
 
         let policy = RetryPolicy(
@@ -273,7 +272,7 @@ struct RetryPolicyTests {
     // MARK: - Static Convenience Tests
 
     @Test("Static noRetry policy fails immediately")
-    func testNoRetryPolicy() async throws {
+    func noRetryPolicy() async throws {
         let counter = TestCounter()
 
         do {
@@ -290,14 +289,14 @@ struct RetryPolicyTests {
     }
 
     @Test("Static standard policy has correct configuration")
-    func testStandardPolicy() {
+    func standardPolicy() {
         let policy = RetryPolicy.standard
         #expect(policy.maxAttempts == 3)
         #expect(policy.backoff == .exponential(base: 1.0, multiplier: 2.0, maxDelay: 60.0))
     }
 
     @Test("Static aggressive policy has correct configuration")
-    func testAggressivePolicy() {
+    func aggressivePolicy() {
         let policy = RetryPolicy.aggressive
         #expect(policy.maxAttempts == 5)
         #expect(policy.backoff == .exponentialWithJitter(base: 0.5, multiplier: 2.0, maxDelay: 30.0))

@@ -5,6 +5,8 @@
 
 import Foundation
 
+// MARK: - AgentMemory
+
 /// Protocol defining memory storage and retrieval for agents.
 ///
 /// `AgentMemory` provides the contract for storing conversation history
@@ -43,6 +45,15 @@ import Foundation
 /// }
 /// ```
 public protocol AgentMemory: Actor, Sendable {
+    /// The number of messages currently stored.
+    var count: Int { get async }
+
+    /// Whether the memory contains no messages.
+    ///
+    /// Implementations should provide an efficient check that avoids
+    /// fetching all messages when possible.
+    var isEmpty: Bool { get async }
+
     /// Adds a message to memory.
     ///
     /// - Parameter message: The message to store.
@@ -67,15 +78,6 @@ public protocol AgentMemory: Actor, Sendable {
 
     /// Removes all messages from memory.
     func clear() async
-
-    /// The number of messages currently stored.
-    var count: Int { get async }
-
-    /// Whether the memory contains no messages.
-    ///
-    /// Implementations should provide an efficient check that avoids
-    /// fetching all messages when possible.
-    var isEmpty: Bool { get async }
 }
 
 // MARK: - Helper Functions
@@ -148,7 +150,7 @@ public func formatMessagesForContext(
     return result.reversed().joined(separator: separator)
 }
 
-// MARK: - Type-Erased Memory Wrapper
+// MARK: - AnyAgentMemory
 
 /// Type-erased wrapper for any AgentMemory implementation.
 ///
@@ -163,17 +165,24 @@ public func formatMessagesForContext(
 /// await erased.add(.user("Hello"))
 /// ```
 public actor AnyAgentMemory: AgentMemory {
-    private let _add: @Sendable (MemoryMessage) async -> Void
-    private let _getContext: @Sendable (String, Int) async -> String
-    private let _getAllMessages: @Sendable () async -> [MemoryMessage]
-    private let _clear: @Sendable () async -> Void
-    private let _count: @Sendable () async -> Int
-    private let _isEmpty: @Sendable () async -> Bool
+    // MARK: Public
+
+    public var count: Int {
+        get async {
+            await _count()
+        }
+    }
+
+    public var isEmpty: Bool {
+        get async {
+            await _isEmpty()
+        }
+    }
 
     /// Creates a type-erased wrapper around any AgentMemory.
     ///
     /// - Parameter memory: The memory implementation to wrap.
-    public init<M: AgentMemory>(_ memory: M) {
+    public init(_ memory: some AgentMemory) {
         _add = { message in await memory.add(message) }
         _getContext = { query, limit in await memory.getContext(for: query, tokenLimit: limit) }
         _getAllMessages = { await memory.getAllMessages() }
@@ -198,15 +207,12 @@ public actor AnyAgentMemory: AgentMemory {
         await _clear()
     }
 
-    public var count: Int {
-        get async {
-            await _count()
-        }
-    }
+    // MARK: Private
 
-    public var isEmpty: Bool {
-        get async {
-            await _isEmpty()
-        }
-    }
+    private let _add: @Sendable (MemoryMessage) async -> Void
+    private let _getContext: @Sendable (String, Int) async -> String
+    private let _getAllMessages: @Sendable () async -> [MemoryMessage]
+    private let _clear: @Sendable () async -> Void
+    private let _count: @Sendable () async -> Int
+    private let _isEmpty: @Sendable () async -> Bool
 }

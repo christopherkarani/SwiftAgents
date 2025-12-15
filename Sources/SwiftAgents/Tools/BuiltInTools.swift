@@ -5,89 +5,95 @@
 
 import Foundation
 
-// MARK: - Calculator Tool
+#if canImport(Darwin)
 
-/// A calculator tool that evaluates mathematical expressions.
-///
-/// Supports basic arithmetic operations: +, -, *, /, and parentheses.
-/// Uses NSExpression for safe evaluation without code injection risks.
-///
-/// Example:
-/// ```swift
-/// let calc = CalculatorTool()
-/// let result = try await calc.execute(arguments: ["expression": "2 + 3 * 4"])
-/// // result == .double(14.0)
-/// ```
-public struct CalculatorTool: Tool, Sendable {
-    public let name = "calculator"
-    public let description = """
+    // MARK: - Calculator Tool
+
+    /// A calculator tool that evaluates mathematical expressions.
+    ///
+    /// **Platform Availability**: Apple platforms only (macOS, iOS, watchOS, tvOS, visionOS).
+    /// Not available on Linux due to NSExpression dependency.
+    ///
+    /// Supports basic arithmetic operations: +, -, *, /, and parentheses.
+    /// Uses NSExpression on Apple platforms and a pure Swift parser on Linux
+    /// for safe evaluation without code injection risks.
+    ///
+    /// Example:
+    /// ```swift
+    /// let calc = CalculatorTool()
+    /// let result = try await calc.execute(arguments: ["expression": "2 + 3 * 4"])
+    /// // result == .double(14.0)
+    /// ```
+    public struct CalculatorTool: Tool, Sendable {
+        // MARK: Public
+
+        public let name = "calculator"
+        public let description = """
         Evaluates a mathematical expression and returns the result. \
         Supports +, -, *, /, parentheses, and decimal numbers.
         """
 
-    public let parameters: [ToolParameter] = [
-        ToolParameter(
-            name: "expression",
-            description: "The mathematical expression to evaluate (e.g., '2 + 3 * 4', '(10 + 5) / 3')",
-            type: .string,
-            isRequired: true
-        )
-    ]
-
-    /// Creates a new calculator tool.
-    public init() {}
-
-    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
-        guard let expression = arguments["expression"]?.stringValue else {
-            throw AgentError.invalidToolArguments(
-                toolName: name,
-                reason: "Missing required parameter 'expression'"
+        public let parameters: [ToolParameter] = [
+            ToolParameter(
+                name: "expression",
+                description: "The mathematical expression to evaluate (e.g., '2 + 3 * 4', '(10 + 5) / 3')",
+                type: .string,
+                isRequired: true
             )
+        ]
+
+        /// Creates a new calculator tool.
+        public init() {}
+
+        public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+            guard let expression = arguments["expression"]?.stringValue else {
+                throw AgentError.invalidToolArguments(
+                    toolName: name,
+                    reason: "Missing required parameter 'expression'"
+                )
+            }
+
+            let result = try evaluate(expression)
+            return .double(result)
         }
 
-        let result = try evaluate(expression)
-        return .double(result)
-    }
+        // MARK: Private
 
-    /// Evaluates a simple mathematical expression safely.
-    private func evaluate(_ expression: String) throws -> Double {
-        // Sanitize the expression to only allow safe characters
-        let allowedCharacters = CharacterSet(charactersIn: "0123456789.+-*/() ")
-        let trimmed = expression.trimmingCharacters(in: .whitespaces)
+        /// Evaluates a simple mathematical expression safely.
+        private func evaluate(_ expression: String) throws -> Double {
+            // Sanitize the expression to only allow safe characters
+            let allowedCharacters = CharacterSet(charactersIn: "0123456789.+-*/() ")
+            let trimmed = expression.trimmingCharacters(in: .whitespaces)
 
-        guard trimmed.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) }) else {
-            throw AgentError.invalidToolArguments(
-                toolName: name,
-                reason: "Expression contains invalid characters. Only numbers and operators (+, -, *, /, parentheses) are allowed."
-            )
-        }
+            guard trimmed.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) }) else {
+                throw AgentError.invalidToolArguments(
+                    toolName: name,
+                    reason: "Expression contains invalid characters. Only numbers and operators (+, -, *, /, parentheses) are allowed."
+                )
+            }
 
-        guard !trimmed.isEmpty else {
-            throw AgentError.invalidToolArguments(
-                toolName: name,
-                reason: "Expression is empty"
-            )
-        }
+            guard !trimmed.isEmpty else {
+                throw AgentError.invalidToolArguments(
+                    toolName: name,
+                    reason: "Expression is empty"
+                )
+            }
 
-        // Use NSExpression for safe evaluation
-        let nsExpression = NSExpression(format: trimmed)
-
-        if let result = nsExpression.expressionValue(with: nil, context: nil) as? Double {
-            return result
-        } else if let result = nsExpression.expressionValue(with: nil, context: nil) as? Int {
-            return Double(result)
-        } else if let result = nsExpression.expressionValue(with: nil, context: nil) as? NSNumber {
-            return result.doubleValue
-        } else {
-            throw AgentError.toolExecutionFailed(
-                toolName: name,
-                underlyingError: "Failed to evaluate expression: \(trimmed)"
-            )
+            // Use pure Swift ArithmeticParser on all platforms for consistency
+            // NSExpression is unavailable on Linux (swift-corelibs-foundation)
+            do {
+                return try ArithmeticParser.evaluate(trimmed)
+            } catch let error as ArithmeticParser.ParserError {
+                throw AgentError.toolExecutionFailed(
+                    toolName: name,
+                    underlyingError: "Failed to evaluate expression: \(error)"
+                )
+            }
         }
     }
-}
+#endif // canImport(Darwin)
 
-// MARK: - DateTime Tool
+// MARK: - DateTimeTool
 
 /// A tool that provides current date and time information.
 ///
@@ -108,9 +114,9 @@ public struct DateTimeTool: Tool, Sendable {
         ToolParameter(
             name: "format",
             description: """
-                The date format: 'full' (default), 'date', 'time', 'iso8601', \
-                or a custom format string (e.g., 'yyyy-MM-dd')
-                """,
+            The date format: 'full' (default), 'date', 'time', 'iso8601', \
+            or a custom format string (e.g., 'yyyy-MM-dd')
+            """,
             type: .string,
             isRequired: false,
             defaultValue: .string("full")
@@ -175,7 +181,7 @@ public struct DateTimeTool: Tool, Sendable {
     }
 }
 
-// MARK: - String Tool
+// MARK: - StringTool
 
 /// A tool for string manipulation operations.
 ///
@@ -195,9 +201,9 @@ public struct DateTimeTool: Tool, Sendable {
 public struct StringTool: Tool, Sendable {
     public let name = "string"
     public let description = """
-        Performs string operations: length, uppercase, lowercase, trim, split, \
-        replace, contains, reverse, substring.
-        """
+    Performs string operations: length, uppercase, lowercase, trim, split, \
+    replace, contains, reverse, substring.
+    """
 
     public let parameters: [ToolParameter] = [
         ToolParameter(
@@ -329,26 +335,40 @@ public struct StringTool: Tool, Sendable {
     }
 }
 
-// MARK: - Built-in Tool Collection
+// MARK: - BuiltInTools
 
 /// Provides access to all built-in tools.
+///
+/// **Note**: The calculator tool is only available on Apple platforms (macOS, iOS, etc.).
+/// On Linux, only date/time and string tools are available.
 ///
 /// Example:
 /// ```swift
 /// let agent = ReActAgent(tools: BuiltInTools.all)
 /// ```
 public enum BuiltInTools {
-    /// All available built-in tools.
-    public static var all: [any Tool] {
-        [calculator, dateTime, string]
-    }
-
-    /// The calculator tool for math expressions.
-    public static let calculator = CalculatorTool()
+    #if canImport(Darwin)
+        /// The calculator tool for math expressions.
+        ///
+        /// **Platform Availability**: Apple platforms only.
+        public static let calculator = CalculatorTool()
+    #endif
 
     /// The date/time tool for current time.
     public static let dateTime = DateTimeTool()
 
     /// The string manipulation tool.
     public static let string = StringTool()
+
+    /// All available built-in tools for the current platform.
+    ///
+    /// - Apple platforms: calculator, dateTime, string
+    /// - Linux: dateTime, string
+    public static var all: [any Tool] {
+        #if canImport(Darwin)
+            [calculator, dateTime, string]
+        #else
+            [dateTime, string]
+        #endif
+    }
 }

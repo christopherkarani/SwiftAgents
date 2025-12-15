@@ -5,6 +5,11 @@
 
 import Foundation
 
+// MARK: - Pipeline Composition Operator
+
+/// Operator for pipeline composition.
+infix operator >>>: AdditionPrecedence
+
 // MARK: - Pipeline
 
 /// A type-safe pipeline with explicit input and output types.
@@ -53,8 +58,7 @@ import Foundation
 /// The capture chain is deallocated after pipeline execution completes, so memory
 /// overhead only persists for the lifetime of the pipeline instance itself.
 public struct Pipeline<Input: Sendable, Output: Sendable>: Sendable {
-    /// The transformation function.
-    private let transform: @Sendable (Input) async throws -> Output
+    // MARK: Public
 
     /// Creates a new pipeline with the given transformation.
     ///
@@ -84,11 +88,16 @@ public struct Pipeline<Input: Sendable, Output: Sendable>: Sendable {
             return .failure(error)
         }
     }
+
+    // MARK: Private
+
+    /// The transformation function.
+    private let transform: @Sendable (Input) async throws -> Output
 }
 
 // MARK: - Pipeline Transformations
 
-extension Pipeline {
+public extension Pipeline {
     /// Transforms the output of this pipeline.
     ///
     /// - Parameter transform: The transformation to apply to the output.
@@ -100,7 +109,7 @@ extension Pipeline {
     /// let doubled = stringLength.map { $0 * 2 }
     /// let result = try await doubled.execute("hello")  // 10
     /// ```
-    public func map<NewOutput: Sendable>(
+    func map<NewOutput: Sendable>(
         _ transform: @escaping @Sendable (Output) async throws -> NewOutput
     ) -> Pipeline<Input, NewOutput> {
         Pipeline<Input, NewOutput> { input in
@@ -120,7 +129,7 @@ extension Pipeline {
     /// let pipeline2 = Pipeline<Int, String> { "Length: \($0)" }
     /// let combined = pipeline1.flatMap { _ in pipeline2 }
     /// ```
-    public func flatMap<NewOutput: Sendable>(
+    func flatMap<NewOutput: Sendable>(
         _ transform: @escaping @Sendable (Output) async throws -> Pipeline<Output, NewOutput>
     ) -> Pipeline<Input, NewOutput> {
         Pipeline<Input, NewOutput> { input in
@@ -134,7 +143,7 @@ extension Pipeline {
     ///
     /// - Parameter next: The next pipeline in the chain.
     /// - Returns: A combined pipeline.
-    public func then<NewOutput: Sendable>(
+    func then<NewOutput: Sendable>(
         _ next: Pipeline<Output, NewOutput>
     ) -> Pipeline<Input, NewOutput> {
         Pipeline<Input, NewOutput> { input in
@@ -146,26 +155,26 @@ extension Pipeline {
 
 // MARK: - Pipeline Identity and Constants
 
-extension Pipeline where Input == Output {
+public extension Pipeline where Input == Output {
     /// An identity pipeline that passes through the input unchanged.
-    public static var identity: Pipeline<Input, Output> {
+    static var identity: Pipeline<Input, Output> {
         Pipeline { $0 }
     }
 }
 
-extension Pipeline {
+public extension Pipeline {
     /// Creates a pipeline that always returns the same value.
     ///
     /// - Parameter value: The constant value to return.
     /// - Returns: A pipeline that ignores input and returns the constant.
-    public static func constant(_ value: Output) -> Pipeline<Input, Output> {
+    static func constant(_ value: Output) -> Pipeline<Input, Output> {
         Pipeline { _ in value }
     }
 }
 
 // MARK: - Pipeline Error Handling
 
-extension Pipeline {
+public extension Pipeline {
     /// Catches errors and returns a fallback value.
     ///
     /// - Parameters:
@@ -181,7 +190,7 @@ extension Pipeline {
     ///     // Log to analytics, monitoring, etc.
     /// }
     /// ```
-    public func catchError(
+    func catchError(
         _ fallback: Output,
         onError: (@Sendable (Error) -> Void)? = nil
     ) -> Pipeline<Input, Output> {
@@ -199,7 +208,7 @@ extension Pipeline {
     ///
     /// - Parameter handler: A closure that transforms errors to outputs.
     /// - Returns: A pipeline that handles errors.
-    public func catchError(
+    func catchError(
         _ handler: @escaping @Sendable (Error) async throws -> Output
     ) -> Pipeline<Input, Output> {
         Pipeline { input in
@@ -217,7 +226,7 @@ extension Pipeline {
     ///   - attempts: Maximum number of attempts.
     ///   - delay: Delay between attempts.
     /// - Returns: A pipeline that retries on failure.
-    public func retry(
+    func retry(
         attempts: Int,
         delay: Duration = .zero
     ) -> Pipeline<Input, Output> {
@@ -228,7 +237,7 @@ extension Pipeline {
                     return try await self.execute(input)
                 } catch {
                     lastError = error
-                    if attempt < attempts - 1 && delay > .zero {
+                    if attempt < attempts - 1, delay > .zero {
                         try? await Task.sleep(for: delay)
                     }
                 }
@@ -240,12 +249,12 @@ extension Pipeline {
 
 // MARK: - Pipeline Timeout
 
-extension Pipeline {
+public extension Pipeline {
     /// Adds a timeout to the pipeline.
     ///
     /// - Parameter duration: The maximum execution time.
     /// - Returns: A pipeline that throws on timeout.
-    public func timeout(_ duration: Duration) -> Pipeline<Input, Output> {
+    func timeout(_ duration: Duration) -> Pipeline<Input, Output> {
         Pipeline { input in
             try await withThrowingTaskGroup(of: Output.self) { group in
                 group.addTask {
@@ -292,7 +301,7 @@ public func >>> <A: Sendable, B: Sendable, C: Sendable>(
 
 // MARK: - Agent Pipeline Extension
 
-extension Agent {
+public extension Agent {
     /// Converts this agent into a pipeline.
     ///
     /// - Returns: A pipeline that runs this agent.
@@ -302,7 +311,7 @@ extension Agent {
     /// let pipeline = myAgent.asPipeline()
     /// let result = try await pipeline.execute("Hello")
     /// ```
-    public func asPipeline() -> Pipeline<String, AgentResult> {
+    func asPipeline() -> Pipeline<String, AgentResult> {
         Pipeline { input in
             try await self.run(input)
         }
@@ -311,7 +320,7 @@ extension Agent {
     /// Converts this agent into a pipeline that extracts the output.
     ///
     /// - Returns: A pipeline that runs this agent and extracts the output string.
-    public func asOutputPipeline() -> Pipeline<String, String> {
+    func asOutputPipeline() -> Pipeline<String, String> {
         Pipeline { input in
             let result = try await self.run(input)
             return result.output
@@ -351,10 +360,23 @@ public func extractToolCalls() -> Pipeline<AgentResult, [ToolCall]> {
     Pipeline { $0.toolCalls }
 }
 
-// MARK: - Pipeline Error
+// MARK: - PipelineError
 
 /// Errors that can occur during pipeline execution.
 public enum PipelineError: Error, LocalizedError {
+    // MARK: Public
+
+    public var errorDescription: String? {
+        switch self {
+        case .timeout:
+            "Pipeline execution timed out"
+        case .maxRetriesExceeded:
+            "Maximum retry attempts exceeded"
+        case let .custom(message):
+            message
+        }
+    }
+
     /// The pipeline timed out.
     case timeout
 
@@ -363,15 +385,4 @@ public enum PipelineError: Error, LocalizedError {
 
     /// A custom pipeline error.
     case custom(String)
-
-    public var errorDescription: String? {
-        switch self {
-        case .timeout:
-            return "Pipeline execution timed out"
-        case .maxRetriesExceeded:
-            return "Maximum retry attempts exceeded"
-        case .custom(let message):
-            return message
-        }
-    }
 }
