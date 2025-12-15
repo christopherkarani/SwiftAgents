@@ -46,10 +46,14 @@ final class AgentMacroTests: XCTestCase {
 
                     public let configuration: AgentConfiguration = .default
 
-                    public nonisolated var memory: (any AgentMemory)? { _memory }
+                    public nonisolated var memory: (any AgentMemory)? {
+                        _memory
+                    }
                     private nonisolated let _memory: (any AgentMemory)?
 
-                    public nonisolated var inferenceProvider: (any InferenceProvider)? { _inferenceProvider }
+                    public nonisolated var inferenceProvider: (any InferenceProvider)? {
+                        _inferenceProvider
+                    }
                     private nonisolated let _inferenceProvider: (any InferenceProvider)?
 
                     private var isCancelled: Bool = false
@@ -127,7 +131,8 @@ final class AgentMacroTests: XCTestCase {
                     }
                 }
 
-                extension AssistantAgent: Agent {}
+                extension AssistantAgent: Agent {
+                }
                 """,
                 macros: agentMacros
             )
@@ -162,10 +167,14 @@ final class AgentMacroTests: XCTestCase {
 
                     public let configuration: AgentConfiguration = .default
 
-                    public nonisolated var memory: (any AgentMemory)? { _memory }
+                    public nonisolated var memory: (any AgentMemory)? {
+                        _memory
+                    }
                     private nonisolated let _memory: (any AgentMemory)?
 
-                    public nonisolated var inferenceProvider: (any InferenceProvider)? { _inferenceProvider }
+                    public nonisolated var inferenceProvider: (any InferenceProvider)? {
+                        _inferenceProvider
+                    }
                     private nonisolated let _inferenceProvider: (any InferenceProvider)?
 
                     private var isCancelled: Bool = false
@@ -243,7 +252,8 @@ final class AgentMacroTests: XCTestCase {
                     }
                 }
 
-                extension MathAgent: Agent {}
+                extension MathAgent: Agent {
+                }
                 """,
                 macros: agentMacros
             )
@@ -300,10 +310,14 @@ final class AgentMacroTests: XCTestCase {
 
                     public let configuration: AgentConfiguration = .default
 
-                    public nonisolated var memory: (any AgentMemory)? { _memory }
+                    public nonisolated var memory: (any AgentMemory)? {
+                        _memory
+                    }
                     private nonisolated let _memory: (any AgentMemory)?
 
-                    public nonisolated var inferenceProvider: (any InferenceProvider)? { _inferenceProvider }
+                    public nonisolated var inferenceProvider: (any InferenceProvider)? {
+                        _inferenceProvider
+                    }
                     private nonisolated let _inferenceProvider: (any InferenceProvider)?
 
                     private var isCancelled: Bool = false
@@ -348,7 +362,8 @@ final class AgentMacroTests: XCTestCase {
                     }
                 }
 
-                extension IncompleteAgent: Agent {}
+                extension IncompleteAgent: Agent {
+                }
                 """,
                 macros: agentMacros
             )

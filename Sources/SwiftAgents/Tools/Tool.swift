@@ -100,7 +100,7 @@ public extension Tool {
 /// Describes a parameter that a tool accepts.
 public struct ToolParameter: Sendable, Equatable {
     /// The type of a tool parameter.
-    public indirect enum ParameterType: Sendable, Equatable, CustomStringConvertible {
+    indirect public enum ParameterType: Sendable, Equatable, CustomStringConvertible {
         // MARK: Public
 
         public var description: String {

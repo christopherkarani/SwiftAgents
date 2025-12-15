@@ -35,7 +35,10 @@ public extension Duration {
         let (seconds, attoseconds) = components
 
         // Handle overflow for very large durations
-        guard seconds <= Int64(Double.greatestFiniteMagnitude) else {
+        // Int64 values beyond 2^53 lose precision when converted to Double,
+        // and extremely large durations should be treated as infinity
+        let maxSafeSeconds: Int64 = 1 << 53 // 9_007_199_254_740_992
+        guard seconds < maxSafeSeconds else {
             return .infinity
         }
 

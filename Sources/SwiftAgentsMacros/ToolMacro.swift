@@ -132,6 +132,12 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
+        // Only add extension for valid Tool declarations
+        // Must be a struct with a description argument
+        guard declaration.is(StructDeclSyntax.self),
+              extractDescription(from: node) != nil else {
+            return []
+        }
         // Add Tool and Sendable conformance
         let toolExtension = try ExtensionDeclSyntax("extension \(type): Tool, Sendable {}")
         return [toolExtension]

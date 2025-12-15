@@ -27,12 +27,12 @@ public actor ResilientAgent: Agent {
 
     // MARK: - Agent Protocol (nonisolated)
 
-    public nonisolated let tools: [any Tool]
-    public nonisolated let instructions: String
-    public nonisolated let configuration: AgentConfiguration
+    nonisolated public let tools: [any Tool]
+    nonisolated public let instructions: String
+    nonisolated public let configuration: AgentConfiguration
 
-    public nonisolated var memory: (any AgentMemory)? { baseMemory }
-    public nonisolated var inferenceProvider: (any InferenceProvider)? { baseInferenceProvider }
+    nonisolated public var memory: (any AgentMemory)? { baseMemory }
+    nonisolated public var inferenceProvider: (any InferenceProvider)? { baseInferenceProvider }
 
     // MARK: - Initialization
 
@@ -69,7 +69,7 @@ public actor ResilientAgent: Agent {
     ///
     /// - Parameter policy: The retry policy to apply.
     /// - Returns: A new resilient agent with retry enabled.
-    public nonisolated func withRetry(_ policy: RetryPolicy) -> ResilientAgent {
+    nonisolated public func withRetry(_ policy: RetryPolicy) -> ResilientAgent {
         ResilientAgent(
             base: base,
             retryPolicy: policy,
@@ -85,7 +85,7 @@ public actor ResilientAgent: Agent {
     ///   - threshold: Number of failures before opening the circuit.
     ///   - resetTimeout: Time to wait before attempting recovery.
     /// - Returns: A new resilient agent with circuit breaker enabled.
-    public nonisolated func withCircuitBreaker(threshold: Int, resetTimeout: Duration) -> ResilientAgent {
+    nonisolated public func withCircuitBreaker(threshold: Int, resetTimeout: Duration) -> ResilientAgent {
         let breaker = CircuitBreaker(
             name: "agent-\(UUID().uuidString)",
             failureThreshold: threshold,
@@ -104,7 +104,7 @@ public actor ResilientAgent: Agent {
     ///
     /// - Parameter fallback: The agent to use when the primary fails.
     /// - Returns: A new resilient agent with fallback enabled.
-    public nonisolated func withFallback(_ fallback: any Agent) -> ResilientAgent {
+    nonisolated public func withFallback(_ fallback: any Agent) -> ResilientAgent {
         ResilientAgent(
             base: base,
             retryPolicy: retryPolicy,
@@ -118,7 +118,7 @@ public actor ResilientAgent: Agent {
     ///
     /// - Parameter duration: Maximum execution time.
     /// - Returns: A new resilient agent with timeout enabled.
-    public nonisolated func withTimeout(_ duration: Duration) -> ResilientAgent {
+    nonisolated public func withTimeout(_ duration: Duration) -> ResilientAgent {
         ResilientAgent(
             base: base,
             retryPolicy: retryPolicy,
@@ -164,7 +164,7 @@ public actor ResilientAgent: Agent {
         }
     }
 
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -224,16 +224,16 @@ public actor ResilientAgent: Agent {
 
     // MARK: - Stored Properties (nonisolated)
 
-    private nonisolated let baseMemory: (any AgentMemory)?
-    private nonisolated let baseInferenceProvider: (any InferenceProvider)?
+    nonisolated private let baseMemory: (any AgentMemory)?
+    nonisolated private let baseInferenceProvider: (any InferenceProvider)?
 
     // MARK: - Resilience Configuration
 
-    private nonisolated let base: any Agent
-    private nonisolated let retryPolicy: RetryPolicy?
-    private nonisolated let circuitBreaker: CircuitBreaker?
-    private nonisolated let fallbackAgent: (any Agent)?
-    private nonisolated let timeoutDuration: Duration?
+    nonisolated private let base: any Agent
+    nonisolated private let retryPolicy: RetryPolicy?
+    nonisolated private let circuitBreaker: CircuitBreaker?
+    nonisolated private let fallbackAgent: (any Agent)?
+    nonisolated private let timeoutDuration: Duration?
 
     // MARK: - Private State
 

@@ -67,7 +67,7 @@
 --self-required
 
 # Modifiers
---modifier-order acl,setterACL,override,mutating,lazy,final,required,convenience,typeMethods,owned
+--modifier-order nonisolated,acl,setterACL,override,mutating,lazy,final,required,convenience,typeMethods,owned
 
 # Enabled rules
 --enable isEmpty

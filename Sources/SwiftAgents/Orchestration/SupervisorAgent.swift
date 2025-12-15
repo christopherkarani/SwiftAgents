@@ -450,12 +450,12 @@ public actor SupervisorAgent: Agent {
 
     // MARK: - Agent Protocol Properties
 
-    public nonisolated let tools: [any Tool] = []
-    public nonisolated let instructions: String
-    public nonisolated let configuration: AgentConfiguration
+    nonisolated public let tools: [any Tool] = []
+    nonisolated public let instructions: String
+    nonisolated public let configuration: AgentConfiguration
 
-    public nonisolated var memory: (any AgentMemory)? { nil }
-    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Supervisor-Specific Methods
 
@@ -582,7 +582,7 @@ public actor SupervisorAgent: Agent {
         }
     }
 
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {

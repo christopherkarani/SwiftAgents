@@ -70,13 +70,13 @@ public actor AgentContext {
     // MARK: Public
 
     /// The original input that started orchestration.
-    public nonisolated let originalInput: String
+    nonisolated public let originalInput: String
 
     /// Unique identifier for this execution.
-    public nonisolated let executionId: UUID
+    nonisolated public let executionId: UUID
 
     /// When this context was created.
-    public nonisolated let createdAt: Date
+    nonisolated public let createdAt: Date
 
     /// All current keys in the context.
     public var allKeys: [String] {
@@ -308,7 +308,7 @@ public actor AgentContext {
 // MARK: CustomStringConvertible
 
 extension AgentContext: CustomStringConvertible {
-    public nonisolated var description: String {
+    nonisolated public var description: String {
         """
         AgentContext(
             executionId: \(executionId),
@@ -322,7 +322,7 @@ extension AgentContext: CustomStringConvertible {
 // MARK: CustomDebugStringConvertible
 
 extension AgentContext: CustomDebugStringConvertible {
-    public nonisolated var debugDescription: String {
+    nonisolated public var debugDescription: String {
         """
         AgentContext(
             executionId: \(executionId),

@@ -328,24 +328,24 @@ public enum MergeStrategies {
 public actor ParallelGroup: Agent {
     // MARK: Public
 
-    public nonisolated let configuration: AgentConfiguration
+    nonisolated public let configuration: AgentConfiguration
 
     // MARK: - Group Properties (nonisolated)
 
     /// The agents in this parallel group with their names.
-    public nonisolated let agents: [(name: String, agent: any Agent)]
+    nonisolated public let agents: [(name: String, agent: any Agent)]
 
     // MARK: - Agent Protocol Properties (nonisolated)
 
-    public nonisolated var tools: [any Tool] { [] }
+    nonisolated public var tools: [any Tool] { [] }
 
-    public nonisolated var instructions: String {
+    nonisolated public var instructions: String {
         "Parallel group of \(agents.count) agents"
     }
 
-    public nonisolated var memory: (any AgentMemory)? { nil }
+    nonisolated public var memory: (any AgentMemory)? { nil }
 
-    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
 
@@ -521,7 +521,7 @@ public actor ParallelGroup: Agent {
     ///
     /// - Parameter input: The input to send to all agents.
     /// - Returns: An async stream of agent events.
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -573,7 +573,7 @@ public actor ParallelGroup: Agent {
 // MARK: CustomStringConvertible
 
 extension ParallelGroup: CustomStringConvertible {
-    public nonisolated var description: String {
+    nonisolated public var description: String {
         let agentNames = agents.map(\.name).joined(separator: ", ")
         return "ParallelGroup(\(agents.count) agents: [\(agentNames)])"
     }

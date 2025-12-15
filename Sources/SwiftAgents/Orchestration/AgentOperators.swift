@@ -113,18 +113,18 @@ public actor ParallelComposition: Agent {
 
     // MARK: - Agent Protocol (nonisolated)
 
-    public nonisolated let tools: [any Tool] = []
-    public nonisolated let instructions: String = "Parallel composition of agents"
-    public nonisolated let configuration: AgentConfiguration
+    nonisolated public let tools: [any Tool] = []
+    nonisolated public let instructions: String = "Parallel composition of agents"
+    nonisolated public let configuration: AgentConfiguration
 
     // MARK: - Properties (nonisolated)
 
-    public nonisolated let parallelAgents: [any Agent]
-    public nonisolated let currentMergeStrategy: ParallelMergeStrategy
-    public nonisolated let currentErrorHandling: ParallelErrorHandling
+    nonisolated public let parallelAgents: [any Agent]
+    nonisolated public let currentMergeStrategy: ParallelMergeStrategy
+    nonisolated public let currentErrorHandling: ParallelErrorHandling
 
-    public nonisolated var memory: (any AgentMemory)? { nil }
-    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
 
@@ -144,7 +144,7 @@ public actor ParallelComposition: Agent {
     // MARK: - Configuration
 
     /// Returns a new composition with the specified merge strategy.
-    public nonisolated func withMergeStrategy(_ strategy: ParallelMergeStrategy) -> ParallelComposition {
+    nonisolated public func withMergeStrategy(_ strategy: ParallelMergeStrategy) -> ParallelComposition {
         ParallelComposition(
             agents: parallelAgents,
             mergeStrategy: strategy,
@@ -154,7 +154,7 @@ public actor ParallelComposition: Agent {
     }
 
     /// Returns a new composition with the specified error handling.
-    public nonisolated func withErrorHandling(_ handling: ParallelErrorHandling) -> ParallelComposition {
+    nonisolated public func withErrorHandling(_ handling: ParallelErrorHandling) -> ParallelComposition {
         ParallelComposition(
             agents: parallelAgents,
             mergeStrategy: currentMergeStrategy,
@@ -234,7 +234,7 @@ public actor ParallelComposition: Agent {
         )
     }
 
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -322,17 +322,17 @@ public actor AgentSequence: Agent {
 
     // MARK: - Agent Protocol (nonisolated)
 
-    public nonisolated let tools: [any Tool] = []
-    public nonisolated let instructions: String = "Sequential composition of agents"
-    public nonisolated let configuration: AgentConfiguration
+    nonisolated public let tools: [any Tool] = []
+    nonisolated public let instructions: String = "Sequential composition of agents"
+    nonisolated public let configuration: AgentConfiguration
 
     // MARK: - Properties (nonisolated)
 
-    public nonisolated let sequentialAgents: [any Agent]
-    public nonisolated let currentTransformers: [Int: OutputTransformer]
+    nonisolated public let sequentialAgents: [any Agent]
+    nonisolated public let currentTransformers: [Int: OutputTransformer]
 
-    public nonisolated var memory: (any AgentMemory)? { nil }
-    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
 
@@ -349,7 +349,7 @@ public actor AgentSequence: Agent {
     // MARK: - Configuration
 
     /// Returns a new sequence with a transformer after the specified index.
-    public nonisolated func withTransformer(
+    nonisolated public func withTransformer(
         after index: Int,
         _ transformer: OutputTransformer
     ) -> AgentSequence {
@@ -410,7 +410,7 @@ public actor AgentSequence: Agent {
         )
     }
 
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -458,12 +458,12 @@ public actor ConditionalFallback: Agent {
 
     // MARK: - Agent Protocol (nonisolated)
 
-    public nonisolated let tools: [any Tool] = []
-    public nonisolated let instructions: String = "Conditional fallback agent"
-    public nonisolated let configuration: AgentConfiguration
+    nonisolated public let tools: [any Tool] = []
+    nonisolated public let instructions: String = "Conditional fallback agent"
+    nonisolated public let configuration: AgentConfiguration
 
-    public nonisolated var memory: (any AgentMemory)? { nil }
-    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
 
@@ -514,7 +514,7 @@ public actor ConditionalFallback: Agent {
         }
     }
 
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {

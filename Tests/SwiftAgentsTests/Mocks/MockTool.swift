@@ -104,9 +104,9 @@ public struct FailingTool: Tool, Sendable {
 public actor SpyTool: Tool {
     // MARK: Public
 
-    public nonisolated let name: String
-    public nonisolated let description: String
-    public nonisolated let parameters: [ToolParameter]
+    nonisolated public let name: String
+    nonisolated public let description: String
+    nonisolated public let parameters: [ToolParameter]
 
     /// The number of times the tool was called.
     public var callCount: Int {

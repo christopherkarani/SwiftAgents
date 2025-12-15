@@ -33,11 +33,11 @@ public actor ReActAgent: Agent {
 
     // MARK: - Agent Protocol Properties
 
-    public nonisolated let tools: [any Tool]
-    public nonisolated let instructions: String
-    public nonisolated let configuration: AgentConfiguration
-    public nonisolated let memory: (any AgentMemory)?
-    public nonisolated let inferenceProvider: (any InferenceProvider)?
+    nonisolated public let tools: [any Tool]
+    nonisolated public let instructions: String
+    nonisolated public let configuration: AgentConfiguration
+    nonisolated public let memory: (any AgentMemory)?
+    nonisolated public let inferenceProvider: (any InferenceProvider)?
 
     // MARK: - Initialization
 
@@ -102,7 +102,7 @@ public actor ReActAgent: Agent {
     /// Streams the agent's execution, yielding events as they occur.
     /// - Parameter input: The user's input/query.
     /// - Returns: An async stream of agent events.
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {

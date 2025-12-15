@@ -211,6 +211,10 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
+        // Only add extension for actors
+        guard declaration.is(ActorDeclSyntax.self) else {
+            return []
+        }
         let agentExtension = try ExtensionDeclSyntax("extension \(type): Agent {}")
         return [agentExtension]
     }

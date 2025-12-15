@@ -29,7 +29,7 @@ final class PromptMacroTests: XCTestCase {
                 let prompt = #Prompt("You are a helpful assistant")
                 """,
                 expandedSource: """
-                let prompt = PromptString(content: \"\"\"You are a helpful assistant\"\"\", interpolations: [])
+                let prompt = PromptString(content: "You are a helpful assistant", interpolations: [])
                 """,
                 macros: promptMacros
             )
@@ -45,7 +45,7 @@ final class PromptMacroTests: XCTestCase {
                 let prompt = #Prompt("You are \(role). Help with: \(task)")
                 """#,
                 expandedSource: #"""
-                let prompt = PromptString(content: """You are \(role). Help with: \(task)""", interpolations: ["role", "task"])
+                let prompt = PromptString(content: "You are \(role). Help with: \(task)", interpolations: ["role", "task"])
                 """#,
                 macros: promptMacros
             )
@@ -65,11 +65,7 @@ final class PromptMacroTests: XCTestCase {
                     """)
                 """#,
                 expandedSource: #"""
-                let prompt = PromptString(content: """
-                    You are a helpful assistant.
-                    Available tools: calculator, weather.
-                    Please help the user.
-                    """, interpolations: [])
+                let prompt = PromptString(content: "You are a helpful assistant.\nAvailable tools: calculator, weather.\nPlease help the user.", interpolations: [])
                 """#,
                 macros: promptMacros
             )

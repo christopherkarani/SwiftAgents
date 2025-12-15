@@ -47,71 +47,71 @@ final class TraceableMacroTests: XCTestCase {
                     func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
                         return .string("Sunny")
                     }
+                }
 
-                    /// Executes the tool with tracing enabled.
-                    /// - Parameters:
-                    ///   - arguments: The tool arguments.
-                    ///   - tracer: Optional tracer for recording events.
-                    /// - Returns: The result of execution.
-                    public func executeWithTracing(
-                        arguments: [String: SendableValue],
-                        tracer: (any Tracer)? = nil
-                    ) async throws -> SendableValue {
-                        let startTime = ContinuousClock.now
-                        let traceId = UUID()
+                /// Executes the tool with tracing enabled.
+                /// - Parameters:
+                ///   - arguments: The tool arguments.
+                ///   - tracer: Optional tracer for recording events.
+                /// - Returns: The result of execution.
+                public func executeWithTracing(
+                    arguments: [String: SendableValue],
+                    tracer: (any Tracer)? = nil
+                ) async throws -> SendableValue {
+                    let startTime = ContinuousClock.now
+                    let traceId = UUID()
 
-                        // Emit start event
+                    // Emit start event
+                    if let tracer = tracer {
+                        await tracer.record(TraceEvent(
+                            id: traceId,
+                            type: .toolCall,
+                            name: name,
+                            timestamp: Date(),
+                            duration: nil,
+                            metadata: ["arguments": .object(arguments)]
+                        ))
+                    }
+
+                    do {
+                        let result = try await execute(arguments: arguments)
+                        let duration = ContinuousClock.now - startTime
+
+                        // Emit success event
                         if let tracer = tracer {
                             await tracer.record(TraceEvent(
                                 id: traceId,
-                                type: .toolCall,
+                                type: .toolResult,
                                 name: name,
                                 timestamp: Date(),
-                                duration: nil,
-                                metadata: ["arguments": .object(arguments)]
+                                duration: duration,
+                                metadata: [
+                                    "result": result,
+                                    "success": .bool(true)
+                                ]
                             ))
                         }
 
-                        do {
-                            let result = try await execute(arguments: arguments)
-                            let duration = ContinuousClock.now - startTime
+                        return result
+                    } catch {
+                        let duration = ContinuousClock.now - startTime
 
-                            // Emit success event
-                            if let tracer = tracer {
-                                await tracer.record(TraceEvent(
-                                    id: traceId,
-                                    type: .toolResult,
-                                    name: name,
-                                    timestamp: Date(),
-                                    duration: duration,
-                                    metadata: [
-                                        "result": result,
-                                        "success": .bool(true)
-                                    ]
-                                ))
-                            }
-
-                            return result
-                        } catch {
-                            let duration = ContinuousClock.now - startTime
-
-                            // Emit error event
-                            if let tracer = tracer {
-                                await tracer.record(TraceEvent(
-                                    id: traceId,
-                                    type: .error,
-                                    name: name,
-                                    timestamp: Date(),
-                                    duration: duration,
-                                    metadata: [
-                                        "error": .string(error.localizedDescription),
-                                        "success": .bool(false)
-                                    ]
-                                ))
-                            }
-
-                            throw error
+                        // Emit error event
+                        if let tracer = tracer {
+                            await tracer.record(TraceEvent(
+                                id: traceId,
+                                type: .error,
+                                name: name,
+                                timestamp: Date(),
+                                duration: duration,
+                                metadata: [
+                                    "error": .string(error.localizedDescription),
+                                    "success": .bool(false)
+                                ]
+                            ))
                         }
+
+                        throw error
                     }
                 }
                 """,

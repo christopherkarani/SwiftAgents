@@ -194,7 +194,7 @@ public actor CompositeMemory: AgentMemory {
     // MARK: Public
 
     /// Number of memory components.
-    public nonisolated var componentCount: Int {
+    nonisolated public var componentCount: Int {
         components.count
     }
 
@@ -239,7 +239,7 @@ public actor CompositeMemory: AgentMemory {
     ///
     /// - Parameter strategy: The retrieval strategy to use.
     /// - Returns: A new composite memory with the configured strategy.
-    public nonisolated func withRetrievalStrategy(_ strategy: RetrievalStrategy) -> CompositeMemory {
+    nonisolated public func withRetrievalStrategy(_ strategy: RetrievalStrategy) -> CompositeMemory {
         CompositeMemory(
             components: components,
             retrievalStrategy: strategy,
@@ -252,7 +252,7 @@ public actor CompositeMemory: AgentMemory {
     ///
     /// - Parameter strategy: The merge strategy to use.
     /// - Returns: A new composite memory with the configured strategy.
-    public nonisolated func withMergeStrategy(_ strategy: MemoryMergeStrategy) -> CompositeMemory {
+    nonisolated public func withMergeStrategy(_ strategy: MemoryMergeStrategy) -> CompositeMemory {
         CompositeMemory(
             components: components,
             retrievalStrategy: retrievalStrategy,
@@ -265,7 +265,7 @@ public actor CompositeMemory: AgentMemory {
     ///
     /// - Parameter estimator: The token estimator to use.
     /// - Returns: A new composite memory with the configured estimator.
-    public nonisolated func withTokenEstimator(_ estimator: any TokenEstimator) -> CompositeMemory {
+    nonisolated public func withTokenEstimator(_ estimator: any TokenEstimator) -> CompositeMemory {
         CompositeMemory(
             components: components,
             retrievalStrategy: retrievalStrategy,

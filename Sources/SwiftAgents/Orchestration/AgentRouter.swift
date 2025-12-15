@@ -339,12 +339,12 @@ public actor AgentRouter: Agent {
 
     // MARK: - Agent Protocol Properties
 
-    public nonisolated let tools: [any Tool] = []
-    public nonisolated let instructions: String
-    public nonisolated let configuration: AgentConfiguration
+    nonisolated public let tools: [any Tool] = []
+    nonisolated public let instructions: String
+    nonisolated public let configuration: AgentConfiguration
 
-    public nonisolated var memory: (any AgentMemory)? { nil }
-    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
 
@@ -447,7 +447,7 @@ public actor AgentRouter: Agent {
     ///
     /// - Parameter input: The user's input/query.
     /// - Returns: An async stream of agent events.
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -528,7 +528,7 @@ public actor AgentRouter: Agent {
 // MARK: CustomStringConvertible
 
 extension AgentRouter: CustomStringConvertible {
-    public nonisolated var description: String {
+    nonisolated public var description: String {
         """
         AgentRouter(
             routes: \(routes.count),
