@@ -235,23 +235,27 @@ public actor ParallelComposition: Agent {
     }
 
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    continuation.yield(.started(input: input))
-                    let result = try await self.run(input)
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch {
-                    if let agentError = error as? AgentError {
-                        continuation.yield(.failed(error: agentError))
-                    } else {
-                        continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
-                    }
-                    continuation.finish()
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                continuation.yield(.started(input: input))
+                let result = try await run(input)
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                if let agentError = error as? AgentError {
+                    continuation.yield(.failed(error: agentError))
+                } else {
+                    continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
                 }
+                continuation.finish()
             }
         }
+        return stream
     }
 
     public func cancel() async {
@@ -411,23 +415,27 @@ public actor AgentSequence: Agent {
     }
 
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    continuation.yield(.started(input: input))
-                    let result = try await self.run(input)
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch {
-                    if let agentError = error as? AgentError {
-                        continuation.yield(.failed(error: agentError))
-                    } else {
-                        continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
-                    }
-                    continuation.finish()
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                continuation.yield(.started(input: input))
+                let result = try await run(input)
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                if let agentError = error as? AgentError {
+                    continuation.yield(.failed(error: agentError))
+                } else {
+                    continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
                 }
+                continuation.finish()
             }
         }
+        return stream
     }
 
     public func cancel() async {
@@ -515,23 +523,27 @@ public actor ConditionalFallback: Agent {
     }
 
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    continuation.yield(.started(input: input))
-                    let result = try await self.run(input)
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch {
-                    if let agentError = error as? AgentError {
-                        continuation.yield(.failed(error: agentError))
-                    } else {
-                        continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
-                    }
-                    continuation.finish()
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                continuation.yield(.started(input: input))
+                let result = try await run(input)
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                if let agentError = error as? AgentError {
+                    continuation.yield(.failed(error: agentError))
+                } else {
+                    continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
                 }
+                continuation.finish()
             }
         }
+        return stream
     }
 
     public func cancel() async {

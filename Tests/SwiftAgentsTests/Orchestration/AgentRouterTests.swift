@@ -41,14 +41,22 @@ final class TestAgent: Agent, @unchecked Sendable {
     }
 
     func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
                 continuation.yield(.started(input: input))
-                let result = try await self.run(input)
+                let result = try await run(input)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     func cancel() async {}

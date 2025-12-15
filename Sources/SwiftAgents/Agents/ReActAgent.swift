@@ -103,28 +103,32 @@ public actor ReActAgent: Agent {
     /// - Parameter input: The user's input/query.
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    // Emit started event
-                    continuation.yield(.started(input: input))
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                // Emit started event
+                continuation.yield(.started(input: input))
 
-                    // Run the agent
-                    let result = try await self.run(input)
+                // Run the agent
+                let result = try await run(input)
 
-                    // Emit completed event
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch let error as AgentError {
-                    continuation.yield(.failed(error: error))
-                    continuation.finish(throwing: error)
-                } catch {
-                    let agentError = AgentError.internalError(reason: error.localizedDescription)
-                    continuation.yield(.failed(error: agentError))
-                    continuation.finish(throwing: agentError)
-                }
+                // Emit completed event
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch let error as AgentError {
+                continuation.yield(.failed(error: error))
+                continuation.finish(throwing: error)
+            } catch {
+                let agentError = AgentError.internalError(reason: error.localizedDescription)
+                continuation.yield(.failed(error: agentError))
+                continuation.finish(throwing: agentError)
             }
         }
+        return stream
     }
 
     /// Cancels any ongoing execution.

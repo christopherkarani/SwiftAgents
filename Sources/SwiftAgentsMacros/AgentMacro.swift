@@ -169,23 +169,27 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
         if !existingMembers.contains("stream") {
             members.append("""
                 public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-                    AsyncThrowingStream { continuation in
-                        Task {
-                            do {
-                                continuation.yield(.started(input: input))
-                                let result = try await self.run(input)
-                                continuation.yield(.completed(result: result))
-                                continuation.finish()
-                            } catch let error as AgentError {
-                                continuation.yield(.failed(error: error))
-                                continuation.finish(throwing: error)
-                            } catch {
-                                let agentError = AgentError.internalError(reason: error.localizedDescription)
-                                continuation.yield(.failed(error: agentError))
-                                continuation.finish(throwing: agentError)
-                            }
+                    let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+                    Task { @Sendable [weak self] in
+                        guard let self else {
+                            continuation.finish()
+                            return
+                        }
+                        do {
+                            continuation.yield(.started(input: input))
+                            let result = try await self.run(input)
+                            continuation.yield(.completed(result: result))
+                            continuation.finish()
+                        } catch let error as AgentError {
+                            continuation.yield(.failed(error: error))
+                            continuation.finish(throwing: error)
+                        } catch {
+                            let agentError = AgentError.internalError(reason: error.localizedDescription)
+                            continuation.yield(.failed(error: agentError))
+                            continuation.finish(throwing: agentError)
                         }
                     }
+                    return stream
                 }
                 """)
         }

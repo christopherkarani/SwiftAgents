@@ -339,17 +339,21 @@ actor ParallelComposition: Agent {
     }
 
     nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    let result = try await self.run(input)
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                let result = try await run(input)
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     func cancel() async {
@@ -447,17 +451,21 @@ actor SequentialComposition: Agent {
     }
 
     nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    let result = try await self.run(input)
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                let result = try await run(input)
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     func cancel() async {
@@ -498,17 +506,21 @@ actor ConditionalRouter: Agent {
     }
 
     nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    let result = try await self.run(input)
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                let result = try await run(input)
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     func cancel() async {

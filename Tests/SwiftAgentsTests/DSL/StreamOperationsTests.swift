@@ -414,45 +414,57 @@ struct StreamOperationsTests {
 // MARK: - Test Helpers
 
 func makeTestEventStream(_ events: [AgentEvent]) -> AsyncThrowingStream<AgentEvent, Error> {
-    AsyncThrowingStream { continuation in
+    let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+    Task { @Sendable in
         for event in events {
             continuation.yield(event)
         }
         continuation.finish()
     }
+    return stream
 }
 
 func makeSlowEventStream(count: Int, delay: Duration) -> AsyncThrowingStream<AgentEvent, Error> {
-    AsyncThrowingStream { continuation in
-        Task {
+    let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+    Task { @Sendable in
+        do {
             for i in 0..<count {
-                try? await Task.sleep(for: delay)
+                try await Task.sleep(for: delay)
                 continuation.yield(.thinking(thought: "Event \(i)"))
             }
             continuation.finish()
+        } catch {
+            continuation.finish(throwing: error)
         }
     }
+    return stream
 }
 
 func makeFailingEventStream(failAfter count: Int) -> AsyncThrowingStream<AgentEvent, Error> {
-    AsyncThrowingStream { continuation in
+    let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+    Task { @Sendable in
         for i in 0..<count {
             continuation.yield(.thinking(thought: "Event \(i)"))
         }
         continuation.finish(throwing: TestStreamError.intentionalFailure)
     }
+    return stream
 }
 
 func makeRapidEventStream(count: Int, interval: Duration) -> AsyncThrowingStream<AgentEvent, Error> {
-    AsyncThrowingStream { continuation in
-        Task {
+    let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+    Task { @Sendable in
+        do {
             for i in 0..<count {
-                try? await Task.sleep(for: interval)
+                try await Task.sleep(for: interval)
                 continuation.yield(.thinking(thought: "Rapid \(i)"))
             }
             continuation.finish()
+        } catch {
+            continuation.finish(throwing: error)
         }
     }
+    return stream
 }
 
 func makeTestResult(_ output: String) -> AgentResult {

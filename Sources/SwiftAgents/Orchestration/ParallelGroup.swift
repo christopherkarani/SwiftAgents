@@ -522,23 +522,28 @@ public actor ParallelGroup: Agent {
     /// - Parameter input: The input to send to all agents.
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    continuation.yield(.started(input: input))
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
 
-                    let result = try await run(input)
+            do {
+                continuation.yield(.started(input: input))
 
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                } catch {
-                    if let agentError = error as? AgentError {
-                        continuation.yield(.failed(error: agentError))
-                    }
-                    continuation.finish(throwing: error)
+                let result = try await run(input)
+
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                if let agentError = error as? AgentError {
+                    continuation.yield(.failed(error: agentError))
                 }
+                continuation.finish(throwing: error)
             }
         }
+        return stream
     }
 
     /// Cancels the parallel execution.

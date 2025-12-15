@@ -448,52 +448,57 @@ public actor AgentRouter: Agent {
     /// - Parameter input: The user's input/query.
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    continuation.yield(.started(input: input))
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
 
-                    if await self.isCancelled {
-                        continuation.yield(.cancelled)
-                        continuation.finish()
-                        return
-                    }
+            do {
+                continuation.yield(.started(input: input))
 
-                    // Find the first matching route
-                    let selectedRoute = await self.findMatchingRoute(input: input, context: nil)
-
-                    guard let route = selectedRoute else {
-                        // No route matched - try fallback
-                        if let fallback = fallbackAgent {
-                            for try await event in fallback.stream(input) {
-                                continuation.yield(event)
-                            }
-                        } else {
-                            let error = OrchestrationError.routingFailed(
-                                reason: "No route matched input and no fallback agent configured"
-                            )
-                            continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
-                        }
-                        continuation.finish()
-                        return
-                    }
-
-                    // Stream from the matched route's agent
-                    for try await event in route.agent.stream(input) {
-                        continuation.yield(event)
-                    }
-
+                if await isCancelled {
+                    continuation.yield(.cancelled)
                     continuation.finish()
-                } catch {
-                    if let agentError = error as? AgentError {
-                        continuation.yield(.failed(error: agentError))
+                    return
+                }
+
+                // Find the first matching route
+                let selectedRoute = await findMatchingRoute(input: input, context: nil)
+
+                guard let route = selectedRoute else {
+                    // No route matched - try fallback
+                    if let fallback = await fallbackAgent {
+                        for try await event in fallback.stream(input) {
+                            continuation.yield(event)
+                        }
                     } else {
+                        let error = OrchestrationError.routingFailed(
+                            reason: "No route matched input and no fallback agent configured"
+                        )
                         continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
                     }
                     continuation.finish()
+                    return
                 }
+
+                // Stream from the matched route's agent
+                for try await event in route.agent.stream(input) {
+                    continuation.yield(event)
+                }
+
+                continuation.finish()
+            } catch {
+                if let agentError = error as? AgentError {
+                    continuation.yield(.failed(error: agentError))
+                } else {
+                    continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
+                }
+                continuation.finish()
             }
         }
+        return stream
     }
 
     /// Cancels any ongoing routing execution.

@@ -374,9 +374,11 @@ struct AlwaysFailingProvider: InferenceProvider {
     }
 
     func stream(prompt _: String, options _: InferenceOptions) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
+        let (stream, continuation) = AsyncThrowingStream<String, Error>.makeStream()
+        Task { @Sendable in
             continuation.finish(throwing: TestResilienceError.permanent)
         }
+        return stream
     }
 
     func generateWithToolCalls(
