@@ -5,6 +5,11 @@
 
 import Foundation
 
+// MARK: - Pipeline Composition Operator
+
+/// Operator for pipeline composition.
+infix operator >>>: AdditionPrecedence
+
 // MARK: - Pipeline
 
 /// A type-safe pipeline with explicit input and output types.

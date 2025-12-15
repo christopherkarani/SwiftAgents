@@ -4,6 +4,7 @@
 // A tracer that integrates with Apple's unified logging system (os.log).
 // Provides structured logging with signposts for performance analysis in Instruments.
 
+#if canImport(os)
 import Foundation
 import os.log
 
@@ -382,3 +383,4 @@ extension OSLogTracer {
             .build()
     }
 }
+#endif

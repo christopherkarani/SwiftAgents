@@ -80,7 +80,7 @@ public actor ResilientAgent: Agent {
     // MARK: - Internal Initialization for Chaining
 
     /// Internal initializer for chaining resilience patterns.
-    nonisolated init(
+    init(
         wrapping resilient: ResilientAgent,
         retryPolicy: RetryPolicy? = nil,
         circuitBreaker: CircuitBreaker? = nil,
@@ -127,7 +127,7 @@ public actor ResilientAgent: Agent {
     /// - Returns: A new resilient agent with circuit breaker enabled.
     public nonisolated func withCircuitBreaker(threshold: Int, resetTimeout: Duration) -> ResilientAgent {
         let breaker = CircuitBreaker(
-            name: "agent-\(ObjectIdentifier(base))",
+            name: "agent-\(UUID().uuidString)",
             failureThreshold: threshold,
             resetTimeout: resetTimeout.timeInterval
         )
@@ -347,7 +347,7 @@ extension Agent {
             return resilient.withCircuitBreaker(threshold: threshold, resetTimeout: resetTimeout)
         }
         let breaker = CircuitBreaker(
-            name: "agent-\(ObjectIdentifier(self))",
+            name: "agent-\(UUID().uuidString)",
             failureThreshold: threshold,
             resetTimeout: resetTimeout.timeInterval
         )
@@ -524,15 +524,5 @@ extension RetryPolicy {
     /// ```
     public static func immediate(maxAttempts: Int) -> RetryPolicy {
         RetryPolicy(maxAttempts: maxAttempts, backoff: .immediate)
-    }
-}
-
-// MARK: - Duration Extension
-
-extension Duration {
-    /// Converts Duration to TimeInterval (seconds).
-    var timeInterval: TimeInterval {
-        let (seconds, attoseconds) = components
-        return Double(seconds) + Double(attoseconds) / 1e18
     }
 }

@@ -1,46 +1,38 @@
 // Logger+SwiftAgents.swift
 // SwiftAgents Framework
 //
-// Structured logging extensions using Apple's os.Logger framework.
+// Cross-platform structured logging using swift-log.
 
 import Foundation
-import os
+import Logging
 
 /// Structured logging for SwiftAgents framework components.
 ///
-/// Provides category-specific loggers for different framework subsystems,
-/// enabling structured logging with appropriate categorization and filtering.
+/// Provides category-specific loggers for different framework subsystems.
+/// Uses swift-log for cross-platform compatibility (Apple + Linux).
 ///
 /// ## Usage
 ///
 /// ```swift
-/// Logger.agents.info("Starting agent execution")
-/// Logger.memory.debug("Retrieved \(count) messages from memory")
-/// Logger.tracing.trace("Span started: \(spanName)")
+/// Log.agents.info("Starting agent execution")
+/// Log.memory.debug("Retrieved \(count) messages from memory")
+/// Log.tracing.trace("Span started: \(spanName)")
 /// ```
 ///
-/// ## Categories
+/// ## Bootstrap
 ///
-/// - `agents`: Agent lifecycle and execution logging
-/// - `memory`: Memory system operations
-/// - `tracing`: Observability and tracing events
-/// - `metrics`: Performance and usage metrics
-/// - `orchestration`: Multi-agent coordination
+/// Call `Log.bootstrap()` once at application startup to configure logging:
 ///
-/// ## Log Levels
+/// ```swift
+/// // Default console logging
+/// Log.bootstrap()
 ///
-/// Use appropriate levels for different scenarios:
-/// - `.trace`: Fine-grained debug information
-/// - `.debug`: Diagnostic information for development
-/// - `.info`: General informational messages
-/// - `.notice`: Significant events that are not errors
-/// - `.warning`: Warning conditions
-/// - `.error`: Error conditions
-/// - `.fault`: Critical failures
-extension Logger {
-    /// Subsystem identifier for all SwiftAgents loggers.
-    private static let subsystem = "com.swiftagents"
-
+/// // Or with custom handler
+/// Log.bootstrap { label in
+///     MyCustomLogHandler(label: label)
+/// }
+/// ```
+public enum Log {
     /// Logger for agent-related operations.
     ///
     /// Use for:
@@ -48,12 +40,7 @@ extension Logger {
     /// - Agent execution lifecycle
     /// - Tool invocations
     /// - Agent state transitions
-    ///
-    /// ```swift
-    /// Logger.agents.info("Agent initialized: \(agentType)")
-    /// Logger.agents.debug("Executing step \(step) of \(totalSteps)")
-    /// ```
-    public static let agents = Logger(subsystem: subsystem, category: "agents")
+    public static let agents = Logger(label: "com.swiftagents.agents")
 
     /// Logger for memory system operations.
     ///
@@ -62,12 +49,7 @@ extension Logger {
     /// - Context window management
     /// - Memory pruning and optimization
     /// - Vector operations
-    ///
-    /// ```swift
-    /// Logger.memory.debug("Stored message: \(messageId)")
-    /// Logger.memory.warning("Memory approaching capacity: \(usage)%")
-    /// ```
-    public static let memory = Logger(subsystem: subsystem, category: "memory")
+    public static let memory = Logger(label: "com.swiftagents.memory")
 
     /// Logger for observability and tracing events.
     ///
@@ -76,12 +58,7 @@ extension Logger {
     /// - Distributed tracing
     /// - Performance tracking
     /// - Execution flow visualization
-    ///
-    /// ```swift
-    /// Logger.tracing.trace("Span started: \(spanName, privacy: .public)")
-    /// Logger.tracing.info("Span completed: duration=\(duration)ms")
-    /// ```
-    public static let tracing = Logger(subsystem: subsystem, category: "tracing")
+    public static let tracing = Logger(label: "com.swiftagents.tracing")
 
     /// Logger for metrics and performance data.
     ///
@@ -90,12 +67,7 @@ extension Logger {
     /// - Latency measurements
     /// - Resource utilization
     /// - Performance benchmarks
-    ///
-    /// ```swift
-    /// Logger.metrics.info("Tokens used: \(tokens)")
-    /// Logger.metrics.debug("Request latency: \(latency)ms")
-    /// ```
-    public static let metrics = Logger(subsystem: subsystem, category: "metrics")
+    public static let metrics = Logger(label: "com.swiftagents.metrics")
 
     /// Logger for multi-agent orchestration.
     ///
@@ -104,10 +76,34 @@ extension Logger {
     /// - Message passing between agents
     /// - Orchestration state transitions
     /// - Delegation and handoffs
+    public static let orchestration = Logger(label: "com.swiftagents.orchestration")
+
+    /// Bootstrap the logging system with default console output.
+    ///
+    /// Call once at application startup before using any loggers.
     ///
     /// ```swift
-    /// Logger.orchestration.info("Delegating task to agent: \(agentId)")
-    /// Logger.orchestration.debug("Coordination complete: \(agentsCount) agents")
+    /// Log.bootstrap()
     /// ```
-    public static let orchestration = Logger(subsystem: subsystem, category: "orchestration")
+    public static func bootstrap() {
+        LoggingSystem.bootstrap(StreamLogHandler.standardOutput)
+    }
+
+    /// Bootstrap the logging system with a custom log handler factory.
+    ///
+    /// Call once at application startup before using any loggers.
+    ///
+    /// ```swift
+    /// Log.bootstrap { label in
+    ///     var handler = StreamLogHandler.standardError(label: label)
+    ///     handler.logLevel = .debug
+    ///     return handler
+    /// }
+    /// ```
+    ///
+    /// - Parameter factory: A closure that creates a LogHandler for the given label.
+    public static func bootstrap(_ factory: @escaping @Sendable (String) -> LogHandler) {
+        LoggingSystem.bootstrap(factory)
+    }
+
 }

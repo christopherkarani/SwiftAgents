@@ -3,6 +3,7 @@
 //
 // SwiftData model for persistent message storage.
 
+#if canImport(SwiftData)
 import Foundation
 import SwiftData
 
@@ -174,3 +175,4 @@ extension PersistedMessage {
         return try ModelContainer(for: schema, configurations: [configuration])
     }
 }
+#endif

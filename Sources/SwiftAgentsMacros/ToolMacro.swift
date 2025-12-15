@@ -388,12 +388,12 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
 
         if hasUserExecute {
             // Generate property assignments
-            let propertyAssignments = parameters.map { "self.\($0.name) = \($0.name)" }.joined(separator: "\n            ")
+            let propertyAssignments = parameters.map { "self.\($0.name) = \($0.name)" }.joined(separator: "\n                    ")
 
             return """
                 public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
                     \(raw: extractionCode)
-            \(raw: propertyAssignments)
+                    \(raw: propertyAssignments)
                     let result = try await execute()
                     \(raw: conversionCode)
                 }

@@ -5,7 +5,6 @@
 // Provides counters, gauges, histograms, and timers for comprehensive observability.
 
 import Foundation
-import os
 
 // MARK: - Metrics Snapshot
 
@@ -474,7 +473,7 @@ public struct JSONMetricsReporter: MetricsReporter {
         } else {
             // Print to console
             if let jsonString = String(data: data, encoding: .utf8) {
-                Logger.metrics.info("\(jsonString)")
+                Log.metrics.info("\(jsonString)")
             }
         }
     }

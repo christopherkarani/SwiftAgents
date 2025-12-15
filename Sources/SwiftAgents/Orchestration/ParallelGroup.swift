@@ -17,7 +17,7 @@ import Foundation
 /// let strategy = MergeStrategies.Concatenate(separator: "\n---\n", includeAgentNames: true)
 /// let merged = try await strategy.merge(results)
 /// ```
-public protocol MergeStrategy: Sendable {
+public protocol ResultMergeStrategy: Sendable {
     /// Merges multiple agent results into a single result.
     ///
     /// - Parameter results: Dictionary of agent names to their results.
@@ -47,7 +47,7 @@ public enum MergeStrategies {
     /// // Agent2:
     /// // Output from agent2
     /// ```
-    public struct Concatenate: MergeStrategy {
+    public struct Concatenate: ResultMergeStrategy {
         /// Separator to use between outputs.
         public let separator: String
 
@@ -134,7 +134,7 @@ public enum MergeStrategies {
     /// ```swift
     /// let strategy = MergeStrategies.First()
     /// ```
-    public struct First: MergeStrategy {
+    public struct First: ResultMergeStrategy {
         /// Creates a first-result merge strategy.
         public init() {}
 
@@ -171,7 +171,7 @@ public enum MergeStrategies {
     /// ```swift
     /// let strategy = MergeStrategies.Longest()
     /// ```
-    public struct Longest: MergeStrategy {
+    public struct Longest: ResultMergeStrategy {
         /// Creates a longest-output merge strategy.
         public init() {}
 
@@ -214,7 +214,7 @@ public enum MergeStrategies {
     ///     return AgentResult(output: output)
     /// }
     /// ```
-    public struct Custom: MergeStrategy {
+    public struct Custom: ResultMergeStrategy {
         /// The custom merge function.
         public let mergeFunction: @Sendable ([String: AgentResult]) async throws -> AgentResult
 
@@ -246,7 +246,7 @@ public enum MergeStrategies {
     /// //   "agent2": "Output from agent2"
     /// // }
     /// ```
-    public struct Structured: MergeStrategy {
+    public struct Structured: ResultMergeStrategy {
         /// Creates a structured merge strategy.
         public init() {}
 
@@ -348,7 +348,7 @@ public actor ParallelGroup: Agent {
     // MARK: - Private State
 
     /// The strategy for merging parallel results.
-    private let mergeStrategy: any MergeStrategy
+    private let mergeStrategy: any ResultMergeStrategy
 
     /// Whether to continue execution if some agents fail.
     private let continueOnError: Bool
@@ -375,7 +375,7 @@ public actor ParallelGroup: Agent {
     ///   - configuration: Agent configuration. Default: .default
     public init(
         agents: [(name: String, agent: any Agent)],
-        mergeStrategy: any MergeStrategy = MergeStrategies.Concatenate(),
+        mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
         continueOnError: Bool = false,
         maxConcurrency: Int? = nil,
         configuration: AgentConfiguration = .default
@@ -399,7 +399,7 @@ public actor ParallelGroup: Agent {
     ///   - configuration: Agent configuration. Default: .default
     public init(
         agents: [any Agent],
-        mergeStrategy: any MergeStrategy = MergeStrategies.Concatenate(),
+        mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
         continueOnError: Bool = false,
         maxConcurrency: Int? = nil,
         configuration: AgentConfiguration = .default

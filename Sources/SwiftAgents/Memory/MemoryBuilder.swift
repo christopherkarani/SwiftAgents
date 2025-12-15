@@ -140,10 +140,10 @@ public enum RetrievalStrategy: Sendable {
     case custom(@Sendable ([MemoryMessage], String) async -> [MemoryMessage])
 }
 
-// MARK: - MergeStrategy
+// MARK: - MemoryMergeStrategy
 
 /// Strategy for merging messages from multiple memory components.
-public enum MergeStrategy: Sendable {
+public enum MemoryMergeStrategy: Sendable {
     /// Concatenate messages from all components (primary first).
     case concatenate
 
@@ -193,7 +193,7 @@ public actor CompositeMemory: AgentMemory {
     private let retrievalStrategy: RetrievalStrategy
 
     /// Strategy for merging messages from multiple components.
-    private let mergeStrategy: MergeStrategy
+    private let mergeStrategy: MemoryMergeStrategy
 
     /// Token estimator for context formatting.
     private let tokenEstimator: any TokenEstimator
@@ -220,10 +220,10 @@ public actor CompositeMemory: AgentMemory {
     }
 
     /// Internal initializer for configuration chaining.
-    private init(
+    internal init(
         components: [MemoryComponent],
         retrievalStrategy: RetrievalStrategy,
-        mergeStrategy: MergeStrategy,
+        mergeStrategy: MemoryMergeStrategy,
         tokenEstimator: any TokenEstimator
     ) {
         self.components = components
@@ -251,7 +251,7 @@ public actor CompositeMemory: AgentMemory {
     ///
     /// - Parameter strategy: The merge strategy to use.
     /// - Returns: A new composite memory with the configured strategy.
-    public nonisolated func withMergeStrategy(_ strategy: MergeStrategy) -> CompositeMemory {
+    public nonisolated func withMergeStrategy(_ strategy: MemoryMergeStrategy) -> CompositeMemory {
         CompositeMemory(
             components: components,
             retrievalStrategy: retrievalStrategy,
@@ -310,6 +310,17 @@ public actor CompositeMemory: AgentMemory {
                 total += await component.memory.count
             }
             return total
+        }
+    }
+
+    public var isEmpty: Bool {
+        get async {
+            for component in components {
+                if await !component.memory.isEmpty {
+                    return false
+                }
+            }
+            return true
         }
     }
 

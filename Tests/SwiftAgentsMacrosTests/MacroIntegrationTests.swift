@@ -227,7 +227,7 @@ struct ToolParameter: Sendable, Equatable {
         self.defaultValue = defaultValue
     }
 
-    enum ParameterType: Sendable, Equatable {
+    indirect enum ParameterType: Sendable, Equatable {
         case string
         case int
         case double

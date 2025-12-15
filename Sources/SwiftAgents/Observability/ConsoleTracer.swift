@@ -5,7 +5,6 @@
 // Provides both standard and pretty (emoji-enhanced) console tracers.
 
 import Foundation
-import os
 
 // MARK: - Console Tracer
 
@@ -127,7 +126,7 @@ public actor ConsoleTracer: AgentTracer {
 
         // Join parts and log
         let output = parts.joined(separator: " ")
-        Logger.tracing.info("\(output)")
+        Log.tracing.info("\(output)")
 
         // Print error details if present
         if let error = event.error {
@@ -212,17 +211,17 @@ public actor ConsoleTracer: AgentTracer {
         let prefix = colorized ? "\u{001B}[31m" : ""
         let reset = colorized ? "\u{001B}[0m" : ""
 
-        Logger.tracing.error("\(prefix)  Error: \(error.type)\(reset)")
-        Logger.tracing.error("\(prefix)  Message: \(error.message)\(reset)")
+        Log.tracing.error("\(prefix)  Error: \(error.type)\(reset)")
+        Log.tracing.error("\(prefix)  Message: \(error.message)\(reset)")
 
         if let underlyingError = error.underlyingError {
-            Logger.tracing.error("\(prefix)  Underlying: \(underlyingError)\(reset)")
+            Log.tracing.error("\(prefix)  Underlying: \(underlyingError)\(reset)")
         }
 
         if let stackTrace = error.stackTrace {
-            Logger.tracing.error("\(prefix)  Stack Trace:\(reset)")
+            Log.tracing.error("\(prefix)  Stack Trace:\(reset)")
             for frame in stackTrace {
-                Logger.tracing.error("\(prefix)    \(frame)\(reset)")
+                Log.tracing.error("\(prefix)    \(frame)\(reset)")
             }
         }
     }
@@ -232,9 +231,9 @@ public actor ConsoleTracer: AgentTracer {
         let prefix = colorized ? "\u{001B}[37m" : ""
         let reset = colorized ? "\u{001B}[0m" : ""
 
-        Logger.tracing.debug("\(prefix)  Metadata:\(reset)")
+        Log.tracing.debug("\(prefix)  Metadata:\(reset)")
         for (key, value) in metadata.sorted(by: { $0.key < $1.key }) {
-            Logger.tracing.debug("\(prefix)    \(key): \(value)\(reset)")
+            Log.tracing.debug("\(prefix)    \(key): \(value)\(reset)")
         }
     }
 }
@@ -331,7 +330,7 @@ public actor PrettyConsoleTracer: AgentTracer {
         }
 
         // Add blank line for visual separation
-        Logger.tracing.debug("")
+        Log.tracing.debug("")
     }
 
     // MARK: - Pretty Formatting
@@ -360,40 +359,40 @@ public actor PrettyConsoleTracer: AgentTracer {
         // Add message
         parts.append(event.message)
 
-        Logger.tracing.info("\(parts.joined(separator: " "))")
+        Log.tracing.info("\(parts.joined(separator: " "))")
     }
 
     /// Prints event details with indentation.
     private func printDetails(_ event: TraceEvent) {
         // Print agent name if present
         if let agentName = event.agentName {
-            Logger.tracing.debug("  📛 Agent: \(agentName)")
+            Log.tracing.debug("  📛 Agent: \(agentName)")
         }
 
         // Print tool name if present
         if let toolName = event.toolName {
-            Logger.tracing.debug("  🔨 Tool: \(toolName)")
+            Log.tracing.debug("  🔨 Tool: \(toolName)")
         }
 
         // Print duration if present
         if let duration = event.duration {
-            Logger.tracing.debug("  ⏱️  Duration: \(String(format: "%.2f", duration * 1000))ms")
+            Log.tracing.debug("  ⏱️  Duration: \(String(format: "%.2f", duration * 1000))ms")
         }
 
         // Print trace ID
-        Logger.tracing.debug("  🆔 Trace: \(event.traceId)")
+        Log.tracing.debug("  🆔 Trace: \(event.traceId)")
 
         // Print span ID
-        Logger.tracing.debug("  📍 Span: \(event.spanId)")
+        Log.tracing.debug("  📍 Span: \(event.spanId)")
 
         // Print parent span ID if present
         if let parentSpanId = event.parentSpanId {
-            Logger.tracing.debug("  ⬆️  Parent: \(parentSpanId)")
+            Log.tracing.debug("  ⬆️  Parent: \(parentSpanId)")
         }
 
         // Print source location if enabled and present
         if includeSource, let source = event.source {
-            Logger.tracing.debug("  📂 Source: \(source.filename):\(source.line) - \(source.function)")
+            Log.tracing.debug("  📂 Source: \(source.filename):\(source.line) - \(source.function)")
         }
     }
 
@@ -500,18 +499,18 @@ public actor PrettyConsoleTracer: AgentTracer {
         let prefix = colorized ? "\u{001B}[31m" : ""
         let reset = colorized ? "\u{001B}[0m" : ""
 
-        Logger.tracing.error("\(prefix)  ❌ Error Details:\(reset)")
-        Logger.tracing.error("\(prefix)    🏷️  Type: \(error.type)\(reset)")
-        Logger.tracing.error("\(prefix)    💬 Message: \(error.message)\(reset)")
+        Log.tracing.error("\(prefix)  ❌ Error Details:\(reset)")
+        Log.tracing.error("\(prefix)    🏷️  Type: \(error.type)\(reset)")
+        Log.tracing.error("\(prefix)    💬 Message: \(error.message)\(reset)")
 
         if let underlyingError = error.underlyingError {
-            Logger.tracing.error("\(prefix)    ⚡ Underlying: \(underlyingError)\(reset)")
+            Log.tracing.error("\(prefix)    ⚡ Underlying: \(underlyingError)\(reset)")
         }
 
         if let stackTrace = error.stackTrace {
-            Logger.tracing.error("\(prefix)    📚 Stack Trace:\(reset)")
+            Log.tracing.error("\(prefix)    📚 Stack Trace:\(reset)")
             for frame in stackTrace {
-                Logger.tracing.error("\(prefix)      • \(frame)\(reset)")
+                Log.tracing.error("\(prefix)      • \(frame)\(reset)")
             }
         }
     }
@@ -521,9 +520,9 @@ public actor PrettyConsoleTracer: AgentTracer {
         let prefix = colorized ? "\u{001B}[37m" : ""
         let reset = colorized ? "\u{001B}[0m" : ""
 
-        Logger.tracing.debug("\(prefix)  📊 Metadata:\(reset)")
+        Log.tracing.debug("\(prefix)  📊 Metadata:\(reset)")
         for (key, value) in metadata.sorted(by: { $0.key < $1.key }) {
-            Logger.tracing.debug("\(prefix)    • \(key): \(value)\(reset)")
+            Log.tracing.debug("\(prefix)    • \(key): \(value)\(reset)")
         }
     }
 }

@@ -256,7 +256,7 @@ struct TypedPipelineTests {
 
 // MARK: - Test Support Types
 
-enum TestError: Error {
+enum PipelineTestError: Error {
     case intentionalFailure
 }
 
@@ -305,7 +305,7 @@ struct Pipeline<Input: Sendable, Output: Sendable>: Sendable {
         }
     }
 
-    static var identity: Pipeline<Input, Input> where Input == Output {
+    static var identity: Pipeline<Input, Input> {
         Pipeline<Input, Input> { $0 }
     }
 }

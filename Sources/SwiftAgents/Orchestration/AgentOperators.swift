@@ -7,18 +7,18 @@ import Foundation
 
 // MARK: - Operator Precedence
 
-precedencegroup AgentCompositionPrecedence {
+precedencegroup AgentConditionalPrecedence {
     higherThan: AdditionPrecedence
+    associativity: left
+}
+
+precedencegroup AgentCompositionPrecedence {
+    higherThan: AgentConditionalPrecedence
     associativity: left
 }
 
 precedencegroup AgentSequentialPrecedence {
     higherThan: AgentCompositionPrecedence
-    associativity: left
-}
-
-precedencegroup AgentConditionalPrecedence {
-    lowerThan: AgentCompositionPrecedence
     associativity: left
 }
 

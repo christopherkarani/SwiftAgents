@@ -234,79 +234,7 @@ struct MemoryBuilderTests {
     }
 }
 
-// MARK: - CompositeMemory (to be implemented)
-
-/// Composite memory that combines multiple memory systems
-actor CompositeMemory: AgentMemory {
-    private var components: [any AgentMemory]
-    private var retrievalStrategy: RetrievalStrategy = .recency
-    private var mergeStrategy: MergeStrategy = .concatenate
-
-    var componentCount: Int {
-        components.count
-    }
-
-    init(@MemoryBuilder _ content: () -> [any AgentMemory]) {
-        self.components = content()
-    }
-
-    func store(_ message: MemoryMessage) async {
-        for component in components {
-            await component.store(message)
-        }
-    }
-
-    func retrieve(limit: Int) async -> [MemoryMessage] {
-        guard let primary = components.first else { return [] }
-        return await primary.retrieve(limit: limit)
-    }
-
-    func clear() async {
-        for component in components {
-            await component.clear()
-        }
-    }
-
-    nonisolated func withRetrievalStrategy(_ strategy: RetrievalStrategy) -> CompositeMemory {
-        // Return configured copy
-        self
-    }
-
-    nonisolated func withMergeStrategy(_ strategy: MergeStrategy) -> CompositeMemory {
-        // Return configured copy
-        self
-    }
-
-    func buildContext(maxTokens: Int) async -> String {
-        let messages = await retrieve(limit: 100)
-        return messages.map { $0.content }.joined(separator: "\n")
-    }
-}
-
-// MARK: - MemoryBuilder Result Builder
-
-@resultBuilder
-struct MemoryBuilder {
-    static func buildBlock(_ components: any AgentMemory...) -> [any AgentMemory] {
-        components
-    }
-
-    static func buildOptional(_ component: (any AgentMemory)?) -> [any AgentMemory] {
-        component.map { [$0] } ?? []
-    }
-
-    static func buildEither(first component: any AgentMemory) -> [any AgentMemory] {
-        [component]
-    }
-
-    static func buildEither(second component: any AgentMemory) -> [any AgentMemory] {
-        [component]
-    }
-
-    static func buildArray(_ components: [[any AgentMemory]]) -> [any AgentMemory] {
-        components.flatMap { $0 }
-    }
-}
+// NOTE: CompositeMemory and MemoryBuilder are now public types exported from SwiftAgents.
 
 // MARK: - Memory Configuration Extensions
 
@@ -346,16 +274,29 @@ actor MockVectorMemory: AgentMemory {
     private var similarityThreshold: Double = 0.5
     private var maxResults: Int = 10
 
-    func store(_ message: MemoryMessage) async {
+    func add(_ message: MemoryMessage) async {
         messages.append(message)
     }
 
-    func retrieve(limit: Int) async -> [MemoryMessage] {
-        Array(messages.suffix(limit))
+    func getContext(for query: String, tokenLimit: Int) async -> String {
+        let recent = Array(messages.suffix(maxResults))
+        return recent.map { $0.content }.joined(separator: "\n")
+    }
+
+    func getAllMessages() async -> [MemoryMessage] {
+        messages
     }
 
     func clear() async {
         messages = []
+    }
+
+    var count: Int {
+        get async { messages.count }
+    }
+
+    var isEmpty: Bool {
+        get async { messages.isEmpty }
     }
 
     nonisolated func withSimilarityThreshold(_ threshold: Double) -> MockVectorMemory {

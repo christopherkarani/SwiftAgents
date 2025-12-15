@@ -1,6 +1,7 @@
 // SwiftDataMemoryTests.swift
 // SwiftAgents Framework
 
+#if canImport(SwiftData)
 import Testing
 import Foundation
 import SwiftData
@@ -276,3 +277,4 @@ struct SwiftDataMemoryTests {
         #expect(await memory.maxMessages == 25)
     }
 }
+#endif
