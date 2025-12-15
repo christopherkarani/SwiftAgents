@@ -106,6 +106,7 @@ struct ReActAgentTests {
 @Suite("Built-in Tools Tests")
 struct BuiltInToolsTests {
 
+    #if canImport(Darwin)
     @Test("Calculator tool")
     func calculatorTool() async throws {
         let calculator = CalculatorTool()
@@ -118,6 +119,7 @@ struct BuiltInToolsTests {
         // Verify result (3*4=12, 12+2=14)
         #expect(result == .double(14.0))
     }
+    #endif
 
     @Test("DateTime tool")
     func dateTimeTool() async throws {
