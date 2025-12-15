@@ -419,7 +419,7 @@ struct RoutingStrategyProtocolTests {
         let strategy = KeywordRoutingStrategy()
 
         // Can be captured in async context
-        let task = Task {
+        let task = Task { @Sendable in
             let agents = [
                 AgentDescription(name: "test", description: "Test agent")
             ]

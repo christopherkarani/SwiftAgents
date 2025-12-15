@@ -341,7 +341,7 @@ struct CircuitBreakerTests {
         try await Task.sleep(nanoseconds: 150_000_000)
 
         // First request should be allowed
-        let task = Task {
+        let task = Task { @Sendable in
             try await breaker.execute {
                 try await Task.sleep(nanoseconds: 100_000_000) // Slow operation
                 return "success"

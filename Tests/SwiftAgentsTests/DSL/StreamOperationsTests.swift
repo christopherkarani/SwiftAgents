@@ -338,7 +338,7 @@ struct StreamOperationsTests {
         let collector = SideEffectCollector()
         let stream = events.onEach { event in
             if case let .thinking(thought) = event {
-                Task { await collector.append(thought) }
+                Task { @Sendable in await collector.append(thought) }
             }
         }
 
@@ -361,7 +361,7 @@ struct StreamOperationsTests {
 
         let completionFlag = CompletionFlag()
         let stream = events.onComplete { result in
-            Task {
+            Task { @Sendable in
                 await completionFlag.markComplete()
                 #expect(result.output == "Done")
             }

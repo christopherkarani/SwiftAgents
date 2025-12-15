@@ -166,7 +166,7 @@ struct TraceEventTests {
             .build()
 
         // Transfer event across async task boundary
-        let transferredEvent = await Task {
+        let transferredEvent = await Task { @Sendable in
             event
         }.value
 
