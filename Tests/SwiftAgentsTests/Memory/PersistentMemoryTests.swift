@@ -58,7 +58,6 @@ struct PersistentMemoryTests {
         await memory.clear()
 
         #expect(await memory.isEmpty)
-        #expect(await memory.count == 0)
     }
 
     @Test("Different conversations are isolated")

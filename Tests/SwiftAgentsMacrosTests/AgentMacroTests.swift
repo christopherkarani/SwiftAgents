@@ -21,6 +21,7 @@ final class AgentMacroTests: XCTestCase {
 
     // MARK: - Basic Agent Tests
 
+    // swiftlint:disable:next function_body_length
     func testBasicAgentExpansion() throws {
         #if canImport(SwiftAgentsMacros)
         assertMacroExpansion(
@@ -134,6 +135,7 @@ final class AgentMacroTests: XCTestCase {
         #endif
     }
 
+    // swiftlint:disable:next function_body_length
     func testAgentWithExistingTools() throws {
         #if canImport(SwiftAgentsMacros)
         assertMacroExpansion(

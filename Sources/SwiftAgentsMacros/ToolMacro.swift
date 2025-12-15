@@ -237,10 +237,8 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
     private static func extractParameterDefault(from attr: AttributeSyntax) -> String? {
         guard let arguments = attr.arguments?.as(LabeledExprListSyntax.self) else { return nil }
 
-        for arg in arguments {
-            if arg.label?.text == "default" {
-                return arg.expression.description
-            }
+        for arg in arguments where arg.label?.text == "default" {
+            return arg.expression.description
         }
         return nil
     }
@@ -267,10 +265,8 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
 
     /// Checks if the declaration already has an init.
     private static func hasInit(in declaration: some DeclGroupSyntax) -> Bool {
-        for member in declaration.memberBlock.members {
-            if member.decl.is(InitializerDeclSyntax.self) {
-                return true
-            }
+        for member in declaration.memberBlock.members where member.decl.is(InitializerDeclSyntax.self) {
+            return true
         }
         return false
     }

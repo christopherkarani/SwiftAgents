@@ -278,6 +278,8 @@ struct BuilderBasedTool: Tool {
 
 // MARK: - Parameter Factory Function (to be implemented)
 
+// swiftlint:disable identifier_name
+
 /// Convenience function for creating ToolParameter with builder DSL syntax
 /// This needs to be implemented in the main source
 func Parameter(
@@ -329,3 +331,5 @@ func Parameter(
         defaultValue: .string(defaultValue)
     )
 }
+
+// swiftlint:enable identifier_name

@@ -111,7 +111,14 @@ public actor PersistentMemory: AgentMemory {
     }
 
     public var isEmpty: Bool {
-        get async { await count == 0 }
+        get async {
+            do {
+                let messageCount = try await backend.messageCount(conversationId: conversationId)
+                return messageCount == 0
+            } catch {
+                return true
+            }
+        }
     }
 
     // MARK: - Additional Methods

@@ -87,7 +87,10 @@
 /// - Must be applied to a struct
 /// - Must have an `execute()` method (can be async throws)
 /// - Parameters should be annotated with `@Parameter`
-@attached(member, names: named(name), named(description), named(parameters), named(init), named(execute), named(_userExecute))
+@attached(
+    member,
+    names: named(name), named(description), named(parameters), named(init), named(execute), named(_userExecute)
+)
 @attached(extension, conformances: Tool, Sendable)
 public macro Tool(_ description: String) = #externalMacro(module: "SwiftAgentsMacros", type: "ToolMacro")
 
@@ -136,7 +139,11 @@ public macro Tool(_ description: String) = #externalMacro(module: "SwiftAgentsMa
 /// - `default`: Optional default value
 /// - `oneOf`: Optional array of allowed string values
 @attached(peer)
-public macro Parameter(_ description: String, default defaultValue: Any? = nil, oneOf options: [String]? = nil) = #externalMacro(module: "SwiftAgentsMacros", type: "ParameterMacro")
+public macro Parameter(
+    _ description: String,
+    default defaultValue: Any? = nil,
+    oneOf options: [String]? = nil
+) = #externalMacro(module: "SwiftAgentsMacros", type: "ParameterMacro")
 
 // MARK: - @Agent Macro
 
@@ -192,7 +199,12 @@ public macro Parameter(_ description: String, default defaultValue: Any? = nil, 
 ///
 /// - Must be applied to an actor
 /// - Should have a `process(_ input: String) async throws -> String` method
-@attached(member, names: named(tools), named(instructions), named(configuration), named(memory), named(inferenceProvider), named(_memory), named(_inferenceProvider), named(isCancelled), named(init), named(run), named(stream), named(cancel))
+@attached(
+    member,
+    names: named(tools), named(instructions), named(configuration), named(memory), named(inferenceProvider),
+    named(_memory), named(_inferenceProvider), named(isCancelled), named(init), named(run), named(stream),
+    named(cancel)
+)
 @attached(extension, conformances: Agent)
 public macro Agent(_ instructions: String) = #externalMacro(module: "SwiftAgentsMacros", type: "AgentMacro")
 
@@ -253,7 +265,10 @@ public macro Traceable() = #externalMacro(module: "SwiftAgentsMacros", type: "Tr
 /// - Type checking for interpolated values
 /// - Clear error messages for invalid syntax
 @freestanding(expression)
-public macro Prompt(_ content: String) -> PromptString = #externalMacro(module: "SwiftAgentsMacros", type: "PromptMacro")
+public macro Prompt(_ content: String) -> PromptString = #externalMacro(
+    module: "SwiftAgentsMacros",
+    type: "PromptMacro"
+)
 
 // MARK: - Supporting Types
 
@@ -261,7 +276,8 @@ public macro Prompt(_ content: String) -> PromptString = #externalMacro(module: 
 ///
 /// This type wraps a prompt string that has been validated at compile time,
 /// providing type safety for prompt construction.
-public struct PromptString: Sendable, ExpressibleByStringLiteral, ExpressibleByStringInterpolation, CustomStringConvertible {
+public struct PromptString: Sendable, ExpressibleByStringLiteral, ExpressibleByStringInterpolation,
+    CustomStringConvertible {
     /// The prompt content.
     public let content: String
 

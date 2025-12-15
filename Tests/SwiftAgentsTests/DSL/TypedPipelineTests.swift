@@ -253,9 +253,11 @@ struct TypedPipelineTests {
 
     @Test("Pipeline composition is associative")
     func pipelineCompositionIsAssociative() async throws {
+        // swiftlint:disable identifier_name
         let f = Pipeline<Int, Int> { $0 + 1 }
         let g = Pipeline<Int, Int> { $0 * 2 }
         let h = Pipeline<Int, Int> { $0 - 3 }
+        // swiftlint:enable identifier_name
 
         // (f >>> g) >>> h should equal f >>> (g >>> h)
         let leftAssoc = (f >>> g) >>> h

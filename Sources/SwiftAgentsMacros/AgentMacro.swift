@@ -34,6 +34,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
 
     // MARK: - MemberMacro
 
+    // swiftlint:disable:next function_body_length
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -248,10 +249,8 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
 
     /// Checks if the declaration has an init.
     private static func hasInit(in declaration: some DeclGroupSyntax) -> Bool {
-        for member in declaration.memberBlock.members {
-            if member.decl.is(InitializerDeclSyntax.self) {
-                return true
-            }
+        for member in declaration.memberBlock.members where member.decl.is(InitializerDeclSyntax.self) {
+            return true
         }
         return false
     }

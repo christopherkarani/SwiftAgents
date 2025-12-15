@@ -118,7 +118,7 @@ struct TypedToolTests {
             "query": .string("swift programming")
         ])
 
-        #expect(results.count > 0)
+        #expect(!results.isEmpty)
         #expect(results.first?.title.contains("Swift") == true)
     }
 
@@ -131,8 +131,8 @@ struct TypedToolTests {
         ])
 
         #expect(order.id == "ORD-123")
-        #expect(order.items.count > 0)
-        #expect(order.customer.name.isEmpty == false)
+        #expect(!order.items.isEmpty)
+        #expect(!order.customer.name.isEmpty)
     }
 
     // MARK: - TypedTool Output Type Inference
@@ -239,7 +239,7 @@ struct SearchResultsTypedTool: TypedTool {
     ]
 
     func executeTyped(arguments: [String: SendableValue]) async throws -> [SearchResult] {
-        return [
+        [
             SearchResult(title: "Swift Programming Guide", url: "https://example.com/1"),
             SearchResult(title: "Swift Best Practices", url: "https://example.com/2")
         ]
@@ -262,7 +262,7 @@ struct OrderTypedTool: TypedTool {
     ]
 
     func executeTyped(arguments: [String: SendableValue]) async throws -> Order {
-        return Order(
+        Order(
             id: arguments["orderId"]?.stringValue ?? "unknown",
             items: [OrderItem(productId: "P1", quantity: 2, price: 29.99)],
             customer: Customer(name: "John Doe", email: "john@example.com")

@@ -128,7 +128,7 @@ force_try: warning
 # File header format (matches project style)
 file_header:
   required_pattern: |
-    \/\/ [\w+]+\.swift\n\/\/ SwiftAgents Framework
+    \/\/ [\w+]+\.swift\n\/\/ SwiftAgents(Tests|Macros|MacrosTests| Framework)?
 
 # Modifier order (Swift 6 conventions)
 modifier_order:

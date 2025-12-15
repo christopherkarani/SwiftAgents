@@ -93,6 +93,8 @@ public struct ToolParameterBuilder {
 
 // MARK: - Parameter Factory Functions
 
+// swiftlint:disable identifier_name
+
 /// Creates a tool parameter with the specified configuration.
 ///
 /// This is a convenience function for use with `ToolParameterBuilder` that provides
@@ -229,6 +231,8 @@ public func Parameter(
         defaultValue: .double(defaultValue)
     )
 }
+
+// swiftlint:enable identifier_name
 
 // MARK: - ToolArrayBuilder
 

@@ -18,6 +18,7 @@ let toolMacros: [String: Macro.Type] = [
 ]
 #endif
 
+// swiftlint:disable:next type_body_length
 final class ToolMacroTests: XCTestCase {
 
     // MARK: - Basic Tool Tests

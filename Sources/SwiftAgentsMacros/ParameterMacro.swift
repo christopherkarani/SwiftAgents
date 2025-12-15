@@ -33,7 +33,7 @@ public struct ParameterMacro: PeerMacro {
     ) throws -> [DeclSyntax] {
         // @Parameter is a marker macro - it doesn't generate peer declarations
         // The @Tool macro reads these attributes to generate the parameters array
-        return []
+        []
     }
 }
 

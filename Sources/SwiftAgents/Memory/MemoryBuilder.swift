@@ -204,7 +204,7 @@ public actor CompositeMemory: AgentMemory {
     private let tokenEstimator: any TokenEstimator
 
     /// Number of memory components.
-    public nonisolated var componentCount: Int {
+    nonisolated public var componentCount: Int {
         components.count
     }
 
@@ -243,7 +243,7 @@ public actor CompositeMemory: AgentMemory {
     ///
     /// - Parameter strategy: The retrieval strategy to use.
     /// - Returns: A new composite memory with the configured strategy.
-    public nonisolated func withRetrievalStrategy(_ strategy: RetrievalStrategy) -> CompositeMemory {
+    nonisolated public func withRetrievalStrategy(_ strategy: RetrievalStrategy) -> CompositeMemory {
         CompositeMemory(
             components: components,
             retrievalStrategy: strategy,
@@ -256,7 +256,7 @@ public actor CompositeMemory: AgentMemory {
     ///
     /// - Parameter strategy: The merge strategy to use.
     /// - Returns: A new composite memory with the configured strategy.
-    public nonisolated func withMergeStrategy(_ strategy: MemoryMergeStrategy) -> CompositeMemory {
+    nonisolated public func withMergeStrategy(_ strategy: MemoryMergeStrategy) -> CompositeMemory {
         CompositeMemory(
             components: components,
             retrievalStrategy: retrievalStrategy,
@@ -269,7 +269,7 @@ public actor CompositeMemory: AgentMemory {
     ///
     /// - Parameter estimator: The token estimator to use.
     /// - Returns: A new composite memory with the configured estimator.
-    public nonisolated func withTokenEstimator(_ estimator: any TokenEstimator) -> CompositeMemory {
+    nonisolated public func withTokenEstimator(_ estimator: any TokenEstimator) -> CompositeMemory {
         CompositeMemory(
             components: components,
             retrievalStrategy: retrievalStrategy,
@@ -320,10 +320,8 @@ public actor CompositeMemory: AgentMemory {
 
     public var isEmpty: Bool {
         get async {
-            for component in components {
-                if await !component.memory.isEmpty {
-                    return false
-                }
+            for component in components where await !component.memory.isEmpty {
+                return false
             }
             return true
         }
@@ -445,10 +443,8 @@ public actor CompositeMemory: AgentMemory {
     private func relevanceScore(for message: MemoryMessage, query: Set<String>) -> Double {
         let content = message.content.lowercased()
         var matches = 0
-        for term in query {
-            if content.contains(term) {
-                matches += 1
-            }
+        for term in query where content.contains(term) {
+            matches += 1
         }
         return query.isEmpty ? 0 : Double(matches) / Double(query.count)
     }
@@ -461,7 +457,7 @@ extension ConversationMemory {
     ///
     /// - Parameter messageCount: Number of messages after which to summarize.
     /// - Returns: A configured memory component.
-    public nonisolated func withSummarization(after messageCount: Int) -> MemoryComponent {
+    nonisolated public func withSummarization(after messageCount: Int) -> MemoryComponent {
         // Note: Actual summarization would require additional implementation
         // This returns a component wrapper that could be enhanced later
         MemoryComponent(memory: self)
@@ -471,7 +467,7 @@ extension ConversationMemory {
     ///
     /// - Parameter limit: Maximum tokens for context retrieval.
     /// - Returns: A configured memory component.
-    public nonisolated func withTokenLimit(_ limit: Int) -> MemoryComponent {
+    nonisolated public func withTokenLimit(_ limit: Int) -> MemoryComponent {
         MemoryComponent(memory: self)
     }
 
@@ -479,7 +475,7 @@ extension ConversationMemory {
     ///
     /// - Parameter priority: The priority level.
     /// - Returns: A configured memory component.
-    public nonisolated func priority(_ priority: MemoryPriority) -> MemoryComponent {
+    nonisolated public func priority(_ priority: MemoryPriority) -> MemoryComponent {
         MemoryComponent(memory: self, priority: priority)
     }
 }
@@ -491,7 +487,7 @@ extension SlidingWindowMemory {
     ///
     /// - Parameter size: Number of messages to overlap when sliding.
     /// - Returns: A configured memory component.
-    public nonisolated func withOverlapSize(_ size: Int) -> MemoryComponent {
+    nonisolated public func withOverlapSize(_ size: Int) -> MemoryComponent {
         MemoryComponent(memory: self)
     }
 
@@ -499,7 +495,7 @@ extension SlidingWindowMemory {
     ///
     /// - Parameter priority: The priority level.
     /// - Returns: A configured memory component.
-    public nonisolated func priority(_ priority: MemoryPriority) -> MemoryComponent {
+    nonisolated public func priority(_ priority: MemoryPriority) -> MemoryComponent {
         MemoryComponent(memory: self, priority: priority)
     }
 }
@@ -519,12 +515,12 @@ public protocol VectorMemoryConfigurable: AgentMemory {
 
 extension VectorMemoryConfigurable {
     /// Default implementation that wraps in a component.
-    public nonisolated func withSimilarityThreshold(_ threshold: Double) -> MemoryComponent {
+    nonisolated public func withSimilarityThreshold(_ threshold: Double) -> MemoryComponent {
         MemoryComponent(memory: self)
     }
 
     /// Default implementation that wraps in a component.
-    public nonisolated func withMaxResults(_ max: Int) -> MemoryComponent {
+    nonisolated public func withMaxResults(_ max: Int) -> MemoryComponent {
         MemoryComponent(memory: self)
     }
 }

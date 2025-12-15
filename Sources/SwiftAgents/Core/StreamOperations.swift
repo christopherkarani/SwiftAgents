@@ -75,10 +75,8 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    for try await event in self {
-                        if predicate(event) {
-                            continuation.yield(event)
-                        }
+                    for try await event in self where predicate(event) {
+                        continuation.yield(event)
                     }
                     continuation.finish()
                 } catch {
@@ -268,8 +266,8 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
     public func first(
         where predicate: @escaping @Sendable (AgentEvent) -> Bool
     ) async throws -> AgentEvent? {
-        for try await event in self {
-            if predicate(event) { return event }
+        for try await event in self where predicate(event) {
+            return event
         }
         return nil
     }

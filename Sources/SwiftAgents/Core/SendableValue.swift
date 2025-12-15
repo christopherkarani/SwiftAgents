@@ -256,15 +256,19 @@ extension SendableValue {
     public func decode<T: Decodable>() throws -> T {
         // Handle primitive types directly
         if T.self == Bool.self, let value = boolValue {
+            // swiftlint:disable:next force_cast
             return value as! T
         }
         if T.self == Int.self, let value = intValue {
+            // swiftlint:disable:next force_cast
             return value as! T
         }
         if T.self == Double.self, let value = doubleValue {
+            // swiftlint:disable:next force_cast
             return value as! T
         }
         if T.self == String.self, let value = stringValue {
+            // swiftlint:disable:next force_cast
             return value as! T
         }
 

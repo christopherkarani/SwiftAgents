@@ -21,6 +21,7 @@ final class TraceableMacroTests: XCTestCase {
 
     // MARK: - Basic Traceable Tests
 
+    // swiftlint:disable:next function_body_length
     func testTraceableMacroExpansion() throws {
         #if canImport(SwiftAgentsMacros)
         assertMacroExpansion(

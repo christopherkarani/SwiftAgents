@@ -1,9 +1,9 @@
-#if canImport(SwiftData)
 // SwiftDataBackend.swift
 // SwiftAgents Framework
 //
 // SwiftData implementation of PersistentMemoryBackend.
 
+#if canImport(SwiftData)
 import Foundation
 import SwiftData
 
