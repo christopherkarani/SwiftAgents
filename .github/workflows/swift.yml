@@ -24,28 +24,44 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app
+      - name: Install Swiftly
+        run: |
+          curl -L https://swiftlang.github.io/swiftly/swiftly-install.sh | bash -s -- -y
+          echo "$HOME/.swiftly/bin" >> $GITHUB_PATH
+
+      - name: Install Swift 6.2
+        run: |
+          export PATH="$HOME/.swiftly/bin:$PATH"
+          swiftly install 6.2
+          swiftly use 6.2
 
       - name: Show Swift version
-        run: swift --version
+        run: |
+          export PATH="$HOME/.swiftly/bin:$PATH"
+          swift --version
 
       - name: Cache Swift packages
         uses: actions/cache@v4
         with:
           path: .build
-          key: ${{ runner.os }}-swift-${{ hashFiles('Package.resolved') }}
+          key: ${{ runner.os }}-swift-6.2-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-swift-
+            ${{ runner.os }}-swift-6.2-
 
       - name: Resolve dependencies
-        run: swift package resolve
+        run: |
+          export PATH="$HOME/.swiftly/bin:$PATH"
+          swift package resolve
 
       - name: Build
-        run: swift build
+        run: |
+          export PATH="$HOME/.swiftly/bin:$PATH"
+          swift build
 
       - name: Run tests
-        run: swift test --parallel
+        run: |
+          export PATH="$HOME/.swiftly/bin:$PATH"
+          swift test --parallel
 
   # Linux Build & Test (core features, no SwiftData)
   build-linux:
