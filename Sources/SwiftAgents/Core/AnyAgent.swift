@@ -27,7 +27,7 @@ import Foundation
 ///
 /// AnyAgent uses the box-protocol pattern to achieve type erasure while
 /// maintaining protocol conformance and Sendable safety.
-public struct AnyAgent: Agent, @unchecked Sendable {
+public struct AnyAgent: Agent, Sendable {
     private let box: any AnyAgentBox
 
     /// Creates a type-erased wrapper around the given agent.
@@ -96,23 +96,23 @@ public struct AnyAgent: Agent, @unchecked Sendable {
 /// Private protocol for type erasure implementation.
 private protocol AnyAgentBox: Sendable {
     // Properties
-    var tools: [any Tool] { get }
-    var instructions: String { get }
-    var configuration: AgentConfiguration { get }
-    var memory: (any Memory)? { get }
-    var inferenceProvider: (any InferenceProvider)? { get }
-    var tracer: (any Tracer)? { get }
+    nonisolated var tools: [any Tool] { get }
+    nonisolated var instructions: String { get }
+    nonisolated var configuration: AgentConfiguration { get }
+    nonisolated var memory: (any Memory)? { get }
+    nonisolated var inferenceProvider: (any InferenceProvider)? { get }
+    nonisolated var tracer: (any Tracer)? { get }
 
     // Methods
     func run(_ input: String) async throws -> AgentResult
-    func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error>
+    nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error>
     func cancel() async
 }
 
 // MARK: - Private Box Implementation
 
-/// Private class that wraps a concrete Agent implementation.
-private final class AgentBox<A: Agent>: AnyAgentBox, @unchecked Sendable {
+/// Private struct that wraps a concrete Agent implementation.
+private struct AgentBox<A: Agent>: AnyAgentBox, Sendable {
     private let agent: A
 
     init(_ agent: A) {
@@ -121,27 +121,27 @@ private final class AgentBox<A: Agent>: AnyAgentBox, @unchecked Sendable {
 
     // MARK: - Properties
 
-    var tools: [any Tool] {
+    nonisolated var tools: [any Tool] {
         agent.tools
     }
 
-    var instructions: String {
+    nonisolated var instructions: String {
         agent.instructions
     }
 
-    var configuration: AgentConfiguration {
+    nonisolated var configuration: AgentConfiguration {
         agent.configuration
     }
 
-    var memory: (any Memory)? {
+    nonisolated var memory: (any Memory)? {
         agent.memory
     }
 
-    var inferenceProvider: (any InferenceProvider)? {
+    nonisolated var inferenceProvider: (any InferenceProvider)? {
         agent.inferenceProvider
     }
 
-    var tracer: (any Tracer)? {
+    nonisolated var tracer: (any Tracer)? {
         agent.tracer
     }
 
@@ -151,7 +151,7 @@ private final class AgentBox<A: Agent>: AnyAgentBox, @unchecked Sendable {
         try await agent.run(input)
     }
 
-    func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         agent.stream(input)
     }
 

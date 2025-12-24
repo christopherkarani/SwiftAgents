@@ -69,6 +69,19 @@ public actor VectorMemory: Memory {
         public let message: MemoryMessage
         /// Cosine similarity score (0 to 1, higher is more similar).
         public let similarity: Float
+        /// Timestamp of the message for recency ranking.
+        public let timestamp: Date
+
+        /// Initializes a search result with a message and similarity score.
+        ///
+        /// - Parameters:
+        ///   - message: The matched message.
+        ///   - similarity: The cosine similarity score.
+        public init(message: MemoryMessage, similarity: Float) {
+            self.message = message
+            self.similarity = similarity
+            self.timestamp = message.timestamp
+        }
     }
 
     // MARK: - Configuration
@@ -78,6 +91,10 @@ public actor VectorMemory: Memory {
 
     /// Maximum number of results to return from similarity search.
     public let maxResults: Int
+
+    /// Maximum number of messages to store in memory.
+    /// When exceeded, oldest messages are removed (FIFO eviction).
+    public let maxMessages: Int
 
     /// The embedding provider used to vectorize messages.
     public let embeddingProvider: any EmbeddingProvider
@@ -108,16 +125,19 @@ public actor VectorMemory: Memory {
     ///   - embeddingProvider: Provider for generating text embeddings.
     ///   - similarityThreshold: Minimum similarity for results (0-1, default: 0.7).
     ///   - maxResults: Maximum results to return (default: 10).
+    ///   - maxMessages: Maximum messages to store (default: 1000).
     ///   - tokenEstimator: Estimator for token counting.
     public init(
         embeddingProvider: any EmbeddingProvider,
         similarityThreshold: Float = 0.7,
         maxResults: Int = 10,
+        maxMessages: Int = 1000,
         tokenEstimator: any TokenEstimator = CharacterBasedTokenEstimator.shared
     ) {
         self.embeddingProvider = embeddingProvider
         self.similarityThreshold = max(0, min(1, similarityThreshold))
         self.maxResults = max(1, maxResults)
+        self.maxMessages = max(1, maxMessages)
         self.tokenEstimator = tokenEstimator
     }
 
@@ -126,17 +146,42 @@ public actor VectorMemory: Memory {
     /// Adds a message to memory with its embedding.
     ///
     /// The message content is embedded using the configured `EmbeddingProvider`.
-    /// If embedding fails, the error is logged but the message is not stored.
+    /// If embedding fails, the message is stored with an empty embedding to prevent data loss.
+    ///
+    /// When the number of stored messages exceeds `maxMessages`, the oldest
+    /// messages are removed to maintain the limit (FIFO eviction).
     ///
     /// - Parameter message: The message to store.
     public func add(_ message: MemoryMessage) async {
         do {
             let embedding = try await embeddingProvider.embed(message.content)
+
+            // Validate embedding dimensions
+            let expectedDimensions = embeddingProvider.dimensions
+            guard embedding.count == expectedDimensions else {
+                Log.memory.error("Embedding dimension mismatch: expected \(expectedDimensions), got \(embedding.count)")
+                // Store with empty embedding rather than corrupted data
+                let fallbackMessage = EmbeddedMessage(message: message, embedding: [])
+                embeddedMessages.append(fallbackMessage)
+                // Apply FIFO eviction and return early
+                if embeddedMessages.count > maxMessages {
+                    embeddedMessages.removeFirst(embeddedMessages.count - maxMessages)
+                }
+                return
+            }
+
             let embeddedMessage = EmbeddedMessage(message: message, embedding: embedding)
             embeddedMessages.append(embeddedMessage)
         } catch {
-            // Log error but don't throw - embedding failures shouldn't break the memory contract
-            Log.memory.error("Failed to embed message: \(error.localizedDescription)")
+            // Store message with empty embedding to prevent data loss
+            Log.memory.error("Failed to embed message, storing without embedding: \(error.localizedDescription)")
+            let fallbackMessage = EmbeddedMessage(message: message, embedding: [])
+            embeddedMessages.append(fallbackMessage)
+        }
+
+        // FIFO eviction when capacity exceeded
+        if embeddedMessages.count > maxMessages {
+            embeddedMessages.removeFirst(embeddedMessages.count - maxMessages)
         }
     }
 
@@ -157,12 +202,25 @@ public actor VectorMemory: Memory {
 
         do {
             let queryEmbedding = try await embeddingProvider.embed(query)
+
+            // Validate query embedding dimensions
+            let expectedDimensions = embeddingProvider.dimensions
+            guard queryEmbedding.count == expectedDimensions else {
+                Log.memory.warning("Query embedding dimension mismatch: expected \(expectedDimensions), got \(queryEmbedding.count). Falling back to recency-based retrieval.")
+                // Fallback to recency-based context
+                return formatMessagesForContext(
+                    embeddedMessages.map(\.message),
+                    tokenLimit: tokenLimit,
+                    tokenEstimator: tokenEstimator
+                )
+            }
+
             let results = search(queryEmbedding: queryEmbedding)
 
             // Format results within token limit
             return formatResultsForContext(results, tokenLimit: tokenLimit)
         } catch {
-            Log.memory.error("Failed to embed query: \(error.localizedDescription)")
+            Log.memory.warning("Semantic search unavailable, falling back to recency-based retrieval: \(error.localizedDescription)")
             // Fallback to simple recency-based context
             return formatMessagesForContext(
                 embeddedMessages.map(\.message),
@@ -196,6 +254,17 @@ public actor VectorMemory: Memory {
         }
 
         let queryEmbedding = try await embeddingProvider.embed(query)
+
+        // Validate query embedding dimensions
+        let expectedDimensions = embeddingProvider.dimensions
+        guard queryEmbedding.count == expectedDimensions else {
+            Log.memory.error("Search query embedding dimension mismatch: expected \(expectedDimensions), got \(queryEmbedding.count)")
+            throw VectorMemoryError.dimensionMismatch(
+                expected: expectedDimensions,
+                actual: queryEmbedding.count
+            )
+        }
+
         return search(queryEmbedding: queryEmbedding)
     }
 
@@ -235,6 +304,9 @@ public actor VectorMemory: Memory {
     /// More efficient than adding messages individually when importing
     /// conversation history, as it uses batch embedding.
     ///
+    /// When the number of stored messages exceeds `maxMessages`, the oldest
+    /// messages are removed to maintain the limit (FIFO eviction).
+    ///
     /// - Parameter newMessages: Messages to add in order.
     public func addAll(_ newMessages: [MemoryMessage]) async {
         guard !newMessages.isEmpty else { return }
@@ -243,11 +315,25 @@ public actor VectorMemory: Memory {
             let contents = newMessages.map(\.content)
             let embeddings = try await embeddingProvider.embed(contents)
 
-            for (message, embedding) in zip(newMessages, embeddings) {
+            // Validate embedding dimensions
+            let expectedDimensions = embeddingProvider.dimensions
+            for (index, (message, embedding)) in zip(newMessages, embeddings).enumerated() {
+                guard embedding.count == expectedDimensions else {
+                    Log.memory.error("Batch embedding dimension mismatch at index \(index): expected \(expectedDimensions), got \(embedding.count)")
+                    // Store with empty embedding rather than corrupted data
+                    embeddedMessages.append(EmbeddedMessage(message: message, embedding: []))
+                    continue
+                }
+
                 embeddedMessages.append(EmbeddedMessage(
                     message: message,
                     embedding: embedding
                 ))
+            }
+
+            // FIFO eviction when capacity exceeded
+            if embeddedMessages.count > maxMessages {
+                embeddedMessages.removeFirst(embeddedMessages.count - maxMessages)
             }
         } catch {
             Log.memory.error("Batch embedding failed: \(error.localizedDescription)")
@@ -358,6 +444,7 @@ public extension VectorMemory {
     func diagnostics() async -> VectorMemoryDiagnostics {
         VectorMemoryDiagnostics(
             messageCount: embeddedMessages.count,
+            maxMessages: maxMessages,
             embeddingDimensions: embeddingProvider.dimensions,
             similarityThreshold: similarityThreshold,
             maxResults: maxResults,
@@ -374,6 +461,8 @@ public extension VectorMemory {
 public struct VectorMemoryDiagnostics: Sendable {
     /// Current number of messages stored.
     public let messageCount: Int
+    /// Maximum number of messages that can be stored.
+    public let maxMessages: Int
     /// Dimensionality of the embeddings.
     public let embeddingDimensions: Int
     /// Configured similarity threshold.
@@ -395,6 +484,7 @@ public struct VectorMemoryBuilder: Sendable {
     private var embeddingProvider: (any EmbeddingProvider)?
     private var similarityThreshold: Float = 0.7
     private var maxResults: Int = 10
+    private var maxMessages: Int = 1000
     private var tokenEstimator: any TokenEstimator = CharacterBasedTokenEstimator.shared
 
     /// Creates a new vector memory builder.
@@ -430,6 +520,18 @@ public struct VectorMemoryBuilder: Sendable {
         return copy
     }
 
+    /// Sets the maximum number of messages to store.
+    ///
+    /// When exceeded, oldest messages are removed (FIFO eviction).
+    ///
+    /// - Parameter max: Maximum messages to store in memory.
+    /// - Returns: Updated builder.
+    public func maxMessages(_ max: Int) -> VectorMemoryBuilder {
+        var copy = self
+        copy.maxMessages = max
+        return copy
+    }
+
     /// Sets the token estimator.
     ///
     /// - Parameter estimator: Token estimator for context retrieval.
@@ -453,6 +555,7 @@ public struct VectorMemoryBuilder: Sendable {
             embeddingProvider: provider,
             similarityThreshold: similarityThreshold,
             maxResults: maxResults,
+            maxMessages: maxMessages,
             tokenEstimator: tokenEstimator
         )
     }
@@ -468,12 +571,17 @@ public enum VectorMemoryError: Error, Sendable, CustomStringConvertible {
     /// Search failed due to embedding error.
     case searchFailed(underlying: any Error & Sendable)
 
+    /// Embedding dimension mismatch.
+    case dimensionMismatch(expected: Int, actual: Int)
+
     public var description: String {
         switch self {
         case .missingEmbeddingProvider:
             return "VectorMemory requires an EmbeddingProvider"
         case let .searchFailed(error):
             return "Search failed: \(error.localizedDescription)"
+        case let .dimensionMismatch(expected, actual):
+            return "Embedding dimension mismatch: expected \(expected), got \(actual)"
         }
     }
 }

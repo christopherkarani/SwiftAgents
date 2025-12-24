@@ -289,27 +289,6 @@ public struct InferenceResponse: Sendable, Equatable {
         }
     }
 
-    /// Token usage statistics from inference.
-    public struct TokenUsage: Sendable, Equatable {
-        /// Number of tokens in the input/prompt.
-        public let inputTokens: Int
-
-        /// Number of tokens in the output/response.
-        public let outputTokens: Int
-
-        /// Total tokens used.
-        public var totalTokens: Int { inputTokens + outputTokens }
-
-        /// Creates token usage statistics.
-        /// - Parameters:
-        ///   - inputTokens: Number of tokens in the input/prompt.
-        ///   - outputTokens: Number of tokens in the output/response.
-        public init(inputTokens: Int, outputTokens: Int) {
-            self.inputTokens = inputTokens
-            self.outputTokens = outputTokens
-        }
-    }
-
     /// The text content of the response, if any.
     public let content: String?
 

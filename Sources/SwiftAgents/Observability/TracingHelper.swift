@@ -346,8 +346,9 @@ public struct TracingHelper: Sendable {
 // MARK: - Duration Extension
 
 private extension Duration {
+    /// Converts Duration to milliseconds.
+    /// Reuses the existing timeInterval extension for correct attosecond conversion.
     var milliseconds: Double {
-        let (seconds, attoseconds) = components
-        return Double(seconds) * 1000 + Double(attoseconds) / 1_000_000_000_000_000
+        return timeInterval * 1000
     }
 }

@@ -60,8 +60,11 @@ public struct CircularBuffer<Element: Sendable>: Sendable {
 
     /// Returns all elements in order from oldest to newest
     ///
-    /// - Returns: Array of elements in chronological order
-    /// - Complexity: O(n) where n is the number of stored elements
+    /// This property allocates a new array. For iteration without allocation,
+    /// use `forEach(_:)` or the Collection protocol (iterate directly).
+    ///
+    /// - Returns: Array of elements in chronological order (oldest first)
+    /// - Complexity: O(n) time and space, where n is the number of stored elements
     public var elements: [Element] {
         guard !storage.isEmpty else { return [] }
 
@@ -75,17 +78,52 @@ public struct CircularBuffer<Element: Sendable>: Sendable {
         return Array(storage[head...]) + Array(storage[..<head])
     }
 
+    /// Calls the given closure on each element in order from oldest to newest
+    ///
+    /// Use this method to iterate without allocating an array.
+    /// More efficient than `elements` for read-only traversal.
+    ///
+    /// - Parameter body: Closure to execute for each element
+    /// - Complexity: O(n) where n is the number of stored elements
+    public func forEach(_ body: (Element) throws -> Void) rethrows {
+        if storage.count < capacity {
+            // Buffer not yet full - elements are in order
+            try storage.forEach(body)
+        } else {
+            // Buffer is full - iterate from head to end, then start to head
+            for i in head..<storage.count {
+                try body(storage[i])
+            }
+            for i in 0..<head {
+                try body(storage[i])
+            }
+        }
+    }
+
     /// The number of elements currently in the buffer
     ///
-    /// Note: This is the actual count, not the total appended.
-    /// Maximum value is `capacity`.
+    /// This is the actual count of elements stored, capped at `capacity`.
+    /// When the buffer is full and overwrites occur, this remains equal to `capacity`.
+    /// For the total number of elements ever appended (including overwritten ones),
+    /// use `totalAppended`.
+    ///
+    /// - Returns: Current element count, in range [0, capacity]
     public var count: Int {
         Swift.min(_count, capacity)
     }
 
-    /// The total number of elements ever appended
+    /// The total number of elements ever appended to the buffer
     ///
-    /// This can exceed capacity and represents the full history count.
+    /// This value grows monotonically and is not capped by capacity.
+    /// It represents the complete history of appends, even for elements
+    /// that were overwritten. Use this to track cumulative statistics
+    /// or to distinguish between buffers with different operational histories.
+    ///
+    /// Relationship to count:
+    /// - When `totalAppended <= capacity`: `count == totalAppended`
+    /// - When `totalAppended > capacity`: `count == capacity`
+    ///
+    /// - Returns: Total number of elements appended since initialization
     public var totalAppended: Int {
         _count
     }
@@ -127,13 +165,31 @@ public struct CircularBuffer<Element: Sendable>: Sendable {
 // MARK: - Collection Conformance
 
 extension CircularBuffer: Collection {
+    /// The starting index of the buffer (always 0)
     public var startIndex: Int { 0 }
+
+    /// The ending index of the buffer (equal to count)
     public var endIndex: Int { count }
 
+    /// Returns the next index after the given position
+    ///
+    /// - Parameter i: Current position
+    /// - Returns: Position + 1
     public func index(after i: Int) -> Int {
         i + 1
     }
 
+    /// Accesses the element at the specified position
+    ///
+    /// Indices are ordered from oldest (0) to newest (count - 1).
+    /// Index 0 always refers to the oldest element in the buffer.
+    /// When the buffer is full and overwrites occur, the indexing automatically
+    /// adjusts to maintain this invariant.
+    ///
+    /// - Parameter position: The position to access (0 = oldest, count-1 = newest)
+    /// - Returns: The element at the specified position
+    /// - Precondition: position must be in range [0, count)
+    /// - Complexity: O(1)
     public subscript(position: Int) -> Element {
         precondition(position >= 0 && position < count, "Index out of bounds")
         if storage.count < capacity {
@@ -166,15 +222,39 @@ extension CircularBuffer: CustomStringConvertible {
 // MARK: - Equatable
 
 extension CircularBuffer: Equatable where Element: Equatable {
+    /// Compares two circular buffers for equality
+    ///
+    /// Two buffers are equal if they contain the same elements in the same order,
+    /// regardless of internal storage layout. This comparison is element-wise to avoid
+    /// allocating arrays for each comparison.
+    ///
+    /// - Complexity: O(n) where n is the number of elements
     public static func == (lhs: CircularBuffer, rhs: CircularBuffer) -> Bool {
-        lhs.elements == rhs.elements
+        guard lhs.count == rhs.count else { return false }
+
+        for i in 0..<lhs.count {
+            if lhs[i] != rhs[i] {
+                return false
+            }
+        }
+        return true
     }
 }
 
 // MARK: - Hashable
 
 extension CircularBuffer: Hashable where Element: Hashable {
+    /// Hashes the buffer by combining all elements in order
+    ///
+    /// The hash is computed element-wise (oldest to newest) without allocating
+    /// an intermediate array, making it efficient even for large buffers.
+    ///
+    /// - Parameter hasher: The hasher to combine values into
+    /// - Complexity: O(n) where n is the number of elements
     public func hash(into hasher: inout Hasher) {
-        hasher.combine(elements)
+        hasher.combine(count)
+        forEach { element in
+            hasher.combine(element)
+        }
     }
 }

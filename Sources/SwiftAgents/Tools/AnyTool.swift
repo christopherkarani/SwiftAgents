@@ -29,20 +29,20 @@ public struct AnyTool: Tool, Sendable {
         self.box = ToolBox(tool)
     }
 
-    public var name: String { box._name }
-    public var description: String { box._description }
-    public var parameters: [ToolParameter] { box._parameters }
+    public var name: String { box.name }
+    public var description: String { box.description }
+    public var parameters: [ToolParameter] { box.parameters }
 
     public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
-        try await box._execute(arguments: arguments)
+        try await box.execute(arguments: arguments)
     }
 }
 
 private protocol AnyToolBox: Sendable {
-    var _name: String { get }
-    var _description: String { get }
-    var _parameters: [ToolParameter] { get }
-    func _execute(arguments: [String: SendableValue]) async throws -> SendableValue
+    var name: String { get }
+    var description: String { get }
+    var parameters: [ToolParameter] { get }
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue
 }
 
 private struct ToolBox<T: Tool>: AnyToolBox, Sendable {
@@ -50,11 +50,11 @@ private struct ToolBox<T: Tool>: AnyToolBox, Sendable {
 
     init(_ tool: T) { self.tool = tool }
 
-    var _name: String { tool.name }
-    var _description: String { tool.description }
-    var _parameters: [ToolParameter] { tool.parameters }
+    var name: String { tool.name }
+    var description: String { tool.description }
+    var parameters: [ToolParameter] { tool.parameters }
 
-    func _execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         try await tool.execute(arguments: arguments)
     }
 }
