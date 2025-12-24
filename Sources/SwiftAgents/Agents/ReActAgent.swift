@@ -107,17 +107,15 @@ public actor ReActAgent: Agent {
 
         _ = resultBuilder.setOutput(output)
 
-        // Store output in memory if available
+        // Run output guardrails BEFORE storing in memory
+        try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
+
+        // Only store output in memory if validation passed
         if let mem = memory {
             await mem.add(.assistant(output))
         }
 
-        let result = resultBuilder.build()
-
-        // Run output guardrails before returning
-        _ = try await runner.runOutputGuardrails(outputGuardrails, output: result.output, agent: self, context: nil)
-
-        return result
+        return resultBuilder.build()
     }
 
     /// Streams the agent's execution, yielding events as they occur.

@@ -253,6 +253,7 @@ public actor PlanAndExecuteAgent: Agent {
     nonisolated public let configuration: AgentConfiguration
     nonisolated public let memory: (any Memory)?
     nonisolated public let inferenceProvider: (any InferenceProvider)?
+    nonisolated public let tracer: (any Tracer)?
     nonisolated public let inputGuardrails: [any InputGuardrail]
     nonisolated public let outputGuardrails: [any OutputGuardrail]
 
@@ -282,6 +283,7 @@ public actor PlanAndExecuteAgent: Agent {
     ///   - configuration: Agent configuration. Default: .default
     ///   - memory: Optional memory system. Default: nil
     ///   - inferenceProvider: Optional inference provider. Default: nil
+    ///   - tracer: Optional tracer for observability. Default: nil
     ///   - inputGuardrails: Input validation guardrails. Default: []
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - maxReplanAttempts: Maximum replan attempts. Default: 3
@@ -291,6 +293,7 @@ public actor PlanAndExecuteAgent: Agent {
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
         inferenceProvider: (any InferenceProvider)? = nil,
+        tracer: (any Tracer)? = nil,
         inputGuardrails: [any InputGuardrail] = [],
         outputGuardrails: [any OutputGuardrail] = [],
         maxReplanAttempts: Int = 3
@@ -300,6 +303,7 @@ public actor PlanAndExecuteAgent: Agent {
         self.configuration = configuration
         self.memory = memory
         self.inferenceProvider = inferenceProvider
+        self.tracer = tracer
         self.inputGuardrails = inputGuardrails
         self.outputGuardrails = outputGuardrails
         self.maxReplanAttempts = maxReplanAttempts
@@ -338,13 +342,13 @@ public actor PlanAndExecuteAgent: Agent {
 
         _ = resultBuilder.setOutput(output)
 
-        // Store output in memory if available
+        // Run output guardrails BEFORE storing in memory
+        try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
+
+        // Only store output in memory if validation passed
         if let mem = memory {
             await mem.add(.assistant(output))
         }
-
-        // Run output guardrails at the end before returning the result
-        _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
 
         return resultBuilder.build()
     }
@@ -962,6 +966,16 @@ public extension PlanAndExecuteAgent {
             return copy
         }
 
+        /// Sets the tracer.
+        /// - Parameter tracer: The tracer to use.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func tracer(_ tracer: (any Tracer)?) -> Builder {
+            var copy = self
+            copy._tracer = tracer
+            return copy
+        }
+
         /// Sets the maximum number of replan attempts.
         /// - Parameter attempts: The maximum replan attempts.
         /// - Returns: Self for chaining.
@@ -1021,6 +1035,7 @@ public extension PlanAndExecuteAgent {
                 configuration: _configuration,
                 memory: _memory,
                 inferenceProvider: _inferenceProvider,
+                tracer: _tracer,
                 inputGuardrails: _inputGuardrails,
                 outputGuardrails: _outputGuardrails,
                 maxReplanAttempts: _maxReplanAttempts
@@ -1034,6 +1049,7 @@ public extension PlanAndExecuteAgent {
         private var _configuration: AgentConfiguration = .default
         private var _memory: (any Memory)?
         private var _inferenceProvider: (any InferenceProvider)?
+        private var _tracer: (any Tracer)?
         private var _inputGuardrails: [any InputGuardrail] = []
         private var _outputGuardrails: [any OutputGuardrail] = []
         private var _maxReplanAttempts: Int = 3

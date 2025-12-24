@@ -153,3 +153,124 @@ public struct ClosureOutputGuardrail: OutputGuardrail, Sendable {
         try await handler(output, agent, context)
     }
 }
+
+// MARK: - OutputGuardrailBuilder
+
+/// Builder for creating `ClosureOutputGuardrail` instances with a fluent interface.
+///
+/// `OutputGuardrailBuilder` provides a chainable API for configuring output guardrails.
+/// This builder pattern allows for clear, readable guardrail construction.
+///
+/// Example:
+/// ```swift
+/// let guardrail = OutputGuardrailBuilder()
+///     .name("ContentFilter")
+///     .validate { output, agent, context in
+///         if output.isEmpty {
+///             return .tripwire(message: "Empty output not allowed")
+///         }
+///         return .passed()
+///     }
+///     .build()
+/// ```
+///
+/// The builder supports:
+/// - Multiple calls to `.name()` - the last value wins
+/// - Multiple calls to `.validate()` - the last handler wins
+/// - Fluent chaining for readability
+public struct OutputGuardrailBuilder: Sendable {
+    // MARK: - Private Properties
+
+    /// The current name being built.
+    private let currentName: String?
+
+    /// The current validation handler being built.
+    private let currentHandler: (@Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult)?
+
+    // MARK: - Initialization
+
+    /// Creates a new builder instance.
+    ///
+    /// Example:
+    /// ```swift
+    /// let builder = OutputGuardrailBuilder()
+    /// ```
+    public init() {
+        currentName = nil
+        currentHandler = nil
+    }
+
+    /// Private initializer for builder chaining.
+    private init(
+        name: String?,
+        handler: (@Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult)?
+    ) {
+        currentName = name
+        currentHandler = handler
+    }
+
+    // MARK: - Builder Methods
+
+    /// Sets the name for the guardrail.
+    ///
+    /// If called multiple times, the last value wins.
+    ///
+    /// - Parameter name: The name to use for the guardrail.
+    /// - Returns: A new builder with the updated name.
+    ///
+    /// Example:
+    /// ```swift
+    /// let builder = OutputGuardrailBuilder()
+    ///     .name("MyGuardrail")
+    /// ```
+    @discardableResult
+    public func name(_ name: String) -> OutputGuardrailBuilder {
+        OutputGuardrailBuilder(name: name, handler: currentHandler)
+    }
+
+    /// Sets the validation handler for the guardrail.
+    ///
+    /// If called multiple times, the last handler wins.
+    ///
+    /// - Parameter handler: The validation closure.
+    /// - Returns: A new builder with the updated handler.
+    ///
+    /// Example:
+    /// ```swift
+    /// let builder = OutputGuardrailBuilder()
+    ///     .validate { output, agent, context in
+    ///         .passed()
+    ///     }
+    /// ```
+    @discardableResult
+    public func validate(
+        _ handler: @escaping @Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult
+    ) -> OutputGuardrailBuilder {
+        OutputGuardrailBuilder(name: currentName, handler: handler)
+    }
+
+    // MARK: - Build
+
+    /// Builds the final `ClosureOutputGuardrail` instance.
+    ///
+    /// - Returns: A configured `ClosureOutputGuardrail`.
+    ///
+    /// Example:
+    /// ```swift
+    /// let guardrail = OutputGuardrailBuilder()
+    ///     .name("LengthCheck")
+    ///     .validate { output, agent, context in
+    ///         output.count > 100 ? .tripwire(message: "Too long") : .passed()
+    ///     }
+    ///     .build()
+    /// ```
+    ///
+    /// - Note: If no name is provided, defaults to "UnnamedOutputGuardrail".
+    ///         If no handler is provided, defaults to always passing.
+    public func build() -> ClosureOutputGuardrail {
+        let finalName = currentName ?? "UnnamedOutputGuardrail"
+        let finalHandler = currentHandler ?? { _, _, _ in .passed() }
+
+        return ClosureOutputGuardrail(name: finalName, handler: finalHandler)
+    }
+}

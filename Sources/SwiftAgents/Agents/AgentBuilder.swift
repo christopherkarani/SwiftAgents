@@ -371,7 +371,9 @@ public extension ReActAgent {
             configuration: components.configuration ?? .default,
             memory: components.memory,
             inferenceProvider: components.inferenceProvider,
-            tracer: components.tracer
+            tracer: components.tracer,
+            inputGuardrails: components.inputGuardrails,
+            outputGuardrails: components.outputGuardrails
         )
     }
 }

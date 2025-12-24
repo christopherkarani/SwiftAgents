@@ -131,13 +131,13 @@ public actor ToolCallingAgent: Agent {
 
         _ = resultBuilder.setOutput(output)
 
-        // Store output in memory if available
+        // Run output guardrails BEFORE storing in memory
+        try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
+
+        // Only store output in memory if validation passed
         if let mem = memory {
             await mem.add(.assistant(output))
         }
-
-        // Run output guardrails
-        _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
 
         return resultBuilder.build()
     }

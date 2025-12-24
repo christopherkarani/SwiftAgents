@@ -120,6 +120,10 @@ public struct GuardrailExecutionResult: Sendable, Equatable {
 /// - **Stop on first**: Immediately throw when a tripwire is triggered
 /// - **Run all**: Execute all guardrails, then throw if any tripwired
 ///
+/// **Note:** When running in parallel mode, the order of results in the returned
+/// array may not match the order of guardrails in the input array due to the
+/// non-deterministic nature of concurrent execution.
+///
 /// **Example:**
 /// ```swift
 /// let runner = GuardrailRunner()
@@ -277,6 +281,8 @@ public actor GuardrailRunner {
         var results: [GuardrailExecutionResult] = []
 
         for guardrail in guardrails {
+            try Task.checkCancellation()
+
             do {
                 let result = try await guardrail.validate(input, context: context)
                 let executionResult = GuardrailExecutionResult(
@@ -297,7 +303,7 @@ public actor GuardrailRunner {
             } catch {
                 throw GuardrailError.executionFailed(
                     guardrailName: guardrail.name,
-                    underlyingError: String(describing: error)
+                    underlyingError: error.localizedDescription
                 )
             }
         }
@@ -323,6 +329,8 @@ public actor GuardrailRunner {
         var results: [GuardrailExecutionResult] = []
 
         for guardrail in guardrails {
+            try Task.checkCancellation()
+
             do {
                 let result = try await guardrail.validate(output, agent: agent, context: context)
                 let executionResult = GuardrailExecutionResult(
@@ -344,7 +352,7 @@ public actor GuardrailRunner {
             } catch {
                 throw GuardrailError.executionFailed(
                     guardrailName: guardrail.name,
-                    underlyingError: String(describing: error)
+                    underlyingError: error.localizedDescription
                 )
             }
         }
@@ -369,6 +377,8 @@ public actor GuardrailRunner {
         var results: [GuardrailExecutionResult] = []
 
         for guardrail in guardrails {
+            try Task.checkCancellation()
+
             do {
                 let result = try await guardrail.validate(data)
                 let executionResult = GuardrailExecutionResult(
@@ -390,7 +400,7 @@ public actor GuardrailRunner {
             } catch {
                 throw GuardrailError.executionFailed(
                     guardrailName: guardrail.name,
-                    underlyingError: String(describing: error)
+                    underlyingError: error.localizedDescription
                 )
             }
         }
@@ -416,6 +426,8 @@ public actor GuardrailRunner {
         var results: [GuardrailExecutionResult] = []
 
         for guardrail in guardrails {
+            try Task.checkCancellation()
+
             do {
                 let result = try await guardrail.validate(data, output: output)
                 let executionResult = GuardrailExecutionResult(
@@ -437,7 +449,7 @@ public actor GuardrailRunner {
             } catch {
                 throw GuardrailError.executionFailed(
                     guardrailName: guardrail.name,
-                    underlyingError: String(describing: error)
+                    underlyingError: error.localizedDescription
                 )
             }
         }

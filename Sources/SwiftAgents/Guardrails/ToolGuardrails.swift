@@ -249,3 +249,248 @@ public struct ClosureToolOutputGuardrail: ToolOutputGuardrail {
         try await handler(data, output)
     }
 }
+
+// MARK: - ToolInputGuardrailBuilder
+
+/// Builder for creating `ClosureToolInputGuardrail` instances with a fluent interface.
+///
+/// `ToolInputGuardrailBuilder` provides a chainable API for configuring tool input guardrails.
+/// This builder pattern allows for clear, readable guardrail construction.
+///
+/// Example:
+/// ```swift
+/// let guardrail = ToolInputGuardrailBuilder()
+///     .name("ParameterValidator")
+///     .validate { data in
+///         guard data.arguments["required_param"] != nil else {
+///             return .tripwire(message: "Missing required parameter")
+///         }
+///         return .passed()
+///     }
+///     .build()
+/// ```
+///
+/// The builder supports:
+/// - Multiple calls to `.name()` - the last value wins
+/// - Multiple calls to `.validate()` - the last handler wins
+/// - Fluent chaining for readability
+public struct ToolInputGuardrailBuilder: Sendable {
+    // MARK: - Private Properties
+
+    /// The current name being built.
+    private let currentName: String?
+
+    /// The current validation handler being built.
+    private let currentHandler: (@Sendable (ToolGuardrailData) async throws -> GuardrailResult)?
+
+    // MARK: - Initialization
+
+    /// Creates a new builder instance.
+    ///
+    /// Example:
+    /// ```swift
+    /// let builder = ToolInputGuardrailBuilder()
+    /// ```
+    public init() {
+        currentName = nil
+        currentHandler = nil
+    }
+
+    /// Private initializer for builder chaining.
+    private init(
+        name: String?,
+        handler: (@Sendable (ToolGuardrailData) async throws -> GuardrailResult)?
+    ) {
+        currentName = name
+        currentHandler = handler
+    }
+
+    // MARK: - Builder Methods
+
+    /// Sets the name for the guardrail.
+    ///
+    /// If called multiple times, the last value wins.
+    ///
+    /// - Parameter name: The name to use for the guardrail.
+    /// - Returns: A new builder with the updated name.
+    ///
+    /// Example:
+    /// ```swift
+    /// let builder = ToolInputGuardrailBuilder()
+    ///     .name("MyGuardrail")
+    /// ```
+    @discardableResult
+    public func name(_ name: String) -> ToolInputGuardrailBuilder {
+        ToolInputGuardrailBuilder(name: name, handler: currentHandler)
+    }
+
+    /// Sets the validation handler for the guardrail.
+    ///
+    /// If called multiple times, the last handler wins.
+    ///
+    /// - Parameter handler: The validation closure.
+    /// - Returns: A new builder with the updated handler.
+    ///
+    /// Example:
+    /// ```swift
+    /// let builder = ToolInputGuardrailBuilder()
+    ///     .validate { data in
+    ///         .passed()
+    ///     }
+    /// ```
+    @discardableResult
+    public func validate(
+        _ handler: @escaping @Sendable (ToolGuardrailData) async throws -> GuardrailResult
+    ) -> ToolInputGuardrailBuilder {
+        ToolInputGuardrailBuilder(name: currentName, handler: handler)
+    }
+
+    // MARK: - Build
+
+    /// Builds the final `ClosureToolInputGuardrail` instance.
+    ///
+    /// - Returns: A configured `ClosureToolInputGuardrail`.
+    ///
+    /// Example:
+    /// ```swift
+    /// let guardrail = ToolInputGuardrailBuilder()
+    ///     .name("RequiredParams")
+    ///     .validate { data in
+    ///         data.arguments.isEmpty ? .tripwire(message: "No params") : .passed()
+    ///     }
+    ///     .build()
+    /// ```
+    ///
+    /// - Note: If no name is provided, defaults to "UnnamedToolInputGuardrail".
+    ///         If no handler is provided, defaults to always passing.
+    public func build() -> ClosureToolInputGuardrail {
+        let finalName = currentName ?? "UnnamedToolInputGuardrail"
+        let finalHandler = currentHandler ?? { _ in .passed() }
+
+        return ClosureToolInputGuardrail(name: finalName, handler: finalHandler)
+    }
+}
+
+// MARK: - ToolOutputGuardrailBuilder
+
+/// Builder for creating `ClosureToolOutputGuardrail` instances with a fluent interface.
+///
+/// `ToolOutputGuardrailBuilder` provides a chainable API for configuring tool output guardrails.
+/// This builder pattern allows for clear, readable guardrail construction.
+///
+/// Example:
+/// ```swift
+/// let guardrail = ToolOutputGuardrailBuilder()
+///     .name("OutputValidator")
+///     .validate { data, output in
+///         if let text = output.stringValue, text.isEmpty {
+///             return .tripwire(message: "Empty output")
+///         }
+///         return .passed()
+///     }
+///     .build()
+/// ```
+///
+/// The builder supports:
+/// - Multiple calls to `.name()` - the last value wins
+/// - Multiple calls to `.validate()` - the last handler wins
+/// - Fluent chaining for readability
+public struct ToolOutputGuardrailBuilder: Sendable {
+    // MARK: - Private Properties
+
+    /// The current name being built.
+    private let currentName: String?
+
+    /// The current validation handler being built.
+    private let currentHandler: (@Sendable (ToolGuardrailData, SendableValue) async throws -> GuardrailResult)?
+
+    // MARK: - Initialization
+
+    /// Creates a new builder instance.
+    ///
+    /// Example:
+    /// ```swift
+    /// let builder = ToolOutputGuardrailBuilder()
+    /// ```
+    public init() {
+        currentName = nil
+        currentHandler = nil
+    }
+
+    /// Private initializer for builder chaining.
+    private init(
+        name: String?,
+        handler: (@Sendable (ToolGuardrailData, SendableValue) async throws -> GuardrailResult)?
+    ) {
+        currentName = name
+        currentHandler = handler
+    }
+
+    // MARK: - Builder Methods
+
+    /// Sets the name for the guardrail.
+    ///
+    /// If called multiple times, the last value wins.
+    ///
+    /// - Parameter name: The name to use for the guardrail.
+    /// - Returns: A new builder with the updated name.
+    ///
+    /// Example:
+    /// ```swift
+    /// let builder = ToolOutputGuardrailBuilder()
+    ///     .name("MyGuardrail")
+    /// ```
+    @discardableResult
+    public func name(_ name: String) -> ToolOutputGuardrailBuilder {
+        ToolOutputGuardrailBuilder(name: name, handler: currentHandler)
+    }
+
+    /// Sets the validation handler for the guardrail.
+    ///
+    /// If called multiple times, the last handler wins.
+    ///
+    /// - Parameter handler: The validation closure.
+    /// - Returns: A new builder with the updated handler.
+    ///
+    /// Example:
+    /// ```swift
+    /// let builder = ToolOutputGuardrailBuilder()
+    ///     .validate { data, output in
+    ///         .passed()
+    ///     }
+    /// ```
+    @discardableResult
+    public func validate(
+        _ handler: @escaping @Sendable (ToolGuardrailData, SendableValue) async throws -> GuardrailResult
+    ) -> ToolOutputGuardrailBuilder {
+        ToolOutputGuardrailBuilder(name: currentName, handler: handler)
+    }
+
+    // MARK: - Build
+
+    /// Builds the final `ClosureToolOutputGuardrail` instance.
+    ///
+    /// - Returns: A configured `ClosureToolOutputGuardrail`.
+    ///
+    /// Example:
+    /// ```swift
+    /// let guardrail = ToolOutputGuardrailBuilder()
+    ///     .name("SizeLimit")
+    ///     .validate { data, output in
+    ///         if let str = output.stringValue, str.count > 1000 {
+    ///             return .tripwire(message: "Output too large")
+    ///         }
+    ///         return .passed()
+    ///     }
+    ///     .build()
+    /// ```
+    ///
+    /// - Note: If no name is provided, defaults to "UnnamedToolOutputGuardrail".
+    ///         If no handler is provided, defaults to always passing.
+    public func build() -> ClosureToolOutputGuardrail {
+        let finalName = currentName ?? "UnnamedToolOutputGuardrail"
+        let finalHandler = currentHandler ?? { _, _ in .passed() }
+
+        return ClosureToolOutputGuardrail(name: finalName, handler: finalHandler)
+    }
+}
