@@ -126,7 +126,7 @@ struct HybridMemoryTests {
         await memory.add(.user("Hello"))
         await memory.add(.assistant("Hi"))
 
-        let context = await memory.getContext(for: "test", tokenLimit: 1000)
+        let context = await memory.context(for: "test", tokenLimit: 1000)
 
         #expect(context.contains("[user]: Hello"))
         #expect(context.contains("[assistant]: Hi"))
@@ -151,7 +151,7 @@ struct HybridMemoryTests {
             await memory.add(.user("Message \(i)"))
         }
 
-        let context = await memory.getContext(for: "test", tokenLimit: 2000)
+        let context = await memory.context(for: "test", tokenLimit: 2000)
 
         #expect(context.contains("summary"))
         #expect(context.contains("Recent conversation"))
@@ -166,7 +166,7 @@ struct HybridMemoryTests {
         await memory.add(.user("Test message"))
 
         // Request small token limit
-        let context = await memory.getContext(for: "test", tokenLimit: 100)
+        let context = await memory.context(for: "test", tokenLimit: 100)
 
         // Should still return something
         #expect(!context.isEmpty)

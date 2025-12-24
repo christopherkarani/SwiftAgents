@@ -36,8 +36,9 @@ public actor ReActAgent: Agent {
     nonisolated public let tools: [any Tool]
     nonisolated public let instructions: String
     nonisolated public let configuration: AgentConfiguration
-    nonisolated public let memory: (any AgentMemory)?
+    nonisolated public let memory: (any Memory)?
     nonisolated public let inferenceProvider: (any InferenceProvider)?
+    nonisolated public let tracer: (any Tracer)?
 
     // MARK: - Initialization
 
@@ -48,18 +49,21 @@ public actor ReActAgent: Agent {
     ///   - configuration: Agent configuration settings. Default: .default
     ///   - memory: Optional memory system. Default: nil
     ///   - inferenceProvider: Optional custom inference provider. Default: nil
+    ///   - tracer: Optional tracer for observability. Default: nil
     public init(
         tools: [any Tool] = [],
         instructions: String = "",
         configuration: AgentConfiguration = .default,
-        memory: (any AgentMemory)? = nil,
-        inferenceProvider: (any InferenceProvider)? = nil
+        memory: (any Memory)? = nil,
+        inferenceProvider: (any InferenceProvider)? = nil,
+        tracer: (any Tracer)? = nil
     ) {
         self.tools = tools
         self.instructions = instructions
         self.configuration = configuration
         self.memory = memory
         self.inferenceProvider = inferenceProvider
+        self.tracer = tracer
         toolRegistry = ToolRegistry(tools: tools)
     }
 
@@ -103,20 +107,10 @@ public actor ReActAgent: Agent {
     /// - Parameter input: The user's input/query.
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
-        Task { @Sendable [weak self] in
-            guard let self else {
-                continuation.finish()
-                return
-            }
+        StreamHelper.makeTrackedStream(for: self) { agent, continuation in
+            continuation.yield(.started(input: input))
             do {
-                // Emit started event
-                continuation.yield(.started(input: input))
-
-                // Run the agent
-                let result = try await run(input)
-
-                // Emit completed event
+                let result = try await agent.run(input)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {
@@ -125,10 +119,9 @@ public actor ReActAgent: Agent {
             } catch {
                 let agentError = AgentError.internalError(reason: error.localizedDescription)
                 continuation.yield(.failed(error: agentError))
-                continuation.finish(throwing: agentError)
+                continuation.finish(throwing: error)
             }
         }
-        return stream
     }
 
     /// Cancels any ongoing execution.
@@ -505,6 +498,7 @@ public actor ReActAgent: Agent {
 
 public extension ReActAgent {
     /// Builder for creating ReActAgent instances with a fluent API.
+    /// Uses value semantics (struct) for Swift 6 concurrency safety.
     ///
     /// Example:
     /// ```swift
@@ -514,72 +508,88 @@ public extension ReActAgent {
     ///     .configuration(.default.maxIterations(5))
     ///     .build()
     /// ```
-    final class Builder: @unchecked Sendable {
+    struct Builder: Sendable {
         // MARK: Public
 
         /// Creates a new builder.
-        public init() {}
+        public init() {
+            self.tools = []
+            self.instructions = ""
+            self.configuration = .default
+            self.memory = nil
+            self.inferenceProvider = nil
+            self.tracer = nil
+        }
 
         /// Sets the tools.
         /// - Parameter tools: The tools to use.
-        /// - Returns: Self for chaining.
-        @discardableResult
+        /// - Returns: A new builder with the updated tools.
         public func tools(_ tools: [any Tool]) -> Builder {
-            self.tools = tools
-            return self
+            var copy = self
+            copy.tools = tools
+            return copy
         }
 
         /// Adds a tool.
         /// - Parameter tool: The tool to add.
-        /// - Returns: Self for chaining.
-        @discardableResult
+        /// - Returns: A new builder with the tool added.
         public func addTool(_ tool: any Tool) -> Builder {
-            tools.append(tool)
-            return self
+            var copy = self
+            copy.tools.append(tool)
+            return copy
         }
 
         /// Adds built-in tools.
-        /// - Returns: Self for chaining.
-        @discardableResult
+        /// - Returns: A new builder with built-in tools added.
         public func withBuiltInTools() -> Builder {
-            tools.append(contentsOf: BuiltInTools.all)
-            return self
+            var copy = self
+            copy.tools.append(contentsOf: BuiltInTools.all)
+            return copy
         }
 
         /// Sets the instructions.
         /// - Parameter instructions: The system instructions.
-        /// - Returns: Self for chaining.
-        @discardableResult
+        /// - Returns: A new builder with the updated instructions.
         public func instructions(_ instructions: String) -> Builder {
-            self.instructions = instructions
-            return self
+            var copy = self
+            copy.instructions = instructions
+            return copy
         }
 
         /// Sets the configuration.
         /// - Parameter configuration: The agent configuration.
-        /// - Returns: Self for chaining.
-        @discardableResult
+        /// - Returns: A new builder with the updated configuration.
         public func configuration(_ configuration: AgentConfiguration) -> Builder {
-            self.configuration = configuration
-            return self
+            var copy = self
+            copy.configuration = configuration
+            return copy
         }
 
         /// Sets the memory system.
         /// - Parameter memory: The memory to use.
-        /// - Returns: Self for chaining.
-        @discardableResult
-        public func memory(_ memory: any AgentMemory) -> Builder {
-            self.memory = memory
-            return self
+        /// - Returns: A new builder with the updated memory.
+        public func memory(_ memory: any Memory) -> Builder {
+            var copy = self
+            copy.memory = memory
+            return copy
         }
 
         /// Sets the inference provider.
         /// - Parameter provider: The provider to use.
-        /// - Returns: Self for chaining.
-        @discardableResult
+        /// - Returns: A new builder with the updated provider.
         public func inferenceProvider(_ provider: any InferenceProvider) -> Builder {
-            inferenceProvider = provider
-            return self
+            var copy = self
+            copy.inferenceProvider = provider
+            return copy
+        }
+
+        /// Sets the tracer for observability.
+        /// - Parameter tracer: The tracer to use.
+        /// - Returns: A new builder with the updated tracer.
+        public func tracer(_ tracer: any Tracer) -> Builder {
+            var copy = self
+            copy.tracer = tracer
+            return copy
         }
 
         /// Builds the agent.
@@ -590,16 +600,18 @@ public extension ReActAgent {
                 instructions: instructions,
                 configuration: configuration,
                 memory: memory,
-                inferenceProvider: inferenceProvider
+                inferenceProvider: inferenceProvider,
+                tracer: tracer
             )
         }
 
         // MARK: Private
 
-        private var tools: [any Tool] = []
-        private var instructions: String = ""
-        private var configuration: AgentConfiguration = .default
-        private var memory: (any AgentMemory)?
+        private var tools: [any Tool]
+        private var instructions: String
+        private var configuration: AgentConfiguration
+        private var memory: (any Memory)?
         private var inferenceProvider: (any InferenceProvider)?
+        private var tracer: (any Tracer)?
     }
 }

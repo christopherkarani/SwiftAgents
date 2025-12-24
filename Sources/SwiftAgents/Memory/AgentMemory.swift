@@ -5,11 +5,11 @@
 
 import Foundation
 
-// MARK: - AgentMemory
+// MARK: - Memory
 
 /// Protocol defining memory storage and retrieval for agents.
 ///
-/// `AgentMemory` provides the contract for storing conversation history
+/// `Memory` provides the contract for storing conversation history
 /// and retrieving relevant context for agent operations. All implementations
 /// must be actors to ensure thread-safe access.
 ///
@@ -22,18 +22,18 @@ import Foundation
 /// ## Example Implementation
 ///
 /// ```swift
-/// public actor MyCustomMemory: AgentMemory {
+/// public actor MyCustomMemory: Memory {
 ///     private var messages: [MemoryMessage] = []
 ///
 ///     public func add(_ message: MemoryMessage) async {
 ///         messages.append(message)
 ///     }
 ///
-///     public func getContext(for query: String, tokenLimit: Int) async -> String {
+///     public func context(for query: String, tokenLimit: Int) async -> String {
 ///         formatMessagesForContext(messages, tokenLimit: tokenLimit)
 ///     }
 ///
-///     public func getAllMessages() async -> [MemoryMessage] {
+///     public func allMessages() async -> [MemoryMessage] {
 ///         messages
 ///     }
 ///
@@ -44,7 +44,7 @@ import Foundation
 ///     public var count: Int { messages.count }
 /// }
 /// ```
-public protocol AgentMemory: Actor, Sendable {
+public protocol Memory: Actor, Sendable {
     /// The number of messages currently stored.
     var count: Int { get async }
 
@@ -69,15 +69,31 @@ public protocol AgentMemory: Actor, Sendable {
     ///   - query: The query to find relevant context for.
     ///   - tokenLimit: Maximum tokens to include in the context.
     /// - Returns: A formatted string containing relevant context.
-    func getContext(for query: String, tokenLimit: Int) async -> String
+    func context(for query: String, tokenLimit: Int) async -> String
 
     /// Returns all messages currently in memory.
     ///
     /// - Returns: Array of all stored messages, typically in chronological order.
-    func getAllMessages() async -> [MemoryMessage]
+    func allMessages() async -> [MemoryMessage]
 
     /// Removes all messages from memory.
     func clear() async
+}
+
+// MARK: - Backward Compatibility
+
+public extension Memory {
+    /// Deprecated: Use `context(for:tokenLimit:)` instead.
+    @available(*, deprecated, renamed: "context(for:tokenLimit:)", message: "Use context(for:tokenLimit:) instead")
+    func getContext(for query: String, tokenLimit: Int) async -> String {
+        await context(for: query, tokenLimit: tokenLimit)
+    }
+
+    /// Deprecated: Use `allMessages()` instead.
+    @available(*, deprecated, renamed: "allMessages()", message: "Use allMessages() instead")
+    func getAllMessages() async -> [MemoryMessage] {
+        await allMessages()
+    }
 }
 
 // MARK: - Helper Functions
@@ -150,9 +166,15 @@ public func formatMessagesForContext(
     return result.reversed().joined(separator: separator)
 }
 
-// MARK: - AnyAgentMemory
+// MARK: - Deprecated Typealias
 
-/// Type-erased wrapper for any AgentMemory implementation.
+/// Deprecated: Use `Memory` instead.
+@available(*, deprecated, renamed: "Memory", message: "AgentMemory has been renamed to Memory")
+public typealias AgentMemory = Memory
+
+// MARK: - AnyMemory
+
+/// Type-erased wrapper for any Memory implementation.
 ///
 /// Useful when you need to store different memory types in collections
 /// or pass them through APIs that don't support generics.
@@ -161,10 +183,10 @@ public func formatMessagesForContext(
 ///
 /// ```swift
 /// let conversation = ConversationMemory(maxMessages: 50)
-/// let erased = AnyAgentMemory(conversation)
+/// let erased = AnyMemory(conversation)
 /// await erased.add(.user("Hello"))
 /// ```
-public actor AnyAgentMemory: AgentMemory {
+public actor AnyMemory: Memory {
     // MARK: Public
 
     public var count: Int {
@@ -179,13 +201,13 @@ public actor AnyAgentMemory: AgentMemory {
         }
     }
 
-    /// Creates a type-erased wrapper around any AgentMemory.
+    /// Creates a type-erased wrapper around any Memory.
     ///
     /// - Parameter memory: The memory implementation to wrap.
-    public init(_ memory: some AgentMemory) {
+    public init(_ memory: some Memory) {
         _add = { message in await memory.add(message) }
-        _getContext = { query, limit in await memory.getContext(for: query, tokenLimit: limit) }
-        _getAllMessages = { await memory.getAllMessages() }
+        _context = { query, limit in await memory.context(for: query, tokenLimit: limit) }
+        _allMessages = { await memory.allMessages() }
         _clear = { await memory.clear() }
         _count = { await memory.count }
         _isEmpty = { await memory.isEmpty }
@@ -195,12 +217,12 @@ public actor AnyAgentMemory: AgentMemory {
         await _add(message)
     }
 
-    public func getContext(for query: String, tokenLimit: Int) async -> String {
-        await _getContext(query, tokenLimit)
+    public func context(for query: String, tokenLimit: Int) async -> String {
+        await _context(query, tokenLimit)
     }
 
-    public func getAllMessages() async -> [MemoryMessage] {
-        await _getAllMessages()
+    public func allMessages() async -> [MemoryMessage] {
+        await _allMessages()
     }
 
     public func clear() async {
@@ -210,9 +232,13 @@ public actor AnyAgentMemory: AgentMemory {
     // MARK: Private
 
     private let _add: @Sendable (MemoryMessage) async -> Void
-    private let _getContext: @Sendable (String, Int) async -> String
-    private let _getAllMessages: @Sendable () async -> [MemoryMessage]
+    private let _context: @Sendable (String, Int) async -> String
+    private let _allMessages: @Sendable () async -> [MemoryMessage]
     private let _clear: @Sendable () async -> Void
     private let _count: @Sendable () async -> Int
     private let _isEmpty: @Sendable () async -> Bool
 }
+
+/// Deprecated: Use `AnyMemory` instead.
+@available(*, deprecated, renamed: "AnyMemory", message: "AnyAgentMemory has been renamed to AnyMemory")
+public typealias AnyAgentMemory = AnyMemory

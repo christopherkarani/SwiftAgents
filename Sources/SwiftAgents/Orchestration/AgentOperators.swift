@@ -123,7 +123,7 @@ public actor ParallelComposition: Agent {
     nonisolated public let currentMergeStrategy: ParallelMergeStrategy
     nonisolated public let currentErrorHandling: ParallelErrorHandling
 
-    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var memory: (any Memory)? { nil }
     nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
@@ -167,7 +167,7 @@ public actor ParallelComposition: Agent {
 
     public func run(_ input: String) async throws -> AgentResult {
         guard !parallelAgents.isEmpty else {
-            throw OrchestrationError.noAgentsConfigured
+            throw AgentError.invalidInput(reason: "No agents configured in parallel composition")
         }
 
         if isCancelled {
@@ -208,11 +208,21 @@ public actor ParallelComposition: Agent {
         switch currentErrorHandling {
         case .failFast:
             if let firstError = errors.first {
-                throw firstError
+                // Convert to AgentError if needed
+                if let agentError = firstError as? AgentError {
+                    throw agentError
+                } else {
+                    throw AgentError.internalError(reason: firstError.localizedDescription)
+                }
             }
         case .continueOnPartialFailure:
             if results.isEmpty, !errors.isEmpty {
-                throw errors.first!
+                let firstError = errors.first!
+                if let agentError = firstError as? AgentError {
+                    throw agentError
+                } else {
+                    throw AgentError.internalError(reason: firstError.localizedDescription)
+                }
             }
         case .collectErrors:
             // Continue with results, errors can be inspected via metadata
@@ -235,27 +245,21 @@ public actor ParallelComposition: Agent {
     }
 
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
-        Task { @Sendable [weak self] in
-            guard let self else {
-                continuation.finish()
-                return
-            }
+        StreamHelper.makeTrackedStream(for: self) { actor, continuation in
+            continuation.yield(.started(input: input))
             do {
-                continuation.yield(.started(input: input))
-                let result = try await run(input)
+                let result = try await actor.run(input)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
+            } catch let error as AgentError {
+                continuation.yield(.failed(error: error))
+                continuation.finish(throwing: error)
             } catch {
-                if let agentError = error as? AgentError {
-                    continuation.yield(.failed(error: agentError))
-                } else {
-                    continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
-                }
-                continuation.finish()
+                let agentError = AgentError.internalError(reason: error.localizedDescription)
+                continuation.yield(.failed(error: agentError))
+                continuation.finish(throwing: error)
             }
         }
-        return stream
     }
 
     public func cancel() async {
@@ -335,7 +339,7 @@ public actor AgentSequence: Agent {
     nonisolated public let sequentialAgents: [any Agent]
     nonisolated public let currentTransformers: [Int: OutputTransformer]
 
-    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var memory: (any Memory)? { nil }
     nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
@@ -370,7 +374,7 @@ public actor AgentSequence: Agent {
 
     public func run(_ input: String) async throws -> AgentResult {
         guard !sequentialAgents.isEmpty else {
-            throw OrchestrationError.noAgentsConfigured
+            throw AgentError.invalidInput(reason: "No agents configured in sequential composition")
         }
 
         if isCancelled {
@@ -415,27 +419,21 @@ public actor AgentSequence: Agent {
     }
 
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
-        Task { @Sendable [weak self] in
-            guard let self else {
-                continuation.finish()
-                return
-            }
+        StreamHelper.makeTrackedStream(for: self) { actor, continuation in
+            continuation.yield(.started(input: input))
             do {
-                continuation.yield(.started(input: input))
-                let result = try await run(input)
+                let result = try await actor.run(input)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
+            } catch let error as AgentError {
+                continuation.yield(.failed(error: error))
+                continuation.finish(throwing: error)
             } catch {
-                if let agentError = error as? AgentError {
-                    continuation.yield(.failed(error: agentError))
-                } else {
-                    continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
-                }
-                continuation.finish()
+                let agentError = AgentError.internalError(reason: error.localizedDescription)
+                continuation.yield(.failed(error: agentError))
+                continuation.finish(throwing: error)
             }
         }
-        return stream
     }
 
     public func cancel() async {
@@ -470,7 +468,7 @@ public actor ConditionalFallback: Agent {
     nonisolated public let instructions: String = "Conditional fallback agent"
     nonisolated public let configuration: AgentConfiguration
 
-    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var memory: (any Memory)? { nil }
     nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
@@ -523,27 +521,21 @@ public actor ConditionalFallback: Agent {
     }
 
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
-        Task { @Sendable [weak self] in
-            guard let self else {
-                continuation.finish()
-                return
-            }
+        StreamHelper.makeTrackedStream(for: self) { actor, continuation in
+            continuation.yield(.started(input: input))
             do {
-                continuation.yield(.started(input: input))
-                let result = try await run(input)
+                let result = try await actor.run(input)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
+            } catch let error as AgentError {
+                continuation.yield(.failed(error: error))
+                continuation.finish(throwing: error)
             } catch {
-                if let agentError = error as? AgentError {
-                    continuation.yield(.failed(error: agentError))
-                } else {
-                    continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
-                }
-                continuation.finish()
+                let agentError = AgentError.internalError(reason: error.localizedDescription)
+                continuation.yield(.failed(error: agentError))
+                continuation.finish(throwing: error)
             }
         }
-        return stream
     }
 
     public func cancel() async {

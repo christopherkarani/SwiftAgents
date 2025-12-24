@@ -45,13 +45,29 @@ public enum AgentError: Error, Sendable, Equatable {
     case contextWindowExceeded(tokenCount: Int, limit: Int)
 
     /// The model response violated content guidelines.
-    case guardrailViolation
+    case guardrailViolation(reason: String)
+
+    /// Content was filtered by the model's safety systems.
+    case contentFiltered(reason: String)
 
     /// The language is not supported by the model.
     case unsupportedLanguage(language: String)
 
     /// The model failed to generate a response.
     case generationFailed(reason: String)
+
+    /// The requested model is not available.
+    case modelNotAvailable(model: String)
+
+    // MARK: - Rate Limiting Errors
+
+    /// Rate limit was exceeded.
+    case rateLimitExceeded(retryAfter: TimeInterval?)
+
+    // MARK: - Embedding Errors
+
+    /// Embedding operation failed.
+    case embeddingFailed(reason: String)
 
     // MARK: - Internal Errors
 
@@ -82,12 +98,24 @@ extension AgentError: LocalizedError {
             "Inference provider unavailable: \(reason)"
         case let .contextWindowExceeded(count, limit):
             "Context window exceeded: \(count) tokens (limit: \(limit))"
-        case .guardrailViolation:
-            "Response violated content guidelines"
+        case let .guardrailViolation(reason):
+            "Response violated content guidelines: \(reason)"
+        case let .contentFiltered(reason):
+            "Content filtered: \(reason)"
         case let .unsupportedLanguage(language):
             "Language not supported: \(language)"
         case let .generationFailed(reason):
             "Generation failed: \(reason)"
+        case let .modelNotAvailable(model):
+            "Model not available: \(model)"
+        case let .rateLimitExceeded(retryAfter):
+            if let retryAfter {
+                "Rate limit exceeded, retry after \(retryAfter) seconds"
+            } else {
+                "Rate limit exceeded"
+            }
+        case let .embeddingFailed(reason):
+            "Embedding failed: \(reason)"
         case let .internalError(reason):
             "Internal error: \(reason)"
         }

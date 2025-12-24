@@ -40,9 +40,9 @@ import Foundation
 ///     configuration: .init(shortTermMaxMessages: 30, summaryTokenRatio: 0.3)
 /// )
 /// await memory.add(.user("Hello"))
-/// let context = await memory.getContext(for: "question", tokenLimit: 4000)
+/// let context = await memory.context(for: "question", tokenLimit: 4000)
 /// ```
-public actor HybridMemory: AgentMemory {
+public actor HybridMemory: Memory {
     // MARK: Public
 
     /// Configuration for hybrid memory behavior.
@@ -146,7 +146,7 @@ public actor HybridMemory: AgentMemory {
         }
     }
 
-    public func getContext(for query: String, tokenLimit: Int) async -> String {
+    public func context(for query: String, tokenLimit: Int) async -> String {
         var components: [String] = []
 
         // Calculate token allocation
@@ -172,7 +172,7 @@ public actor HybridMemory: AgentMemory {
         }
 
         // Add recent messages from short-term memory
-        let recentContext = await shortTermMemory.getContext(for: query, tokenLimit: recentTokenBudget)
+        let recentContext = await shortTermMemory.context(for: query, tokenLimit: recentTokenBudget)
         if !recentContext.isEmpty {
             components.append("[Recent conversation]:\n\(recentContext)")
         }
@@ -180,8 +180,8 @@ public actor HybridMemory: AgentMemory {
         return components.joined(separator: "\n\n")
     }
 
-    public func getAllMessages() async -> [MemoryMessage] {
-        await shortTermMemory.getAllMessages()
+    public func allMessages() async -> [MemoryMessage] {
+        await shortTermMemory.allMessages()
     }
 
     public func clear() async {

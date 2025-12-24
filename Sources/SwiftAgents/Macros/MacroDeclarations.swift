@@ -147,6 +147,41 @@ public macro Parameter(
 
 // MARK: - @Agent Macro
 
+
+/// Generates a complete Agent implementation from an actor with a process() method.
+///
+/// ## Parameters
+/// - `instructions`: The system instructions for the agent (required).
+/// - `generateBuilder`: Whether to generate a Builder class (default: true).
+///
+/// ## Example
+///
+/// ```swift
+/// @Agent(instructions: "You are a helpful assistant", generateBuilder: true)
+/// actor MyAgent {
+///     func process(_ input: String) async throws -> String {
+///         return "Response to: \(input)"
+///     }
+/// }
+///
+/// // With builder:
+/// let agent = MyAgent.Builder()
+///     .tools([CalculatorTool()])
+///     .configuration(.default)
+///     .build()
+/// ```
+@attached(
+    member,
+    names: named(tools), named(instructions), named(configuration), named(memory), named(inferenceProvider),
+    named(_memory), named(_inferenceProvider), named(isCancelled), named(init), named(run), named(stream),
+    named(cancel), named(Builder)
+)
+@attached(extension, conformances: Agent)
+public macro Agent(
+    instructions: String,
+    generateBuilder: Bool = true
+) = #externalMacro(module: "SwiftAgentsMacros", type: "AgentMacro")
+
 /// A macro that generates Agent protocol conformance for an actor.
 ///
 /// The `@Agent` macro reduces boilerplate when creating agents by:
@@ -187,7 +222,7 @@ public macro Parameter(
 /// - `let tools: [any Tool]` - Default empty array (override if needed)
 /// - `let instructions: String` - From macro argument
 /// - `let configuration: AgentConfiguration` - Default configuration
-/// - `var memory: (any AgentMemory)?` - Optional memory
+/// - `var memory: (any Memory)?` - Optional memory
 /// - `var inferenceProvider: (any InferenceProvider)?` - Optional provider
 /// - `init(...)` - Standard initializer with all parameters
 /// - `run(_ input:)` - Calls your `process()` method
@@ -203,7 +238,7 @@ public macro Parameter(
     member,
     names: named(tools), named(instructions), named(configuration), named(memory), named(inferenceProvider),
     named(_memory), named(_inferenceProvider), named(isCancelled), named(init), named(run), named(stream),
-    named(cancel)
+    named(cancel), named(Builder)
 )
 @attached(extension, conformances: Agent)
 public macro Agent(_ instructions: String) = #externalMacro(module: "SwiftAgentsMacros", type: "AgentMacro")
@@ -305,6 +340,75 @@ public struct PromptString: Sendable, ExpressibleByStringLiteral, ExpressibleByS
         interpolations = []
     }
 }
+
+// MARK: - @Builder Macro
+
+/// A macro that generates fluent setter methods for all stored var properties of a struct.
+///
+/// The `@Builder` macro eliminates boilerplate when creating fluent builder APIs by:
+/// - Generating fluent setter methods for each stored var property
+/// - Preserving access levels (public/internal)
+/// - Following the copy-modify-return pattern for value semantics
+///
+/// ## Basic Usage
+///
+/// ```swift
+/// @Builder
+/// public struct Configuration {
+///     public var timeout: Duration
+///     public var maxRetries: Int
+///     public var enableLogging: Bool
+///
+///     public init(timeout: Duration = .seconds(30), maxRetries: Int = 3, enableLogging: Bool = true) {
+///         self.timeout = timeout
+///         self.maxRetries = maxRetries
+///         self.enableLogging = enableLogging
+///     }
+/// }
+///
+/// // Use it with fluent API:
+/// let config = Configuration()
+///     .timeout(.seconds(60))
+///     .maxRetries(5)
+///     .enableLogging(false)
+/// ```
+///
+/// ## Generated Code
+///
+/// For each stored var property, the macro generates:
+/// ```swift
+/// @discardableResult
+/// public func propertyName(_ value: PropertyType) -> Self {
+///     var copy = self
+///     copy.propertyName = value
+///     return copy
+/// }
+/// ```
+///
+/// ## Requirements
+///
+/// - Must be applied to a struct
+/// - Only generates setters for stored `var` properties
+/// - Computed properties are ignored
+/// - `let` constants are ignored
+/// - Preserves the access level of each property
+///
+/// ## Example with Mixed Properties
+///
+/// ```swift
+/// @Builder
+/// public struct AgentConfig {
+///     public var temperature: Double  // Generates public setter
+///     var maxTokens: Int?              // Generates internal setter
+///     public let modelName: String     // Ignored (constant)
+///
+///     public var isVerbose: Bool {     // Ignored (computed)
+///         temperature > 0.5
+///     }
+/// }
+/// ```
+@attached(member, names: arbitrary)
+public macro Builder() = #externalMacro(module: "SwiftAgentsMacros", type: "BuilderMacro")
 
 // MARK: - PromptString String Interpolation
 

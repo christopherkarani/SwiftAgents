@@ -196,13 +196,22 @@ public struct MetricsSnapshot: Sendable, Codable, Equatable {
 /// // Reset metrics
 /// await collector.reset()
 /// ```
-public actor MetricsCollector: AgentTracer {
+public actor MetricsCollector: Tracer {
     // MARK: Public
 
     // MARK: - Initialization
 
+    /// Maximum number of duration samples to retain per metric.
+    public let maxMetricsHistory: Int
+
     /// Creates a new metrics collector.
-    public init() {}
+    ///
+    /// - Parameter maxMetricsHistory: Maximum number of duration samples to retain.
+    ///   When exceeded, oldest samples are discarded. Default: 10,000.
+    public init(maxMetricsHistory: Int = 10_000) {
+        self.maxMetricsHistory = maxMetricsHistory
+        self.executionDurations = CircularBuffer<TimeInterval>(capacity: maxMetricsHistory)
+    }
 
     // MARK: - AgentTracer Protocol
 
@@ -250,11 +259,20 @@ public actor MetricsCollector: AgentTracer {
 
         case .toolResult:
             if let toolName = event.toolName {
-                if let duration = event.duration {
-                    toolDurations[toolName, default: []].append(duration)
+                let duration: TimeInterval?
+                if let eventDuration = event.duration {
+                    duration = eventDuration
                 } else if let startTime = spanStartTimes[event.spanId] {
-                    let duration = event.timestamp.timeIntervalSince(startTime)
-                    toolDurations[toolName, default: []].append(duration)
+                    duration = event.timestamp.timeIntervalSince(startTime)
+                } else {
+                    duration = nil
+                }
+
+                if let duration {
+                    if toolDurations[toolName] == nil {
+                        toolDurations[toolName] = CircularBuffer<TimeInterval>(capacity: maxMetricsHistory)
+                    }
+                    toolDurations[toolName]?.append(duration)
                 }
                 spanStartTimes.removeValue(forKey: event.spanId)
             }
@@ -293,15 +311,18 @@ public actor MetricsCollector: AgentTracer {
     ///
     /// - Returns: A metrics snapshot containing all current metrics.
     public func snapshot() -> MetricsSnapshot {
-        MetricsSnapshot(
+        // Convert CircularBuffer to arrays for the snapshot
+        let toolDurationArrays = toolDurations.mapValues { $0.elements }
+
+        return MetricsSnapshot(
             totalExecutions: totalExecutions,
             successfulExecutions: successfulExecutions,
             failedExecutions: failedExecutions,
             cancelledExecutions: cancelledExecutions,
-            executionDurations: executionDurations,
+            executionDurations: executionDurations.elements,
             toolCalls: toolCalls,
             toolErrors: toolErrors,
-            toolDurations: toolDurations,
+            toolDurations: toolDurationArrays,
             timestamp: Date()
         )
     }
@@ -319,7 +340,7 @@ public actor MetricsCollector: AgentTracer {
         successfulExecutions = 0
         failedExecutions = 0
         cancelledExecutions = 0
-        executionDurations.removeAll()
+        executionDurations = CircularBuffer<TimeInterval>(capacity: maxMetricsHistory)
         toolCalls.removeAll()
         toolErrors.removeAll()
         toolDurations.removeAll()
@@ -360,7 +381,7 @@ public actor MetricsCollector: AgentTracer {
 
     /// Returns tool durations.
     public func getToolDurations() -> [String: [TimeInterval]] {
-        toolDurations
+        toolDurations.mapValues { $0.elements }
     }
 
     // MARK: Private
@@ -381,8 +402,9 @@ public actor MetricsCollector: AgentTracer {
 
     // MARK: - Duration Tracking
 
-    /// Array of all execution durations (in seconds).
-    private var executionDurations: [TimeInterval] = []
+    /// Circular buffer of execution durations (in seconds).
+    /// Uses CircularBuffer to prevent unbounded memory growth in long-running processes.
+    private var executionDurations: CircularBuffer<TimeInterval>
 
     // MARK: - Tool Metrics
 
@@ -393,7 +415,8 @@ public actor MetricsCollector: AgentTracer {
     private var toolErrors: [String: Int] = [:]
 
     /// Tool execution durations by tool name (in seconds).
-    private var toolDurations: [String: [TimeInterval]] = [:]
+    /// Uses CircularBuffer per tool to prevent unbounded memory growth.
+    private var toolDurations: [String: CircularBuffer<TimeInterval>] = [:]
 
     // MARK: - Span Tracking
 

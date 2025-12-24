@@ -141,7 +141,7 @@ public struct RoutingDecision: Sendable, Equatable {
 /// ```swift
 /// let strategy = LLMRoutingStrategy(
 ///     inferenceProvider: myProvider,
-///     fallbackToKeyword: true
+///     shouldFallbackToKeyword: true
 /// )
 /// ```
 public struct LLMRoutingStrategy: RoutingStrategy {
@@ -151,7 +151,7 @@ public struct LLMRoutingStrategy: RoutingStrategy {
     public let inferenceProvider: any InferenceProvider
 
     /// Whether to fall back to keyword matching if LLM fails.
-    public let fallbackToKeyword: Bool
+    public let shouldFallbackToKeyword: Bool
 
     /// Temperature for LLM generation (lower = more deterministic).
     public let temperature: Double
@@ -160,16 +160,35 @@ public struct LLMRoutingStrategy: RoutingStrategy {
     ///
     /// - Parameters:
     ///   - inferenceProvider: The LLM provider for routing decisions.
-    ///   - fallbackToKeyword: Fall back to keyword matching on failure. Default: true
+    ///   - shouldFallbackToKeyword: Fall back to keyword matching on failure. Default: true
     ///   - temperature: Generation temperature. Default: 0.3 (more deterministic)
     public init(
         inferenceProvider: any InferenceProvider,
-        fallbackToKeyword: Bool = true,
+        shouldFallbackToKeyword: Bool = true,
         temperature: Double = 0.3
     ) {
         self.inferenceProvider = inferenceProvider
-        self.fallbackToKeyword = fallbackToKeyword
+        self.shouldFallbackToKeyword = shouldFallbackToKeyword
         self.temperature = temperature
+    }
+
+    /// Creates a new LLM-based routing strategy.
+    ///
+    /// - Parameters:
+    ///   - inferenceProvider: The LLM provider for routing decisions.
+    ///   - fallbackToKeyword: Fall back to keyword matching on failure.
+    ///   - temperature: Generation temperature. Default: 0.3 (more deterministic)
+    @available(*, deprecated, message: "Use shouldFallbackToKeyword instead of fallbackToKeyword")
+    public init(
+        inferenceProvider: any InferenceProvider,
+        fallbackToKeyword: Bool,
+        temperature: Double = 0.3
+    ) {
+        self.init(
+            inferenceProvider: inferenceProvider,
+            shouldFallbackToKeyword: fallbackToKeyword,
+            temperature: temperature
+        )
     }
 
     public func selectAgent(
@@ -207,7 +226,7 @@ public struct LLMRoutingStrategy: RoutingStrategy {
 
         } catch {
             // If LLM fails and fallback is enabled, use keyword matching
-            if fallbackToKeyword {
+            if shouldFallbackToKeyword {
                 let keywordStrategy = KeywordRoutingStrategy()
                 return try await keywordStrategy.selectAgent(
                     for: input,
@@ -313,7 +332,7 @@ public struct LLMRoutingStrategy: RoutingStrategy {
 ///
 /// Example:
 /// ```swift
-/// let strategy = KeywordRoutingStrategy(caseSensitive: false)
+/// let strategy = KeywordRoutingStrategy(isCaseSensitive: false)
 /// let decision = try await strategy.selectAgent(
 ///     for: "What's the weather like?",
 ///     from: agentDescriptions,
@@ -322,7 +341,7 @@ public struct LLMRoutingStrategy: RoutingStrategy {
 /// ```
 public struct KeywordRoutingStrategy: RoutingStrategy {
     /// Whether keyword matching is case-sensitive.
-    public let caseSensitive: Bool
+    public let isCaseSensitive: Bool
 
     /// Minimum confidence threshold to select an agent.
     public let minimumConfidence: Double
@@ -330,11 +349,21 @@ public struct KeywordRoutingStrategy: RoutingStrategy {
     /// Creates a new keyword-based routing strategy.
     ///
     /// - Parameters:
-    ///   - caseSensitive: Whether matching is case-sensitive. Default: false
+    ///   - isCaseSensitive: Whether matching is case-sensitive. Default: false
     ///   - minimumConfidence: Minimum confidence threshold. Default: 0.1
-    public init(caseSensitive: Bool = false, minimumConfidence: Double = 0.1) {
-        self.caseSensitive = caseSensitive
+    public init(isCaseSensitive: Bool = false, minimumConfidence: Double = 0.1) {
+        self.isCaseSensitive = isCaseSensitive
         self.minimumConfidence = minimumConfidence
+    }
+
+    /// Creates a new keyword-based routing strategy.
+    ///
+    /// - Parameters:
+    ///   - caseSensitive: Whether matching is case-sensitive.
+    ///   - minimumConfidence: Minimum confidence threshold. Default: 0.1
+    @available(*, deprecated, message: "Use isCaseSensitive instead of caseSensitive")
+    public init(caseSensitive: Bool, minimumConfidence: Double = 0.1) {
+        self.init(isCaseSensitive: caseSensitive, minimumConfidence: minimumConfidence)
     }
 
     public func selectAgent(
@@ -355,7 +384,7 @@ public struct KeywordRoutingStrategy: RoutingStrategy {
             )
         }
 
-        let normalizedInput = caseSensitive ? input : input.lowercased()
+        let normalizedInput = isCaseSensitive ? input : input.lowercased()
         var scores: [(agent: AgentDescription, score: Int)] = []
 
         for agent in agents {
@@ -363,7 +392,7 @@ public struct KeywordRoutingStrategy: RoutingStrategy {
 
             // Check keywords
             for keyword in agent.keywords {
-                let normalizedKeyword = caseSensitive ? keyword : keyword.lowercased()
+                let normalizedKeyword = isCaseSensitive ? keyword : keyword.lowercased()
                 if normalizedInput.contains(normalizedKeyword) {
                     score += 10 // High weight for keyword matches
                 }
@@ -371,14 +400,14 @@ public struct KeywordRoutingStrategy: RoutingStrategy {
 
             // Check capabilities (lower weight)
             for capability in agent.capabilities {
-                let normalizedCapability = caseSensitive ? capability : capability.lowercased()
+                let normalizedCapability = isCaseSensitive ? capability : capability.lowercased()
                 if normalizedInput.contains(normalizedCapability) {
                     score += 5
                 }
             }
 
             // Check agent name
-            let normalizedName = caseSensitive ? agent.name : agent.name.lowercased()
+            let normalizedName = isCaseSensitive ? agent.name : agent.name.lowercased()
             if normalizedInput.contains(normalizedName) {
                 score += 3
             }
@@ -454,7 +483,7 @@ public actor SupervisorAgent: Agent {
     nonisolated public let instructions: String
     nonisolated public let configuration: AgentConfiguration
 
-    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var memory: (any Memory)? { nil }
     nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Supervisor-Specific Methods
@@ -577,92 +606,32 @@ public actor SupervisorAgent: Agent {
                 builder.setMetadata("routing_error", .string(error.localizedDescription))
                 return builder.build()
             } else {
-                throw error
+                // Convert to AgentError if needed
+                if let agentError = error as? AgentError {
+                    throw agentError
+                } else {
+                    throw AgentError.internalError(reason: error.localizedDescription)
+                }
             }
         }
     }
 
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
-
-        Task { @Sendable [weak self] in
-            guard let self else {
-                continuation.finish()
-                return
-            }
-
+        StreamHelper.makeTrackedStream(for: self) { actor, continuation in
+            continuation.yield(.started(input: input))
             do {
-                continuation.yield(.started(input: input))
-
-                // Get agent descriptions for routing
-                let descriptions = await agentRegistry.map(\.description)
-
-                // Create context if tracking is enabled
-                let trackingEnabled = await enableContextTracking
-                let context: AgentContext? = trackingEnabled ? AgentContext(input: input) : nil
-
-                // Select the appropriate agent
-                let strategy = await routingStrategy
-                let decision = try await strategy.selectAgent(
-                    for: input,
-                    from: descriptions,
-                    context: context
-                )
-
-                // Emit routing decision
-                continuation.yield(.thinking(
-                    thought: "Routing to agent: \(decision.selectedAgentName) (confidence: \(decision.confidence))"
-                ))
-
-                // Find the selected agent
-                let registry = await agentRegistry
-                guard let selectedEntry = registry.first(where: { $0.name == decision.selectedAgentName }) else {
-                    // Agent not found, use fallback if available
-                    let fallback = await fallbackAgent
-                    if let fallback {
-                        for try await event in fallback.stream(input) {
-                            continuation.yield(event)
-                        }
-                        continuation.finish()
-                        return
-                    } else {
-                        throw AgentError.internalError(
-                            reason: "Selected agent '\(decision.selectedAgentName)' not found and no fallback configured"
-                        )
-                    }
-                }
-
-                // Track execution in context
-                if let context {
-                    await context.recordExecution(agentName: decision.selectedAgentName)
-                }
-
-                // Stream from the selected agent
-                for try await event in selectedEntry.agent.stream(input) {
-                    continuation.yield(event)
-                }
-
+                let result = try await actor.run(input)
+                continuation.yield(.completed(result: result))
                 continuation.finish()
-
+            } catch let error as AgentError {
+                continuation.yield(.failed(error: error))
+                continuation.finish(throwing: error)
             } catch {
-                // If routing fails and we have a fallback, use it
-                let fallback = await fallbackAgent
-                if let fallback {
-                    do {
-                        for try await event in fallback.stream(input) {
-                            continuation.yield(event)
-                        }
-                        continuation.finish()
-                    } catch {
-                        continuation.finish(throwing: error)
-                    }
-                } else {
-                    continuation.finish(throwing: error)
-                }
+                let agentError = AgentError.internalError(reason: error.localizedDescription)
+                continuation.yield(.failed(error: agentError))
+                continuation.finish(throwing: error)
             }
         }
-
-        return stream
     }
 
     public func cancel() async {

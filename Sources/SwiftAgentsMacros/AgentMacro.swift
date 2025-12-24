@@ -30,6 +30,7 @@ import SwiftSyntaxMacros
 /// - `run()` implementation
 /// - `stream()` wrapper
 /// - `cancel()` implementation
+/// - Builder class (optional, enabled by default)
 public struct AgentMacro: MemberMacro, ExtensionMacro {
 
     // MARK: - MemberMacro
@@ -57,29 +58,29 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
         // 1. Generate tools property if not present
         if !existingMembers.contains("tools") {
             members.append("""
-                public let tools: [any Tool] = []
+                public let tools: [any Tool]
                 """)
         }
 
         // 2. Generate instructions property
         if !existingMembers.contains("instructions") {
             members.append("""
-                public let instructions: String = \(literal: instructions)
+                public let instructions: String
                 """)
         }
 
         // 3. Generate configuration property
         if !existingMembers.contains("configuration") {
             members.append("""
-                public let configuration: AgentConfiguration = .default
+                public let configuration: AgentConfiguration
                 """)
         }
 
         // 4. Generate memory property
         if !existingMembers.contains("memory") {
             members.append("""
-                public nonisolated var memory: (any AgentMemory)? { _memory }
-                private nonisolated let _memory: (any AgentMemory)?
+                public nonisolated var memory: (any Memory)? { _memory }
+                private nonisolated let _memory: (any Memory)?
                 """)
         }
 
@@ -100,14 +101,18 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
 
         // 7. Generate initializer
         if !hasInit(in: declaration) {
+            let defaultInstructions = instructions.isEmpty ? "" : instructions
             members.append("""
                 public init(
                     tools: [any Tool] = [],
-                    instructions: String? = nil,
+                    instructions: String = \(literal: defaultInstructions),
                     configuration: AgentConfiguration = .default,
-                    memory: (any AgentMemory)? = nil,
+                    memory: (any Memory)? = nil,
                     inferenceProvider: (any InferenceProvider)? = nil
                 ) {
+                    self.tools = tools
+                    self.instructions = instructions
+                    self.configuration = configuration
                     self._memory = memory
                     self._inferenceProvider = inferenceProvider
                 }
@@ -203,6 +208,18 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
                 """)
         }
 
+        // 11. Generate Builder class (enabled by default)
+        // Disable with @Agent(instructions: "...", generateBuilder: false)
+        if shouldGenerateBuilder(from: node) {
+            let typeName: String
+            if let actorDecl = declaration.as(ActorDeclSyntax.self) {
+                typeName = actorDecl.name.text
+            } else {
+                typeName = "Agent"
+            }
+            members.append(generateBuilderClass(typeName: typeName))
+        }
+
         return members
     }
 
@@ -226,14 +243,30 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
     // MARK: - Helper Methods
 
     /// Extracts the instructions string from the macro attribute.
+    /// Supports both labeled and unlabeled argument formats for backward compatibility.
     private static func extractInstructions(from node: AttributeSyntax) -> String? {
-        guard let arguments = node.arguments?.as(LabeledExprListSyntax.self),
-              let firstArg = arguments.first,
-              let stringLiteral = firstArg.expression.as(StringLiteralExprSyntax.self),
-              let segment = stringLiteral.segments.first?.as(StringSegmentSyntax.self) else {
+        guard let arguments = node.arguments?.as(LabeledExprListSyntax.self) else {
             return nil
         }
-        return segment.content.text
+        
+        // Try to find labeled "instructions" argument first
+        for argument in arguments {
+            if argument.label?.text == "instructions",
+               let stringLiteral = argument.expression.as(StringLiteralExprSyntax.self),
+               let segment = stringLiteral.segments.first?.as(StringSegmentSyntax.self) {
+                return segment.content.text
+            }
+        }
+        
+        // Fallback to unlabeled first argument for backward compatibility
+        if let firstArg = arguments.first,
+           firstArg.label == nil,
+           let stringLiteral = firstArg.expression.as(StringLiteralExprSyntax.self),
+           let segment = stringLiteral.segments.first?.as(StringSegmentSyntax.self) {
+            return segment.content.text
+        }
+        
+        return nil
     }
 
     /// Gets names of existing members in the declaration.
@@ -272,6 +305,94 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
             }
         }
         return false
+    }
+
+    /// Extracts the generateBuilder parameter from the macro arguments.
+    static func shouldGenerateBuilder(from node: AttributeSyntax) -> Bool {
+        guard let arguments = node.arguments?.as(LabeledExprListSyntax.self) else {
+            return true // Default to generating builder
+        }
+
+        for argument in arguments {
+            if argument.label?.text == "generateBuilder",
+               let boolLiteral = argument.expression.as(BooleanLiteralExprSyntax.self) {
+                return boolLiteral.literal.tokenKind == .keyword(.true)
+            }
+        }
+
+        return true // Default to generating builder
+    }
+
+    /// Generates the Builder struct for the agent.
+    /// Uses value semantics for Swift 6 concurrency safety.
+    static func generateBuilderClass(typeName: String) -> DeclSyntax {
+        """
+        /// A fluent builder for creating \(raw: typeName) instances.
+        /// Uses value semantics (struct) for Swift 6 concurrency safety.
+        public struct Builder: Sendable {
+            private var _tools: [any Tool] = []
+            private var _instructions: String = ""
+            private var _configuration: AgentConfiguration = .default
+            private var _memory: (any Memory)?
+            private var _inferenceProvider: (any InferenceProvider)?
+
+            /// Creates a new builder with default values.
+            public init() {}
+
+            /// Sets the tools for the agent.
+            public func tools(_ tools: [any Tool]) -> Builder {
+                var copy = self
+                copy._tools = tools
+                return copy
+            }
+
+            /// Adds a tool to the agent's tool set.
+            public func addTool(_ tool: any Tool) -> Builder {
+                var copy = self
+                copy._tools.append(tool)
+                return copy
+            }
+
+            /// Sets the instructions for the agent.
+            public func instructions(_ instructions: String) -> Builder {
+                var copy = self
+                copy._instructions = instructions
+                return copy
+            }
+
+            /// Sets the configuration for the agent.
+            public func configuration(_ configuration: AgentConfiguration) -> Builder {
+                var copy = self
+                copy._configuration = configuration
+                return copy
+            }
+
+            /// Sets the memory system for the agent.
+            public func memory(_ memory: any Memory) -> Builder {
+                var copy = self
+                copy._memory = memory
+                return copy
+            }
+
+            /// Sets the inference provider for the agent.
+            public func inferenceProvider(_ provider: any InferenceProvider) -> Builder {
+                var copy = self
+                copy._inferenceProvider = provider
+                return copy
+            }
+
+            /// Builds the agent with the configured values.
+            public func build() -> \(raw: typeName) {
+                \(raw: typeName)(
+                    tools: _tools,
+                    instructions: _instructions,
+                    configuration: _configuration,
+                    memory: _memory,
+                    inferenceProvider: _inferenceProvider
+                )
+            }
+        }
+        """
     }
 }
 

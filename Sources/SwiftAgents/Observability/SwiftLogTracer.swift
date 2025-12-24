@@ -33,7 +33,7 @@ import Logging
 /// - `parentSpanId`: Parent span ID (if applicable)
 /// - `agentName`: Name of the agent (if applicable)
 /// - `toolName`: Name of the tool being invoked (if applicable)
-public actor SwiftLogTracer: AgentTracer {
+public actor SwiftLogTracer: Tracer {
     // MARK: Public
 
     /// Creates a new SwiftLogTracer.

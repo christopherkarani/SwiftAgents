@@ -146,7 +146,7 @@ public actor SequentialChain: Agent {
     }
 
     /// Memory system (chains don't maintain their own memory).
-    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var memory: (any Memory)? { nil }
 
     /// Inference provider (chains don't use inference directly).
     nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
@@ -212,7 +212,7 @@ public actor SequentialChain: Agent {
     ///           or `AgentError.cancelled` if execution was cancelled.
     public func run(_ input: String) async throws -> AgentResult {
         guard !chainedAgents.isEmpty else {
-            throw OrchestrationError.noAgentsConfigured
+            throw AgentError.invalidInput(reason: "No agents configured in sequential chain")
         }
 
         // Create shared context
@@ -274,64 +274,21 @@ public actor SequentialChain: Agent {
     /// - Parameter input: The initial input for the first agent.
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
-
-        Task { @Sendable [weak self] in
-            guard let self else {
-                continuation.finish()
-                return
-            }
-
+        StreamHelper.makeTrackedStream(for: self) { actor, continuation in
+            continuation.yield(.started(input: input))
             do {
-                guard !chainedAgents.isEmpty else {
-                    throw OrchestrationError.noAgentsConfigured
-                }
-
-                continuation.yield(.started(input: input))
-
-                var currentInput = input
-
-                for (index, agent) in chainedAgents.enumerated() {
-                    // Check cancellation
-                    let cancelled = await isCancelled
-                    if cancelled {
-                        continuation.yield(.cancelled)
-                        continuation.finish()
-                        return
-                    }
-
-                    // Stream from this agent
-                    var agentResult: AgentResult?
-
-                    for try await event in agent.stream(currentInput) {
-                        continuation.yield(event)
-
-                        // Capture the result when completed
-                        if case let .completed(result) = event {
-                            agentResult = result
-                        }
-                    }
-
-                    // Apply transformer and prepare input for next agent
-                    if let result = agentResult {
-                        let transformer = transformers[index] ?? .passthrough
-                        currentInput = transformer.apply(result)
-
-                        // If this is the last agent, we're done
-                        if index == chainedAgents.count - 1 {
-                            continuation.finish()
-                            return
-                        }
-                    }
-                }
-
+                let result = try await actor.run(input)
+                continuation.yield(.completed(result: result))
                 continuation.finish()
+            } catch let error as AgentError {
+                continuation.yield(.failed(error: error))
+                continuation.finish(throwing: error)
             } catch {
+                let agentError = AgentError.internalError(reason: error.localizedDescription)
+                continuation.yield(.failed(error: agentError))
                 continuation.finish(throwing: error)
             }
         }
-
-        return stream
     }
 
     /// Cancels the chain execution.

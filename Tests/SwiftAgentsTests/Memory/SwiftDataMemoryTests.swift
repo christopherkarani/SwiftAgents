@@ -75,7 +75,7 @@
             let message = MemoryMessage.user("Test content", metadata: ["key": "value"])
             await memory.add(message)
 
-            let messages = await memory.getAllMessages()
+            let messages = await memory.allMessages()
 
             #expect(messages.count == 1)
             #expect(messages[0].content == "Test content")
@@ -96,7 +96,7 @@
             #expect(await memory.count == 5)
 
             // Should have kept the most recent
-            let messages = await memory.getAllMessages()
+            let messages = await memory.allMessages()
             #expect(messages.first?.content == "Message 6")
             #expect(messages.last?.content == "Message 10")
         }
@@ -121,7 +121,7 @@
             await memory.add(.user("Hello"))
             await memory.add(.assistant("Hi there"))
 
-            let context = await memory.getContext(for: "test", tokenLimit: 1000)
+            let context = await memory.context(for: "test", tokenLimit: 1000)
 
             #expect(context.contains("[user]: Hello"))
             #expect(context.contains("[assistant]: Hi there"))

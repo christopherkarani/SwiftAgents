@@ -71,21 +71,32 @@ public extension RouteCondition {
     ///
     /// - Parameters:
     ///   - substring: The substring to search for.
-    ///   - caseSensitive: Whether the search is case-sensitive. Default: false
+    ///   - isCaseSensitive: Whether the search is case-sensitive. Default: false
     /// - Returns: A condition that matches if the substring is found.
     ///
     /// Example:
     /// ```swift
-    /// let condition = RouteCondition.contains("weather", caseSensitive: false)
+    /// let condition = RouteCondition.contains("weather", isCaseSensitive: false)
     /// ```
-    static func contains(_ substring: String, caseSensitive: Bool = false) -> RouteCondition {
+    static func contains(_ substring: String, isCaseSensitive: Bool = false) -> RouteCondition {
         RouteCondition { input, _ in
-            if caseSensitive {
+            if isCaseSensitive {
                 input.contains(substring)
             } else {
                 input.localizedCaseInsensitiveContains(substring)
             }
         }
+    }
+
+    /// A condition that checks if the input contains a substring.
+    ///
+    /// - Parameters:
+    ///   - substring: The substring to search for.
+    ///   - caseSensitive: Whether the search is case-sensitive.
+    /// - Returns: A condition that matches if the substring is found.
+    @available(*, deprecated, message: "Use isCaseSensitive instead of caseSensitive")
+    static func contains(_ substring: String, caseSensitive: Bool) -> RouteCondition {
+        contains(substring, isCaseSensitive: caseSensitive)
     }
 
     /// A condition that matches the input against a regular expression pattern.
@@ -343,7 +354,7 @@ public actor AgentRouter: Agent {
     nonisolated public let instructions: String
     nonisolated public let configuration: AgentConfiguration
 
-    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var memory: (any Memory)? { nil }
     nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
@@ -448,57 +459,21 @@ public actor AgentRouter: Agent {
     /// - Parameter input: The user's input/query.
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
-        Task { @Sendable [weak self] in
-            guard let self else {
-                continuation.finish()
-                return
-            }
-
+        StreamHelper.makeTrackedStream(for: self) { actor, continuation in
+            continuation.yield(.started(input: input))
             do {
-                continuation.yield(.started(input: input))
-
-                if await isCancelled {
-                    continuation.yield(.cancelled)
-                    continuation.finish()
-                    return
-                }
-
-                // Find the first matching route
-                let selectedRoute = await findMatchingRoute(input: input, context: nil)
-
-                guard let route = selectedRoute else {
-                    // No route matched - try fallback
-                    if let fallback = await fallbackAgent {
-                        for try await event in fallback.stream(input) {
-                            continuation.yield(event)
-                        }
-                    } else {
-                        let error = OrchestrationError.routingFailed(
-                            reason: "No route matched input and no fallback agent configured"
-                        )
-                        continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
-                    }
-                    continuation.finish()
-                    return
-                }
-
-                // Stream from the matched route's agent
-                for try await event in route.agent.stream(input) {
-                    continuation.yield(event)
-                }
-
+                let result = try await actor.run(input)
+                continuation.yield(.completed(result: result))
                 continuation.finish()
+            } catch let error as AgentError {
+                continuation.yield(.failed(error: error))
+                continuation.finish(throwing: error)
             } catch {
-                if let agentError = error as? AgentError {
-                    continuation.yield(.failed(error: agentError))
-                } else {
-                    continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
-                }
-                continuation.finish()
+                let agentError = AgentError.internalError(reason: error.localizedDescription)
+                continuation.yield(.failed(error: agentError))
+                continuation.finish(throwing: error)
             }
         }
-        return stream
     }
 
     /// Cancels any ongoing routing execution.

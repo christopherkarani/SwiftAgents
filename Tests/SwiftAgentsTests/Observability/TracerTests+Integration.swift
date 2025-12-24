@@ -22,7 +22,7 @@ struct TracerIntegrationTests {
 
         let composite = CompositeTracer(
             tracers: [buffered1, buffered2],
-            parallel: true
+            shouldExecuteInParallel: true
         )
 
         let traceId = UUID()
@@ -73,13 +73,13 @@ struct TracerIntegrationTests {
         #expect(destinationEvents.count == 1)
     }
 
-    @Test("AnyAgentTracer wrapping CompositeTracer")
+    @Test("AnyTracer wrapping CompositeTracer")
     func anyTracerWrappingComposite() async {
         // Given
         let spy1 = SpyTracer()
         let spy2 = SpyTracer()
         let composite = CompositeTracer(tracers: [spy1, spy2])
-        let wrapped = AnyAgentTracer(composite)
+        let wrapped = AnyTracer(composite)
 
         let traceId = UUID()
         let event = TraceEvent.agentStart(

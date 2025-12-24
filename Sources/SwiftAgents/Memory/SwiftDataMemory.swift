@@ -25,7 +25,7 @@
     /// await memory.add(.user("Hello"))
     /// // Messages persist across app launches
     /// ```
-    public actor SwiftDataMemory: AgentMemory {
+    public actor SwiftDataMemory: Memory {
         // MARK: Public
 
         /// Conversation identifier for message grouping.
@@ -100,12 +100,12 @@
             }
         }
 
-        public func getContext(for _: String, tokenLimit: Int) async -> String {
-            let messages = await getAllMessages()
+        public func context(for _: String, tokenLimit: Int) async -> String {
+            let messages = await allMessages()
             return formatMessagesForContext(messages, tokenLimit: tokenLimit, tokenEstimator: tokenEstimator)
         }
 
-        public func getAllMessages() async -> [MemoryMessage] {
+        public func allMessages() async -> [MemoryMessage] {
             let descriptor = PersistedMessage.fetchDescriptor(forConversation: conversationId)
 
             do {

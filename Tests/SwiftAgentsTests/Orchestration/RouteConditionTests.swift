@@ -71,9 +71,9 @@ struct RouteConditionBuiltInComprehensiveTests {
         #expect(await !condition.matches(input: "What's the temperature?", context: nil))
     }
 
-    @Test("contains() with caseSensitive: true")
+    @Test("contains() with isCaseSensitive: true")
     func containsCaseSensitive() async {
-        let condition = RouteCondition.contains("Weather", caseSensitive: true)
+        let condition = RouteCondition.contains("Weather", isCaseSensitive: true)
 
         #expect(await condition.matches(input: "What's the Weather today?", context: nil))
         #expect(await !condition.matches(input: "What's the weather today?", context: nil))
@@ -717,8 +717,8 @@ struct RouteConditionEdgeCasesComprehensiveTests {
 
     @Test("Case sensitivity edge cases")
     func caseSensitivityEdgeCases() async {
-        let caseSensitive = RouteCondition.contains("Test", caseSensitive: true)
-        let caseInsensitive = RouteCondition.contains("Test", caseSensitive: false)
+        let caseSensitive = RouteCondition.contains("Test", isCaseSensitive: true)
+        let caseInsensitive = RouteCondition.contains("Test", isCaseSensitive: false)
 
         #expect(await caseSensitive.matches(input: "Test", context: nil))
         #expect(await !caseSensitive.matches(input: "test", context: nil))

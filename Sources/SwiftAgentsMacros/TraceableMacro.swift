@@ -31,7 +31,7 @@ public struct TraceableMacro: PeerMacro {
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
         // Check if this is attached to a struct with Tool conformance
-        guard let structDecl = declaration.as(StructDeclSyntax.self) else {
+        guard declaration.is(StructDeclSyntax.self) else {
             throw TraceableError.onlyApplicableToStruct
         }
 

@@ -26,7 +26,7 @@ import Foundation
 /// #expect(await mock.addCalls.count == 2)
 /// #expect(await mock.getContextCalls.count == 1)
 /// ```
-public actor MockAgentMemory: AgentMemory {
+public actor MockAgentMemory: Memory {
     /// Internal message storage.
     public var messages: [MemoryMessage]
 
@@ -40,7 +40,7 @@ public actor MockAgentMemory: AgentMemory {
     /// Records of all getContext() calls.
     public var getContextCalls: [(query: String, tokenLimit: Int)] = []
 
-    /// Records of all getAllMessages() calls.
+    /// Records of all allMessages() calls.
     public var getAllMessagesCalls: Int = 0
 
     /// Records of all clear() calls.
@@ -87,7 +87,7 @@ public actor MockAgentMemory: AgentMemory {
         responseDelay = delay
     }
 
-    // MARK: - AgentMemory Protocol
+    // MARK: - Memory Protocol
 
     public func add(_ message: MemoryMessage) async {
         if responseDelay > .zero {
@@ -98,7 +98,7 @@ public actor MockAgentMemory: AgentMemory {
         messages.append(message)
     }
 
-    public func getContext(for query: String, tokenLimit: Int) async -> String {
+    public func context(for query: String, tokenLimit: Int) async -> String {
         if responseDelay > .zero {
             try? await Task.sleep(for: responseDelay)
         }
@@ -111,7 +111,7 @@ public actor MockAgentMemory: AgentMemory {
         return contextToReturn
     }
 
-    public func getAllMessages() async -> [MemoryMessage] {
+    public func allMessages() async -> [MemoryMessage] {
         if responseDelay > .zero {
             try? await Task.sleep(for: responseDelay)
         }

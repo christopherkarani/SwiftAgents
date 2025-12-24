@@ -469,12 +469,18 @@ guard let \(param.name) = arguments["\(param.name)"]?\(accessor) else {
         case "Void", "()":
             return "return .null"
         default:
-            // For complex types, try to encode
+            // For complex types, try to encode as Codable
+            // If encoding fails, throw an error rather than silently converting to string
+            // (which could expose sensitive data like PII)
             return """
 do {
                     return try SendableValue(encoding: result)
                 } catch {
-                    return .string(String(describing: result))
+                    throw AgentError.toolExecutionFailed(
+                        toolName: name,
+                        underlyingError: "Unsupported return type '\\(type(of: result))'. " +
+                            "Tool return types must be String, Int, Double, Bool, SendableValue, Void, or Codable."
+                    )
                 }
 """
         }

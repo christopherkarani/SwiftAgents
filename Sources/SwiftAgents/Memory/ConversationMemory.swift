@@ -19,14 +19,14 @@ import Foundation
 /// let memory = ConversationMemory(maxMessages: 50)
 /// await memory.add(.user("Hello"))
 /// await memory.add(.assistant("Hi there!"))
-/// let context = await memory.getContext(for: "greeting", tokenLimit: 1000)
+/// let context = await memory.context(for: "greeting", tokenLimit: 1000)
 /// ```
 ///
 /// ## Thread Safety
 ///
 /// As an actor, `ConversationMemory` is automatically thread-safe.
 /// All operations are serialized through the actor's executor.
-public actor ConversationMemory: AgentMemory {
+public actor ConversationMemory: Memory {
     // MARK: Public
 
     /// Maximum number of messages to retain.
@@ -63,11 +63,11 @@ public actor ConversationMemory: AgentMemory {
         }
     }
 
-    public func getContext(for _: String, tokenLimit: Int) async -> String {
+    public func context(for _: String, tokenLimit: Int) async -> String {
         formatMessagesForContext(messages, tokenLimit: tokenLimit, tokenEstimator: tokenEstimator)
     }
 
-    public func getAllMessages() async -> [MemoryMessage] {
+    public func allMessages() async -> [MemoryMessage] {
         messages
     }
 

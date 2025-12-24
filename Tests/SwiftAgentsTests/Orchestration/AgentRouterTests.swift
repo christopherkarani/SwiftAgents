@@ -17,7 +17,7 @@ final class TestAgent: Agent, @unchecked Sendable {
     let instructions: String
     let configuration: AgentConfiguration
 
-    var memory: (any AgentMemory)? { nil }
+    var memory: (any Memory)? { nil }
     var inferenceProvider: (any InferenceProvider)? { nil }
 
     init(name: String, responsePrefix: String) {

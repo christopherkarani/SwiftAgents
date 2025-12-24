@@ -167,9 +167,12 @@ public actor AgentContext {
 
     /// Gets all stored messages.
     ///
+    /// Returns a snapshot copy of the message history. Modifications to the
+    /// returned array do not affect the context's internal state.
+    ///
     /// - Returns: Array of all messages in chronological order.
     public func getMessages() -> [MemoryMessage] {
-        messages
+        Array(messages)
     }
 
     /// Clears all stored messages.

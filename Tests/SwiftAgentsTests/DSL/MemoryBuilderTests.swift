@@ -103,8 +103,8 @@ struct MemoryBuilderTests {
         await memory.store(message)
 
         // Both should have the message
-        let convMessages = await conv.getAllMessages()
-        let slidingMessages = await sliding.getAllMessages()
+        let convMessages = await conv.allMessages()
+        let slidingMessages = await sliding.allMessages()
 
         #expect(convMessages.count >= 1)
         #expect(slidingMessages.count >= 1)
@@ -235,7 +235,7 @@ struct MemoryBuilderTests {
 
 // MARK: - MockVectorMemory
 
-actor MockVectorMemory: AgentMemory, VectorMemoryConfigurable {
+actor MockVectorMemory: Memory, VectorMemoryConfigurable {
     // MARK: Internal
 
     var count: Int {
@@ -250,12 +250,12 @@ actor MockVectorMemory: AgentMemory, VectorMemoryConfigurable {
         messages.append(message)
     }
 
-    func getContext(for _: String, tokenLimit _: Int) async -> String {
+    func context(for _: String, tokenLimit _: Int) async -> String {
         let recent = Array(messages.suffix(maxResults))
         return recent.map(\.content).joined(separator: "\n")
     }
 
-    func getAllMessages() async -> [MemoryMessage] {
+    func allMessages() async -> [MemoryMessage] {
         messages
     }
 

@@ -31,7 +31,7 @@ public actor ResilientAgent: Agent {
     nonisolated public let instructions: String
     nonisolated public let configuration: AgentConfiguration
 
-    nonisolated public var memory: (any AgentMemory)? { baseMemory }
+    nonisolated public var memory: (any Memory)? { baseMemory }
     nonisolated public var inferenceProvider: (any InferenceProvider)? { baseInferenceProvider }
 
     // MARK: - Initialization
@@ -156,36 +156,32 @@ public actor ResilientAgent: Agent {
                     let fallbackResult = try await fallback.run(input)
                     let duration = ContinuousClock.now - startTime
                     return addResilienceMetadata(to: fallbackResult, duration: duration, usedFallback: true, primaryError: error)
-                } catch {
-                    throw error
+                } catch let fallbackError {
+                    // Fallback run() already returns AgentError due to typed throws
+                    throw fallbackError
                 }
             }
+            // Error from run() is already AgentError due to typed throws
             throw error
         }
     }
 
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
-        Task { @Sendable [weak self] in
-            guard let self else {
-                continuation.finish()
-                return
-            }
+        StreamHelper.makeTrackedStream(for: self) { agent, continuation in
+            continuation.yield(.started(input: input))
             do {
-                continuation.yield(.started(input: input))
-                let result = try await run(input)
+                let result = try await agent.run(input)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
+            } catch let error as AgentError {
+                continuation.yield(.failed(error: error))
+                continuation.finish(throwing: error)
             } catch {
-                if let agentError = error as? AgentError {
-                    continuation.yield(.failed(error: agentError))
-                } else {
-                    continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
-                }
-                continuation.finish()
+                let agentError = AgentError.internalError(reason: error.localizedDescription)
+                continuation.yield(.failed(error: agentError))
+                continuation.finish(throwing: error)
             }
         }
-        return stream
     }
 
     public func cancel() async {
@@ -228,7 +224,7 @@ public actor ResilientAgent: Agent {
 
     // MARK: - Stored Properties (nonisolated)
 
-    nonisolated private let baseMemory: (any AgentMemory)?
+    nonisolated private let baseMemory: (any Memory)?
     nonisolated private let baseInferenceProvider: (any InferenceProvider)?
 
     // MARK: - Resilience Configuration
@@ -247,45 +243,65 @@ public actor ResilientAgent: Agent {
 
     /// Executes the agent with timeout protection.
     private func executeWithTimeout(_ input: String, timeout: Duration) async throws -> AgentResult {
-        try await withThrowingTaskGroup(of: AgentResult.self) { group in
-            group.addTask {
-                try await self.executeWithResilience(input)
-            }
+        do {
+            return try await withThrowingTaskGroup(of: AgentResult.self) { group in
+                group.addTask {
+                    try await self.executeWithResilience(input)
+                }
 
-            group.addTask {
-                try await Task.sleep(for: timeout)
-                throw AgentError.timeout(duration: timeout)
-            }
+                group.addTask {
+                    try await Task.sleep(for: timeout)
+                    throw AgentError.timeout(duration: timeout)
+                }
 
-            guard let result = try await group.next() else {
-                throw AgentError.timeout(duration: timeout)
-            }
+                guard let result = try await group.next() else {
+                    throw AgentError.timeout(duration: timeout)
+                }
 
-            group.cancelAll()
-            return result
+                group.cancelAll()
+                return result
+            }
+        } catch let error as AgentError {
+            throw error
+        } catch {
+            throw AgentError.internalError(reason: error.localizedDescription)
         }
     }
 
     /// Executes the agent with retry and circuit breaker protection.
     private func executeWithResilience(_ input: String) async throws -> AgentResult {
-        // Wrap execution in circuit breaker if configured
-        if let breaker = circuitBreaker {
-            try await breaker.execute {
-                try await self.executeWithRetry(input)
+        do {
+            // Wrap execution in circuit breaker if configured
+            if let breaker = circuitBreaker {
+                return try await breaker.execute {
+                    try await self.executeWithRetry(input)
+                }
+            } else {
+                return try await executeWithRetry(input)
             }
-        } else {
-            try await executeWithRetry(input)
+        } catch let error as AgentError {
+            throw error
+        } catch {
+            // Convert non-AgentError to AgentError
+            throw AgentError.internalError(reason: error.localizedDescription)
         }
     }
 
     /// Executes the agent with retry protection.
     private func executeWithRetry(_ input: String) async throws -> AgentResult {
-        if let policy = retryPolicy {
-            try await policy.execute {
-                try await self.base.run(input)
+        do {
+            if let policy = retryPolicy {
+                return try await policy.execute {
+                    try await self.base.run(input)
+                }
+            } else {
+                return try await base.run(input)
             }
-        } else {
-            try await base.run(input)
+        } catch let error as AgentError {
+            throw error
+        } catch {
+            // Convert non-AgentError to AgentError
+            throw AgentError.internalError(reason: error.localizedDescription)
         }
     }
 

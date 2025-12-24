@@ -62,7 +62,7 @@ struct ConversationMemoryTests {
         await memory.add(.assistant("Second"))
         await memory.add(.user("Third"))
 
-        let messages = await memory.getAllMessages()
+        let messages = await memory.allMessages()
 
         #expect(messages[0].content == "First")
         #expect(messages[1].content == "Second")
@@ -80,7 +80,7 @@ struct ConversationMemoryTests {
         await memory.add(.user("3"))
         await memory.add(.user("4")) // Should remove "1"
 
-        let messages = await memory.getAllMessages()
+        let messages = await memory.allMessages()
 
         #expect(messages.count == 3)
         #expect(messages[0].content == "2")
@@ -107,7 +107,7 @@ struct ConversationMemoryTests {
         await memory.add(.user("Hello"))
         await memory.add(.assistant("Hi there"))
 
-        let context = await memory.getContext(for: "test", tokenLimit: 1000)
+        let context = await memory.context(for: "test", tokenLimit: 1000)
 
         #expect(context.contains("[user]: Hello"))
         #expect(context.contains("[assistant]: Hi there"))
@@ -123,7 +123,7 @@ struct ConversationMemoryTests {
         }
 
         // Request very small token limit
-        let context = await memory.getContext(for: "test", tokenLimit: 50)
+        let context = await memory.context(for: "test", tokenLimit: 50)
 
         // Should only include a few messages
         let lines = context.split(separator: "\n\n")

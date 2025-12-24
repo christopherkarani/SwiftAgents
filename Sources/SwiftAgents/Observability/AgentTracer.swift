@@ -6,11 +6,11 @@
 
 import Foundation
 
-// MARK: - AgentTracer
+// MARK: - Tracer
 
 /// Protocol defining the contract for tracing agent execution events.
 ///
-/// `AgentTracer` is the core abstraction for observability in SwiftAgents.
+/// `Tracer` is the core abstraction for observability in SwiftAgents.
 /// Implementations can log to console, send to telemetry systems, or store events for analysis.
 ///
 /// ## Conformance Requirements
@@ -22,7 +22,7 @@ import Foundation
 /// ## Example Implementation
 ///
 /// ```swift
-/// public actor CustomTracer: AgentTracer {
+/// public actor CustomTracer: Tracer {
 ///     private var events: [TraceEvent] = []
 ///
 ///     public func trace(_ event: TraceEvent) async {
@@ -40,14 +40,14 @@ import Foundation
 /// ## Usage Example
 ///
 /// ```swift
-/// let tracer: AgentTracer = ConsoleTracer(minimumLevel: .info)
+/// let tracer: Tracer = ConsoleTracer(minimumLevel: .info)
 ///
 /// await tracer.trace(.agentStart(
 ///     traceId: traceId,
 ///     agentName: "MyAgent"
 /// ))
 /// ```
-public protocol AgentTracer: Actor, Sendable {
+public protocol Tracer: Actor, Sendable {
     /// Traces an event.
     ///
     /// Implementations should handle the event appropriately based on their purpose
@@ -63,9 +63,15 @@ public protocol AgentTracer: Actor, Sendable {
     func flush() async
 }
 
+// MARK: - Deprecated Typealias
+
+/// Deprecated: Use `Tracer` instead.
+@available(*, deprecated, renamed: "Tracer", message: "AgentTracer has been renamed to Tracer")
+public typealias AgentTracer = Tracer
+
 // MARK: - Default Implementation
 
-public extension AgentTracer {
+public extension Tracer {
     /// Default flush implementation that does nothing.
     ///
     /// Override this method in your tracer if you need to flush buffered events.
@@ -93,12 +99,12 @@ public extension AgentTracer {
 /// let tracer = CompositeTracer(
 ///     tracers: [consoleTracer, fileTracer, telemetryTracer],
 ///     minimumLevel: .info,
-///     parallel: true
+///     shouldExecuteInParallel: true
 /// )
 ///
 /// await tracer.trace(event) // Forwards to all three tracers in parallel
 /// ```
-public actor CompositeTracer: AgentTracer {
+public actor CompositeTracer: Tracer {
     // MARK: Public
 
     /// Creates a composite tracer.
@@ -106,22 +112,32 @@ public actor CompositeTracer: AgentTracer {
     /// - Parameters:
     ///   - tracers: The child tracers to forward events to.
     ///   - minimumLevel: Minimum event level to forward. Default: `.trace` (all events).
-    ///   - parallel: Whether to forward events in parallel. Default: `true`.
+    ///   - shouldExecuteInParallel: Whether to forward events in parallel. Default: `true`.
     public init(
-        tracers: [any AgentTracer],
+        tracers: [any Tracer],
         minimumLevel: EventLevel = .trace,
-        parallel: Bool = true
+        shouldExecuteInParallel: Bool = true
     ) {
         self.tracers = tracers
         self.minimumLevel = minimumLevel
-        self.parallel = parallel
+        self.shouldExecuteInParallel = shouldExecuteInParallel
+    }
+
+    /// Creates a composite tracer.
+    ///
+    /// - Parameters:
+    ///   - tracers: The child tracers to forward events to.
+    ///   - parallel: Whether to forward events in parallel.
+    @available(*, deprecated, message: "Use shouldExecuteInParallel instead of parallel")
+    public init(tracers: [any Tracer], parallel: Bool) {
+        self.init(tracers: tracers, minimumLevel: .trace, shouldExecuteInParallel: parallel)
     }
 
     public func trace(_ event: TraceEvent) async {
         // Filter events below minimum level
         guard event.level >= minimumLevel else { return }
 
-        if parallel {
+        if shouldExecuteInParallel {
             // Forward to all tracers in parallel using TaskGroup
             await withTaskGroup(of: Void.self) { group in
                 for tracer in tracers {
@@ -139,7 +155,7 @@ public actor CompositeTracer: AgentTracer {
     }
 
     public func flush() async {
-        if parallel {
+        if shouldExecuteInParallel {
             // Flush all tracers in parallel
             await withTaskGroup(of: Void.self) { group in
                 for tracer in tracers {
@@ -159,13 +175,13 @@ public actor CompositeTracer: AgentTracer {
     // MARK: Private
 
     /// The child tracers to forward events to.
-    private let tracers: [any AgentTracer]
+    private let tracers: [any Tracer]
 
     /// The minimum event level to forward. Events below this level are discarded.
     private let minimumLevel: EventLevel
 
     /// Whether to forward events in parallel (true) or sequentially (false).
-    private let parallel: Bool
+    private let shouldExecuteInParallel: Bool
 }
 
 // MARK: - NoOpTracer
@@ -180,10 +196,10 @@ public actor CompositeTracer: AgentTracer {
 /// ## Example
 ///
 /// ```swift
-/// let tracer: AgentTracer = NoOpTracer()
+/// let tracer: Tracer = NoOpTracer()
 /// await tracer.trace(event) // Event is discarded
 /// ```
-public actor NoOpTracer: AgentTracer {
+public actor NoOpTracer: Tracer {
     /// Creates a no-op tracer.
     public init() {}
 
@@ -230,7 +246,7 @@ public actor NoOpTracer: AgentTracer {
 /// // Manually flush if needed
 /// await buffered.flush()
 /// ```
-public actor BufferedTracer: AgentTracer {
+public actor BufferedTracer: Tracer {
     // MARK: Public
 
     /// Creates a buffered tracer.
@@ -240,7 +256,7 @@ public actor BufferedTracer: AgentTracer {
     ///   - maxBufferSize: Maximum events to buffer before auto-flush. Default: `100`.
     ///   - flushInterval: Time between automatic flushes. Default: `5 seconds`.
     public init(
-        destination: any AgentTracer,
+        destination: any Tracer,
         maxBufferSize: Int = 100,
         flushInterval: Duration = .seconds(5)
     ) {
@@ -254,8 +270,10 @@ public actor BufferedTracer: AgentTracer {
     /// Starts the periodic flush task. Call this after initialization.
     public func start() {
         guard flushTask == nil else { return }
-        flushTask = Task { [weak self] in
-            await self?.periodicFlush()
+        // Note: Actors don't need [weak self] - the Task is cancelled in deinit
+        // and actor isolation guarantees safe access
+        flushTask = Task {
+            await periodicFlush()
         }
     }
 
@@ -304,7 +322,7 @@ public actor BufferedTracer: AgentTracer {
     private let flushInterval: Duration
 
     /// The destination tracer to forward events to.
-    private let destination: any AgentTracer
+    private let destination: any Tracer
 
     /// The task that handles periodic flushing.
     private var flushTask: Task<Void, Never>?
@@ -319,9 +337,12 @@ public actor BufferedTracer: AgentTracer {
             do {
                 try await Task.sleep(for: flushInterval)
             } catch {
-                // Task was cancelled
+                // Task was cancelled during sleep
                 break
             }
+
+            // Check cancellation before performing potentially expensive flush
+            guard !Task.isCancelled else { break }
 
             // Check if enough time has passed since last flush
             let now = ContinuousClock.now
@@ -336,7 +357,7 @@ public actor BufferedTracer: AgentTracer {
 
 // MARK: - Convenience Extensions
 
-public extension AgentTracer {
+public extension Tracer {
     /// Traces multiple events sequentially.
     ///
     /// - Parameter events: The events to trace.
@@ -347,19 +368,19 @@ public extension AgentTracer {
     }
 }
 
-// MARK: - AnyAgentTracer
+// MARK: - AnyTracer
 
-/// Type-erased wrapper for `AgentTracer` protocol.
+/// Type-erased wrapper for `Tracer` protocol.
 ///
 /// This allows storing heterogeneous tracers in collections while maintaining
 /// the actor-based interface.
-public actor AnyAgentTracer: AgentTracer {
+public actor AnyTracer: Tracer {
     // MARK: Public
 
     /// Creates a type-erased tracer.
     ///
     /// - Parameter tracer: The tracer to wrap.
-    public init(_ tracer: some AgentTracer) {
+    public init(_ tracer: some Tracer) {
         _trace = { event in
             await tracer.trace(event)
         }
@@ -381,3 +402,7 @@ public actor AnyAgentTracer: AgentTracer {
     private let _trace: @Sendable (TraceEvent) async -> Void
     private let _flush: @Sendable () async -> Void
 }
+
+/// Deprecated: Use `AnyTracer` instead.
+@available(*, deprecated, renamed: "AnyTracer", message: "AnyAgentTracer has been renamed to AnyTracer")
+public typealias AnyAgentTracer = AnyTracer

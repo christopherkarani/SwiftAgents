@@ -1,7 +1,7 @@
 // TracerTests.swift
 // SwiftAgents Framework
 //
-// Core tests for tracer types from AgentTracer.swift
+// Core tests for tracer types from Tracer protocol
 // Additional test suites are in extension files:
 // - TracerTests+Buffered.swift
 // - TracerTests+NoOp.swift
@@ -17,7 +17,7 @@ import Testing
 
 /// Spy tracer that records all traced events for verification.
 /// This is shared across all test files via internal access.
-actor SpyTracer: AgentTracer {
+actor SpyTracer: Tracer {
     private(set) var tracedEvents: [TraceEvent] = []
     private(set) var flushCallCount: Int = 0
     private(set) var traceCallCount: Int = 0
@@ -64,7 +64,7 @@ struct CompositeTracerTests {
         let composite = CompositeTracer(
             tracers: [spy1, spy2, spy3],
             minimumLevel: .info,
-            parallel: true
+            shouldExecuteInParallel: true
         )
 
         // Then - composite created successfully
@@ -161,7 +161,7 @@ struct CompositeTracerTests {
         let spy3 = SpyTracer()
         let composite = CompositeTracer(
             tracers: [spy1, spy2, spy3],
-            parallel: true
+            shouldExecuteInParallel: true
         )
 
         let traceId = UUID()
@@ -194,7 +194,7 @@ struct CompositeTracerTests {
         let spy2 = SpyTracer()
         let composite = CompositeTracer(
             tracers: [spy1, spy2],
-            parallel: false // Sequential
+            shouldExecuteInParallel: false // Sequential
         )
 
         let traceId = UUID()
@@ -222,7 +222,7 @@ struct CompositeTracerTests {
         let spy3 = SpyTracer()
         let composite = CompositeTracer(
             tracers: [spy1, spy2, spy3],
-            parallel: true
+            shouldExecuteInParallel: true
         )
 
         // When
@@ -245,7 +245,7 @@ struct CompositeTracerTests {
         let spy2 = SpyTracer()
         let composite = CompositeTracer(
             tracers: [spy1, spy2],
-            parallel: false // Sequential
+            shouldExecuteInParallel: false // Sequential
         )
 
         // When

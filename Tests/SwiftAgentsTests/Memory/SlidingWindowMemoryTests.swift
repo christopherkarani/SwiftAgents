@@ -107,7 +107,7 @@ struct SlidingWindowMemoryTests {
         await memory.add(.user("Hello"))
         await memory.add(.assistant("Hi there"))
 
-        let context = await memory.getContext(for: "test", tokenLimit: 500)
+        let context = await memory.context(for: "test", tokenLimit: 500)
 
         #expect(context.contains("[user]: Hello"))
         #expect(context.contains("[assistant]: Hi there"))
@@ -120,7 +120,7 @@ struct SlidingWindowMemoryTests {
         await memory.add(.user("Hello"))
 
         // Request more tokens than maxTokens
-        let context = await memory.getContext(for: "test", tokenLimit: 1000)
+        let context = await memory.context(for: "test", tokenLimit: 1000)
 
         // Should be capped to maxTokens
         #expect(!context.isEmpty)

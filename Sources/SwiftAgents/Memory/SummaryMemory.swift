@@ -33,7 +33,7 @@ import Foundation
 /// await memory.add(.user("Hello"))
 /// // When messages exceed 50, older ones are summarized
 /// ```
-public actor SummaryMemory: AgentMemory {
+public actor SummaryMemory: Memory {
     // MARK: Public
 
     /// Configuration for summary memory behavior.
@@ -126,7 +126,7 @@ public actor SummaryMemory: AgentMemory {
         }
     }
 
-    public func getContext(for _: String, tokenLimit: Int) async -> String {
+    public func context(for _: String, tokenLimit: Int) async -> String {
         var components: [String] = []
         var remainingTokens = tokenLimit
 
@@ -155,7 +155,7 @@ public actor SummaryMemory: AgentMemory {
         return components.joined(separator: "\n\n")
     }
 
-    public func getAllMessages() async -> [MemoryMessage] {
+    public func allMessages() async -> [MemoryMessage] {
         recentMessages
     }
 

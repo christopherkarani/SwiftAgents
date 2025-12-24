@@ -29,7 +29,7 @@ import Foundation
 /// let backend = PostgreSQLBackend(connectionString: "...")
 /// let memory = PersistentMemory(backend: backend)
 /// ```
-public actor PersistentMemory: AgentMemory {
+public actor PersistentMemory: Memory {
     // MARK: Public
 
     /// The conversation ID for this memory instance.
@@ -95,8 +95,8 @@ public actor PersistentMemory: AgentMemory {
         }
     }
 
-    public func getContext(for _: String, tokenLimit: Int) async -> String {
-        let messages = await getAllMessages()
+    public func context(for _: String, tokenLimit: Int) async -> String {
+        let messages = await allMessages()
         return formatMessagesForContext(
             messages,
             tokenLimit: tokenLimit,
@@ -104,7 +104,7 @@ public actor PersistentMemory: AgentMemory {
         )
     }
 
-    public func getAllMessages() async -> [MemoryMessage] {
+    public func allMessages() async -> [MemoryMessage] {
         do {
             return try await backend.fetchMessages(conversationId: conversationId)
         } catch {

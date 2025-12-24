@@ -33,10 +33,13 @@ public protocol Agent: Sendable {
     nonisolated var configuration: AgentConfiguration { get }
 
     /// Optional memory system for context management.
-    nonisolated var memory: (any AgentMemory)? { get }
+    nonisolated var memory: (any Memory)? { get }
 
     /// Optional custom inference provider.
     nonisolated var inferenceProvider: (any InferenceProvider)? { get }
+
+    /// Optional tracer for observability.
+    nonisolated var tracer: (any Tracer)? { get }
 
     /// Executes the agent with the given input and returns a result.
     /// - Parameter input: The user's input/query.
@@ -47,7 +50,7 @@ public protocol Agent: Sendable {
     /// Streams the agent's execution, yielding events as they occur.
     /// - Parameter input: The user's input/query.
     /// - Returns: An async stream of agent events.
-    func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error>
+    nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error>
 
     /// Cancels any ongoing execution.
     func cancel() async
@@ -57,10 +60,13 @@ public protocol Agent: Sendable {
 
 public extension Agent {
     /// Default memory implementation (none).
-    var memory: (any AgentMemory)? { nil }
+    nonisolated var memory: (any Memory)? { nil }
 
     /// Default inference provider (none, uses Foundation Models).
-    var inferenceProvider: (any InferenceProvider)? { nil }
+    nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+
+    /// Default tracer implementation (none).
+    nonisolated var tracer: (any Tracer)? { nil }
 }
 
 // MARK: - InferenceProvider
@@ -116,6 +122,7 @@ public protocol InferenceProvider: Sendable {
 ///     .maxTokens(2000)
 ///     .stopSequences("END", "STOP")
 /// ```
+@Builder
 public struct InferenceOptions: Sendable, Equatable {
     /// Default inference options.
     public static let `default` = InferenceOptions()
@@ -200,39 +207,12 @@ public struct InferenceOptions: Sendable, Equatable {
         self.frequencyPenalty = frequencyPenalty
     }
 
-    // MARK: - Fluent Builder Methods
+    // MARK: - Special Builder Methods
 
-    /// Sets the temperature for generation.
-    /// - Parameter value: The temperature (0.0-2.0). Values are clamped to valid range.
-    /// - Returns: A modified options instance.
-    public func temperature(_ value: Double) -> InferenceOptions {
-        var copy = self
-        copy.temperature = max(0.0, min(2.0, value))
-        return copy
-    }
-
-    /// Sets the maximum tokens to generate.
-    /// - Parameter value: The maximum token count, or nil for model default.
-    /// - Returns: A modified options instance.
-    public func maxTokens(_ value: Int?) -> InferenceOptions {
-        var copy = self
-        copy.maxTokens = value.flatMap { $0 > 0 ? $0 : nil }
-        return copy
-    }
-
-    /// Sets the stop sequences.
+    /// Sets the stop sequences from variadic arguments.
     /// - Parameter sequences: Sequences that stop generation.
     /// - Returns: A modified options instance.
     public func stopSequences(_ sequences: String...) -> InferenceOptions {
-        var copy = self
-        copy.stopSequences = sequences
-        return copy
-    }
-
-    /// Sets the stop sequences from an array.
-    /// - Parameter sequences: Sequences that stop generation.
-    /// - Returns: A modified options instance.
-    public func stopSequences(_ sequences: [String]) -> InferenceOptions {
         var copy = self
         copy.stopSequences = sequences
         return copy
@@ -252,42 +232,6 @@ public struct InferenceOptions: Sendable, Equatable {
     public func clearStopSequences() -> InferenceOptions {
         var copy = self
         copy.stopSequences = []
-        return copy
-    }
-
-    /// Sets the top-p (nucleus) sampling parameter.
-    /// - Parameter value: The top-p value (0.0-1.0).
-    /// - Returns: A modified options instance.
-    public func topP(_ value: Double?) -> InferenceOptions {
-        var copy = self
-        copy.topP = value.map { max(0.0, min(1.0, $0)) }
-        return copy
-    }
-
-    /// Sets the top-k sampling parameter.
-    /// - Parameter value: The top-k value.
-    /// - Returns: A modified options instance.
-    public func topK(_ value: Int?) -> InferenceOptions {
-        var copy = self
-        copy.topK = value.flatMap { $0 > 0 ? $0 : nil }
-        return copy
-    }
-
-    /// Sets the presence penalty.
-    /// - Parameter value: The presence penalty (-2.0 to 2.0).
-    /// - Returns: A modified options instance.
-    public func presencePenalty(_ value: Double?) -> InferenceOptions {
-        var copy = self
-        copy.presencePenalty = value.map { max(-2.0, min(2.0, $0)) }
-        return copy
-    }
-
-    /// Sets the frequency penalty.
-    /// - Parameter value: The frequency penalty (-2.0 to 2.0).
-    /// - Returns: A modified options instance.
-    public func frequencyPenalty(_ value: Double?) -> InferenceOptions {
-        var copy = self
-        copy.frequencyPenalty = value.map { max(-2.0, min(2.0, $0)) }
         return copy
     }
 
@@ -324,18 +268,45 @@ public struct InferenceResponse: Sendable, Equatable {
 
     /// A parsed tool call from the model's response.
     public struct ParsedToolCall: Sendable, Equatable {
+        /// Unique identifier for this tool call (required for multi-turn tool conversations).
+        public let id: String?
+
         /// The name of the tool to call.
         public let name: String
+
         /// The arguments for the tool.
         public let arguments: [String: SendableValue]
 
         /// Creates a parsed tool call.
         /// - Parameters:
+        ///   - id: Unique identifier for the tool call. Default: nil
         ///   - name: The tool name.
         ///   - arguments: The tool arguments.
-        public init(name: String, arguments: [String: SendableValue]) {
+        public init(id: String? = nil, name: String, arguments: [String: SendableValue]) {
+            self.id = id
             self.name = name
             self.arguments = arguments
+        }
+    }
+
+    /// Token usage statistics from inference.
+    public struct TokenUsage: Sendable, Equatable {
+        /// Number of tokens in the input/prompt.
+        public let inputTokens: Int
+
+        /// Number of tokens in the output/response.
+        public let outputTokens: Int
+
+        /// Total tokens used.
+        public var totalTokens: Int { inputTokens + outputTokens }
+
+        /// Creates token usage statistics.
+        /// - Parameters:
+        ///   - inputTokens: Number of tokens in the input/prompt.
+        ///   - outputTokens: Number of tokens in the output/response.
+        public init(inputTokens: Int, outputTokens: Int) {
+            self.inputTokens = inputTokens
+            self.outputTokens = outputTokens
         }
     }
 
@@ -348,6 +319,9 @@ public struct InferenceResponse: Sendable, Equatable {
     /// The reason generation finished.
     public let finishReason: FinishReason
 
+    /// Token usage statistics, if available.
+    public let usage: TokenUsage?
+
     /// Whether this response includes tool calls.
     public var hasToolCalls: Bool {
         !toolCalls.isEmpty
@@ -358,13 +332,16 @@ public struct InferenceResponse: Sendable, Equatable {
     ///   - content: Text content. Default: nil
     ///   - toolCalls: Tool calls. Default: []
     ///   - finishReason: Finish reason. Default: .completed
+    ///   - usage: Token usage statistics. Default: nil
     public init(
         content: String? = nil,
         toolCalls: [ParsedToolCall] = [],
-        finishReason: FinishReason = .completed
+        finishReason: FinishReason = .completed,
+        usage: TokenUsage? = nil
     ) {
         self.content = content
         self.toolCalls = toolCalls
         self.finishReason = finishReason
+        self.usage = usage
     }
 }

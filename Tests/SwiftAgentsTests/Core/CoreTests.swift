@@ -401,13 +401,16 @@ struct AgentErrorTests {
 
     @Test("guardrailViolation error")
     func guardrailViolationError() {
-        let error = AgentError.guardrailViolation
+        let error = AgentError.guardrailViolation(reason: "harmful content detected")
 
         #expect(error.localizedDescription.contains("violated content guidelines"))
+        #expect(error.localizedDescription.contains("harmful content detected"))
 
-        // Test equatability (no associated value)
-        let error2 = AgentError.guardrailViolation
+        // Test equatability
+        let error2 = AgentError.guardrailViolation(reason: "harmful content detected")
+        let error3 = AgentError.guardrailViolation(reason: "different reason")
         #expect(error == error2)
+        #expect(error != error3)
     }
 
     @Test("unsupportedLanguage error")
@@ -464,9 +467,14 @@ struct AgentErrorTests {
             .invalidToolArguments(toolName: "test", reason: "reason"),
             .inferenceProviderUnavailable(reason: "test"),
             .contextWindowExceeded(tokenCount: 1000, limit: 500),
-            .guardrailViolation,
+            .guardrailViolation(reason: "test"),
+            .contentFiltered(reason: "test"),
             .unsupportedLanguage(language: "test"),
             .generationFailed(reason: "test"),
+            .modelNotAvailable(model: "test-model"),
+            .rateLimitExceeded(retryAfter: 60.0),
+            .rateLimitExceeded(retryAfter: nil),
+            .embeddingFailed(reason: "test"),
             .internalError(reason: "test")
         ]
 
@@ -479,7 +487,7 @@ struct AgentErrorTests {
     @Test("Different error cases are not equal")
     func differentErrorCasesNotEqual() {
         let error1 = AgentError.cancelled
-        let error2 = AgentError.guardrailViolation
+        let error2 = AgentError.guardrailViolation(reason: "test")
         let error3 = AgentError.invalidInput(reason: "test")
         let error4 = AgentError.toolNotFound(name: "test")
 
@@ -489,6 +497,75 @@ struct AgentErrorTests {
         #expect(error2 != error3)
         #expect(error2 != error4)
         #expect(error3 != error4)
+    }
+
+    @Test("contentFiltered error")
+    func contentFilteredError() {
+        let error = AgentError.contentFiltered(reason: "explicit content")
+
+        #expect(error.localizedDescription.contains("Content filtered"))
+        #expect(error.localizedDescription.contains("explicit content"))
+
+        // Test equatability
+        let error2 = AgentError.contentFiltered(reason: "explicit content")
+        let error3 = AgentError.contentFiltered(reason: "different reason")
+        #expect(error == error2)
+        #expect(error != error3)
+    }
+
+    @Test("rateLimitExceeded error with retry after")
+    func rateLimitExceededWithRetryError() {
+        let error = AgentError.rateLimitExceeded(retryAfter: 30.0)
+
+        #expect(error.localizedDescription.contains("Rate limit exceeded"))
+        #expect(error.localizedDescription.contains("30"))
+
+        // Test equatability
+        let error2 = AgentError.rateLimitExceeded(retryAfter: 30.0)
+        let error3 = AgentError.rateLimitExceeded(retryAfter: 60.0)
+        #expect(error == error2)
+        #expect(error != error3)
+    }
+
+    @Test("rateLimitExceeded error without retry after")
+    func rateLimitExceededWithoutRetryError() {
+        let error = AgentError.rateLimitExceeded(retryAfter: nil)
+
+        #expect(error.localizedDescription.contains("Rate limit exceeded"))
+
+        // Test equatability
+        let error2 = AgentError.rateLimitExceeded(retryAfter: nil)
+        let error3 = AgentError.rateLimitExceeded(retryAfter: 30.0)
+        #expect(error == error2)
+        #expect(error != error3)
+    }
+
+    @Test("modelNotAvailable error")
+    func modelNotAvailableError() {
+        let error = AgentError.modelNotAvailable(model: "gpt-5-turbo")
+
+        #expect(error.localizedDescription.contains("Model not available"))
+        #expect(error.localizedDescription.contains("gpt-5-turbo"))
+
+        // Test equatability
+        let error2 = AgentError.modelNotAvailable(model: "gpt-5-turbo")
+        let error3 = AgentError.modelNotAvailable(model: "claude-4")
+        #expect(error == error2)
+        #expect(error != error3)
+    }
+
+    @Test("embeddingFailed error")
+    func embeddingFailedError() {
+        let error = AgentError.embeddingFailed(reason: "invalid vector dimensions")
+
+        #expect(error.localizedDescription.contains("Embedding failed"))
+        #expect(error.localizedDescription.contains("invalid vector dimensions"))
+
+        // Test equatability
+        let error2 = AgentError.embeddingFailed(reason: "invalid vector dimensions")
+        let error3 = AgentError.embeddingFailed(reason: "service unavailable")
+        #expect(error == error2)
+        #expect(error != error3)
     }
 }
 

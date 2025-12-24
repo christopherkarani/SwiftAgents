@@ -20,7 +20,7 @@ actor MockSupervisorTestAgent: Agent {
     private(set) var runCallCount = 0
     private(set) var lastInput: String?
 
-    nonisolated var memory: (any AgentMemory)? { nil }
+    nonisolated var memory: (any Memory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
     init(name: String, responsePrefix: String = "Response from", instructions: String = "") {
@@ -475,7 +475,7 @@ struct SupervisorAgentFallbackTests {
             nonisolated let tools: [any Tool] = []
             nonisolated let instructions: String = "Error agent"
             nonisolated let configuration: AgentConfiguration = .default
-            nonisolated var memory: (any AgentMemory)? { nil }
+            nonisolated var memory: (any Memory)? { nil }
             nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
             func run(_: String) async throws -> AgentResult {
@@ -563,7 +563,7 @@ struct SupervisorAgentToolCallTests {
             nonisolated let tools: [any Tool] = []
             nonisolated let instructions: String = "Tool agent"
             nonisolated let configuration: AgentConfiguration = .default
-            nonisolated var memory: (any AgentMemory)? { nil }
+            nonisolated var memory: (any Memory)? { nil }
             nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
             func run(_: String) async throws -> AgentResult {

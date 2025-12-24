@@ -59,8 +59,8 @@ public struct MemoryBuilder {
         components.flatMap(\.self)
     }
 
-    /// Converts a single AgentMemory to a MemoryComponent array.
-    public static func buildExpression(_ expression: any AgentMemory) -> [MemoryComponent] {
+    /// Converts a single Memory to a MemoryComponent array.
+    public static func buildExpression(_ expression: any Memory) -> [MemoryComponent] {
         [MemoryComponent(memory: expression)]
     }
 
@@ -80,7 +80,7 @@ public struct MemoryBuilder {
 /// A wrapper for a memory with optional configuration.
 public struct MemoryComponent: Sendable {
     /// The wrapped memory instance.
-    public let memory: any AgentMemory
+    public let memory: any Memory
 
     /// Priority level for this memory (higher priority checked first).
     public let priority: MemoryPriority
@@ -95,7 +95,7 @@ public struct MemoryComponent: Sendable {
     ///   - priority: Priority level (default: normal).
     ///   - identifier: Optional identifier for debugging.
     public init(
-        memory: any AgentMemory,
+        memory: any Memory,
         priority: MemoryPriority = .normal,
         identifier: String? = nil
     ) {
@@ -188,9 +188,9 @@ public enum MemoryMergeStrategy: Sendable {
 /// .withMergeStrategy(.interleave)
 ///
 /// await memory.add(.user("Hello"))
-/// let context = await memory.getContext(for: "greeting", tokenLimit: 2000)
+/// let context = await memory.context(for: "greeting", tokenLimit: 2000)
 /// ```
-public actor CompositeMemory: AgentMemory {
+public actor CompositeMemory: Memory {
     // MARK: Public
 
     /// Number of memory components.
@@ -282,16 +282,16 @@ public actor CompositeMemory: AgentMemory {
         }
     }
 
-    public func getContext(for query: String, tokenLimit: Int) async -> String {
+    public func context(for query: String, tokenLimit: Int) async -> String {
         let messages = await retrieveMessages(for: query, limit: tokenLimit)
         return formatMessagesForContext(messages, tokenLimit: tokenLimit, tokenEstimator: tokenEstimator)
     }
 
-    public func getAllMessages() async -> [MemoryMessage] {
+    public func allMessages() async -> [MemoryMessage] {
         var allMessages: [[MemoryMessage]] = []
 
         for component in components {
-            let messages = await component.memory.getAllMessages()
+            let messages = await component.memory.allMessages()
             allMessages.append(messages)
         }
 
@@ -320,7 +320,7 @@ public actor CompositeMemory: AgentMemory {
     /// - Parameter limit: Maximum number of messages to retrieve.
     /// - Returns: Array of messages.
     public func retrieve(limit: Int) async -> [MemoryMessage] {
-        let allMessages = await getAllMessages()
+        let allMessages = await allMessages()
         return Array(allMessages.suffix(limit))
     }
 
@@ -329,7 +329,7 @@ public actor CompositeMemory: AgentMemory {
     /// - Parameter maxTokens: Maximum tokens for the context.
     /// - Returns: Formatted context string.
     public func buildContext(maxTokens: Int) async -> String {
-        await getContext(for: "", tokenLimit: maxTokens)
+        await context(for: "", tokenLimit: maxTokens)
     }
 
     // MARK: Internal
@@ -368,7 +368,7 @@ public actor CompositeMemory: AgentMemory {
         var allMessages: [[MemoryMessage]] = []
 
         for component in components {
-            let messages = await component.memory.getAllMessages()
+            let messages = await component.memory.allMessages()
             allMessages.append(messages)
         }
 
@@ -509,7 +509,7 @@ public extension SlidingWindowMemory {
 // MARK: - VectorMemoryConfigurable
 
 /// Protocol for vector memory configuration.
-public protocol VectorMemoryConfigurable: AgentMemory {
+public protocol VectorMemoryConfigurable: Memory {
     /// Sets the similarity threshold for vector search.
     func withSimilarityThreshold(_ threshold: Double) -> MemoryComponent
 

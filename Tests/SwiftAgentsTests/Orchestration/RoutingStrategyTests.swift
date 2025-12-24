@@ -281,18 +281,18 @@ struct KeywordRoutingStrategyTests {
     func defaultInitialization() {
         let strategy = KeywordRoutingStrategy()
 
-        #expect(strategy.caseSensitive == false)
+        #expect(strategy.isCaseSensitive == false)
         #expect(strategy.minimumConfidence == 0.1)
     }
 
     @Test("Custom initialization")
     func customInitialization() {
         let strategy = KeywordRoutingStrategy(
-            caseSensitive: true,
+            isCaseSensitive: true,
             minimumConfidence: 0.5
         )
 
-        #expect(strategy.caseSensitive == true)
+        #expect(strategy.isCaseSensitive == true)
         #expect(strategy.minimumConfidence == 0.5)
     }
 
@@ -364,7 +364,7 @@ struct KeywordRoutingStrategyTests {
 
     @Test("Case insensitive matching by default")
     func caseInsensitiveMatching() async throws {
-        let strategy = KeywordRoutingStrategy(caseSensitive: false)
+        let strategy = KeywordRoutingStrategy(isCaseSensitive: false)
         let agents = createTestAgents()
 
         // Keywords are lowercase, but input is uppercase
@@ -379,7 +379,7 @@ struct KeywordRoutingStrategyTests {
 
     @Test("Case sensitive matching when enabled")
     func caseSensitiveMatching() async throws {
-        let strategy = KeywordRoutingStrategy(caseSensitive: true)
+        let strategy = KeywordRoutingStrategy(isCaseSensitive: true)
         let agents = [
             AgentDescription(
                 name: "agent1",

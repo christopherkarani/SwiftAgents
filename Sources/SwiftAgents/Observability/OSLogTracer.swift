@@ -48,7 +48,7 @@
     /// - `toolCall` → `toolResult/toolError`
     ///
     /// These intervals are visible in Instruments' "os_signpost" instrument.
-    public actor OSLogTracer: AgentTracer {
+    public actor OSLogTracer: Tracer {
         // MARK: Public
 
         // MARK: - Initialization
@@ -276,6 +276,7 @@
         /// A builder for configuring `OSLogTracer` instances.
         ///
         /// Provides a fluent API for creating tracers with custom configurations.
+        /// Uses value semantics (struct) for Swift 6 concurrency safety.
         ///
         /// ## Example
         ///
@@ -286,7 +287,7 @@
         ///     .emitSignposts(true)
         ///     .build()
         /// ```
-        final class Builder: @unchecked Sendable {
+        struct Builder: Sendable {
             // MARK: Public
 
             /// Creates a new builder with the required subsystem.
@@ -294,39 +295,39 @@
             /// - Parameter subsystem: The subsystem identifier (e.g., "com.example.app").
             public init(subsystem: String) {
                 self.subsystem = subsystem
-                category = "agent"
-                minimumLevel = .debug
-                emitSignposts = true
+                self.category = "agent"
+                self.minimumLevel = .debug
+                self.emitSignposts = true
             }
 
             /// Sets the category within the subsystem.
             ///
             /// - Parameter category: The category name.
-            /// - Returns: The builder for chaining.
-            @discardableResult
+            /// - Returns: A new builder with the updated category.
             public func category(_ category: String) -> Builder {
-                self.category = category
-                return self
+                var copy = self
+                copy.category = category
+                return copy
             }
 
             /// Sets the minimum event level to log.
             ///
             /// - Parameter level: The minimum event level.
-            /// - Returns: The builder for chaining.
-            @discardableResult
+            /// - Returns: A new builder with the updated level.
             public func minimumLevel(_ level: EventLevel) -> Builder {
-                minimumLevel = level
-                return self
+                var copy = self
+                copy.minimumLevel = level
+                return copy
             }
 
             /// Sets whether to emit signpost intervals.
             ///
             /// - Parameter emit: Whether to emit signposts.
-            /// - Returns: The builder for chaining.
-            @discardableResult
+            /// - Returns: A new builder with the updated setting.
             public func emitSignposts(_ emit: Bool) -> Builder {
-                emitSignposts = emit
-                return self
+                var copy = self
+                copy.emitSignposts = emit
+                return copy
             }
 
             /// Builds the configured `OSLogTracer`.

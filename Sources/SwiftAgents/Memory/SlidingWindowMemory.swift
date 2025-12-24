@@ -26,7 +26,7 @@ import Foundation
 ///
 /// By default uses character-based estimation (chars / 4).
 /// For production use with specific models, provide a custom `TokenEstimator`.
-public actor SlidingWindowMemory: AgentMemory {
+public actor SlidingWindowMemory: Memory {
     // MARK: Public
 
     /// Maximum tokens to retain.
@@ -83,20 +83,37 @@ public actor SlidingWindowMemory: AgentMemory {
             let removedTokens = tokenEstimator.estimateTokens(for: removed.formattedContent)
             currentTokenCount -= removedTokens
         }
+
+        // Periodic recalibration to prevent token count drift
+        operationsSinceRecalibration += 1
+        if operationsSinceRecalibration >= recalibrationInterval {
+            recalibrateTokenCount()
+            operationsSinceRecalibration = 0
+        }
     }
 
-    public func getContext(for _: String, tokenLimit: Int) async -> String {
+    /// Recalibrates token count by recalculating from all messages.
+    ///
+    /// Called automatically to prevent drift from cumulative estimation errors.
+    private func recalibrateTokenCount() {
+        currentTokenCount = messages.reduce(0) { total, message in
+            total + tokenEstimator.estimateTokens(for: message.formattedContent)
+        }
+    }
+
+    public func context(for _: String, tokenLimit: Int) async -> String {
         let effectiveLimit = min(tokenLimit, maxTokens)
         return formatMessagesForContext(messages, tokenLimit: effectiveLimit, tokenEstimator: tokenEstimator)
     }
 
-    public func getAllMessages() async -> [MemoryMessage] {
+    public func allMessages() async -> [MemoryMessage] {
         messages
     }
 
     public func clear() async {
         messages.removeAll()
         currentTokenCount = 0
+        operationsSinceRecalibration = 0
     }
 
     // MARK: Private
@@ -109,6 +126,12 @@ public actor SlidingWindowMemory: AgentMemory {
 
     /// Current estimated token count.
     private var currentTokenCount: Int = 0
+
+    /// Number of add operations since last recalibration.
+    private var operationsSinceRecalibration: Int = 0
+
+    /// How often to recalibrate token count to prevent drift.
+    private let recalibrationInterval: Int = 100
 }
 
 // MARK: - Batch Operations

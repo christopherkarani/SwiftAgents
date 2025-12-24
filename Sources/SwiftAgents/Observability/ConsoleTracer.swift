@@ -42,7 +42,7 @@ import Foundation
 /// ))
 /// // Output: [2024-12-12T10:30:45Z] [INFO] agentStart agent=MyAgent Agent started
 /// ```
-public actor ConsoleTracer: AgentTracer {
+public actor ConsoleTracer: Tracer {
     // MARK: Public
 
     /// Creates a console tracer with the specified configuration.
@@ -273,7 +273,7 @@ public actor ConsoleTracer: AgentTracer {
 ///     results_count: 42
 ///     search_time: 1.2
 /// ```
-public actor PrettyConsoleTracer: AgentTracer {
+public actor PrettyConsoleTracer: Tracer {
     // MARK: Public
 
     /// Creates a pretty console tracer with the specified configuration.

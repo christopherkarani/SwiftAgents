@@ -14,6 +14,7 @@ struct SwiftAgentsMacrosPlugin: CompilerPlugin {
         ParameterMacro.self,
         AgentMacro.self,
         TraceableMacro.self,
-        PromptMacro.self
+        PromptMacro.self,
+        BuilderMacro.self
     ]
 }

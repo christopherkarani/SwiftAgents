@@ -19,7 +19,7 @@ struct PersistentMemoryTests {
 
         #expect(await memory.count == 2)
 
-        let messages = await memory.getAllMessages()
+        let messages = await memory.allMessages()
         #expect(messages.count == 2)
         #expect(messages[0].role == .user)
         #expect(messages[0].content == "Hello")
@@ -44,7 +44,7 @@ struct PersistentMemoryTests {
         // Should have trimmed to 3 messages (oldest 2 removed)
         #expect(await memory.count == 3)
 
-        let messages = await memory.getAllMessages()
+        let messages = await memory.allMessages()
         // After trimming, the oldest 2 messages (Message 1, Response 1) are removed
         // Remaining: Message 2, Response 2, Message 3
         #expect(messages[0].content == "Message 2")
@@ -88,7 +88,7 @@ struct PersistentMemoryTests {
         await memory.add(.user("What is 2+2?"))
         await memory.add(.assistant("2+2 equals 4."))
 
-        let context = await memory.getContext(for: "math", tokenLimit: 1000)
+        let context = await memory.context(for: "math", tokenLimit: 1000)
 
         #expect(context.contains("What is 2+2?"))
         #expect(context.contains("2+2 equals 4."))

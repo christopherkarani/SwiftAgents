@@ -286,7 +286,7 @@ actor ParallelComposition: Agent {
     nonisolated let instructions: String = "Parallel composition"
     nonisolated let configuration: AgentConfiguration = .default
 
-    nonisolated var memory: (any AgentMemory)? { nil }
+    nonisolated var memory: (any Memory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
     init(agents: [any Agent], mergeStrategy: ParallelMergeStrategy = .firstSuccess, errorHandling: ErrorHandlingStrategy = .failFast) {
@@ -430,7 +430,7 @@ actor SequentialComposition: Agent {
     nonisolated let instructions: String = "Sequential composition"
     nonisolated let configuration: AgentConfiguration = .default
 
-    nonisolated var memory: (any AgentMemory)? { nil }
+    nonisolated var memory: (any Memory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
     init(agents: [any Agent]) {
@@ -489,7 +489,7 @@ actor ConditionalRouter: Agent {
     nonisolated let instructions: String = "Conditional router"
     nonisolated let configuration: AgentConfiguration = .default
 
-    nonisolated var memory: (any AgentMemory)? { nil }
+    nonisolated var memory: (any Memory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
     init(primary: any Agent, fallback: any Agent) {
@@ -559,7 +559,7 @@ struct EmptyAgent: Agent {
     let instructions: String = ""
     let configuration: AgentConfiguration = .default
 
-    var memory: (any AgentMemory)? { nil }
+    var memory: (any Memory)? { nil }
     var inferenceProvider: (any InferenceProvider)? { nil }
 
     func run(_: String) async throws -> AgentResult {

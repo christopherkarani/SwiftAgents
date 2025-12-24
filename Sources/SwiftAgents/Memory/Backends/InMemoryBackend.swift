@@ -21,7 +21,7 @@ import Foundation
 /// let memory = PersistentMemory(backend: backend)
 ///
 /// await memory.add(.user("Hello"))
-/// let messages = await memory.getAllMessages()
+/// let messages = await memory.allMessages()
 /// ```
 public actor InMemoryBackend: PersistentMemoryBackend {
     // MARK: Public

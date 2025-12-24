@@ -201,3 +201,55 @@ extension ToolResult: CustomStringConvertible {
         }
     }
 }
+
+// MARK: - AgentEvent + Equatable
+
+extension AgentEvent: Equatable {
+    public static func == (lhs: AgentEvent, rhs: AgentEvent) -> Bool {
+        switch (lhs, rhs) {
+        case let (.started(lhsInput), .started(rhsInput)):
+            lhsInput == rhsInput
+        case let (.completed(lhsResult), .completed(rhsResult)):
+            lhsResult == rhsResult
+        case let (.failed(lhsError), .failed(rhsError)):
+            lhsError == rhsError
+        case (.cancelled, .cancelled):
+            true
+        case let (.thinking(lhsThought), .thinking(rhsThought)):
+            lhsThought == rhsThought
+        case let (.thinkingPartial(lhsPartial), .thinkingPartial(rhsPartial)):
+            lhsPartial == rhsPartial
+        case let (.toolCallStarted(lhsCall), .toolCallStarted(rhsCall)):
+            lhsCall == rhsCall
+        case let (.toolCallCompleted(lhsCall, lhsResult), .toolCallCompleted(rhsCall, rhsResult)):
+            lhsCall == rhsCall && lhsResult == rhsResult
+        case let (.toolCallFailed(lhsCall, lhsError), .toolCallFailed(rhsCall, rhsError)):
+            lhsCall == rhsCall && lhsError == rhsError
+        case let (.outputToken(lhsToken), .outputToken(rhsToken)):
+            lhsToken == rhsToken
+        case let (.outputChunk(lhsChunk), .outputChunk(rhsChunk)):
+            lhsChunk == rhsChunk
+        case let (.iterationStarted(lhsNumber), .iterationStarted(rhsNumber)):
+            lhsNumber == rhsNumber
+        case let (.iterationCompleted(lhsNumber), .iterationCompleted(rhsNumber)):
+            lhsNumber == rhsNumber
+        default:
+            false
+        }
+    }
+}
+
+// MARK: - AgentEvent + Comparison Helper
+
+extension AgentEvent {
+    /// Compares this event to another for equality.
+    ///
+    /// This is a convenience method that enables comparison in contexts
+    /// where the static `==` operator is inconvenient.
+    ///
+    /// - Parameter other: The event to compare with.
+    /// - Returns: True if the events are equal.
+    func isEqual(to other: AgentEvent) -> Bool {
+        self == other
+    }
+}

@@ -54,7 +54,7 @@ struct AgentBuilderTests {
     func buildAgentWithMemory() async throws {
         let agent = ReActAgent {
             Instructions("You remember conversations.")
-            Memory(ConversationMemory(maxMessages: 50))
+            AgentMemoryComponent(ConversationMemory(maxMessages: 50))
         }
 
         #expect(agent.memory != nil)
@@ -85,7 +85,7 @@ struct AgentBuilderTests {
                 MockTool(name: "tool2")
             }
 
-            Memory(ConversationMemory(maxMessages: 100))
+            AgentMemoryComponent(ConversationMemory(maxMessages: 100))
 
             Configuration(.default
                 .maxIterations(10)
@@ -182,7 +182,7 @@ struct AgentBuilderTests {
     func buildAgentWithHybridMemory() async throws {
         let agent = ReActAgent {
             Instructions("Hybrid memory agent.")
-            Memory(HybridMemory(
+            AgentMemoryComponent(HybridMemory(
                 configuration: .init(
                     shortTermMaxMessages: 50,
                     longTermSummaryTokens: 2000

@@ -14,7 +14,7 @@ import Foundation
 ///
 /// Example:
 /// ```swift
-/// let strategy = MergeStrategies.Concatenate(separator: "\n---\n", includeAgentNames: true)
+/// let strategy = MergeStrategies.Concatenate(separator: "\n---\n", shouldIncludeAgentNames: true)
 /// let merged = try await strategy.merge(results)
 /// ```
 public protocol ResultMergeStrategy: Sendable {
@@ -39,7 +39,7 @@ public enum MergeStrategies {
     ///
     /// Example:
     /// ```swift
-    /// let strategy = MergeStrategies.Concatenate(separator: "\n\n", includeAgentNames: true)
+    /// let strategy = MergeStrategies.Concatenate(separator: "\n\n", shouldIncludeAgentNames: true)
     /// // Result:
     /// // Agent1:
     /// // Output from agent1
@@ -52,16 +52,26 @@ public enum MergeStrategies {
         public let separator: String
 
         /// Whether to include agent names in the output.
-        public let includeAgentNames: Bool
+        public let shouldIncludeAgentNames: Bool
 
         /// Creates a concatenate merge strategy.
         ///
         /// - Parameters:
         ///   - separator: String to join outputs. Default: "\n\n"
-        ///   - includeAgentNames: Whether to prefix outputs with agent names. Default: false
-        public init(separator: String = "\n\n", includeAgentNames: Bool = false) {
+        ///   - shouldIncludeAgentNames: Whether to prefix outputs with agent names. Default: false
+        public init(separator: String = "\n\n", shouldIncludeAgentNames: Bool = false) {
             self.separator = separator
-            self.includeAgentNames = includeAgentNames
+            self.shouldIncludeAgentNames = shouldIncludeAgentNames
+        }
+
+        /// Creates a concatenate merge strategy.
+        ///
+        /// - Parameters:
+        ///   - separator: String to join outputs. Default: "\n\n"
+        ///   - includeAgentNames: Whether to prefix outputs with agent names.
+        @available(*, deprecated, message: "Use shouldIncludeAgentNames instead of includeAgentNames")
+        public init(separator: String = "\n\n", includeAgentNames: Bool) {
+            self.init(separator: separator, shouldIncludeAgentNames: includeAgentNames)
         }
 
         public func merge(_ results: [String: AgentResult]) async throws -> AgentResult {
@@ -73,7 +83,7 @@ public enum MergeStrategies {
             let sortedResults = results.sorted { $0.key < $1.key }
 
             let outputs: [String] = sortedResults.map { name, result in
-                if includeAgentNames {
+                if shouldIncludeAgentNames {
                     "\(name):\n\(result.output)"
                 } else {
                     result.output
@@ -318,8 +328,8 @@ public enum MergeStrategies {
 ///         ("translator", TranslatorAgent()),
 ///         ("analyzer", AnalyzerAgent())
 ///     ],
-///     mergeStrategy: MergeStrategies.Concatenate(includeAgentNames: true),
-///     continueOnError: true,
+///     mergeStrategy: MergeStrategies.Concatenate(shouldIncludeAgentNames: true),
+///     shouldContinueOnError: true,
 ///     maxConcurrency: 2
 /// )
 ///
@@ -343,7 +353,7 @@ public actor ParallelGroup: Agent {
         "Parallel group of \(agents.count) agents"
     }
 
-    nonisolated public var memory: (any AgentMemory)? { nil }
+    nonisolated public var memory: (any Memory)? { nil }
 
     nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
@@ -354,19 +364,19 @@ public actor ParallelGroup: Agent {
     /// - Parameters:
     ///   - agents: Array of (name, agent) tuples.
     ///   - mergeStrategy: Strategy for merging results. Default: Concatenate()
-    ///   - continueOnError: Whether to continue if some agents fail. Default: false
+    ///   - shouldContinueOnError: Whether to continue if some agents fail. Default: false
     ///   - maxConcurrency: Maximum concurrent agents. Default: nil (unlimited)
     ///   - configuration: Agent configuration. Default: .default
     public init(
         agents: [(name: String, agent: any Agent)],
         mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
-        continueOnError: Bool = false,
+        shouldContinueOnError: Bool = false,
         maxConcurrency: Int? = nil,
         configuration: AgentConfiguration = .default
     ) {
         self.agents = agents
         self.mergeStrategy = mergeStrategy
-        self.continueOnError = continueOnError
+        self.shouldContinueOnError = shouldContinueOnError
         self.maxConcurrency = maxConcurrency
         self.configuration = configuration
     }
@@ -378,13 +388,13 @@ public actor ParallelGroup: Agent {
     /// - Parameters:
     ///   - agents: Array of agents.
     ///   - mergeStrategy: Strategy for merging results. Default: Concatenate()
-    ///   - continueOnError: Whether to continue if some agents fail. Default: false
+    ///   - shouldContinueOnError: Whether to continue if some agents fail. Default: false
     ///   - maxConcurrency: Maximum concurrent agents. Default: nil (unlimited)
     ///   - configuration: Agent configuration. Default: .default
     public init(
         agents: [any Agent],
         mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
-        continueOnError: Bool = false,
+        shouldContinueOnError: Bool = false,
         maxConcurrency: Int? = nil,
         configuration: AgentConfiguration = .default
     ) {
@@ -392,9 +402,61 @@ public actor ParallelGroup: Agent {
             ("agent_\(index)", agent)
         }
         self.mergeStrategy = mergeStrategy
-        self.continueOnError = continueOnError
+        self.shouldContinueOnError = shouldContinueOnError
         self.maxConcurrency = maxConcurrency
         self.configuration = configuration
+    }
+
+    // MARK: - Deprecated Initializers
+
+    /// Creates a new parallel group orchestrator.
+    ///
+    /// - Parameters:
+    ///   - agents: Array of (name, agent) tuples.
+    ///   - mergeStrategy: Strategy for merging results. Default: Concatenate()
+    ///   - continueOnError: Whether to continue if some agents fail. Default: false
+    ///   - maxConcurrency: Maximum concurrent agents. Default: nil (unlimited)
+    ///   - configuration: Agent configuration. Default: .default
+    @available(*, deprecated, message: "Use shouldContinueOnError instead of continueOnError")
+    public init(
+        agents: [(name: String, agent: any Agent)],
+        mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
+        continueOnError: Bool,
+        maxConcurrency: Int? = nil,
+        configuration: AgentConfiguration = .default
+    ) {
+        self.init(
+            agents: agents,
+            mergeStrategy: mergeStrategy,
+            shouldContinueOnError: continueOnError,
+            maxConcurrency: maxConcurrency,
+            configuration: configuration
+        )
+    }
+
+    /// Convenience initializer that auto-generates agent names.
+    ///
+    /// - Parameters:
+    ///   - agents: Array of agents.
+    ///   - mergeStrategy: Strategy for merging results. Default: Concatenate()
+    ///   - continueOnError: Whether to continue if some agents fail. Default: false
+    ///   - maxConcurrency: Maximum concurrent agents. Default: nil (unlimited)
+    ///   - configuration: Agent configuration. Default: .default
+    @available(*, deprecated, message: "Use shouldContinueOnError instead of continueOnError")
+    public init(
+        agents: [any Agent],
+        mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
+        continueOnError: Bool,
+        maxConcurrency: Int? = nil,
+        configuration: AgentConfiguration = .default
+    ) {
+        self.init(
+            agents: agents,
+            mergeStrategy: mergeStrategy,
+            shouldContinueOnError: continueOnError,
+            maxConcurrency: maxConcurrency,
+            configuration: configuration
+        )
     }
 
     // MARK: - Context Management
@@ -417,7 +479,7 @@ public actor ParallelGroup: Agent {
     /// - Parameter input: The input to send to all agents.
     /// - Returns: The merged result from all agents.
     /// - Throws: `OrchestrationError.allAgentsFailed` if all agents fail,
-    ///           or rethrows the first agent error if `continueOnError` is false.
+    ///           or rethrows the first agent error if `shouldContinueOnError` is false.
     public func run(_ input: String) async throws -> AgentResult {
         guard !agents.isEmpty else {
             throw OrchestrationError.noAgentsConfigured
@@ -454,7 +516,7 @@ public actor ParallelGroup: Agent {
                                 results[completedName] = agentResult
                             case let .failure(error):
                                 errors[completedName] = error
-                                if !continueOnError {
+                                if !shouldContinueOnError {
                                     throw error
                                 }
                             }
@@ -481,7 +543,7 @@ public actor ParallelGroup: Agent {
                     results[name] = agentResult
                 case let .failure(error):
                     errors[name] = error
-                    if !continueOnError {
+                    if !shouldContinueOnError {
                         throw error
                     }
                 }
@@ -522,28 +584,21 @@ public actor ParallelGroup: Agent {
     /// - Parameter input: The input to send to all agents.
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
-        Task { @Sendable [weak self] in
-            guard let self else {
-                continuation.finish()
-                return
-            }
-
+        StreamHelper.makeTrackedStream(for: self) { actor, continuation in
+            continuation.yield(.started(input: input))
             do {
-                continuation.yield(.started(input: input))
-
-                let result = try await run(input)
-
+                let result = try await actor.run(input)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
+            } catch let error as AgentError {
+                continuation.yield(.failed(error: error))
+                continuation.finish(throwing: error)
             } catch {
-                if let agentError = error as? AgentError {
-                    continuation.yield(.failed(error: agentError))
-                }
+                let agentError = AgentError.internalError(reason: error.localizedDescription)
+                continuation.yield(.failed(error: agentError))
                 continuation.finish(throwing: error)
             }
         }
-        return stream
     }
 
     /// Cancels the parallel execution.
@@ -562,7 +617,7 @@ public actor ParallelGroup: Agent {
     private let mergeStrategy: any ResultMergeStrategy
 
     /// Whether to continue execution if some agents fail.
-    private let continueOnError: Bool
+    private let shouldContinueOnError: Bool
 
     /// Maximum number of agents to run concurrently.
     /// If nil, all agents run without limit.

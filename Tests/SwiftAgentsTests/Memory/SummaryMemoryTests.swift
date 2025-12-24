@@ -221,7 +221,7 @@ struct SummaryMemoryTests {
             await memory.add(.user("Message \(i)"))
         }
 
-        let context = await memory.getContext(for: "test", tokenLimit: 2000)
+        let context = await memory.context(for: "test", tokenLimit: 2000)
 
         #expect(context.contains("summary"))
     }

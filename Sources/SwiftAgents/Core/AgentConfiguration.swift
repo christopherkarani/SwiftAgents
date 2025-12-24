@@ -19,6 +19,7 @@ import Foundation
 ///     .temperature(0.8)
 ///     .timeout(.seconds(120))
 /// ```
+@Builder
 public struct AgentConfiguration: Sendable, Equatable {
     // MARK: - Default Configuration
 
@@ -102,88 +103,6 @@ public struct AgentConfiguration: Sendable, Equatable {
         self.includeReasoning = includeReasoning
     }
 
-    // MARK: - Fluent Builder Methods
-
-    /// Sets the maximum number of iterations.
-    /// - Parameter value: The maximum iteration count.
-    /// - Returns: A modified configuration.
-    public func maxIterations(_ value: Int) -> Self {
-        var copy = self
-        copy.maxIterations = value
-        return copy
-    }
-
-    /// Sets the timeout duration.
-    /// - Parameter value: The timeout duration.
-    /// - Returns: A modified configuration.
-    public func timeout(_ value: Duration) -> Self {
-        var copy = self
-        copy.timeout = value
-        return copy
-    }
-
-    /// Sets the temperature for generation.
-    /// - Parameter value: The temperature (0.0-2.0).
-    /// - Returns: A modified configuration.
-    public func temperature(_ value: Double) -> Self {
-        var copy = self
-        copy.temperature = value
-        return copy
-    }
-
-    /// Sets the maximum tokens per response.
-    /// - Parameter value: The maximum token count, or nil for model default.
-    /// - Returns: A modified configuration.
-    public func maxTokens(_ value: Int?) -> Self {
-        var copy = self
-        copy.maxTokens = value
-        return copy
-    }
-
-    /// Sets the stop sequences.
-    /// - Parameter value: Sequences that stop generation.
-    /// - Returns: A modified configuration.
-    public func stopSequences(_ value: [String]) -> Self {
-        var copy = self
-        copy.stopSequences = value
-        return copy
-    }
-
-    /// Enables or disables streaming.
-    /// - Parameter value: Whether streaming is enabled.
-    /// - Returns: A modified configuration.
-    public func enableStreaming(_ value: Bool) -> Self {
-        var copy = self
-        copy.enableStreaming = value
-        return copy
-    }
-
-    /// Enables or disables tool call details in results.
-    /// - Parameter value: Whether to include tool call details.
-    /// - Returns: A modified configuration.
-    public func includeToolCallDetails(_ value: Bool) -> Self {
-        var copy = self
-        copy.includeToolCallDetails = value
-        return copy
-    }
-
-    /// Sets whether to stop on tool errors.
-    /// - Parameter value: Whether to stop on first tool error.
-    /// - Returns: A modified configuration.
-    public func stopOnToolError(_ value: Bool) -> Self {
-        var copy = self
-        copy.stopOnToolError = value
-        return copy
-    }
-
-    /// Enables or disables reasoning in events.
-    /// - Parameter value: Whether to include reasoning.
-    /// - Returns: A modified configuration.
-    public func includeReasoning(_ value: Bool) -> Self {
-        var copy = self
-        copy.includeReasoning = value
-        return copy
-    }
 }
 
 // MARK: CustomStringConvertible

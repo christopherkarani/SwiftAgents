@@ -13,7 +13,7 @@ SwiftAgents provides the agent orchestration layer on top of SwiftAI SDK, enabli
 
 ## Features
 
-- 🤖 **Agent Framework** - ReAct pattern with Thought-Action-Observation loops for autonomous reasoning
+- 🤖 **Agent Framework** - ReAct, PlanAndExecute, and ToolCalling patterns for autonomous reasoning
 - 🧠 **Memory Systems** - Conversation, sliding window, summary, hybrid, and pluggable persistence backends
 - 🛠️ **Tool Integration** - Type-safe tool protocol with fluent builder API and built-in utilities
 - 🎭 **Multi-Agent Orchestration** - Supervisor-worker patterns, sequential chains, parallel execution, and intelligent routing
@@ -129,7 +129,7 @@ let response2 = try await agent.run("What's my name and what do I love?")
 print(response2.output)  // "Your name is Alice and you love Swift programming."
 
 // Check memory contents
-let messages = await memory.getAllMessages()
+let messages = await memory.allMessages()
 print("Stored messages: \(messages.count)")
 ```
 
@@ -672,7 +672,7 @@ public protocol Agent: Sendable {
     var tools: [any Tool] { get }
     var instructions: String { get }
     var configuration: AgentConfiguration { get }
-    var memory: (any AgentMemory)? { get }
+    var memory: (any Memory)? { get }  // Was: AgentMemory
     var inferenceProvider: (any InferenceProvider)? { get }
 
     func run(_ input: String) async throws -> AgentResult
@@ -688,6 +688,36 @@ public protocol Agent: Sendable {
   - Decides when to use tools vs. provide final answer
   - Parses natural language tool calls
   - Configurable max iterations and error handling
+
+- **PlanAndExecuteAgent**: Separates planning from execution (NEW)
+  - Three-phase execution: Plan → Execute → Replan
+  - Structured `ExecutionPlan` with step tracking
+  - Automatic replanning when steps fail
+  - Best for complex multi-step tasks
+
+```swift
+let agent = PlanAndExecuteAgent.Builder()
+    .tools([WebSearchTool(), CalculatorTool()])
+    .instructions("You are a research assistant.")
+    .inferenceProvider(provider)
+    .maxReplanAttempts(2)
+    .build()
+
+let result = try await agent.run("Research and summarize recent AI developments")
+```
+
+- **ToolCallingAgent**: Uses native LLM tool calling (NEW)
+  - Uses structured `InferenceProvider.generateWithToolCalls()`
+  - More reliable than text-based tool parsing
+  - Best when your LLM supports native function calling
+
+```swift
+let agent = ToolCallingAgent.Builder()
+    .tools([WeatherTool()])
+    .instructions("You are a helpful assistant.")
+    .inferenceProvider(provider)
+    .build()
+```
 
 **Agent Configuration:**
 
@@ -728,16 +758,22 @@ enum AgentEvent {
 
 ### 2. Memory Systems
 
-All memory implementations conform to the `AgentMemory` protocol (actor-based for thread safety):
+All memory implementations conform to the `Memory` protocol (actor-based for thread safety):
+
+> **Note**: The protocol was renamed from `AgentMemory` to `Memory`. A deprecated typealias is provided for backward compatibility.
 
 ```swift
-public protocol AgentMemory: Actor, Sendable {
+public protocol Memory: Actor, Sendable {
     func add(_ message: MemoryMessage) async
-    func getContext(for query: String, tokenLimit: Int) async -> String
-    func getAllMessages() async -> [MemoryMessage]
+    func context(for query: String, tokenLimit: Int) async -> String  // Was: getContext
+    func allMessages() async -> [MemoryMessage]  // Was: getAllMessages
     func clear() async
     var count: Int { get async }
 }
+
+// Deprecated typealias for backward compatibility
+@available(*, deprecated, renamed: "Memory")
+public typealias AgentMemory = Memory
 ```
 
 **Available Memory Systems:**
@@ -1058,7 +1094,7 @@ final class AgentTests: XCTestCase {
 
         _ = try await agent.run("My name is Alice")
 
-        let messages = await memory.getAllMessages()
+        let messages = await memory.allMessages()
         XCTAssertEqual(messages.count, 2) // User + Assistant
     }
 }
@@ -1141,7 +1177,7 @@ Create specialized memory strategies:
 ```swift
 import SwiftAgents
 
-public actor VectorMemory: AgentMemory {
+public actor VectorMemory: Memory {
     private var messages: [MemoryMessage] = []
     private let vectorStore: VectorStore
     private let embedder: Embedder
@@ -1163,7 +1199,7 @@ public actor VectorMemory: AgentMemory {
         )
     }
 
-    public func getContext(for query: String, tokenLimit: Int) async -> String {
+    public func context(for query: String, tokenLimit: Int) async -> String {
         // Semantic search for relevant messages
         let queryEmbedding = await embedder.embed(query)
         let results = await vectorStore.search(
@@ -1182,7 +1218,7 @@ public actor VectorMemory: AgentMemory {
         )
     }
 
-    public func getAllMessages() async -> [MemoryMessage] {
+    public func allMessages() async -> [MemoryMessage] {
         messages
     }
 
@@ -1268,7 +1304,9 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## Roadmap
 
-- [ ] Additional agent patterns (Plan-and-Execute, Reflexion)
+- [x] Additional agent patterns (PlanAndExecuteAgent, ToolCallingAgent) ✅ NEW
+- [x] @Agent macro builder generation ✅ NEW
+- [x] Swift-style API naming (Memory protocol, method renames) ✅ NEW
 - [ ] Vector memory with embedding support
 - [ ] More built-in tools (web search, file system, etc.)
 - [ ] SwiftData schema versioning for memory persistence

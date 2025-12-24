@@ -1,23 +1,23 @@
 // TracerTests+TypeErasure.swift
 // SwiftAgents Framework
 //
-// AnyAgentTracer type erasure tests
+// AnyTracer type erasure tests
 
 import Foundation
 @testable import SwiftAgents
 import Testing
 
-// MARK: - AnyAgentTracer Tests
+// MARK: - AnyTracer Tests
 
-@Suite("AnyAgentTracer Tests")
-struct AnyAgentTracerTests {
-    @Test("AnyAgentTracer wraps tracer correctly")
+@Suite("AnyTracer Tests")
+struct AnyTracerTests {
+    @Test("AnyTracer wraps tracer correctly")
     func wrapsTracerCorrectly() async {
         // Given
         let spy = SpyTracer()
 
         // When
-        let wrapped = AnyAgentTracer(spy)
+        let wrapped = AnyTracer(spy)
 
         // Then - verify by using it
         let traceId = UUID()
@@ -27,11 +27,11 @@ struct AnyAgentTracerTests {
         #expect(spyEvents.count == 1)
     }
 
-    @Test("AnyAgentTracer forwards trace calls to wrapped tracer")
+    @Test("AnyTracer forwards trace calls to wrapped tracer")
     func forwardsTraceCallsToWrappedTracer() async {
         // Given
         let spy = SpyTracer()
-        let wrapped = AnyAgentTracer(spy)
+        let wrapped = AnyTracer(spy)
 
         let traceId = UUID()
         let event = TraceEvent.agentStart(
@@ -48,11 +48,11 @@ struct AnyAgentTracerTests {
         #expect(spyEvents.first?.kind == .agentStart)
     }
 
-    @Test("AnyAgentTracer forwards flush calls to wrapped tracer")
+    @Test("AnyTracer forwards flush calls to wrapped tracer")
     func forwardsFlushCallsToWrappedTracer() async {
         // Given
         let spy = SpyTracer()
-        let wrapped = AnyAgentTracer(spy)
+        let wrapped = AnyTracer(spy)
 
         // When
         await wrapped.flush()
@@ -62,11 +62,11 @@ struct AnyAgentTracerTests {
         #expect(flushCount == 1)
     }
 
-    @Test("AnyAgentTracer handles multiple trace calls")
+    @Test("AnyTracer handles multiple trace calls")
     func handlesMultipleTraceCalls() async {
         // Given
         let spy = SpyTracer()
-        let wrapped = AnyAgentTracer(spy)
+        let wrapped = AnyTracer(spy)
 
         let traceId = UUID()
         let events = (0..<10).map { index in
@@ -86,13 +86,13 @@ struct AnyAgentTracerTests {
         #expect(spyEvents.count == 10)
     }
 
-    @Test("AnyAgentTracer can wrap NoOpTracer")
+    @Test("AnyTracer can wrap NoOpTracer")
     func canWrapNoOpTracer() async {
         // Given
         let noOp = NoOpTracer()
 
         // When
-        let wrapped = AnyAgentTracer(noOp)
+        let wrapped = AnyTracer(noOp)
 
         let traceId = UUID()
         let event = TraceEvent.agentStart(
@@ -105,19 +105,19 @@ struct AnyAgentTracerTests {
         await wrapped.flush()
     }
 
-    @Test("AnyAgentTracer can be stored in heterogeneous collections")
+    @Test("AnyTracer can be stored in heterogeneous collections")
     func canBeStoredInHeterogeneousCollections() async {
         // Given
         let spy1 = SpyTracer()
         let spy2 = SpyTracer()
         let noOp = NoOpTracer()
 
-        let wrapped1 = AnyAgentTracer(spy1)
-        let wrapped2 = AnyAgentTracer(spy2)
-        let wrapped3 = AnyAgentTracer(noOp)
+        let wrapped1 = AnyTracer(spy1)
+        let wrapped2 = AnyTracer(spy2)
+        let wrapped3 = AnyTracer(noOp)
 
         // When - store in array
-        let tracers: [AnyAgentTracer] = [wrapped1, wrapped2, wrapped3]
+        let tracers: [AnyTracer] = [wrapped1, wrapped2, wrapped3]
 
         let traceId = UUID()
         let event = TraceEvent.agentStart(
