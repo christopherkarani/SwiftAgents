@@ -154,8 +154,8 @@ public extension RunHooks {
 /// Composite hook implementation that delegates to multiple hooks.
 ///
 /// `CompositeRunHooks` allows combining multiple hook implementations so they
-/// all receive callbacks. Each hook is called in sequence in the order they
-/// were registered.
+/// all receive callbacks. Each hook is called concurrently using structured
+/// concurrency for optimal performance.
 ///
 /// Example:
 /// ```swift
@@ -189,56 +189,92 @@ public struct CompositeRunHooks: RunHooks {
     // MARK: - RunHooks Implementation
 
     public func onAgentStart(context: AgentContext?, agent: any Agent, input: String) async {
-        for hook in hooks {
-            await hook.onAgentStart(context: context, agent: agent, input: input)
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onAgentStart(context: context, agent: agent, input: input)
+                }
+            }
         }
     }
 
     public func onAgentEnd(context: AgentContext?, agent: any Agent, result: AgentResult) async {
-        for hook in hooks {
-            await hook.onAgentEnd(context: context, agent: agent, result: result)
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onAgentEnd(context: context, agent: agent, result: result)
+                }
+            }
         }
     }
 
     public func onError(context: AgentContext?, agent: any Agent, error: Error) async {
-        for hook in hooks {
-            await hook.onError(context: context, agent: agent, error: error)
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onError(context: context, agent: agent, error: error)
+                }
+            }
         }
     }
 
     public func onHandoff(context: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async {
-        for hook in hooks {
-            await hook.onHandoff(context: context, fromAgent: fromAgent, toAgent: toAgent)
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onHandoff(context: context, fromAgent: fromAgent, toAgent: toAgent)
+                }
+            }
         }
     }
 
     public func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {
-        for hook in hooks {
-            await hook.onToolStart(context: context, agent: agent, tool: tool, arguments: arguments)
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onToolStart(context: context, agent: agent, tool: tool, arguments: arguments)
+                }
+            }
         }
     }
 
     public func onToolEnd(context: AgentContext?, agent: any Agent, tool: any Tool, result: SendableValue) async {
-        for hook in hooks {
-            await hook.onToolEnd(context: context, agent: agent, tool: tool, result: result)
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onToolEnd(context: context, agent: agent, tool: tool, result: result)
+                }
+            }
         }
     }
 
     public func onLLMStart(context: AgentContext?, agent: any Agent, systemPrompt: String?, inputMessages: [MemoryMessage]) async {
-        for hook in hooks {
-            await hook.onLLMStart(context: context, agent: agent, systemPrompt: systemPrompt, inputMessages: inputMessages)
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onLLMStart(context: context, agent: agent, systemPrompt: systemPrompt, inputMessages: inputMessages)
+                }
+            }
         }
     }
 
     public func onLLMEnd(context: AgentContext?, agent: any Agent, response: String, usage: InferenceResponse.TokenUsage?) async {
-        for hook in hooks {
-            await hook.onLLMEnd(context: context, agent: agent, response: response, usage: usage)
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onLLMEnd(context: context, agent: agent, response: response, usage: usage)
+                }
+            }
         }
     }
 
     public func onGuardrailTriggered(context: AgentContext?, guardrailName: String, guardrailType: GuardrailType, result: GuardrailResult) async {
-        for hook in hooks {
-            await hook.onGuardrailTriggered(context: context, guardrailName: guardrailName, guardrailType: guardrailType, result: result)
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onGuardrailTriggered(context: context, guardrailName: guardrailName, guardrailType: guardrailType, result: result)
+                }
+            }
         }
     }
 }
@@ -252,10 +288,9 @@ public struct CompositeRunHooks: RunHooks {
 /// observability, and understanding agent execution flow.
 ///
 /// Log levels:
-/// - `.info`: Agent start/end, tool start/end, LLM start/end
+/// - `.info`: Agent start/end, tool start/end, LLM start/end, handoff
 /// - `.warning`: Guardrail triggered
 /// - `.error`: Error events
-/// - `.debug`: Handoff events
 ///
 /// Example:
 /// ```swift
@@ -306,7 +341,7 @@ public struct LoggingRunHooks: RunHooks {
         } else {
             ""
         }
-        Log.agents.debug("Agent handoff\(contextId) - from: \(type(of: fromAgent)) to: \(type(of: toAgent))")
+        Log.agents.info("Agent handoff\(contextId) - from: \(type(of: fromAgent)) to: \(type(of: toAgent))")
     }
 
     public func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {

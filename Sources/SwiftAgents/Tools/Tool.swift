@@ -336,12 +336,19 @@ public actor ToolRegistry {
 
             return result
         } catch let error as AgentError {
+            if let agent = agent, let hooks = hooks {
+                await hooks.onError(context: context, agent: agent, error: error)
+            }
             throw error
         } catch {
-            throw AgentError.toolExecutionFailed(
+            let toolError = AgentError.toolExecutionFailed(
                 toolName: name,
                 underlyingError: error.localizedDescription
             )
+            if let agent = agent, let hooks = hooks {
+                await hooks.onError(context: context, agent: agent, error: toolError)
+            }
+            throw toolError
         }
     }
 

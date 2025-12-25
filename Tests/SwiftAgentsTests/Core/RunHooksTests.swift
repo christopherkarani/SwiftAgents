@@ -499,6 +499,77 @@ struct RunHooksIntegrationTests {
     }
 }
 
+// MARK: - Concurrent Execution Tests
+
+@Suite("RunHooks Concurrent Execution Tests")
+struct RunHooksConcurrentExecutionTests {
+
+    @Test("Concurrent hook execution completes in parallel")
+    func concurrentHookExecution() async throws {
+        // Create a hook that tracks execution order with delays
+        actor DelayedHook: RunHooks {
+            var events: [(String, Date)] = []
+
+            func onAgentStart(context: AgentContext?, agent: any Agent, input: String) async {
+                let start = Date()
+                try? await Task.sleep(nanoseconds: 10_000_000) // 10ms delay
+                events.append(("start", start))
+            }
+
+            func onAgentEnd(context: AgentContext?, agent: any Agent, result: AgentResult) async {}
+            func onError(context: AgentContext?, agent: any Agent, error: Error) async {}
+            func onHandoff(context: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async {}
+            func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {}
+            func onToolEnd(context: AgentContext?, agent: any Agent, tool: any Tool, result: SendableValue) async {}
+            func onLLMStart(context: AgentContext?, agent: any Agent, systemPrompt: String?, inputMessages: [MemoryMessage]) async {}
+            func onLLMEnd(context: AgentContext?, agent: any Agent, response: String, usage: InferenceResponse.TokenUsage?) async {}
+            func onGuardrailTriggered(context: AgentContext?, guardrailName: String, guardrailType: GuardrailType, result: GuardrailResult) async {}
+
+            func getEvents() -> [(String, Date)] { events }
+        }
+
+        let hook1 = DelayedHook()
+        let hook2 = DelayedHook()
+        let hook3 = DelayedHook()
+
+        let composite = CompositeRunHooks(hooks: [hook1, hook2, hook3])
+        let mockAgent = MockAgentForRunHooks()
+
+        // Execute and measure time
+        let startTime = Date()
+        await composite.onAgentStart(context: nil, agent: mockAgent, input: "test")
+        let elapsed = Date().timeIntervalSince(startTime)
+
+        // With concurrent execution, all 3 hooks should run in ~10ms (parallel)
+        // With sequential execution, it would take ~30ms
+        // Allow some margin for timing variations
+        #expect(elapsed < 0.025, "Concurrent execution should complete in ~10ms, not \(elapsed * 1000)ms")
+    }
+
+    @Test("Composite hooks all receive callbacks")
+    func compositeHooksAllReceiveCallbacks() async throws {
+        let hook1 = RecordingHooks()
+        let hook2 = RecordingHooks()
+
+        let composite = CompositeRunHooks(hooks: [hook1, hook2])
+        let mockAgent = MockAgentForRunHooks()
+
+        await composite.onAgentStart(context: nil, agent: mockAgent, input: "test")
+        await composite.onAgentEnd(context: nil, agent: mockAgent, result: AgentResult(output: "done"))
+
+        // Both hooks should receive both events
+        let events1 = await hook1.getEvents()
+        let events2 = await hook2.getEvents()
+
+        #expect(events1.count == 2)
+        #expect(events2.count == 2)
+        #expect(events1.contains("agentStart:test"))
+        #expect(events1.contains("agentEnd:done"))
+        #expect(events2.contains("agentStart:test"))
+        #expect(events2.contains("agentEnd:done"))
+    }
+}
+
 // MARK: - Edge Case Tests
 
 @Suite("RunHooks Edge Cases")

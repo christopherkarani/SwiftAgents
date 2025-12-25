@@ -422,14 +422,16 @@ public actor AgentRouter: Agent {
 
         let startTime = ContinuousClock.now
 
+        // Create context for this routing operation
+        let routingContext = AgentContext(input: input)
+
         // Find the first matching route
-        let selectedRoute = await findMatchingRoute(input: input, context: nil)
+        let selectedRoute = await findMatchingRoute(input: input, context: routingContext)
 
         guard let route = selectedRoute else {
             // No route matched - try fallback
             if let fallback = fallbackAgent {
                 // Notify hooks of handoff to fallback agent
-                let routingContext = AgentContext(input: input)
                 await hooks?.onHandoff(context: routingContext, fromAgent: self, toAgent: fallback)
 
                 return try await fallback.run(input, hooks: hooks)
@@ -441,7 +443,6 @@ public actor AgentRouter: Agent {
         }
 
         // Notify hooks of handoff to matched route's agent
-        let routingContext = AgentContext(input: input)
         await hooks?.onHandoff(context: routingContext, fromAgent: self, toAgent: route.agent)
 
         // Execute the matched route's agent
