@@ -84,10 +84,11 @@ public actor ReActAgent: Agent {
     /// Executes the agent with the given input and returns a result.
     /// - Parameters:
     ///   - input: The user's input/query.
+    ///   - session: Optional session for conversation history management.
     ///   - hooks: Optional hooks for observing agent execution events.
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
-    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
@@ -104,22 +105,42 @@ public actor ReActAgent: Agent {
             let resultBuilder = AgentResult.Builder()
             _ = resultBuilder.start()
 
-            // Store input in memory if available
-            if let mem = memory {
-                await mem.add(.user(input))
+            // Load conversation history from session (limit to recent messages)
+            var sessionHistory: [MemoryMessage] = []
+            if let session = session {
+                sessionHistory = try await session.getItems(limit: 50)
             }
 
-            // Execute the ReAct loop
+            // Create user message for this turn
+            let userMessage = MemoryMessage.user(input)
+
+            // Store in memory (for AI context) if available
+            if let mem = memory {
+                // Add session history to memory
+                for msg in sessionHistory {
+                    await mem.add(msg)
+                }
+                await mem.add(userMessage)
+            }
+
+            // Execute the ReAct loop with session context
             let output = try await executeReActLoop(
                 input: input,
+                sessionHistory: sessionHistory,
                 resultBuilder: resultBuilder,
                 hooks: hooks
             )
 
             _ = resultBuilder.setOutput(output)
 
-            // Run output guardrails BEFORE storing in memory
+            // Run output guardrails BEFORE storing in memory/session
             try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
+
+            // Store turn in session (user + assistant messages)
+            if let session = session {
+                let assistantMessage = MemoryMessage.assistant(output)
+                try await session.addItems([userMessage, assistantMessage])
+            }
 
             // Only store output in memory if validation passed
             if let mem = memory {
@@ -138,13 +159,14 @@ public actor ReActAgent: Agent {
     /// Streams the agent's execution, yielding events as they occur.
     /// - Parameters:
     ///   - input: The user's input/query.
+    ///   - session: Optional session for conversation history management.
     ///   - hooks: Optional hooks for observing agent execution events.
     /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { agent, continuation in
             continuation.yield(.started(input: input))
             do {
-                let result = try await agent.run(input, hooks: hooks)
+                let result = try await agent.run(input, session: session, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {
@@ -186,6 +208,7 @@ public actor ReActAgent: Agent {
 
     private func executeReActLoop(
         input: String,
+        sessionHistory: [MemoryMessage] = [],
         resultBuilder: AgentResult.Builder,
         hooks: (any RunHooks)? = nil
     ) async throws -> String {
@@ -212,6 +235,7 @@ public actor ReActAgent: Agent {
             // Step 1: Build prompt with current context
             let prompt = buildPrompt(
                 input: input,
+                sessionHistory: sessionHistory,
                 scratchpad: scratchpad,
                 iteration: iteration
             )
@@ -318,10 +342,12 @@ public actor ReActAgent: Agent {
 
     private func buildPrompt(
         input: String,
+        sessionHistory: [MemoryMessage] = [],
         scratchpad: String,
         iteration _: Int
     ) -> String {
         let toolDescriptions = buildToolDescriptions()
+        let conversationContext = buildConversationContext(from: sessionHistory)
 
         let basePrompt = """
         \(instructions.isEmpty ? "You are a helpful AI assistant." : instructions)
@@ -340,6 +366,7 @@ public actor ReActAgent: Agent {
         2. After an Observation, decide if you need another Action or can give the Final Answer.
         3. Only use tools that are available in the list above.
         4. When you have enough information, provide the Final Answer.
+        \(conversationContext.isEmpty ? "" : "\nConversation History:\n\(conversationContext)")
 
         User Query: \(input)
         """
@@ -349,6 +376,25 @@ public actor ReActAgent: Agent {
         } else {
             return basePrompt + "\n\nPrevious steps:" + scratchpad + "\n\nContinue with your next step:"
         }
+    }
+
+    private func buildConversationContext(from sessionHistory: [MemoryMessage]) -> String {
+        guard !sessionHistory.isEmpty else { return "" }
+
+        var lines: [String] = []
+        for message in sessionHistory {
+            switch message.role {
+            case .user:
+                lines.append("User: \(message.content)")
+            case .assistant:
+                lines.append("Assistant: \(message.content)")
+            case .system:
+                lines.append("System: \(message.content)")
+            case .tool:
+                lines.append("Tool: \(message.content)")
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func buildToolDescriptions() -> String {

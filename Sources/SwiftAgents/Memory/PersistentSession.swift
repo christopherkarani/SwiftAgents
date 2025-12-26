@@ -1,0 +1,218 @@
+// PersistentSession.swift
+// SwiftAgents Framework
+//
+// Persistent session implementation using SwiftDataBackend.
+
+#if canImport(SwiftData)
+    import Foundation
+    import SwiftData
+
+    // MARK: - PersistentSession
+
+    /// Persistent session implementation backed by SwiftData.
+    ///
+    /// `PersistentSession` stores conversation history using SwiftData,
+    /// providing persistence across app launches. Data is stored either
+    /// in-memory (for testing) or on disk (for production).
+    ///
+    /// This implementation is ideal for:
+    /// - Long-running conversations that need persistence
+    /// - Multi-session applications with shared backend
+    /// - Production applications requiring data durability
+    ///
+    /// ## Thread Safety
+    /// As an actor, `PersistentSession` provides automatic thread-safe access
+    /// to all session data through Swift's actor isolation.
+    ///
+    /// ## Example Usage
+    /// ```swift
+    /// // Create a persistent session
+    /// let session = try PersistentSession.persistent(sessionId: "user-123-chat")
+    ///
+    /// // Or for testing, use in-memory storage
+    /// let testSession = try PersistentSession.inMemory(sessionId: "test-chat")
+    ///
+    /// // Add conversation messages
+    /// try await session.addItem(.user("What's the weather?"))
+    /// try await session.addItem(.assistant("It's sunny today!"))
+    ///
+    /// // Retrieve recent history
+    /// let recent = try await session.getItems(limit: 10)
+    /// ```
+    ///
+    /// ## Session Isolation
+    /// Multiple sessions can share the same backend while maintaining
+    /// complete data isolation through unique session IDs:
+    ///
+    /// ```swift
+    /// let backend = try SwiftDataBackend.inMemory()
+    /// let session1 = PersistentSession(sessionId: "chat-1", backend: backend)
+    /// let session2 = PersistentSession(sessionId: "chat-2", backend: backend)
+    ///
+    /// // Each session's data is isolated from the other
+    /// ```
+    @available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *)
+    public actor PersistentSession: Session {
+        // MARK: - Properties
+
+        /// Unique identifier for this session.
+        ///
+        /// The session ID is used as the conversation ID when storing
+        /// messages in the backend, ensuring data isolation between sessions.
+        public let sessionId: String
+
+        /// The SwiftData backend used for persistence.
+        private let backend: SwiftDataBackend
+
+        // MARK: - Initialization
+
+        /// Creates a new persistent session with a custom backend.
+        ///
+        /// Use this initializer when you need to share a backend between
+        /// multiple sessions or when you have a custom ModelContainer.
+        ///
+        /// - Parameters:
+        ///   - sessionId: Unique identifier for the session.
+        ///   - backend: The SwiftData backend to use for storage.
+        public init(sessionId: String, backend: SwiftDataBackend) {
+            self.sessionId = sessionId
+            self.backend = backend
+        }
+
+        // MARK: - Factory Methods
+
+        /// Creates a persistent session with disk storage.
+        ///
+        /// Data is persisted to the default SwiftData location on disk,
+        /// surviving app restarts and device reboots.
+        ///
+        /// - Parameter sessionId: Unique identifier for the session.
+        /// - Returns: A new persistent session with disk storage.
+        /// - Throws: If the SwiftData container cannot be created.
+        public static func persistent(sessionId: String) throws -> PersistentSession {
+            let backend = try SwiftDataBackend.persistent()
+            return PersistentSession(sessionId: sessionId, backend: backend)
+        }
+
+        /// Creates a persistent session with in-memory storage.
+        ///
+        /// Data is stored only in memory and is lost when the session
+        /// is deallocated. Ideal for testing and temporary conversations.
+        ///
+        /// - Parameter sessionId: Unique identifier for the session.
+        /// - Returns: A new persistent session with in-memory storage.
+        /// - Throws: If the SwiftData container cannot be created.
+        public static func inMemory(sessionId: String) throws -> PersistentSession {
+            let backend = try SwiftDataBackend.inMemory()
+            return PersistentSession(sessionId: sessionId, backend: backend)
+        }
+
+        // MARK: - Session Protocol Properties
+
+        /// Number of items currently stored in the session.
+        ///
+        /// This property queries the backend for the current message count
+        /// for this session's conversation ID.
+        public var itemCount: Int {
+            get async {
+                do {
+                    return try await backend.messageCount(conversationId: sessionId)
+                } catch {
+                    Log.memory.error("Failed to get item count: \(error.localizedDescription)")
+                    return 0
+                }
+            }
+        }
+
+        /// Whether the session contains no items.
+        ///
+        /// Returns `true` if `itemCount` is zero, `false` otherwise.
+        public var isEmpty: Bool {
+            get async {
+                await itemCount == 0
+            }
+        }
+
+        // MARK: - Session Protocol Methods
+
+        /// Retrieves conversation history from the session.
+        ///
+        /// Items are returned in chronological order (oldest first).
+        /// When a limit is specified, returns the most recent N items
+        /// while still maintaining chronological order.
+        ///
+        /// - Parameter limit: Maximum number of items to retrieve.
+        ///   - `nil`: Returns all items
+        ///   - Positive value: Returns the last N items in chronological order
+        ///   - Zero or negative: Returns an empty array
+        /// - Returns: Array of messages in chronological order.
+        /// - Throws: If retrieval fails due to underlying storage issues.
+        public func getItems(limit: Int?) async throws -> [MemoryMessage] {
+            guard let limit = limit else {
+                // nil limit: return all messages
+                return try await backend.fetchMessages(conversationId: sessionId)
+            }
+
+            guard limit > 0 else {
+                // Zero or negative limit: return empty array
+                return []
+            }
+
+            // Positive limit: return last N messages in chronological order
+            return try await backend.fetchRecentMessages(conversationId: sessionId, limit: limit)
+        }
+
+        /// Adds items to the conversation history.
+        ///
+        /// Items are appended in the order they appear in the array,
+        /// maintaining the conversation's chronological sequence.
+        ///
+        /// - Parameter items: Messages to add to the session.
+        /// - Throws: If storage operation fails.
+        public func addItems(_ items: [MemoryMessage]) async throws {
+            try await backend.storeAll(items, conversationId: sessionId)
+        }
+
+        /// Removes and returns the most recent item from the session.
+        ///
+        /// Follows LIFO (Last-In-First-Out) semantics, removing the last added item.
+        /// This is useful for undoing the last message or implementing retry logic.
+        ///
+        /// - Returns: The removed message, or `nil` if the session is empty.
+        /// - Throws: If removal operation fails.
+        public func popItem() async throws -> MemoryMessage? {
+            // Fetch all messages in chronological order
+            let allMessages = try await backend.fetchMessages(conversationId: sessionId)
+
+            guard !allMessages.isEmpty else {
+                return nil
+            }
+
+            // Get the last message (most recent)
+            let lastMessage = allMessages[allMessages.count - 1]
+
+            // Get all messages except the last one
+            let remainingMessages = Array(allMessages.dropLast())
+
+            // Clear the session
+            try await backend.deleteMessages(conversationId: sessionId)
+
+            // Re-add the remaining messages
+            if !remainingMessages.isEmpty {
+                try await backend.storeAll(remainingMessages, conversationId: sessionId)
+            }
+
+            return lastMessage
+        }
+
+        /// Clears all items from this session.
+        ///
+        /// The session ID remains unchanged after clearing, allowing the session
+        /// to be reused for new conversations.
+        ///
+        /// - Throws: If clear operation fails.
+        public func clearSession() async throws {
+            try await backend.deleteMessages(conversationId: sessionId)
+        }
+    }
+#endif

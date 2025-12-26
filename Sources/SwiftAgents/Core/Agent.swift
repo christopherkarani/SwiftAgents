@@ -62,17 +62,19 @@ public protocol Agent: Sendable {
     /// Executes the agent with the given input and returns a result.
     /// - Parameters:
     ///   - input: The user's input/query.
+    ///   - session: Optional session for conversation history management.
     ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
-    func run(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult
+    func run(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) async throws -> AgentResult
 
     /// Streams the agent's execution, yielding events as they occur.
     /// - Parameters:
     ///   - input: The user's input/query.
+    ///   - session: Optional session for conversation history management.
     ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: An async stream of agent events.
-    nonisolated func stream(_ input: String, hooks: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error>
+    nonisolated func stream(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error>
 
     /// Cancels any ongoing execution.
     func cancel() async
@@ -100,14 +102,24 @@ public extension Agent {
 // MARK: - Agent Backward Compatibility
 
 public extension Agent {
-    /// Convenience method for run without hooks.
-    func run(_ input: String) async throws -> AgentResult {
-        try await run(input, hooks: nil)
+    /// Convenience method for run with hooks but no session.
+    func run(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
+        try await run(input, session: nil, hooks: hooks)
     }
 
-    /// Convenience method for stream without hooks.
+    /// Convenience method for run without session or hooks.
+    func run(_ input: String) async throws -> AgentResult {
+        try await run(input, session: nil, hooks: nil)
+    }
+
+    /// Convenience method for stream with hooks but no session.
+    nonisolated func stream(_ input: String, hooks: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error> {
+        stream(input, session: nil, hooks: hooks)
+    }
+
+    /// Convenience method for stream without session or hooks.
     nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        stream(input, hooks: nil)
+        stream(input, session: nil, hooks: nil)
     }
 }
 
