@@ -94,6 +94,18 @@ public protocol PersistentMemoryBackend: Actor, Sendable {
     ///   - conversationId: The conversation identifier.
     ///   - keepRecent: Number of recent messages to keep.
     func deleteOldestMessages(conversationId: String, keepRecent: Int) async throws
+
+    /// Deletes and returns the most recent message from a conversation.
+    ///
+    /// This is an O(1) operation that fetches only the last message (using fetchLimit: 1
+    /// with descending timestamp order), deletes it, and returns its content.
+    ///
+    /// Default implementation fetches all messages and performs O(n) operations.
+    /// Override for optimized single-message deletion.
+    ///
+    /// - Parameter conversationId: The conversation identifier.
+    /// - Returns: The deleted message, or `nil` if the conversation is empty.
+    func deleteLastMessage(conversationId: String) async throws -> MemoryMessage?
 }
 
 // MARK: - Default Implementations
@@ -113,6 +125,23 @@ public extension PersistentMemoryBackend {
         let messagesToKeep = Array(allMessages.suffix(keepRecent))
         try await deleteMessages(conversationId: conversationId)
         try await storeAll(messagesToKeep, conversationId: conversationId)
+    }
+
+    func deleteLastMessage(conversationId: String) async throws -> MemoryMessage? {
+        // Default O(n) implementation: fetch all, delete all, re-insert all but last
+        // Override this method for optimized O(1) implementations
+        let allMessages = try await fetchMessages(conversationId: conversationId)
+        guard !allMessages.isEmpty else { return nil }
+
+        let lastMessage = allMessages[allMessages.count - 1]
+        let remainingMessages = Array(allMessages.dropLast())
+
+        try await deleteMessages(conversationId: conversationId)
+        if !remainingMessages.isEmpty {
+            try await storeAll(remainingMessages, conversationId: conversationId)
+        }
+
+        return lastMessage
     }
 }
 

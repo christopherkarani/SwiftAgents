@@ -87,6 +87,45 @@ public protocol Session: Actor, Sendable {
     func clearSession() async throws
 }
 
+// MARK: - SessionError
+
+/// Errors that can occur during session operations.
+public enum SessionError: Error, Sendable, Equatable {
+    /// Failed to retrieve items from the session.
+    case retrievalFailed(reason: String)
+
+    /// Failed to store items in the session.
+    case storageFailed(reason: String)
+
+    /// Failed to delete items from the session.
+    case deletionFailed(reason: String)
+
+    /// Session is in an invalid state.
+    case invalidState(reason: String)
+
+    /// Backend operation failed.
+    case backendError(reason: String)
+}
+
+// MARK: LocalizedError
+
+extension SessionError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .retrievalFailed(let reason):
+            return "Failed to retrieve session items: \(reason)"
+        case .storageFailed(let reason):
+            return "Failed to store session items: \(reason)"
+        case .deletionFailed(let reason):
+            return "Failed to delete session items: \(reason)"
+        case .invalidState(let reason):
+            return "Session in invalid state: \(reason)"
+        case .backendError(let reason):
+            return "Session backend error: \(reason)"
+        }
+    }
+}
+
 // MARK: - Default Extension Methods
 
 public extension Session {

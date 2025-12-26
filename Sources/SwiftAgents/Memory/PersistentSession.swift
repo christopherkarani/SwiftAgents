@@ -67,12 +67,21 @@
         ///
         /// This property queries the backend for the current message count
         /// for this session's conversation ID.
+        ///
+        /// - Note: This is a convenience property that returns `0` on backend errors.
+        ///   The `Session` protocol defines `itemCount` as a non-throwing async property,
+        ///   and Swift does not support throwing computed properties. For guaranteed
+        ///   accuracy when error handling is critical, use `getItems(limit: nil)` and
+        ///   check the array's count, which properly propagates errors.
+        ///
+        /// - Important: A return value of `0` may indicate either an empty session
+        ///   or a backend error. Check logs for errors if unexpected results occur.
         public var itemCount: Int {
             get async {
                 do {
                     return try await backend.messageCount(conversationId: sessionId)
                 } catch {
-                    Log.memory.error("Failed to get item count: \(error.localizedDescription)")
+                    Log.memory.error("Failed to get item count for session '\(sessionId)': \(error.localizedDescription). Returning 0 as fallback.")
                     return 0
                 }
             }
@@ -175,31 +184,13 @@
         /// Follows LIFO (Last-In-First-Out) semantics, removing the last added item.
         /// This is useful for undoing the last message or implementing retry logic.
         ///
+        /// Uses an optimized O(1) operation that fetches and deletes only the last message,
+        /// rather than an O(n) approach of fetching all, deleting all, and re-inserting.
+        ///
         /// - Returns: The removed message, or `nil` if the session is empty.
         /// - Throws: If removal operation fails.
         public func popItem() async throws -> MemoryMessage? {
-            // Fetch all messages in chronological order
-            let allMessages = try await backend.fetchMessages(conversationId: sessionId)
-
-            guard !allMessages.isEmpty else {
-                return nil
-            }
-
-            // Get the last message (most recent)
-            let lastMessage = allMessages[allMessages.count - 1]
-
-            // Get all messages except the last one
-            let remainingMessages = Array(allMessages.dropLast())
-
-            // Clear the session
-            try await backend.deleteMessages(conversationId: sessionId)
-
-            // Re-add the remaining messages
-            if !remainingMessages.isEmpty {
-                try await backend.storeAll(remainingMessages, conversationId: sessionId)
-            }
-
-            return lastMessage
+            try await backend.deleteLastMessage(conversationId: sessionId)
         }
 
         /// Clears all items from this session.

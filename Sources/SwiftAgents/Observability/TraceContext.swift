@@ -132,7 +132,7 @@ public actor TraceContext: Sendable {
         )
 
         spans.append(span)
-        currentSpanId = span.id
+        spanStack.append(span.id)
 
         return span
     }
@@ -158,10 +158,8 @@ public actor TraceContext: Sendable {
         let completedSpan = span.completed(status: status)
         spans[index] = completedSpan
 
-        // Restore parent span as current
-        if currentSpanId == span.id {
-            currentSpanId = span.parentSpanId
-        }
+        // Remove span from stack (allows out-of-order span completion)
+        spanStack.removeAll { $0 == span.id }
     }
 
     /// Adds an external span to this context.
@@ -186,8 +184,15 @@ public actor TraceContext: Sendable {
     /// Collection of spans recorded within this trace context.
     private var spans: [TraceSpan] = []
 
+    /// Stack of active span IDs for proper parent tracking.
+    /// Allows spans to end in any order while maintaining correct parent relationships.
+    private var spanStack: [UUID] = []
+
     /// Current active span for parent tracking.
-    private var currentSpanId: UUID?
+    /// Returns the most recently started span that has not yet ended.
+    private var currentSpanId: UUID? {
+        spanStack.last
+    }
 
     // MARK: - Initialization
 

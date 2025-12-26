@@ -668,15 +668,21 @@ public actor SupervisorAgent: Agent {
     /// - Parameters:
     ///   - agentName: The name of the agent to execute.
     ///   - input: The input to pass to the agent.
+    ///   - session: Optional session for conversation context.
     ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: The agent's result.
     /// - Throws: `AgentError.internalError` if agent not found.
-    public func executeAgent(named agentName: String, input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    public func executeAgent(
+        named agentName: String,
+        input: String,
+        session: (any Session)? = nil,
+        hooks: (any RunHooks)? = nil
+    ) async throws -> AgentResult {
         guard let entry = agentRegistry.first(where: { $0.name == agentName }) else {
             throw AgentError.internalError(reason: "Agent '\(agentName)' not found")
         }
 
-        return try await entry.agent.run(input, session: nil, hooks: hooks)
+        return try await entry.agent.run(input, session: session, hooks: hooks)
     }
 
     // MARK: Private

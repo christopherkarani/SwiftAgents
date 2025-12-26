@@ -82,6 +82,18 @@ public actor InMemoryBackend: PersistentMemoryBackend {
         storage[conversationId] = messages
     }
 
+    public func deleteLastMessage(conversationId: String) async throws -> MemoryMessage? {
+        guard var messages = storage[conversationId], !messages.isEmpty else {
+            return nil
+        }
+
+        // O(1) operation: remove and return the last element
+        let lastStored = messages.removeLast()
+        storage[conversationId] = messages
+
+        return lastStored.message
+    }
+
     // MARK: - Additional Convenience Methods
 
     /// Clears all data from all conversations.

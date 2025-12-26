@@ -51,10 +51,10 @@ public struct TraceSpan: Sendable, Identifiable, Equatable, Hashable {
 
     /// Timestamp when this span ended.
     /// Nil if the span is still active.
-    public var endTime: Date?
+    public let endTime: Date?
 
     /// Current status of this span.
-    public var status: SpanStatus
+    public let status: SpanStatus
 
     /// Additional metadata associated with this span.
     public let metadata: [String: SendableValue]
