@@ -356,6 +356,8 @@ public actor AgentRouter: Agent {
 
     nonisolated public var memory: (any Memory)? { nil }
     nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
+
+    /// Tracer for this router. Returns `nil` as orchestrators delegate tracing to their sub-agents.
     nonisolated public var tracer: (any Tracer)? { nil }
 
     // MARK: - Initialization

@@ -158,8 +158,9 @@ public extension RunHooks {
 /// all receive callbacks. Hooks are executed **concurrently** using structured
 /// concurrency for optimal performance.
 ///
-/// - Important: Hook execution order is **not guaranteed** due to concurrent execution.
-///   If ordering is required, use a single hook implementation that coordinates internally.
+/// - Important: Hooks are **invoked** in registration order but execute **concurrently**.
+///   Completion order is not guaranteed. For strictly ordered execution, use a single hook
+///   that coordinates multiple handlers internally.
 /// - Note: Hook implementations must be thread-safe and handle concurrent invocation.
 ///
 /// Example:
@@ -197,11 +198,7 @@ public struct CompositeRunHooks: RunHooks {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
-                    do {
-                        await hook.onAgentStart(context: context, agent: agent, input: input)
-                    } catch {
-                        Log.agents.warning("RunHook failed in onAgentStart: \(error.localizedDescription)")
-                    }
+                    await hook.onAgentStart(context: context, agent: agent, input: input)
                 }
             }
         }
@@ -211,11 +208,7 @@ public struct CompositeRunHooks: RunHooks {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
-                    do {
-                        await hook.onAgentEnd(context: context, agent: agent, result: result)
-                    } catch {
-                        Log.agents.warning("RunHook failed in onAgentEnd: \(error.localizedDescription)")
-                    }
+                    await hook.onAgentEnd(context: context, agent: agent, result: result)
                 }
             }
         }
@@ -225,11 +218,7 @@ public struct CompositeRunHooks: RunHooks {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
-                    do {
-                        await hook.onError(context: context, agent: agent, error: error)
-                    } catch {
-                        Log.agents.warning("RunHook failed in onError: \(error.localizedDescription)")
-                    }
+                    await hook.onError(context: context, agent: agent, error: error)
                 }
             }
         }
@@ -239,11 +228,7 @@ public struct CompositeRunHooks: RunHooks {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
-                    do {
-                        await hook.onHandoff(context: context, fromAgent: fromAgent, toAgent: toAgent)
-                    } catch {
-                        Log.agents.warning("RunHook failed in onHandoff: \(error.localizedDescription)")
-                    }
+                    await hook.onHandoff(context: context, fromAgent: fromAgent, toAgent: toAgent)
                 }
             }
         }
@@ -253,11 +238,7 @@ public struct CompositeRunHooks: RunHooks {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
-                    do {
-                        await hook.onToolStart(context: context, agent: agent, tool: tool, arguments: arguments)
-                    } catch {
-                        Log.agents.warning("RunHook failed in onToolStart: \(error.localizedDescription)")
-                    }
+                    await hook.onToolStart(context: context, agent: agent, tool: tool, arguments: arguments)
                 }
             }
         }
@@ -267,11 +248,7 @@ public struct CompositeRunHooks: RunHooks {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
-                    do {
-                        await hook.onToolEnd(context: context, agent: agent, tool: tool, result: result)
-                    } catch {
-                        Log.agents.warning("RunHook failed in onToolEnd: \(error.localizedDescription)")
-                    }
+                    await hook.onToolEnd(context: context, agent: agent, tool: tool, result: result)
                 }
             }
         }
@@ -281,11 +258,7 @@ public struct CompositeRunHooks: RunHooks {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
-                    do {
-                        await hook.onLLMStart(context: context, agent: agent, systemPrompt: systemPrompt, inputMessages: inputMessages)
-                    } catch {
-                        Log.agents.warning("RunHook failed in onLLMStart: \(error.localizedDescription)")
-                    }
+                    await hook.onLLMStart(context: context, agent: agent, systemPrompt: systemPrompt, inputMessages: inputMessages)
                 }
             }
         }
@@ -295,11 +268,7 @@ public struct CompositeRunHooks: RunHooks {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
-                    do {
-                        await hook.onLLMEnd(context: context, agent: agent, response: response, usage: usage)
-                    } catch {
-                        Log.agents.warning("RunHook failed in onLLMEnd: \(error.localizedDescription)")
-                    }
+                    await hook.onLLMEnd(context: context, agent: agent, response: response, usage: usage)
                 }
             }
         }
@@ -309,11 +278,7 @@ public struct CompositeRunHooks: RunHooks {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
-                    do {
-                        await hook.onGuardrailTriggered(context: context, guardrailName: guardrailName, guardrailType: guardrailType, result: result)
-                    } catch {
-                        Log.agents.warning("RunHook failed in onGuardrailTriggered: \(error.localizedDescription)")
-                    }
+                    await hook.onGuardrailTriggered(context: context, guardrailName: guardrailName, guardrailType: guardrailType, result: result)
                 }
             }
         }
@@ -383,8 +348,8 @@ public struct LoggingRunHooks: RunHooks {
         } else {
             ""
         }
-        let fromName = fromAgent.configuration.name ?? String(describing: type(of: fromAgent))
-        let toName = toAgent.configuration.name ?? String(describing: type(of: toAgent))
+        let fromName = fromAgent.configuration.name
+        let toName = toAgent.configuration.name
         Log.agents.info("Agent handoff\(contextId) - from: \(fromName) to: \(toName)")
     }
 

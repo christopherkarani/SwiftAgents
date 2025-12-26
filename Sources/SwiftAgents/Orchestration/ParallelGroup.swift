@@ -357,6 +357,7 @@ public actor ParallelGroup: Agent {
 
     nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
 
+    /// Tracer for this group. Returns `nil` as orchestrators delegate tracing to their sub-agents.
     nonisolated public var tracer: (any Tracer)? { nil }
 
     // MARK: - Initialization

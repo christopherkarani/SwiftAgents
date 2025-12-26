@@ -321,12 +321,12 @@ public actor ToolRegistry {
         let runner = GuardrailRunner()
         let data = ToolGuardrailData(tool: tool, arguments: arguments, agent: agent, context: context)
 
-        // Run input guardrails
-        if !tool.inputGuardrails.isEmpty {
-            _ = try await runner.runToolInputGuardrails(tool.inputGuardrails, data: data)
-        }
-
         do {
+            // Run input guardrails
+            if !tool.inputGuardrails.isEmpty {
+                _ = try await runner.runToolInputGuardrails(tool.inputGuardrails, data: data)
+            }
+
             let result = try await tool.execute(arguments: arguments)
 
             // Run output guardrails
@@ -335,20 +335,25 @@ public actor ToolRegistry {
             }
 
             return result
-        } catch let error as AgentError {
-            if let agent = agent, let hooks = hooks {
-                await hooks.onError(context: context, agent: agent, error: error)
-            }
-            throw error
         } catch {
-            let toolError = AgentError.toolExecutionFailed(
-                toolName: name,
-                underlyingError: error.localizedDescription
-            )
+            // Notify hooks for any error (guardrail, execution, or otherwise)
             if let agent = agent, let hooks = hooks {
-                await hooks.onError(context: context, agent: agent, error: toolError)
+                let notificationError = (error as? AgentError) ?? AgentError.toolExecutionFailed(
+                    toolName: name,
+                    underlyingError: error.localizedDescription
+                )
+                await hooks.onError(context: context, agent: agent, error: notificationError)
             }
-            throw toolError
+
+            // Re-throw original error or wrap it
+            if let agentError = error as? AgentError {
+                throw agentError
+            } else {
+                throw AgentError.toolExecutionFailed(
+                    toolName: name,
+                    underlyingError: error.localizedDescription
+                )
+            }
         }
     }
 
