@@ -173,30 +173,51 @@ public actor MCPClient {
             return Array(toolCache.values)
         }
 
-        // Clear the cache
-        toolCache.removeAll()
-
-        // Collect tools from all servers
-        for (_, server) in servers {
-            let capabilities = await server.capabilities
-            guard capabilities.tools else {
-                continue
-            }
-
-            let toolDefinitions = try await server.listTools()
-            for definition in toolDefinitions {
-                let bridgedTool = MCPBridgedTool(
-                    definition: definition,
-                    server: server
-                )
-                toolCache[bridgedTool.name] = bridgedTool
-            }
+        // If a refresh is already in progress, wait for it instead of starting a new one.
+        // This prevents concurrent cache rebuilds (race condition).
+        if let ongoing = refreshTask {
+            return try await ongoing.value
         }
 
-        // Mark cache as valid
-        cacheValid = true
+        // Start a new refresh task
+        let task = Task<[any Tool], Error> {
+            // Clear the cache
+            toolCache.removeAll()
 
-        return Array(toolCache.values)
+            // Collect tools from all servers
+            for (_, server) in servers {
+                let capabilities = await server.capabilities
+                guard capabilities.tools else {
+                    continue
+                }
+
+                let toolDefinitions = try await server.listTools()
+                for definition in toolDefinitions {
+                    let bridgedTool = MCPBridgedTool(
+                        definition: definition,
+                        server: server
+                    )
+                    toolCache[bridgedTool.name] = bridgedTool
+                }
+            }
+
+            // Mark cache as valid
+            cacheValid = true
+
+            return Array(toolCache.values)
+        }
+
+        // Store the task for deduplication
+        refreshTask = task
+
+        do {
+            let result = try await task.value
+            refreshTask = nil
+            return result
+        } catch {
+            refreshTask = nil
+            throw error
+        }
     }
 
     /// Refreshes the tool cache and returns all available tools.
@@ -328,12 +349,24 @@ public actor MCPClient {
     public func closeAll() async throws {
         var errors: [(serverName: String, error: Error)] = []
 
-        // Attempt to close all servers
-        for (name, server) in servers {
-            do {
-                try await server.close()
-            } catch {
-                errors.append((serverName: name, error: error))
+        // Attempt to close all servers concurrently
+        try await withThrowingTaskGroup(of: (String, Error?).self) { group in
+            for (name, server) in servers {
+                group.addTask {
+                    do {
+                        try await server.close()
+                        return (name, nil)
+                    } catch {
+                        return (name, error)
+                    }
+                }
+            }
+
+            // Collect all results (successes and failures)
+            for try await (name, error) in group {
+                if let error {
+                    errors.append((serverName: name, error: error))
+                }
             }
         }
 
@@ -370,4 +403,9 @@ public actor MCPClient {
 
     /// Whether the tool cache is currently valid.
     private var cacheValid: Bool = false
+
+    /// Ongoing tool refresh task to prevent concurrent cache rebuilds.
+    /// Used for request deduplication - if a refresh is in progress,
+    /// subsequent calls wait for the same task instead of starting new ones.
+    private var refreshTask: Task<[any Tool], Error>?
 }

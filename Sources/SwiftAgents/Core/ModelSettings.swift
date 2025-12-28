@@ -311,19 +311,25 @@ public extension ModelSettings {
     ///
     /// This is useful for combining base settings with overrides.
     /// Only non-nil values from `other` replace values in `self`.
+    /// The merged settings are validated before being returned.
     ///
     /// - Parameter other: The settings to merge in.
-    /// - Returns: A new ModelSettings with merged values.
+    /// - Returns: A new ModelSettings with merged and validated values.
+    /// - Throws: `ModelSettingsValidationError` if the merged settings are invalid.
     ///
     /// Example:
     /// ```swift
     /// let base = ModelSettings.balanced
     /// let override = ModelSettings().maxTokens(2048)
-    /// let merged = base.merged(with: override)
+    /// let merged = try base.merged(with: override)
     /// // Result: temperature 0.7, topP 0.9, maxTokens 2048
+    ///
+    /// // Merging invalid settings will throw
+    /// let invalid = ModelSettings().temperature(3.0)
+    /// let merged = try base.merged(with: invalid) // Throws invalidTemperature
     /// ```
-    func merged(with other: ModelSettings) -> ModelSettings {
-        ModelSettings(
+    func merged(with other: ModelSettings) throws -> ModelSettings {
+        let merged = ModelSettings(
             temperature: other.temperature ?? temperature,
             topP: other.topP ?? topP,
             topK: other.topK ?? topK,
@@ -341,6 +347,11 @@ public extension ModelSettings {
             minP: other.minP ?? minP,
             providerSettings: mergeProviderSettings(with: other.providerSettings)
         )
+
+        // Validate the merged settings to catch invalid combinations
+        try merged.validate()
+
+        return merged
     }
 
     // MARK: Private

@@ -208,7 +208,7 @@ public struct MCPResponse: Sendable, Codable, Equatable {
     ///
     /// According to JSON-RPC 2.0, a response must contain either a `result`
     /// (on success) or an `error` (on failure), but not both. This initializer
-    /// enforces this constraint with a precondition.
+    /// enforces this constraint by throwing an error.
     ///
     /// - Parameters:
     ///   - jsonrpc: The protocol version. Should always be "2.0".
@@ -216,18 +216,19 @@ public struct MCPResponse: Sendable, Codable, Equatable {
     ///   - result: The result of successful execution, or `nil` on error.
     ///   - error: The error object on failure, or `nil` on success.
     ///
-    /// - Precondition: Exactly one of `result` or `error` must be non-nil.
-    ///   Both being `nil` or both being non-nil violates JSON-RPC 2.0.
+    /// - Throws: `MCPError.invalidRequest` if both `result` and `error` are `nil`,
+    ///   or if both are non-nil, which violates JSON-RPC 2.0 specification.
     public init(
         jsonrpc: String = "2.0",
         id: String,
         result: SendableValue? = nil,
         error: MCPErrorObject? = nil
-    ) {
-        precondition(
-            (result == nil) != (error == nil),
-            "MCPResponse must have exactly one of result or error set, not both or neither"
-        )
+    ) throws {
+        guard (result == nil) != (error == nil) else {
+            throw MCPError.invalidRequest(
+                "MCPResponse must have exactly one of result or error set, not both or neither"
+            )
+        }
         self.jsonrpc = jsonrpc
         self.id = id
         self.result = result
@@ -254,7 +255,12 @@ public struct MCPResponse: Sendable, Codable, Equatable {
             )
         }
 
-        self.init(jsonrpc: jsonrpc, id: id, result: result, error: error, skipValidation: true)
+        // Use private initializer that bypasses the throwing check
+        // since we've already validated above
+        self.jsonrpc = jsonrpc
+        self.id = id
+        self.result = result
+        self.error = error
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -273,22 +279,6 @@ public struct MCPResponse: Sendable, Codable, Equatable {
         case result
         case error
     }
-
-    /// Internal initializer for decoding that bypasses the precondition.
-    ///
-    /// Used by `init(from:)` which performs its own validation.
-    private init(
-        jsonrpc: String,
-        id: String,
-        result: SendableValue?,
-        error: MCPErrorObject?,
-        skipValidation _: Bool
-    ) {
-        self.jsonrpc = jsonrpc
-        self.id = id
-        self.result = result
-        self.error = error
-    }
 }
 
 // MARK: - MCPResponse Factory Methods
@@ -300,8 +290,11 @@ public extension MCPResponse {
     ///   - id: The identifier matching the corresponding request.
     ///   - result: The result value to include in the response.
     /// - Returns: An MCPResponse with the result set and error as `nil`.
+    ///
+    /// - Note: This method cannot fail as it guarantees valid inputs.
     static func success(id: String, result: SendableValue) -> MCPResponse {
-        MCPResponse(id: id, result: result, error: nil)
+        // Safe to force-try because we guarantee exactly one of result/error is set
+        try! MCPResponse(id: id, result: result, error: nil)
     }
 
     /// Creates an error response with the given error object.
@@ -310,8 +303,11 @@ public extension MCPResponse {
     ///   - id: The identifier matching the corresponding request.
     ///   - error: The error object describing what went wrong.
     /// - Returns: An MCPResponse with the error set and result as `nil`.
+    ///
+    /// - Note: This method cannot fail as it guarantees valid inputs.
     static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
-        MCPResponse(id: id, result: nil, error: error)
+        // Safe to force-try because we guarantee exactly one of result/error is set
+        try! MCPResponse(id: id, result: nil, error: error)
     }
 }
 

@@ -84,28 +84,49 @@ public actor ResponseTracker {
     /// are automatically removed to maintain the bound.
     nonisolated public let maxHistorySize: Int
 
+    /// Maximum number of sessions to track simultaneously.
+    ///
+    /// When the number of sessions exceeds this limit, the least recently
+    /// used (LRU) sessions are automatically evicted to prevent unbounded
+    /// memory growth.
+    ///
+    /// Set to `nil` for unlimited sessions (use with caution in production).
+    /// Default: 1000 sessions
+    nonisolated public let maxSessions: Int?
+
     // MARK: - Initialization
 
-    /// Creates a response tracker with the specified history limit.
+    /// Creates a response tracker with the specified history and session limits.
     ///
-    /// - Parameter maxHistorySize: Maximum responses to store per session.
-    ///   Must be greater than 0. Default: 100
+    /// - Parameters:
+    ///   - maxHistorySize: Maximum responses to store per session.
+    ///     Must be greater than 0. Default: 100
+    ///   - maxSessions: Maximum number of sessions to track simultaneously.
+    ///     When exceeded, least recently used sessions are evicted.
+    ///     Set to `nil` for unlimited sessions. Default: 1000
     ///
     /// ## Example
     ///
     /// ```swift
-    /// // Default tracker with 100 response limit
+    /// // Default tracker with 100 responses/session, 1000 sessions
     /// let defaultTracker = ResponseTracker()
     ///
     /// // Compact tracker for memory-constrained environments
-    /// let compactTracker = ResponseTracker(maxHistorySize: 20)
+    /// let compactTracker = ResponseTracker(maxHistorySize: 20, maxSessions: 100)
     ///
     /// // Large tracker for detailed history needs
-    /// let largeTracker = ResponseTracker(maxHistorySize: 500)
+    /// let largeTracker = ResponseTracker(maxHistorySize: 500, maxSessions: 5000)
+    ///
+    /// // Unlimited sessions (use with caution in production)
+    /// let unlimitedTracker = ResponseTracker(maxSessions: nil)
     /// ```
-    public init(maxHistorySize: Int = 100) {
+    public init(maxHistorySize: Int = 100, maxSessions: Int? = 1000) {
         precondition(maxHistorySize > 0, "maxHistorySize must be greater than 0")
+        if let maxSessions {
+            precondition(maxSessions > 0, "maxSessions must be greater than 0 when not nil")
+        }
         self.maxHistorySize = maxHistorySize
+        self.maxSessions = maxSessions
     }
 
     // MARK: - Recording
@@ -141,12 +162,20 @@ public actor ResponseTracker {
         var history = responseHistory[sessionId] ?? []
         history.append(response)
 
-        // CRITICAL: Trim oldest responses to prevent unbounded growth
+        // CRITICAL: Trim oldest responses to prevent unbounded growth per session
         if history.count > maxHistorySize {
             history = Array(history.suffix(maxHistorySize))
         }
 
         responseHistory[sessionId] = history
+
+        // Update session access time for LRU tracking
+        sessionAccessTimes[sessionId] = Date()
+
+        // CRITICAL: Enforce maximum session limit using LRU eviction
+        if let maxSessions, sessionAccessTimes.count > maxSessions {
+            evictLeastRecentlyUsedSessions(keepingMostRecent: maxSessions)
+        }
     }
 
     // MARK: - Retrieval
@@ -259,6 +288,7 @@ public actor ResponseTracker {
     /// ```
     public func clearHistory(for sessionId: String) {
         responseHistory.removeValue(forKey: sessionId)
+        sessionAccessTimes.removeValue(forKey: sessionId)
     }
 
     /// Clears all response history across all sessions.
@@ -277,6 +307,7 @@ public actor ResponseTracker {
     /// ```
     public func clearAllHistory() {
         responseHistory.removeAll()
+        sessionAccessTimes.removeAll()
     }
 
     // MARK: - Statistics
@@ -337,4 +368,28 @@ public actor ResponseTracker {
 
     /// Storage for response history keyed by session ID.
     private var responseHistory: [String: [AgentResponse]] = [:]
+
+    /// LRU tracking: maps session IDs to their last access time.
+    /// Used to evict least recently used sessions when maxSessions is exceeded.
+    private var sessionAccessTimes: [String: Date] = [:]
+
+    // MARK: - Private Methods
+
+    /// Evicts the least recently used sessions to maintain the session limit.
+    ///
+    /// - Parameter keepingMostRecent: Number of most recently used sessions to keep.
+    private func evictLeastRecentlyUsedSessions(keepingMostRecent limit: Int) {
+        // Sort sessions by access time (oldest first)
+        let sortedSessions = sessionAccessTimes.sorted { $0.value < $1.value }
+
+        // Calculate how many to evict
+        let evictCount = sortedSessions.count - limit
+        guard evictCount > 0 else { return }
+
+        // Evict oldest sessions
+        for (sessionId, _) in sortedSessions.prefix(evictCount) {
+            responseHistory.removeValue(forKey: sessionId)
+            sessionAccessTimes.removeValue(forKey: sessionId)
+        }
+    }
 }
