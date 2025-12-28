@@ -98,15 +98,14 @@
         public func toMemoryMessage() -> MemoryMessage? {
             guard let messageRole = MemoryMessage.Role(rawValue: role) else {
                 Log.memory.warning(
-                    "Failed to deserialize PersistedMessage: invalid role '\(self.role)' for message id: \(id)"
+                    "Failed to deserialize PersistedMessage: invalid role '\(role)' for message id: \(id)"
                 )
                 return nil
             }
 
             let metadata: [String: String]
             if let data = metadataJSON.data(using: .utf8),
-               let decoded = try? JSONDecoder().decode([String: String].self, from: data)
-            {
+               let decoded = try? JSONDecoder().decode([String: String].self, from: data) {
                 metadata = decoded
             } else {
                 if !metadataJSON.isEmpty, metadataJSON != "{}" {

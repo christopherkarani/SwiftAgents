@@ -56,6 +56,22 @@ public struct AgentConfiguration: Sendable, Equatable {
     /// Default: empty
     public var stopSequences: [String]
 
+    /// Extended model settings for fine-grained control.
+    ///
+    /// When set, values in `modelSettings` take precedence over the individual
+    /// `temperature`, `maxTokens`, and `stopSequences` properties above.
+    /// This allows for backward compatibility while enabling advanced configuration.
+    ///
+    /// Example:
+    /// ```swift
+    /// let config = AgentConfiguration.default
+    ///     .modelSettings(ModelSettings.creative
+    ///         .toolChoice(.required)
+    ///         .parallelToolCalls(true)
+    ///     )
+    /// ```
+    public var modelSettings: ModelSettings?
+
     // MARK: - Behavior Settings
 
     /// Whether to stream responses.
@@ -84,6 +100,44 @@ public struct AgentConfiguration: Sendable, Equatable {
     /// Default: 50
     public var sessionHistoryLimit: Int?
 
+    // MARK: - Parallel Execution Settings
+
+    /// Whether to execute multiple tool calls in parallel.
+    ///
+    /// When enabled, if the agent requests multiple tool calls in a single turn,
+    /// they will be executed concurrently using Swift's structured concurrency.
+    /// This can significantly improve performance but may increase resource usage.
+    ///
+    /// ## Performance Impact
+    /// - Sequential: Each tool waits for previous to complete
+    /// - Parallel: All tools execute simultaneously
+    /// - Speedup: Up to N× faster (where N = number of tools)
+    ///
+    /// ## Requirements
+    /// - Tools must be independent (no shared mutable state)
+    /// - All tools must be thread-safe
+    ///
+    /// Default: `false`
+    public var parallelToolCalls: Bool
+
+    // MARK: - Response Tracking Settings
+
+    /// Previous response ID for conversation continuation.
+    ///
+    /// Set this to continue a conversation from a specific response.
+    /// The agent will use this to maintain context across sessions.
+    ///
+    /// - Note: Usually set automatically when `autoPreviousResponseId` is enabled
+    public var previousResponseId: String?
+
+    /// Whether to automatically populate previous response ID.
+    ///
+    /// When enabled, the agent automatically tracks response IDs
+    /// and uses them for conversation continuation within a session.
+    ///
+    /// Default: `false`
+    public var autoPreviousResponseId: Bool
+
     // MARK: - Initialization
 
     /// Creates a new agent configuration.
@@ -94,11 +148,15 @@ public struct AgentConfiguration: Sendable, Equatable {
     ///   - temperature: Model temperature (0.0-2.0). Default: 1.0
     ///   - maxTokens: Maximum tokens per response. Default: nil
     ///   - stopSequences: Generation stop sequences. Default: []
+    ///   - modelSettings: Extended model settings. Default: nil
     ///   - enableStreaming: Enable response streaming. Default: true
     ///   - includeToolCallDetails: Include tool details in results. Default: true
     ///   - stopOnToolError: Stop on first tool error. Default: false
     ///   - includeReasoning: Include reasoning in events. Default: true
     ///   - sessionHistoryLimit: Maximum session history messages to load. Default: 50
+    ///   - parallelToolCalls: Enable parallel tool execution. Default: false
+    ///   - previousResponseId: Previous response ID for continuation. Default: nil
+    ///   - autoPreviousResponseId: Enable auto response ID tracking. Default: false
     public init(
         name: String = "Agent",
         maxIterations: Int = 10,
@@ -106,23 +164,35 @@ public struct AgentConfiguration: Sendable, Equatable {
         temperature: Double = 1.0,
         maxTokens: Int? = nil,
         stopSequences: [String] = [],
+        modelSettings: ModelSettings? = nil,
         enableStreaming: Bool = true,
         includeToolCallDetails: Bool = true,
         stopOnToolError: Bool = false,
         includeReasoning: Bool = true,
-        sessionHistoryLimit: Int? = 50
+        sessionHistoryLimit: Int? = 50,
+        parallelToolCalls: Bool = false,
+        previousResponseId: String? = nil,
+        autoPreviousResponseId: Bool = false
     ) {
+        precondition(maxIterations > 0, "maxIterations must be positive")
+        precondition(timeout > .zero, "timeout must be positive")
+        precondition((0.0 ... 2.0).contains(temperature), "temperature must be 0.0-2.0")
+
         self.name = name
         self.maxIterations = maxIterations
         self.timeout = timeout
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.stopSequences = stopSequences
+        self.modelSettings = modelSettings
         self.enableStreaming = enableStreaming
         self.includeToolCallDetails = includeToolCallDetails
         self.stopOnToolError = stopOnToolError
         self.includeReasoning = includeReasoning
         self.sessionHistoryLimit = sessionHistoryLimit
+        self.parallelToolCalls = parallelToolCalls
+        self.previousResponseId = previousResponseId
+        self.autoPreviousResponseId = autoPreviousResponseId
     }
 }
 
@@ -138,11 +208,15 @@ extension AgentConfiguration: CustomStringConvertible {
             temperature: \(temperature),
             maxTokens: \(maxTokens.map(String.init) ?? "nil"),
             stopSequences: \(stopSequences),
+            modelSettings: \(modelSettings.map { String(describing: $0) } ?? "nil"),
             enableStreaming: \(enableStreaming),
             includeToolCallDetails: \(includeToolCallDetails),
             stopOnToolError: \(stopOnToolError),
             includeReasoning: \(includeReasoning),
-            sessionHistoryLimit: \(sessionHistoryLimit.map(String.init) ?? "nil")
+            sessionHistoryLimit: \(sessionHistoryLimit.map(String.init) ?? "nil"),
+            parallelToolCalls: \(parallelToolCalls),
+            previousResponseId: \(previousResponseId.map { "\"\($0)\"" } ?? "nil"),
+            autoPreviousResponseId: \(autoPreviousResponseId)
         )
         """
     }

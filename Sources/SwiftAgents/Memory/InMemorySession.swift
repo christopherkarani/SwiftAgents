@@ -41,7 +41,7 @@ public actor InMemorySession: Session {
     // MARK: Public
 
     /// Unique identifier for this session.
-    public nonisolated let sessionId: String
+    nonisolated public let sessionId: String
 
     // MARK: - Session Protocol Properties
 
@@ -55,16 +55,6 @@ public actor InMemorySession: Session {
         items.isEmpty
     }
 
-    /// Retrieves the item count with proper error propagation.
-    ///
-    /// For in-memory sessions, this operation cannot fail, so it simply
-    /// returns the current item count.
-    ///
-    /// - Returns: The number of items in the session.
-    public func getItemCount() async throws -> Int {
-        items.count
-    }
-
     // MARK: - Initialization
 
     /// Creates a new in-memory session.
@@ -73,6 +63,16 @@ public actor InMemorySession: Session {
     ///   Defaults to a new UUID string if not provided.
     public init(sessionId: String = UUID().uuidString) {
         self.sessionId = sessionId
+    }
+
+    /// Retrieves the item count with proper error propagation.
+    ///
+    /// For in-memory sessions, this operation cannot fail, so it simply
+    /// returns the current item count.
+    ///
+    /// - Returns: The number of items in the session.
+    public func getItemCount() async throws -> Int {
+        items.count
     }
 
     // MARK: - Session Protocol Methods

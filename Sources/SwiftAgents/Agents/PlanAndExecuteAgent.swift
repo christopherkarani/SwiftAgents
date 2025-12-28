@@ -259,15 +259,14 @@ public actor PlanAndExecuteAgent: Agent {
     nonisolated public let inputGuardrails: [any InputGuardrail]
     nonisolated public let outputGuardrails: [any OutputGuardrail]
     nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
-    private let _handoffs: [AnyHandoffConfiguration]
-
-    /// Configured handoffs for this agent.
-    nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
 
     // MARK: - Plan-and-Execute Specific Configuration
 
     /// Maximum number of replan attempts when steps fail.
     nonisolated public let maxReplanAttempts: Int
+
+    /// Configured handoffs for this agent.
+    nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
 
     // MARK: - Initialization
 
@@ -441,6 +440,8 @@ public actor PlanAndExecuteAgent: Agent {
         let toolArguments: [String: SendableValue]?
         let dependsOn: [Int]
     }
+
+    private let _handoffs: [AnyHandoffConfiguration]
 
     // MARK: - Internal State
 

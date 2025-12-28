@@ -14,15 +14,15 @@ actor MockHandoffAgent: Agent {
     nonisolated let tools: [any Tool] = []
     nonisolated let instructions: String
     nonisolated let configuration: AgentConfiguration
-    nonisolated var memory: (any Memory)? { nil }
-    nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
-
     private(set) var runCallCount = 0
     private(set) var lastInput: String?
 
+    nonisolated var memory: (any Memory)? { nil }
+    nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+
     init(name: String = "MockAgent", instructions: String = "Mock instructions") {
         self.instructions = instructions
-        self.configuration = AgentConfiguration(name: name)
+        configuration = AgentConfiguration(name: name)
     }
 
     func run(
@@ -67,12 +67,12 @@ actor MockHandoffAgent: Agent {
     func getLastInput() -> String? { lastInput }
 }
 
-// MARK: - HandoffInputData Tests
+// MARK: - HandoffInputDataTests
 
 @Suite("HandoffInputData Tests")
 struct HandoffInputDataTests {
     @Test("Creates HandoffInputData with all properties")
-    func testHandoffInputDataCreation() {
+    func handoffInputDataCreation() {
         let inputData = HandoffInputData(
             sourceAgentName: "planner",
             targetAgentName: "executor",
@@ -89,7 +89,7 @@ struct HandoffInputDataTests {
     }
 
     @Test("Creates HandoffInputData with default empty context and metadata")
-    func testHandoffInputDataDefaultValues() {
+    func handoffInputDataDefaultValues() {
         let inputData = HandoffInputData(
             sourceAgentName: "source",
             targetAgentName: "target",
@@ -101,7 +101,7 @@ struct HandoffInputDataTests {
     }
 
     @Test("HandoffInputData is Equatable")
-    func testHandoffInputDataEquatable() {
+    func handoffInputDataEquatable() {
         let inputData1 = HandoffInputData(
             sourceAgentName: "planner",
             targetAgentName: "executor",
@@ -129,7 +129,7 @@ struct HandoffInputDataTests {
     }
 
     @Test("HandoffInputData metadata can be mutated")
-    func testHandoffInputDataMetadataMutation() {
+    func handoffInputDataMetadataMutation() {
         var inputData = HandoffInputData(
             sourceAgentName: "source",
             targetAgentName: "target",
@@ -137,16 +137,16 @@ struct HandoffInputDataTests {
         )
 
         // Metadata can be modified
-        inputData.metadata["timestamp"] = .double(1234567890.0)
+        inputData.metadata["timestamp"] = .double(1_234_567_890.0)
         inputData.metadata["processed"] = .bool(true)
 
-        #expect(inputData.metadata["timestamp"]?.doubleValue == 1234567890.0)
+        #expect(inputData.metadata["timestamp"]?.doubleValue == 1_234_567_890.0)
         #expect(inputData.metadata["processed"]?.boolValue == true)
         #expect(inputData.metadata.count == 2)
     }
 
     @Test("HandoffInputData conforms to CustomStringConvertible")
-    func testHandoffInputDataDescription() {
+    func handoffInputDataDescription() {
         let inputData = HandoffInputData(
             sourceAgentName: "planner",
             targetAgentName: "executor",
@@ -161,7 +161,7 @@ struct HandoffInputDataTests {
     }
 
     @Test("HandoffInputData description truncates long input")
-    func testHandoffInputDataDescriptionTruncation() {
+    func handoffInputDataDescriptionTruncation() {
         let longInput = String(repeating: "a", count: 100)
         let inputData = HandoffInputData(
             sourceAgentName: "source",
@@ -177,7 +177,7 @@ struct HandoffInputDataTests {
     }
 
     @Test("HandoffInputData is Sendable")
-    func testHandoffInputDataSendable() async {
+    func handoffInputDataSendable() async {
         let inputData = HandoffInputData(
             sourceAgentName: "source",
             targetAgentName: "target",
@@ -193,12 +193,12 @@ struct HandoffInputDataTests {
     }
 }
 
-// MARK: - Callback Type Tests
+// MARK: - CallbackTypeTests
 
 @Suite("Callback Type Tests")
 struct CallbackTypeTests {
     @Test("OnHandoffCallback executes correctly")
-    func testOnHandoffCallbackExecution() async throws {
+    func onHandoffCallbackExecution() async throws {
         actor CallbackState {
             var callbackExecuted = false
             var capturedSourceName: String?
@@ -209,6 +209,7 @@ struct CallbackTypeTests {
                 capturedSourceName = source
                 capturedTargetName = target
             }
+
             func getExecuted() -> Bool { callbackExecuted }
             func getSourceName() -> String? { capturedSourceName }
             func getTargetName() -> String? { capturedTargetName }
@@ -221,7 +222,7 @@ struct CallbackTypeTests {
             await state.setCapturedNames(source: inputData.sourceAgentName, target: inputData.targetAgentName)
 
             // Can access context
-            let _ = await context.get("test_key")
+            _ = await context.get("test_key")
         }
 
         let context = AgentContext(input: "Test")
@@ -241,7 +242,7 @@ struct CallbackTypeTests {
     }
 
     @Test("OnHandoffCallback can throw errors")
-    func testOnHandoffCallbackThrows() async {
+    func onHandoffCallbackThrows() async {
         struct HandoffValidationError: Error {}
 
         let callback: OnHandoffCallback = { _, _ in
@@ -261,7 +262,7 @@ struct CallbackTypeTests {
     }
 
     @Test("InputFilterCallback transforms data correctly")
-    func testInputFilterCallbackTransformation() {
+    func inputFilterCallbackTransformation() {
         let filter: InputFilterCallback = { inputData in
             var modified = inputData
             modified.metadata["filtered_at"] = .double(Date().timeIntervalSince1970)
@@ -286,7 +287,7 @@ struct CallbackTypeTests {
     }
 
     @Test("IsEnabledCallback returns correctly")
-    func testIsEnabledCallbackReturnsCorrectly() async {
+    func isEnabledCallbackReturnsCorrectly() async {
         let agent = MockHandoffAgent(name: "test")
 
         let alwaysEnabled: IsEnabledCallback = { _, _ in true }
@@ -316,12 +317,12 @@ struct CallbackTypeTests {
     }
 }
 
-// MARK: - HandoffConfiguration Tests
+// MARK: - HandoffConfigurationTests
 
 @Suite("HandoffConfiguration Tests")
 struct HandoffConfigurationTests {
     @Test("Creates HandoffConfiguration with minimal parameters")
-    func testHandoffConfigurationCreation() async {
+    func handoffConfigurationCreation() async {
         let agent = MockHandoffAgent(name: "executor")
 
         let config = HandoffConfiguration(targetAgent: agent)
@@ -335,7 +336,7 @@ struct HandoffConfigurationTests {
     }
 
     @Test("Creates HandoffConfiguration with all properties")
-    func testHandoffConfigurationWithAllProperties() async {
+    func handoffConfigurationWithAllProperties() async {
         let agent = MockHandoffAgent(name: "executor")
 
         actor CallbackState {
@@ -396,7 +397,7 @@ struct HandoffConfigurationTests {
     }
 
     @Test("effectiveToolName returns override when set")
-    func testEffectiveToolNameWithOverride() async {
+    func effectiveToolNameWithOverride() async {
         let agent = MockHandoffAgent(name: "executor")
         let config = HandoffConfiguration(
             targetAgent: agent,
@@ -407,7 +408,7 @@ struct HandoffConfigurationTests {
     }
 
     @Test("effectiveToolName generates from type name when no override")
-    func testEffectiveToolNameGenerated() async {
+    func effectiveToolNameGenerated() async {
         let agent = MockHandoffAgent(name: "ExecutorAgent")
         let config = HandoffConfiguration(targetAgent: agent)
 
@@ -418,7 +419,7 @@ struct HandoffConfigurationTests {
     }
 
     @Test("effectiveToolDescription returns description when set")
-    func testEffectiveToolDescriptionWithOverride() async {
+    func effectiveToolDescriptionWithOverride() async {
         let agent = MockHandoffAgent(name: "executor")
         let config = HandoffConfiguration(
             targetAgent: agent,
@@ -429,7 +430,7 @@ struct HandoffConfigurationTests {
     }
 
     @Test("effectiveToolDescription generates default when not set")
-    func testEffectiveToolDescriptionGenerated() async {
+    func effectiveToolDescriptionGenerated() async {
         let agent = MockHandoffAgent(name: "executor")
         let config = HandoffConfiguration(targetAgent: agent)
 
@@ -438,7 +439,7 @@ struct HandoffConfigurationTests {
     }
 
     @Test("HandoffConfiguration is Sendable")
-    func testHandoffConfigurationSendable() async {
+    func handoffConfigurationSendable() async {
         let agent = MockHandoffAgent(name: "executor")
         let config = HandoffConfiguration(
             targetAgent: agent,
@@ -454,12 +455,12 @@ struct HandoffConfigurationTests {
     }
 }
 
-// MARK: - HandoffBuilder Tests
+// MARK: - HandoffBuilderTests
 
 @Suite("HandoffBuilder Tests")
 struct HandoffBuilderTests {
     @Test("HandoffBuilder creates basic configuration")
-    func testHandoffBuilderBasic() async {
+    func handoffBuilderBasic() async {
         let agent = MockHandoffAgent(name: "executor")
 
         let config = HandoffBuilder(to: agent).build()
@@ -470,7 +471,7 @@ struct HandoffBuilderTests {
     }
 
     @Test("HandoffBuilder supports fluent chaining")
-    func testHandoffBuilderFluentChaining() async {
+    func handoffBuilderFluentChaining() async {
         let agent = MockHandoffAgent(name: "executor")
 
         actor CallbackState {
@@ -531,7 +532,7 @@ struct HandoffBuilderTests {
     }
 
     @Test("HandoffBuilder build produces valid configuration")
-    func testHandoffBuilderBuild() async {
+    func handoffBuilderBuild() async {
         let agent = MockHandoffAgent(name: "test_agent")
 
         let config = HandoffBuilder(to: agent)
@@ -546,7 +547,7 @@ struct HandoffBuilderTests {
     }
 
     @Test("HandoffBuilder is immutable (returns new instances)")
-    func testHandoffBuilderImmutability() async {
+    func handoffBuilderImmutability() async {
         let agent = MockHandoffAgent(name: "executor")
 
         let builder1 = HandoffBuilder(to: agent)
@@ -562,7 +563,7 @@ struct HandoffBuilderTests {
     }
 
     @Test("HandoffBuilder is Sendable")
-    func testHandoffBuilderSendable() async {
+    func handoffBuilderSendable() async {
         let agent = MockHandoffAgent(name: "executor")
         let builder = HandoffBuilder(to: agent)
             .toolName("test")
@@ -576,12 +577,12 @@ struct HandoffBuilderTests {
     }
 }
 
-// MARK: - handoff() Convenience Function Tests
+// MARK: - HandoffConvenienceFunctionTests
 
 @Suite("handoff() Convenience Function Tests")
 struct HandoffConvenienceFunctionTests {
     @Test("handoff() creates configuration with minimal parameters")
-    func testHandoffConvenienceFunctionMinimal() async {
+    func handoffConvenienceFunctionMinimal() async {
         let agent = MockHandoffAgent(name: "executor")
 
         let config = handoff(to: agent)
@@ -592,7 +593,7 @@ struct HandoffConvenienceFunctionTests {
     }
 
     @Test("handoff() creates configuration with all parameters")
-    func testHandoffConvenienceFunctionFull() async {
+    func handoffConvenienceFunctionFull() async {
         let agent = MockHandoffAgent(name: "executor")
 
         actor CallbackState {
@@ -639,7 +640,7 @@ struct HandoffConvenienceFunctionTests {
     }
 
     @Test("handoff() produces equivalent result to HandoffConfiguration init")
-    func testHandoffConvenienceFunctionEquivalence() async {
+    func handoffConvenienceFunctionEquivalence() async {
         let agent = MockHandoffAgent(name: "executor")
 
         let configViaFunction = handoff(
@@ -662,12 +663,12 @@ struct HandoffConvenienceFunctionTests {
     }
 }
 
-// MARK: - AnyHandoffConfiguration Tests
+// MARK: - AnyHandoffConfigurationTests
 
 @Suite("AnyHandoffConfiguration Tests")
 struct AnyHandoffConfigurationTests {
     @Test("AnyHandoffConfiguration creates from typed configuration")
-    func testAnyHandoffConfigurationFromTyped() async {
+    func anyHandoffConfigurationFromTyped() async {
         let agent = MockHandoffAgent(name: "executor")
 
         let typedConfig = HandoffConfiguration(
@@ -685,7 +686,7 @@ struct AnyHandoffConfigurationTests {
     }
 
     @Test("AnyHandoffConfiguration preserves callbacks from typed configuration")
-    func testAnyHandoffConfigurationPreservesCallbacks() async throws {
+    func anyHandoffConfigurationPreservesCallbacks() async throws {
         let agent = MockHandoffAgent(name: "executor")
 
         actor CallbackState {
@@ -736,7 +737,7 @@ struct AnyHandoffConfigurationTests {
     }
 
     @Test("AnyHandoffConfiguration creates directly")
-    func testAnyHandoffConfigurationDirectCreation() async {
+    func anyHandoffConfigurationDirectCreation() async {
         let agent = MockHandoffAgent(name: "executor")
 
         let config = AnyHandoffConfiguration(
@@ -752,7 +753,7 @@ struct AnyHandoffConfigurationTests {
     }
 
     @Test("AnyHandoffConfiguration effectiveToolName works")
-    func testAnyHandoffConfigurationEffectiveToolName() async {
+    func anyHandoffConfigurationEffectiveToolName() async {
         let agent = MockHandoffAgent(name: "executor")
 
         // With override
@@ -768,7 +769,7 @@ struct AnyHandoffConfigurationTests {
     }
 
     @Test("AnyHandoffConfiguration effectiveToolDescription works")
-    func testAnyHandoffConfigurationEffectiveToolDescription() async {
+    func anyHandoffConfigurationEffectiveToolDescription() async {
         let agent = MockHandoffAgent(name: "executor")
 
         // With description
@@ -784,7 +785,7 @@ struct AnyHandoffConfigurationTests {
     }
 
     @Test("AnyHandoffConfiguration is Sendable")
-    func testAnyHandoffConfigurationSendable() async {
+    func anyHandoffConfigurationSendable() async {
         let agent = MockHandoffAgent(name: "executor")
         let config = AnyHandoffConfiguration(
             targetAgent: agent,
@@ -800,7 +801,7 @@ struct AnyHandoffConfigurationTests {
     }
 
     @Test("AnyHandoffConfiguration can be stored in heterogeneous collection")
-    func testAnyHandoffConfigurationHeterogeneousCollection() async {
+    func anyHandoffConfigurationHeterogeneousCollection() async {
         let agent1 = MockHandoffAgent(name: "agent1")
         let agent2 = MockHandoffAgent(name: "agent2")
 
@@ -818,12 +819,12 @@ struct AnyHandoffConfigurationTests {
     }
 }
 
-// MARK: - Integration Tests
+// MARK: - HandoffConfigurationIntegrationTests
 
 @Suite("Handoff Configuration Integration Tests")
 struct HandoffConfigurationIntegrationTests {
     @Test("Full handoff workflow with callbacks and filters")
-    func testFullHandoffWorkflow() async throws {
+    func fullHandoffWorkflow() async throws {
         let targetAgent = MockHandoffAgent(name: "executor")
 
         actor WorkflowLogger {
@@ -889,7 +890,7 @@ struct HandoffConfigurationIntegrationTests {
     }
 
     @Test("Multiple configurations with different agents")
-    func testMultipleConfigurations() async {
+    func multipleConfigurations() async {
         let plannerAgent = MockHandoffAgent(name: "planner")
         let executorAgent = MockHandoffAgent(name: "executor")
         let reviewerAgent = MockHandoffAgent(name: "reviewer")
@@ -915,7 +916,7 @@ struct HandoffConfigurationIntegrationTests {
         #expect(configs.count == 3)
 
         // Each config should have unique tool name
-        let toolNames = Set(configs.map { $0.effectiveToolName })
+        let toolNames = Set(configs.map(\.effectiveToolName))
         #expect(toolNames.count == 3)
         #expect(toolNames.contains("plan_task"))
         #expect(toolNames.contains("execute_task"))

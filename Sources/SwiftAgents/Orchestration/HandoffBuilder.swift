@@ -33,15 +33,7 @@ import Foundation
 ///     .build()
 /// ```
 public struct HandoffBuilder<Target: Agent>: Sendable {
-    // MARK: - Private Properties
-
-    private let targetAgent: Target
-    private var toolNameOverride: String?
-    private var toolDescriptionValue: String?
-    private var onHandoffCallback: OnHandoffCallback?
-    private var inputFilterCallback: InputFilterCallback?
-    private var isEnabledCallback: IsEnabledCallback?
-    private var nestHandoffHistory: Bool = false
+    // MARK: Public
 
     // MARK: - Initialization
 
@@ -205,6 +197,18 @@ public struct HandoffBuilder<Target: Agent>: Sendable {
             nestHandoffHistory: nestHandoffHistory
         )
     }
+
+    // MARK: Private
+
+    // MARK: - Private Properties
+
+    private let targetAgent: Target
+    private var toolNameOverride: String?
+    private var toolDescriptionValue: String?
+    private var onHandoffCallback: OnHandoffCallback?
+    private var inputFilterCallback: InputFilterCallback?
+    private var isEnabledCallback: IsEnabledCallback?
+    private var nestHandoffHistory: Bool = false
 }
 
 // MARK: - Convenience Function
@@ -268,7 +272,7 @@ public func handoff<T: Agent>(
     )
 }
 
-// MARK: - Type-Erased Handoff Configuration
+// MARK: - AnyHandoffConfiguration
 
 /// A type-erased wrapper for handoff configurations.
 ///
@@ -284,8 +288,6 @@ public func handoff<T: Agent>(
 /// ]
 /// ```
 public struct AnyHandoffConfiguration: Sendable {
-    // MARK: - Properties
-
     /// The target agent (type-erased).
     public let targetAgent: any Agent
 
@@ -312,7 +314,7 @@ public struct AnyHandoffConfiguration: Sendable {
     /// Creates a type-erased handoff configuration from a typed configuration.
     ///
     /// - Parameter configuration: The typed configuration to wrap.
-    public init<T: Agent>(_ configuration: HandoffConfiguration<T>) {
+    public init(_ configuration: HandoffConfiguration<some Agent>) {
         targetAgent = configuration.targetAgent
         toolNameOverride = configuration.toolNameOverride
         toolDescription = configuration.toolDescription

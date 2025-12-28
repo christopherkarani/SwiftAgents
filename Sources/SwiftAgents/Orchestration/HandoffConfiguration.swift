@@ -27,8 +27,6 @@ import Foundation
 /// )
 /// ```
 public struct HandoffInputData: Sendable, Equatable {
-    // MARK: - Properties
-
     /// The name of the agent initiating the handoff.
     public let sourceAgentName: String
 
@@ -75,7 +73,7 @@ public struct HandoffInputData: Sendable, Equatable {
     }
 }
 
-// MARK: - HandoffInputData + CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension HandoffInputData: CustomStringConvertible {
     public var description: String {
@@ -187,8 +185,6 @@ public typealias IsEnabledCallback = @Sendable (AgentContext, any Agent) async -
 /// )
 /// ```
 public struct HandoffConfiguration<Target: Agent>: Sendable {
-    // MARK: - Properties
-
     /// The target agent to hand off to.
     public let targetAgent: Target
 
@@ -294,7 +290,7 @@ public extension HandoffConfiguration {
 
 // MARK: - String Extension for Snake Case
 
-internal extension String {
+extension String {
     /// Converts a camelCase or PascalCase string to snake_case.
     ///
     /// Example: "ExecutorAgent" -> "executor_agent"

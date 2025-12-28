@@ -7,7 +7,7 @@ import Foundation
 @testable import SwiftAgents
 import Testing
 
-// MARK: - Test Helper Provider
+// MARK: - SimpleMockProvider
 
 /// A simple mock provider for testing routing logic.
 actor SimpleMockProvider: InferenceProvider {
@@ -18,13 +18,13 @@ actor SimpleMockProvider: InferenceProvider {
         self.name = name
     }
 
-    func generate(prompt: String, options: InferenceOptions) async throws -> String {
+    func generate(prompt: String, options _: InferenceOptions) async throws -> String {
         generateCalls.append(prompt)
         return "Response from \(name)"
     }
 
-    nonisolated func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
-        let providerName = self.name
+    nonisolated func stream(prompt _: String, options _: InferenceOptions) -> AsyncThrowingStream<String, Error> {
+        let providerName = name
         return AsyncThrowingStream { continuation in
             for char in "Response from \(providerName)" {
                 continuation.yield(String(char))
@@ -35,15 +35,15 @@ actor SimpleMockProvider: InferenceProvider {
 
     func generateWithToolCalls(
         prompt: String,
-        tools: [ToolDefinition],
-        options: InferenceOptions
+        tools _: [ToolDefinition],
+        options _: InferenceOptions
     ) async throws -> InferenceResponse {
         generateCalls.append(prompt)
         return InferenceResponse(content: "Tool response from \(name)", finishReason: .completed)
     }
 }
 
-// MARK: - MultiProvider Registration Tests
+// MARK: - MultiProviderRegistrationTests
 
 @Suite("MultiProvider Registration Tests")
 struct MultiProviderRegistrationTests {
@@ -126,7 +126,7 @@ struct MultiProviderRegistrationTests {
     }
 }
 
-// MARK: - MultiProvider Model Parsing Tests
+// MARK: - MultiProviderModelParsingTests
 
 @Suite("MultiProvider Model Parsing Tests")
 struct MultiProviderModelParsingTests {
@@ -194,7 +194,7 @@ struct MultiProviderModelParsingTests {
     }
 }
 
-// MARK: - MultiProvider Routing Tests
+// MARK: - MultiProviderRoutingTests
 
 @Suite("MultiProvider Routing Tests")
 struct MultiProviderRoutingTests {
@@ -234,7 +234,7 @@ struct MultiProviderRoutingTests {
     }
 }
 
-// MARK: - MultiProvider Model Selection Tests
+// MARK: - MultiProviderModelSelectionTests
 
 @Suite("MultiProvider Model Selection Tests")
 struct MultiProviderModelSelectionTests {
@@ -271,7 +271,7 @@ struct MultiProviderModelSelectionTests {
     }
 }
 
-// MARK: - MultiProvider Utility Tests
+// MARK: - MultiProviderUtilityTests
 
 @Suite("MultiProvider Utility Tests")
 struct MultiProviderUtilityTests {
@@ -324,7 +324,7 @@ struct MultiProviderUtilityTests {
     }
 }
 
-// MARK: - MultiProviderError Tests
+// MARK: - MultiProviderErrorTests
 
 @Suite("MultiProviderError Tests")
 struct MultiProviderErrorTests {
@@ -347,7 +347,7 @@ struct MultiProviderErrorTests {
     }
 }
 
-// MARK: - MultiProvider InferenceProvider Tests
+// MARK: - MultiProviderInferenceProviderTests
 
 @Suite("MultiProvider InferenceProvider Tests")
 struct MultiProviderInferenceProviderTests {

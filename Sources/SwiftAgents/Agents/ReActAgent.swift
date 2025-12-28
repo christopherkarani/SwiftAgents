@@ -42,7 +42,6 @@ public actor ReActAgent: Agent {
     nonisolated public let inputGuardrails: [any InputGuardrail]
     nonisolated public let outputGuardrails: [any OutputGuardrail]
     nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
-    private let _handoffs: [AnyHandoffConfiguration]
 
     /// Configured handoffs for this agent.
     nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
@@ -204,6 +203,8 @@ public actor ReActAgent: Agent {
         case thinking(String)
         case invalid(String)
     }
+
+    private let _handoffs: [AnyHandoffConfiguration]
 
     // MARK: - Internal State
 

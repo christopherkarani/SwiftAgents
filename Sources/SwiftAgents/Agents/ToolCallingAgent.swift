@@ -44,7 +44,6 @@ public actor ToolCallingAgent: Agent {
     nonisolated public let outputGuardrails: [any OutputGuardrail]
     nonisolated public let tracer: (any Tracer)?
     nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
-    private let _handoffs: [AnyHandoffConfiguration]
 
     /// Configured handoffs for this agent.
     nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
@@ -223,6 +222,8 @@ public actor ToolCallingAgent: Agent {
             }
         }
     }
+
+    private let _handoffs: [AnyHandoffConfiguration]
 
     // MARK: - Internal State
 

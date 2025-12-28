@@ -9,14 +9,7 @@ import Foundation
 
 /// Errors that can occur during MultiProvider operations.
 public enum MultiProviderError: Error, Sendable, LocalizedError, Equatable {
-    /// The prefix is empty or contains only whitespace.
-    case emptyPrefix
-
-    /// No provider is registered for the given prefix.
-    case providerNotFound(prefix: String)
-
-    /// The model name format is invalid.
-    case invalidModelFormat(model: String)
+    // MARK: Public
 
     public var errorDescription: String? {
         switch self {
@@ -28,6 +21,15 @@ public enum MultiProviderError: Error, Sendable, LocalizedError, Equatable {
             "MultiProvider: invalid model format '\(model)'"
         }
     }
+
+    /// The prefix is empty or contains only whitespace.
+    case emptyPrefix
+
+    /// No provider is registered for the given prefix.
+    case providerNotFound(prefix: String)
+
+    /// The model name format is invalid.
+    case invalidModelFormat(model: String)
 }
 
 // MARK: - MultiProvider
@@ -70,19 +72,22 @@ public enum MultiProviderError: Error, Sendable, LocalizedError, Equatable {
 /// MultiProvider is implemented as an actor, providing thread-safe access
 /// to mutable state including the provider registry and current model.
 public actor MultiProvider: InferenceProvider {
-    // MARK: - Properties
+    // MARK: Public
 
-    /// The default provider used when no prefix matches.
-    private let defaultProvider: any InferenceProvider
+    /// Returns all registered prefixes.
+    public var registeredPrefixes: [String] {
+        Array(providers.keys).sorted()
+    }
 
-    /// Registered providers keyed by their prefix.
-    private var providers: [String: any InferenceProvider] = [:]
+    /// Returns the number of registered providers (excluding the default).
+    public var providerCount: Int {
+        providers.count
+    }
 
-    /// The currently selected model name.
-    private var currentModel: String?
-
-    /// Cached description for nonisolated access.
-    private let providerDescription: String
+    /// Returns the currently selected model, if any.
+    public var model: String? {
+        currentModel
+    }
 
     // MARK: - Initialization
 
@@ -96,7 +101,7 @@ public actor MultiProvider: InferenceProvider {
     /// - Parameter defaultProvider: The provider to use when no prefix matches.
     public init(defaultProvider: any InferenceProvider) {
         self.defaultProvider = defaultProvider
-        self.providerDescription = "MultiProvider(default: \(type(of: defaultProvider)))"
+        providerDescription = "MultiProvider(default: \(type(of: defaultProvider)))"
     }
 
     // MARK: - Provider Registration
@@ -128,16 +133,6 @@ public actor MultiProvider: InferenceProvider {
         providers.removeValue(forKey: trimmed)
     }
 
-    /// Returns all registered prefixes.
-    public var registeredPrefixes: [String] {
-        Array(providers.keys).sorted()
-    }
-
-    /// Returns the number of registered providers (excluding the default).
-    public var providerCount: Int {
-        providers.count
-    }
-
     // MARK: - Model Selection
 
     /// Sets the current model for subsequent inference calls.
@@ -149,11 +144,6 @@ public actor MultiProvider: InferenceProvider {
     /// - Parameter model: The model identifier to use.
     public func setModel(_ model: String) {
         currentModel = model
-    }
-
-    /// Returns the currently selected model, if any.
-    public var model: String? {
-        currentModel
     }
 
     /// Clears the current model selection.
@@ -222,6 +212,38 @@ public actor MultiProvider: InferenceProvider {
         return try await provider.generateWithToolCalls(prompt: prompt, tools: tools, options: options)
     }
 
+    /// Checks if a provider is registered for the given prefix.
+    ///
+    /// - Parameter prefix: The prefix to check.
+    /// - Returns: `true` if a provider is registered for this prefix.
+    public func hasProvider(for prefix: String) -> Bool {
+        let trimmed = prefix.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return providers[trimmed] != nil
+    }
+
+    /// Returns the provider for a given prefix, if registered.
+    ///
+    /// - Parameter prefix: The prefix to look up.
+    /// - Returns: The registered provider, or nil if not found.
+    public func provider(for prefix: String) -> (any InferenceProvider)? {
+        let trimmed = prefix.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return providers[trimmed]
+    }
+
+    // MARK: Private
+
+    /// The default provider used when no prefix matches.
+    private let defaultProvider: any InferenceProvider
+
+    /// Registered providers keyed by their prefix.
+    private var providers: [String: any InferenceProvider] = [:]
+
+    /// The currently selected model name.
+    private var currentModel: String?
+
+    /// Cached description for nonisolated access.
+    private let providerDescription: String
+
     // MARK: - Private Methods
 
     /// Performs the streaming operation within actor isolation.
@@ -283,27 +305,9 @@ public actor MultiProvider: InferenceProvider {
 
         return providers[prefix] ?? defaultProvider
     }
-
-    /// Checks if a provider is registered for the given prefix.
-    ///
-    /// - Parameter prefix: The prefix to check.
-    /// - Returns: `true` if a provider is registered for this prefix.
-    public func hasProvider(for prefix: String) -> Bool {
-        let trimmed = prefix.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return providers[trimmed] != nil
-    }
-
-    /// Returns the provider for a given prefix, if registered.
-    ///
-    /// - Parameter prefix: The prefix to look up.
-    /// - Returns: The registered provider, or nil if not found.
-    public func provider(for prefix: String) -> (any InferenceProvider)? {
-        let trimmed = prefix.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return providers[trimmed]
-    }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension MultiProvider: CustomStringConvertible {
     nonisolated public var description: String {

@@ -7,7 +7,7 @@ import Foundation
 @testable import SwiftAgents
 import Testing
 
-// MARK: - Test State Actors
+// MARK: - HandoffTestState
 
 /// Thread-safe state tracking for handoff callback tests.
 actor HandoffTestState {
@@ -23,6 +23,7 @@ actor HandoffTestState {
         capturedSourceName = source
         capturedTargetName = target
     }
+
     func setCapturedInput(_ input: String) { capturedInput = input }
     func setCapturedMetadata(_ metadata: [String: SendableValue]) { capturedMetadata = metadata }
     func setCallbackError(_ error: Error) { callbackError = error }
@@ -43,6 +44,8 @@ actor HandoffTestState {
         callbackError = nil
     }
 }
+
+// MARK: - HooksTestState
 
 /// Thread-safe state tracking for RunHooks tests.
 actor HooksTestState {
@@ -75,15 +78,15 @@ actor MockIntegrationTestAgent: Agent {
     nonisolated let instructions: String
     nonisolated let configuration: AgentConfiguration
 
-    nonisolated var memory: (any Memory)? { nil }
-    nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
-
     private(set) var runCallCount = 0
     private(set) var lastInput: String?
 
+    nonisolated var memory: (any Memory)? { nil }
+    nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+
     init(name: String, instructions: String = "Mock agent instructions") {
         self.instructions = instructions
-        self.configuration = AgentConfiguration(name: name)
+        configuration = AgentConfiguration(name: name)
     }
 
     func run(
@@ -147,12 +150,12 @@ struct MockRunHooks: RunHooks {
     }
 }
 
-// MARK: - HandoffCoordinator with OnHandoff Callback Tests
+// MARK: - HandoffCoordinatorOnHandoffCallbackTests
 
 @Suite("HandoffCoordinator OnHandoff Callback Tests")
 struct HandoffCoordinatorOnHandoffCallbackTests {
     @Test("Callback is invoked before handoff execution")
-    func testHandoffWithOnHandoffCallback() async throws {
+    func handoffWithOnHandoffCallback() async throws {
         let sourceAgent = MockIntegrationTestAgent(name: "source")
         let targetAgent = MockIntegrationTestAgent(name: "target")
         let testState = HandoffTestState()
@@ -190,7 +193,7 @@ struct HandoffCoordinatorOnHandoffCallbackTests {
     }
 
     @Test("Callback errors are logged but do not fail handoff")
-    func testHandoffCallbackErrorDoesNotFailHandoff() async throws {
+    func handoffCallbackErrorDoesNotFailHandoff() async throws {
         struct CallbackTestError: Error {}
 
         let targetAgent = MockIntegrationTestAgent(name: "target")
@@ -229,12 +232,12 @@ struct HandoffCoordinatorOnHandoffCallbackTests {
     }
 }
 
-// MARK: - HandoffCoordinator Input Filter Tests
+// MARK: - HandoffCoordinatorInputFilterTests
 
 @Suite("HandoffCoordinator Input Filter Tests")
 struct HandoffCoordinatorInputFilterTests {
     @Test("Filter transforms HandoffInputData")
-    func testHandoffWithInputFilter() async throws {
+    func handoffWithInputFilter() async throws {
         let targetAgent = MockIntegrationTestAgent(name: "target")
         let testState = HandoffTestState()
 
@@ -270,7 +273,7 @@ struct HandoffCoordinatorInputFilterTests {
     }
 
     @Test("Filter can add metadata that is merged into context")
-    func testHandoffInputFilterModifiesMetadata() async throws {
+    func handoffInputFilterModifiesMetadata() async throws {
         let targetAgent = MockIntegrationTestAgent(name: "target")
 
         let coordinator = HandoffCoordinator()
@@ -306,12 +309,12 @@ struct HandoffCoordinatorInputFilterTests {
     }
 }
 
-// MARK: - HandoffCoordinator IsEnabled Tests
+// MARK: - HandoffCoordinatorIsEnabledTests
 
 @Suite("HandoffCoordinator IsEnabled Tests")
 struct HandoffCoordinatorIsEnabledTests {
     @Test("Handoff executes when isEnabled returns true")
-    func testHandoffWithIsEnabledTrue() async throws {
+    func handoffWithIsEnabledTrue() async throws {
         let targetAgent = MockIntegrationTestAgent(name: "target")
 
         let coordinator = HandoffCoordinator()
@@ -341,7 +344,7 @@ struct HandoffCoordinatorIsEnabledTests {
     }
 
     @Test("Handoff throws handoffSkipped when isEnabled returns false")
-    func testHandoffWithIsEnabledFalse() async throws {
+    func handoffWithIsEnabledFalse() async throws {
         let targetAgent = MockIntegrationTestAgent(name: "target")
 
         let coordinator = HandoffCoordinator()
@@ -371,7 +374,7 @@ struct HandoffCoordinatorIsEnabledTests {
     }
 
     @Test("IsEnabled callback receives correct context and agent")
-    func testIsEnabledCallbackReceivesCorrectParameters() async throws {
+    func isEnabledCallbackReceivesCorrectParameters() async throws {
         let targetAgent = MockIntegrationTestAgent(name: "target")
         let testState = HandoffTestState()
 
@@ -409,12 +412,12 @@ struct HandoffCoordinatorIsEnabledTests {
     }
 }
 
-// MARK: - HandoffCoordinator RunHooks Integration Tests
+// MARK: - HandoffCoordinatorRunHooksIntegrationTests
 
 @Suite("HandoffCoordinator RunHooks Integration Tests")
 struct HandoffCoordinatorRunHooksIntegrationTests {
     @Test("RunHooks.onHandoff is called during handoff")
-    func testHandoffWithRunHooksIntegration() async throws {
+    func handoffWithRunHooksIntegration() async throws {
         let sourceAgent = MockIntegrationTestAgent(name: "source")
         let targetAgent = MockIntegrationTestAgent(name: "target")
         let hooksState = HooksTestState()
@@ -446,7 +449,7 @@ struct HandoffCoordinatorRunHooksIntegrationTests {
     }
 
     @Test("RunHooks.onHandoff is called with configuration callbacks")
-    func testHandoffRunHooksWithConfigurationCallbacks() async throws {
+    func handoffRunHooksWithConfigurationCallbacks() async throws {
         let sourceAgent = MockIntegrationTestAgent(name: "source")
         let targetAgent = MockIntegrationTestAgent(name: "target")
         let hooksState = HooksTestState()
@@ -486,12 +489,12 @@ struct HandoffCoordinatorRunHooksIntegrationTests {
     }
 }
 
-// MARK: - HandoffCoordinator Error Handling Tests
+// MARK: - HandoffCoordinatorErrorHandlingTests
 
 @Suite("HandoffCoordinator Error Handling Tests")
 struct HandoffCoordinatorErrorHandlingTests {
     @Test("Throws agentNotFound for unregistered agent")
-    func testHandoffToUnregisteredAgent() async throws {
+    func handoffToUnregisteredAgent() async throws {
         let sourceAgent = MockIntegrationTestAgent(name: "source")
 
         let coordinator = HandoffCoordinator()
@@ -517,7 +520,7 @@ struct HandoffCoordinatorErrorHandlingTests {
     }
 
     @Test("Backward compatible with nil configuration")
-    func testHandoffWithNilConfiguration() async throws {
+    func handoffWithNilConfiguration() async throws {
         let targetAgent = MockIntegrationTestAgent(name: "target")
 
         let coordinator = HandoffCoordinator()
@@ -544,12 +547,12 @@ struct HandoffCoordinatorErrorHandlingTests {
     }
 }
 
-// MARK: - HandoffCoordinator Context Propagation Tests
+// MARK: - HandoffCoordinatorContextPropagationTests
 
 @Suite("HandoffCoordinator Context Propagation Tests")
 struct HandoffCoordinatorContextPropagationTests {
     @Test("Context from request is merged correctly")
-    func testHandoffContextMerging() async throws {
+    func handoffContextMerging() async throws {
         let targetAgent = MockIntegrationTestAgent(name: "target")
 
         let coordinator = HandoffCoordinator()
@@ -581,7 +584,7 @@ struct HandoffCoordinatorContextPropagationTests {
     }
 
     @Test("HandoffInputData is populated correctly")
-    func testHandoffInputDataContainsCorrectValues() async throws {
+    func handoffInputDataContainsCorrectValues() async throws {
         let targetAgent = MockIntegrationTestAgent(name: "target")
         let testState = HandoffTestState()
 
@@ -626,7 +629,7 @@ struct HandoffCoordinatorContextPropagationTests {
     }
 
     @Test("Context values are set in AgentContext after handoff")
-    func testContextValuesSetAfterHandoff() async throws {
+    func contextValuesSetAfterHandoff() async throws {
         let targetAgent = MockIntegrationTestAgent(name: "target")
 
         let coordinator = HandoffCoordinator()
@@ -655,12 +658,12 @@ struct HandoffCoordinatorContextPropagationTests {
     }
 }
 
-// MARK: - Full Workflow Integration Tests
+// MARK: - HandoffFullWorkflowIntegrationTests
 
 @Suite("Handoff Full Workflow Integration Tests")
 struct HandoffFullWorkflowIntegrationTests {
     @Test("Complete handoff workflow with all callbacks")
-    func testCompleteHandoffWorkflow() async throws {
+    func completeHandoffWorkflow() async throws {
         let sourceAgent = MockIntegrationTestAgent(name: "planner")
         let targetAgent = MockIntegrationTestAgent(name: "executor")
         let testState = HandoffTestState()
@@ -741,7 +744,7 @@ struct HandoffFullWorkflowIntegrationTests {
     }
 
     @Test("Multiple sequential handoffs maintain context")
-    func testMultipleSequentialHandoffs() async throws {
+    func multipleSequentialHandoffs() async throws {
         let agent1 = MockIntegrationTestAgent(name: "agent1")
         let agent2 = MockIntegrationTestAgent(name: "agent2")
         let agent3 = MockIntegrationTestAgent(name: "agent3")

@@ -122,54 +122,54 @@ public enum SessionError: Error, Sendable {
     case backendError(reason: String, underlyingError: String? = nil)
 }
 
-// MARK: - SessionError + Equatable
+// MARK: Equatable
 
 extension SessionError: Equatable {
     public static func == (lhs: SessionError, rhs: SessionError) -> Bool {
         switch (lhs, rhs) {
         case let (.retrievalFailed(r1, u1), .retrievalFailed(r2, u2)):
-            return r1 == r2 && u1 == u2
+            r1 == r2 && u1 == u2
         case let (.storageFailed(r1, u1), .storageFailed(r2, u2)):
-            return r1 == r2 && u1 == u2
+            r1 == r2 && u1 == u2
         case let (.deletionFailed(r1, u1), .deletionFailed(r2, u2)):
-            return r1 == r2 && u1 == u2
+            r1 == r2 && u1 == u2
         case let (.invalidState(r1), .invalidState(r2)):
-            return r1 == r2
+            r1 == r2
         case let (.backendError(r1, u1), .backendError(r2, u2)):
-            return r1 == r2 && u1 == u2
+            r1 == r2 && u1 == u2
         default:
-            return false
+            false
         }
     }
 }
 
-// MARK: - SessionError + LocalizedError
+// MARK: LocalizedError
 
 extension SessionError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case .retrievalFailed(let reason, let underlying):
+        case let .retrievalFailed(reason, underlying):
             if let underlying {
                 return "Failed to retrieve session items: \(reason). Underlying: \(underlying)"
             }
             return "Failed to retrieve session items: \(reason)"
 
-        case .storageFailed(let reason, let underlying):
+        case let .storageFailed(reason, underlying):
             if let underlying {
                 return "Failed to store session items: \(reason). Underlying: \(underlying)"
             }
             return "Failed to store session items: \(reason)"
 
-        case .deletionFailed(let reason, let underlying):
+        case let .deletionFailed(reason, underlying):
             if let underlying {
                 return "Failed to delete session items: \(reason). Underlying: \(underlying)"
             }
             return "Failed to delete session items: \(reason)"
 
-        case .invalidState(let reason):
+        case let .invalidState(reason):
             return "Session in invalid state: \(reason)"
 
-        case .backendError(let reason, let underlying):
+        case let .backendError(reason, underlying):
             if let underlying {
                 return "Session backend error: \(reason). Underlying: \(underlying)"
             }
