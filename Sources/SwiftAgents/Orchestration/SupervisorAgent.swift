@@ -489,6 +489,9 @@ public actor SupervisorAgent: Agent {
     /// Tracer for this supervisor. Returns `nil` as orchestrators delegate tracing to their sub-agents.
     nonisolated public var tracer: (any Tracer)? { nil }
 
+    /// Configured handoffs for this supervisor.
+    nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
+
     // MARK: - Supervisor-Specific Methods
 
     /// Gets the list of available agents.
@@ -507,19 +510,22 @@ public actor SupervisorAgent: Agent {
     ///   - configuration: Agent configuration. Default: .default
     ///   - instructions: Custom instructions. Default: auto-generated
     ///   - enableContextTracking: Track execution in AgentContext. Default: true
+    ///   - handoffs: Handoff configurations for sub-agents. Default: []
     public init(
         agents: [(name: String, agent: any Agent, description: AgentDescription)],
         routingStrategy: any RoutingStrategy,
         fallbackAgent: (any Agent)? = nil,
         configuration: AgentConfiguration = .default,
         instructions: String? = nil,
-        enableContextTracking: Bool = true
+        enableContextTracking: Bool = true,
+        handoffs: [AnyHandoffConfiguration] = []
     ) {
         agentRegistry = agents
         self.routingStrategy = routingStrategy
         self.fallbackAgent = fallbackAgent
         self.configuration = configuration
         self.enableContextTracking = enableContextTracking
+        _handoffs = handoffs
 
         // Generate instructions if not provided
         if let instructions {
@@ -579,13 +585,58 @@ public actor SupervisorAgent: Agent {
                 await context.recordExecution(agentName: decision.selectedAgentName)
             }
 
+            // Apply handoff configuration if available
+            var effectiveInput = input
+            let handoffContext = context ?? AgentContext(input: input)
+
+            if let config = findHandoffConfiguration(for: selectedEntry.agent) {
+                // Check isEnabled callback
+                if let isEnabled = config.isEnabled {
+                    let enabled = await isEnabled(handoffContext, selectedEntry.agent)
+                    if !enabled {
+                        throw OrchestrationError.handoffSkipped(
+                            from: "SupervisorAgent",
+                            to: selectedEntry.name,
+                            reason: "Handoff disabled by isEnabled callback"
+                        )
+                    }
+                }
+
+                // Create HandoffInputData for callbacks
+                var inputData = HandoffInputData(
+                    sourceAgentName: "SupervisorAgent",
+                    targetAgentName: selectedEntry.name,
+                    input: input,
+                    context: [:],
+                    metadata: [:]
+                )
+
+                // Apply inputFilter if present
+                if let inputFilter = config.inputFilter {
+                    inputData = inputFilter(inputData)
+                    effectiveInput = inputData.input
+                }
+
+                // Call onHandoff callback if present
+                if let onHandoff = config.onHandoff {
+                    do {
+                        try await onHandoff(handoffContext, inputData)
+                    } catch {
+                        // Log callback errors but don't fail the handoff
+                        Log.orchestration.warning(
+                            "onHandoff callback failed for SupervisorAgent -> \(selectedEntry.name): \(error.localizedDescription)"
+                        )
+                    }
+                }
+            }
+
             // Notify hooks of handoff to selected agent
             if let context {
                 await hooks?.onHandoff(context: context, fromAgent: self, toAgent: selectedEntry.agent)
             }
 
-            // Execute the selected agent
-            let result = try await selectedEntry.agent.run(input, session: session, hooks: hooks)
+            // Execute the selected agent with potentially modified input
+            let result = try await selectedEntry.agent.run(effectiveInput, session: session, hooks: hooks)
 
             // Update context with result
             if let context {
@@ -700,6 +751,24 @@ public actor SupervisorAgent: Agent {
 
     /// Whether to track execution in a shared context.
     private let enableContextTracking: Bool
+
+    /// Handoff configurations for sub-agents.
+    private let _handoffs: [AnyHandoffConfiguration]
+
+    // MARK: - Private Methods
+
+    /// Finds a handoff configuration for the given target agent.
+    ///
+    /// - Parameter targetAgent: The agent to find configuration for.
+    /// - Returns: The matching handoff configuration, or nil if none found.
+    private func findHandoffConfiguration(for targetAgent: any Agent) -> AnyHandoffConfiguration? {
+        _handoffs.first { config in
+            // Match by type - compare the target agent's type
+            let configTargetType = type(of: config.targetAgent)
+            let currentType = type(of: targetAgent)
+            return configTargetType == currentType
+        }
+    }
 }
 
 // MARK: - RoutingDecision + CustomStringConvertible

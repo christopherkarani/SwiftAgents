@@ -360,6 +360,9 @@ public actor AgentRouter: Agent {
     /// Tracer for this router. Returns `nil` as orchestrators delegate tracing to their sub-agents.
     nonisolated public var tracer: (any Tracer)? { nil }
 
+    /// Configured handoffs for this router.
+    nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
+
     // MARK: - Initialization
 
     /// Creates a new agent router with an array of routes.
@@ -371,14 +374,17 @@ public actor AgentRouter: Agent {
     ///   - routes: The routes to evaluate.
     ///   - fallbackAgent: Optional agent to use when no route matches. Default: nil
     ///   - configuration: Router configuration. Default: .default
+    ///   - handoffs: Handoff configurations for routed agents. Default: []
     public init(
         routes: [Route],
         fallbackAgent: (any Agent)? = nil,
-        configuration: AgentConfiguration = .default
+        configuration: AgentConfiguration = .default,
+        handoffs: [AnyHandoffConfiguration] = []
     ) {
         self.routes = routes
         self.fallbackAgent = fallbackAgent
         self.configuration = configuration
+        _handoffs = handoffs
         instructions = "Routes requests to specialized agents based on conditions."
     }
 
@@ -389,6 +395,7 @@ public actor AgentRouter: Agent {
     /// - Parameters:
     ///   - fallbackAgent: Optional agent to use when no route matches. Default: nil
     ///   - configuration: Router configuration. Default: .default
+    ///   - handoffs: Handoff configurations for routed agents. Default: []
     ///   - routes: A closure that builds the route array.
     ///
     /// Example:
@@ -401,11 +408,13 @@ public actor AgentRouter: Agent {
     public init(
         fallbackAgent: (any Agent)? = nil,
         configuration: AgentConfiguration = .default,
+        handoffs: [AnyHandoffConfiguration] = [],
         @RouteBuilder routes: () -> [Route]
     ) {
         self.routes = routes()
         self.fallbackAgent = fallbackAgent
         self.configuration = configuration
+        _handoffs = handoffs
         instructions = "Routes requests to specialized agents based on conditions."
     }
 
@@ -446,11 +455,56 @@ public actor AgentRouter: Agent {
             }
         }
 
+        // Apply handoff configuration if available
+        var effectiveInput = input
+        let routeName = route.name ?? String(describing: type(of: route.agent))
+
+        if let config = findHandoffConfiguration(for: route.agent) {
+            // Check isEnabled callback
+            if let isEnabled = config.isEnabled {
+                let enabled = await isEnabled(routingContext, route.agent)
+                if !enabled {
+                    throw OrchestrationError.handoffSkipped(
+                        from: "AgentRouter",
+                        to: routeName,
+                        reason: "Handoff disabled by isEnabled callback"
+                    )
+                }
+            }
+
+            // Create HandoffInputData for callbacks
+            var inputData = HandoffInputData(
+                sourceAgentName: "AgentRouter",
+                targetAgentName: routeName,
+                input: input,
+                context: [:],
+                metadata: [:]
+            )
+
+            // Apply inputFilter if present
+            if let inputFilter = config.inputFilter {
+                inputData = inputFilter(inputData)
+                effectiveInput = inputData.input
+            }
+
+            // Call onHandoff callback if present
+            if let onHandoff = config.onHandoff {
+                do {
+                    try await onHandoff(routingContext, inputData)
+                } catch {
+                    // Log callback errors but don't fail the handoff
+                    Log.orchestration.warning(
+                        "onHandoff callback failed for AgentRouter -> \(routeName): \(error.localizedDescription)"
+                    )
+                }
+            }
+        }
+
         // Notify hooks of handoff to matched route's agent
         await hooks?.onHandoff(context: routingContext, fromAgent: self, toAgent: route.agent)
 
-        // Execute the matched route's agent
-        let result = try await route.agent.run(input, session: session, hooks: hooks)
+        // Execute the matched route's agent with potentially modified input
+        let result = try await route.agent.run(effectiveInput, session: session, hooks: hooks)
 
         // Add routing metadata
         let duration = ContinuousClock.now - startTime
@@ -507,6 +561,9 @@ public actor AgentRouter: Agent {
     private let fallbackAgent: (any Agent)?
     private var isCancelled: Bool = false
 
+    /// Handoff configurations for routed agents.
+    private let _handoffs: [AnyHandoffConfiguration]
+
     // MARK: - Private Methods
 
     /// Finds the first route that matches the input and context.
@@ -520,6 +577,19 @@ public actor AgentRouter: Agent {
             return route
         }
         return nil
+    }
+
+    /// Finds a handoff configuration for the given target agent.
+    ///
+    /// - Parameter targetAgent: The agent to find configuration for.
+    /// - Returns: The matching handoff configuration, or nil if none found.
+    private func findHandoffConfiguration(for targetAgent: any Agent) -> AnyHandoffConfiguration? {
+        _handoffs.first { config in
+            // Match by type - compare the target agent's type
+            let configTargetType = type(of: config.targetAgent)
+            let currentType = type(of: targetAgent)
+            return configTargetType == currentType
+        }
     }
 }
 
