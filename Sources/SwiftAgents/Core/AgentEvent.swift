@@ -98,6 +98,15 @@ public enum AgentEvent: Sendable {
     /// Agent handoff completed
     case handoffCompleted(fromAgent: String, toAgent: String)
 
+    /// A handoff to another agent started with input.
+    case handoffStarted(from: String, to: String, input: String)
+
+    /// A handoff to another agent completed with result.
+    case handoffCompletedWithResult(from: String, to: String, result: AgentResult)
+
+    /// A handoff was skipped because it was disabled.
+    case handoffSkipped(from: String, to: String, reason: String)
+
     // MARK: - Guardrail Events
 
     /// Guardrail check started
@@ -306,6 +315,12 @@ extension AgentEvent: Equatable {
             lhsFrom == rhsFrom && lhsTo == rhsTo && lhsReason == rhsReason
         case let (.handoffCompleted(lhsFrom, lhsTo), .handoffCompleted(rhsFrom, rhsTo)):
             lhsFrom == rhsFrom && lhsTo == rhsTo
+        case let (.handoffStarted(lhsFrom, lhsTo, lhsInput), .handoffStarted(rhsFrom, rhsTo, rhsInput)):
+            lhsFrom == rhsFrom && lhsTo == rhsTo && lhsInput == rhsInput
+        case let (.handoffCompletedWithResult(lhsFrom, lhsTo, lhsResult), .handoffCompletedWithResult(rhsFrom, rhsTo, rhsResult)):
+            lhsFrom == rhsFrom && lhsTo == rhsTo && lhsResult == rhsResult
+        case let (.handoffSkipped(lhsFrom, lhsTo, lhsReason), .handoffSkipped(rhsFrom, rhsTo, rhsReason)):
+            lhsFrom == rhsFrom && lhsTo == rhsTo && lhsReason == rhsReason
         case let (.guardrailStarted(lhsName, lhsType), .guardrailStarted(rhsName, rhsType)):
             lhsName == rhsName && lhsType == rhsType
         case let (.guardrailPassed(lhsName, lhsType), .guardrailPassed(rhsName, rhsType)):

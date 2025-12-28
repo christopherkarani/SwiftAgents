@@ -219,6 +219,54 @@ public struct OutputGuardrailsComponent: AgentComponent {
     }
 }
 
+// MARK: - HandoffsComponent
+
+/// Component providing handoff configurations for an agent.
+///
+/// Handoffs define how this agent can transfer execution to other agents,
+/// including callbacks, filters, and enablement checks.
+///
+/// Example:
+/// ```swift
+/// let agent = ReActAgent {
+///     Instructions("Coordinator agent.")
+///     HandoffsComponent([
+///         AnyHandoffConfiguration(handoff(to: plannerAgent)),
+///         AnyHandoffConfiguration(handoff(to: executorAgent))
+///     ])
+/// }
+/// ```
+public struct HandoffsComponent: AgentComponent, Sendable {
+    /// The handoff configurations.
+    public let handoffs: [AnyHandoffConfiguration]
+
+    /// Creates a handoffs component with an array of configurations.
+    ///
+    /// - Parameter handoffs: The handoff configurations to include.
+    public init(_ handoffs: [AnyHandoffConfiguration]) {
+        self.handoffs = handoffs
+    }
+
+    /// Creates a handoffs component from variadic type-erased configurations.
+    ///
+    /// - Parameter handoffs: The handoff configurations to include.
+    public init(_ handoffs: AnyHandoffConfiguration...) {
+        self.handoffs = handoffs
+    }
+
+    /// Creates a handoffs component from typed configurations.
+    ///
+    /// This initializer uses parameter packs to accept multiple typed
+    /// `HandoffConfiguration` instances and type-erase them automatically.
+    ///
+    /// - Parameter configs: The typed handoff configurations.
+    public init<each T: Agent>(_ configs: repeat HandoffConfiguration<each T>) {
+        var result: [AnyHandoffConfiguration] = []
+        repeat result.append(AnyHandoffConfiguration(each configs))
+        self.handoffs = result
+    }
+}
+
 // MARK: - AgentBuilder
 
 /// A result builder for creating agents declaratively.
@@ -259,6 +307,7 @@ public struct AgentBuilder {
         var inputGuardrails: [any InputGuardrail] = []
         var outputGuardrails: [any OutputGuardrail] = []
         var guardrailRunnerConfiguration: GuardrailRunnerConfiguration?
+        var handoffs: [AnyHandoffConfiguration] = []
     }
 
     /// Builds a block of components.
@@ -287,6 +336,7 @@ public struct AgentBuilder {
             if let guardrailRunnerConfiguration = component.guardrailRunnerConfiguration {
                 result.guardrailRunnerConfiguration = guardrailRunnerConfiguration
             }
+            result.handoffs.append(contentsOf: component.handoffs)
         }
         return result
     }
@@ -339,6 +389,8 @@ public struct AgentBuilder {
             result.inputGuardrails.append(contentsOf: inputGuardrails.guardrails)
         case let outputGuardrails as OutputGuardrailsComponent:
             result.outputGuardrails.append(contentsOf: outputGuardrails.guardrails)
+        case let handoffsComponent as HandoffsComponent:
+            result.handoffs.append(contentsOf: handoffsComponent.handoffs)
         default:
             break
         }
@@ -377,7 +429,8 @@ public extension ReActAgent {
             inferenceProvider: components.inferenceProvider,
             tracer: components.tracer,
             inputGuardrails: components.inputGuardrails,
-            outputGuardrails: components.outputGuardrails
+            outputGuardrails: components.outputGuardrails,
+            handoffs: components.handoffs
         )
     }
 }

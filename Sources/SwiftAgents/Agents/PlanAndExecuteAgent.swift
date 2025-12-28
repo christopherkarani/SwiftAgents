@@ -259,6 +259,10 @@ public actor PlanAndExecuteAgent: Agent {
     nonisolated public let inputGuardrails: [any InputGuardrail]
     nonisolated public let outputGuardrails: [any OutputGuardrail]
     nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
+    private let _handoffs: [AnyHandoffConfiguration]
+
+    /// Configured handoffs for this agent.
+    nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
 
     // MARK: - Plan-and-Execute Specific Configuration
 
@@ -279,6 +283,7 @@ public actor PlanAndExecuteAgent: Agent {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - maxReplanAttempts: Maximum replan attempts. Default: 3
+    ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
     public init(
         tools: [any Tool] = [],
         instructions: String = "",
@@ -289,7 +294,8 @@ public actor PlanAndExecuteAgent: Agent {
         inputGuardrails: [any InputGuardrail] = [],
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
-        maxReplanAttempts: Int = 3
+        maxReplanAttempts: Int = 3,
+        handoffs: [AnyHandoffConfiguration] = []
     ) {
         self.tools = tools
         self.instructions = instructions
@@ -301,6 +307,7 @@ public actor PlanAndExecuteAgent: Agent {
         self.outputGuardrails = outputGuardrails
         self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
         self.maxReplanAttempts = maxReplanAttempts
+        _handoffs = handoffs
         toolRegistry = ToolRegistry(tools: tools)
     }
 
@@ -1127,6 +1134,26 @@ public extension PlanAndExecuteAgent {
             return copy
         }
 
+        /// Sets the handoff configurations.
+        /// - Parameter handoffs: The handoff configurations to use.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func handoffs(_ handoffs: [AnyHandoffConfiguration]) -> Builder {
+            var copy = self
+            copy._handoffs = handoffs
+            return copy
+        }
+
+        /// Adds a handoff configuration.
+        /// - Parameter handoff: The handoff configuration to add.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func addHandoff(_ handoff: AnyHandoffConfiguration) -> Builder {
+            var copy = self
+            copy._handoffs.append(handoff)
+            return copy
+        }
+
         /// Builds the agent.
         /// - Returns: A new PlanAndExecuteAgent instance.
         public func build() -> PlanAndExecuteAgent {
@@ -1140,7 +1167,8 @@ public extension PlanAndExecuteAgent {
                 inputGuardrails: _inputGuardrails,
                 outputGuardrails: _outputGuardrails,
                 guardrailRunnerConfiguration: _guardrailRunnerConfiguration,
-                maxReplanAttempts: _maxReplanAttempts
+                maxReplanAttempts: _maxReplanAttempts,
+                handoffs: _handoffs
             )
         }
 
@@ -1156,6 +1184,7 @@ public extension PlanAndExecuteAgent {
         private var _outputGuardrails: [any OutputGuardrail] = []
         private var _guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
         private var _maxReplanAttempts: Int = 3
+        private var _handoffs: [AnyHandoffConfiguration] = []
     }
 }
 
@@ -1190,7 +1219,8 @@ public extension PlanAndExecuteAgent {
             tracer: components.tracer,
             inputGuardrails: components.inputGuardrails,
             outputGuardrails: components.outputGuardrails,
-            guardrailRunnerConfiguration: components.guardrailRunnerConfiguration ?? .default
+            guardrailRunnerConfiguration: components.guardrailRunnerConfiguration ?? .default,
+            handoffs: components.handoffs
         )
     }
 }

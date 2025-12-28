@@ -42,6 +42,10 @@ public actor ReActAgent: Agent {
     nonisolated public let inputGuardrails: [any InputGuardrail]
     nonisolated public let outputGuardrails: [any OutputGuardrail]
     nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
+    private let _handoffs: [AnyHandoffConfiguration]
+
+    /// Configured handoffs for this agent.
+    nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
 
     // MARK: - Initialization
 
@@ -56,6 +60,7 @@ public actor ReActAgent: Agent {
     ///   - inputGuardrails: Input validation guardrails. Default: []
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
+    ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
     public init(
         tools: [any Tool] = [],
         instructions: String = "",
@@ -65,7 +70,8 @@ public actor ReActAgent: Agent {
         tracer: (any Tracer)? = nil,
         inputGuardrails: [any InputGuardrail] = [],
         outputGuardrails: [any OutputGuardrail] = [],
-        guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
+        guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
+        handoffs: [AnyHandoffConfiguration] = []
     ) {
         self.tools = tools
         self.instructions = instructions
@@ -76,6 +82,7 @@ public actor ReActAgent: Agent {
         self.inputGuardrails = inputGuardrails
         self.outputGuardrails = outputGuardrails
         self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
+        _handoffs = handoffs
         toolRegistry = ToolRegistry(tools: tools)
     }
 
@@ -754,6 +761,26 @@ public extension ReActAgent {
             return copy
         }
 
+        /// Sets the handoff configurations.
+        /// - Parameter handoffs: The handoff configurations to use.
+        /// - Returns: A new builder with the updated handoffs.
+        @discardableResult
+        public func handoffs(_ handoffs: [AnyHandoffConfiguration]) -> Builder {
+            var copy = self
+            copy.handoffs = handoffs
+            return copy
+        }
+
+        /// Adds a handoff configuration.
+        /// - Parameter handoff: The handoff configuration to add.
+        /// - Returns: A new builder with the handoff added.
+        @discardableResult
+        public func addHandoff(_ handoff: AnyHandoffConfiguration) -> Builder {
+            var copy = self
+            copy.handoffs.append(handoff)
+            return copy
+        }
+
         /// Builds the agent.
         /// - Returns: A new ReActAgent instance.
         public func build() -> ReActAgent {
@@ -766,7 +793,8 @@ public extension ReActAgent {
                 tracer: tracer,
                 inputGuardrails: inputGuardrails,
                 outputGuardrails: outputGuardrails,
-                guardrailRunnerConfiguration: guardrailRunnerConfiguration
+                guardrailRunnerConfiguration: guardrailRunnerConfiguration,
+                handoffs: handoffs
             )
         }
 
@@ -781,5 +809,6 @@ public extension ReActAgent {
         private var inputGuardrails: [any InputGuardrail]
         private var outputGuardrails: [any OutputGuardrail]
         private var guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
+        private var handoffs: [AnyHandoffConfiguration] = []
     }
 }

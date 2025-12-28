@@ -1,0 +1,793 @@
+// HandoffIntegrationTests.swift
+// SwiftAgentsTests
+//
+// Comprehensive integration tests for HandoffCoordinator with configuration callbacks and hooks.
+
+import Foundation
+@testable import SwiftAgents
+import Testing
+
+// MARK: - Test State Actors
+
+/// Thread-safe state tracking for handoff callback tests.
+actor HandoffTestState {
+    var onHandoffCalled = false
+    var capturedSourceName: String?
+    var capturedTargetName: String?
+    var capturedInput: String?
+    var capturedMetadata: [String: SendableValue] = [:]
+    var callbackError: Error?
+
+    func setOnHandoffCalled() { onHandoffCalled = true }
+    func setCapturedNames(source: String, target: String) {
+        capturedSourceName = source
+        capturedTargetName = target
+    }
+    func setCapturedInput(_ input: String) { capturedInput = input }
+    func setCapturedMetadata(_ metadata: [String: SendableValue]) { capturedMetadata = metadata }
+    func setCallbackError(_ error: Error) { callbackError = error }
+
+    func getOnHandoffCalled() -> Bool { onHandoffCalled }
+    func getCapturedSourceName() -> String? { capturedSourceName }
+    func getCapturedTargetName() -> String? { capturedTargetName }
+    func getCapturedInput() -> String? { capturedInput }
+    func getCapturedMetadata() -> [String: SendableValue] { capturedMetadata }
+    func getCallbackError() -> Error? { callbackError }
+
+    func reset() {
+        onHandoffCalled = false
+        capturedSourceName = nil
+        capturedTargetName = nil
+        capturedInput = nil
+        capturedMetadata = [:]
+        callbackError = nil
+    }
+}
+
+/// Thread-safe state tracking for RunHooks tests.
+actor HooksTestState {
+    var onHandoffHookCalled = false
+    var capturedFromAgentName: String?
+    var capturedToAgentName: String?
+
+    func setOnHandoffHookCalled() { onHandoffHookCalled = true }
+    func setCapturedAgentNames(from: String, to: String) {
+        capturedFromAgentName = from
+        capturedToAgentName = to
+    }
+
+    func getOnHandoffHookCalled() -> Bool { onHandoffHookCalled }
+    func getCapturedFromAgentName() -> String? { capturedFromAgentName }
+    func getCapturedToAgentName() -> String? { capturedToAgentName }
+
+    func reset() {
+        onHandoffHookCalled = false
+        capturedFromAgentName = nil
+        capturedToAgentName = nil
+    }
+}
+
+// MARK: - MockIntegrationTestAgent
+
+/// Mock agent for integration testing handoff scenarios.
+actor MockIntegrationTestAgent: Agent {
+    nonisolated let tools: [any Tool] = []
+    nonisolated let instructions: String
+    nonisolated let configuration: AgentConfiguration
+
+    nonisolated var memory: (any Memory)? { nil }
+    nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
+
+    private(set) var runCallCount = 0
+    private(set) var lastInput: String?
+
+    init(name: String, instructions: String = "Mock agent instructions") {
+        self.instructions = instructions
+        self.configuration = AgentConfiguration(name: name)
+    }
+
+    func run(
+        _ input: String,
+        session _: (any Session)? = nil,
+        hooks _: (any RunHooks)? = nil
+    ) async throws -> AgentResult {
+        runCallCount += 1
+        lastInput = input
+        let builder = AgentResult.Builder()
+        builder.start()
+        builder.setOutput("Response from \(configuration.name): \(input)")
+        return builder.build()
+    }
+
+    nonisolated func stream(
+        _ input: String,
+        session _: (any Session)? = nil,
+        hooks _: (any RunHooks)? = nil
+    ) -> AsyncThrowingStream<AgentEvent, Error> {
+        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                continuation.yield(.started(input: input))
+                let result = try await run(input)
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        return stream
+    }
+
+    func cancel() async {}
+
+    func getCallCount() -> Int { runCallCount }
+    func getLastInput() -> String? { lastInput }
+}
+
+// MARK: - MockRunHooks
+
+/// Mock RunHooks implementation for testing hook invocations.
+struct MockRunHooks: RunHooks {
+    let state: HooksTestState
+
+    init(state: HooksTestState) {
+        self.state = state
+    }
+
+    func onHandoff(context _: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async {
+        await state.setOnHandoffHookCalled()
+        await state.setCapturedAgentNames(
+            from: fromAgent.configuration.name,
+            to: toAgent.configuration.name
+        )
+    }
+}
+
+// MARK: - HandoffCoordinator with OnHandoff Callback Tests
+
+@Suite("HandoffCoordinator OnHandoff Callback Tests")
+struct HandoffCoordinatorOnHandoffCallbackTests {
+    @Test("Callback is invoked before handoff execution")
+    func testHandoffWithOnHandoffCallback() async throws {
+        let sourceAgent = MockIntegrationTestAgent(name: "source")
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+        let testState = HandoffTestState()
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(sourceAgent, as: "source")
+        await coordinator.register(targetAgent, as: "target")
+
+        let config = AnyHandoffConfiguration(
+            targetAgent: targetAgent,
+            onHandoff: { _, inputData in
+                await testState.setOnHandoffCalled()
+                await testState.setCapturedNames(
+                    source: inputData.sourceAgentName,
+                    target: inputData.targetAgentName
+                )
+                await testState.setCapturedInput(inputData.input)
+            }
+        )
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "target",
+            input: "Test handoff input"
+        )
+
+        let context = AgentContext(input: "Test")
+        _ = try await coordinator.executeHandoff(request, context: context, configuration: config, hooks: nil)
+
+        // Verify callback was invoked with correct data
+        #expect(await testState.getOnHandoffCalled())
+        #expect(await testState.getCapturedSourceName() == "source")
+        #expect(await testState.getCapturedTargetName() == "target")
+        #expect(await testState.getCapturedInput() == "Test handoff input")
+    }
+
+    @Test("Callback errors are logged but do not fail handoff")
+    func testHandoffCallbackErrorDoesNotFailHandoff() async throws {
+        struct CallbackTestError: Error {}
+
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+        let testState = HandoffTestState()
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(targetAgent, as: "target")
+
+        let config = AnyHandoffConfiguration(
+            targetAgent: targetAgent,
+            onHandoff: { _, _ in
+                await testState.setOnHandoffCalled()
+                throw CallbackTestError()
+            }
+        )
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "target",
+            input: "Test input"
+        )
+
+        let context = AgentContext(input: "Test")
+
+        // Handoff should succeed despite callback error
+        let result = try await coordinator.executeHandoff(
+            request,
+            context: context,
+            configuration: config,
+            hooks: nil
+        )
+
+        #expect(await testState.getOnHandoffCalled())
+        #expect(result.targetAgentName == "target")
+        #expect(result.result.output.contains("target"))
+    }
+}
+
+// MARK: - HandoffCoordinator Input Filter Tests
+
+@Suite("HandoffCoordinator Input Filter Tests")
+struct HandoffCoordinatorInputFilterTests {
+    @Test("Filter transforms HandoffInputData")
+    func testHandoffWithInputFilter() async throws {
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+        let testState = HandoffTestState()
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(targetAgent, as: "target")
+
+        let config = AnyHandoffConfiguration(
+            targetAgent: targetAgent,
+            onHandoff: { _, inputData in
+                await testState.setCapturedMetadata(inputData.metadata)
+            },
+            inputFilter: { inputData in
+                var modified = inputData
+                modified.metadata["filtered"] = .bool(true)
+                modified.metadata["filter_timestamp"] = .double(Date().timeIntervalSince1970)
+                return modified
+            }
+        )
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "target",
+            input: "Test input"
+        )
+
+        let context = AgentContext(input: "Test")
+        _ = try await coordinator.executeHandoff(request, context: context, configuration: config, hooks: nil)
+
+        // Verify filter added metadata
+        let capturedMetadata = await testState.getCapturedMetadata()
+        #expect(capturedMetadata["filtered"]?.boolValue == true)
+        #expect(capturedMetadata["filter_timestamp"] != nil)
+    }
+
+    @Test("Filter can add metadata that is merged into context")
+    func testHandoffInputFilterModifiesMetadata() async throws {
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(targetAgent, as: "target")
+
+        let config = AnyHandoffConfiguration(
+            targetAgent: targetAgent,
+            inputFilter: { inputData in
+                var modified = inputData
+                modified.metadata["custom_key"] = .string("custom_value")
+                modified.metadata["priority"] = .int(1)
+                return modified
+            }
+        )
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "target",
+            input: "Test input"
+        )
+
+        let context = AgentContext(input: "Test")
+        let result = try await coordinator.executeHandoff(
+            request,
+            context: context,
+            configuration: config,
+            hooks: nil
+        )
+
+        // Verify metadata was merged into transferred context
+        #expect(result.transferredContext["custom_key"]?.stringValue == "custom_value")
+        #expect(result.transferredContext["priority"]?.intValue == 1)
+    }
+}
+
+// MARK: - HandoffCoordinator IsEnabled Tests
+
+@Suite("HandoffCoordinator IsEnabled Tests")
+struct HandoffCoordinatorIsEnabledTests {
+    @Test("Handoff executes when isEnabled returns true")
+    func testHandoffWithIsEnabledTrue() async throws {
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(targetAgent, as: "target")
+
+        let config = AnyHandoffConfiguration(
+            targetAgent: targetAgent,
+            isEnabled: { _, _ in true }
+        )
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "target",
+            input: "Test input"
+        )
+
+        let context = AgentContext(input: "Test")
+        let result = try await coordinator.executeHandoff(
+            request,
+            context: context,
+            configuration: config,
+            hooks: nil
+        )
+
+        #expect(result.targetAgentName == "target")
+        #expect(result.result.output.contains("target"))
+    }
+
+    @Test("Handoff throws handoffSkipped when isEnabled returns false")
+    func testHandoffWithIsEnabledFalse() async throws {
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(targetAgent, as: "target")
+
+        let config = AnyHandoffConfiguration(
+            targetAgent: targetAgent,
+            isEnabled: { _, _ in false }
+        )
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "target",
+            input: "Test input"
+        )
+
+        let context = AgentContext(input: "Test")
+
+        await #expect(throws: OrchestrationError.self, performing: {
+            _ = try await coordinator.executeHandoff(
+                request,
+                context: context,
+                configuration: config,
+                hooks: nil
+            )
+        })
+    }
+
+    @Test("IsEnabled callback receives correct context and agent")
+    func testIsEnabledCallbackReceivesCorrectParameters() async throws {
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+        let testState = HandoffTestState()
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(targetAgent, as: "target")
+
+        let config = AnyHandoffConfiguration(
+            targetAgent: targetAgent,
+            isEnabled: { context, agent in
+                // Verify we receive the correct context
+                let ready = await context.get("ready")?.boolValue ?? false
+                await testState.setCapturedNames(source: "context_check", target: agent.configuration.name)
+                return ready
+            }
+        )
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "target",
+            input: "Test input"
+        )
+
+        let context = AgentContext(input: "Test")
+        await context.set("ready", value: .bool(true))
+
+        let result = try await coordinator.executeHandoff(
+            request,
+            context: context,
+            configuration: config,
+            hooks: nil
+        )
+
+        #expect(await testState.getCapturedTargetName() == "target")
+        #expect(result.targetAgentName == "target")
+    }
+}
+
+// MARK: - HandoffCoordinator RunHooks Integration Tests
+
+@Suite("HandoffCoordinator RunHooks Integration Tests")
+struct HandoffCoordinatorRunHooksIntegrationTests {
+    @Test("RunHooks.onHandoff is called during handoff")
+    func testHandoffWithRunHooksIntegration() async throws {
+        let sourceAgent = MockIntegrationTestAgent(name: "source")
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+        let hooksState = HooksTestState()
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(sourceAgent, as: "source")
+        await coordinator.register(targetAgent, as: "target")
+
+        let hooks = MockRunHooks(state: hooksState)
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "target",
+            input: "Test input"
+        )
+
+        let context = AgentContext(input: "Test")
+
+        _ = try await coordinator.executeHandoff(
+            request,
+            context: context,
+            configuration: nil,
+            hooks: hooks
+        )
+
+        #expect(await hooksState.getOnHandoffHookCalled())
+        #expect(await hooksState.getCapturedFromAgentName() == "source")
+        #expect(await hooksState.getCapturedToAgentName() == "target")
+    }
+
+    @Test("RunHooks.onHandoff is called with configuration callbacks")
+    func testHandoffRunHooksWithConfigurationCallbacks() async throws {
+        let sourceAgent = MockIntegrationTestAgent(name: "source")
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+        let hooksState = HooksTestState()
+        let testState = HandoffTestState()
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(sourceAgent, as: "source")
+        await coordinator.register(targetAgent, as: "target")
+
+        let hooks = MockRunHooks(state: hooksState)
+
+        let config = AnyHandoffConfiguration(
+            targetAgent: targetAgent,
+            onHandoff: { _, _ in
+                await testState.setOnHandoffCalled()
+            }
+        )
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "target",
+            input: "Test input"
+        )
+
+        let context = AgentContext(input: "Test")
+
+        _ = try await coordinator.executeHandoff(
+            request,
+            context: context,
+            configuration: config,
+            hooks: hooks
+        )
+
+        // Both hooks and callbacks should be invoked
+        #expect(await hooksState.getOnHandoffHookCalled())
+        #expect(await testState.getOnHandoffCalled())
+    }
+}
+
+// MARK: - HandoffCoordinator Error Handling Tests
+
+@Suite("HandoffCoordinator Error Handling Tests")
+struct HandoffCoordinatorErrorHandlingTests {
+    @Test("Throws agentNotFound for unregistered agent")
+    func testHandoffToUnregisteredAgent() async throws {
+        let sourceAgent = MockIntegrationTestAgent(name: "source")
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(sourceAgent, as: "source")
+        // Note: "unknown_target" is not registered
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "unknown_target",
+            input: "Test input"
+        )
+
+        let context = AgentContext(input: "Test")
+
+        await #expect(throws: OrchestrationError.self, performing: {
+            _ = try await coordinator.executeHandoff(
+                request,
+                context: context,
+                configuration: nil,
+                hooks: nil
+            )
+        })
+    }
+
+    @Test("Backward compatible with nil configuration")
+    func testHandoffWithNilConfiguration() async throws {
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(targetAgent, as: "target")
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "target",
+            input: "Test input"
+        )
+
+        let context = AgentContext(input: "Test")
+
+        // Should work with nil configuration (backward compatible)
+        let result = try await coordinator.executeHandoff(
+            request,
+            context: context,
+            configuration: nil,
+            hooks: nil
+        )
+
+        #expect(result.targetAgentName == "target")
+        #expect(result.result.output.contains("target"))
+    }
+}
+
+// MARK: - HandoffCoordinator Context Propagation Tests
+
+@Suite("HandoffCoordinator Context Propagation Tests")
+struct HandoffCoordinatorContextPropagationTests {
+    @Test("Context from request is merged correctly")
+    func testHandoffContextMerging() async throws {
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(targetAgent, as: "target")
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "target",
+            input: "Test input",
+            context: [
+                "plan_id": .string("plan-123"),
+                "step": .int(1),
+                "priority": .string("high")
+            ]
+        )
+
+        let context = AgentContext(input: "Test")
+        let result = try await coordinator.executeHandoff(
+            request,
+            context: context,
+            configuration: nil,
+            hooks: nil
+        )
+
+        // Verify context was transferred
+        #expect(result.transferredContext["plan_id"]?.stringValue == "plan-123")
+        #expect(result.transferredContext["step"]?.intValue == 1)
+        #expect(result.transferredContext["priority"]?.stringValue == "high")
+    }
+
+    @Test("HandoffInputData is populated correctly")
+    func testHandoffInputDataContainsCorrectValues() async throws {
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+        let testState = HandoffTestState()
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(targetAgent, as: "target")
+
+        let config = AnyHandoffConfiguration(
+            targetAgent: targetAgent,
+            onHandoff: { _, inputData in
+                await testState.setCapturedNames(
+                    source: inputData.sourceAgentName,
+                    target: inputData.targetAgentName
+                )
+                await testState.setCapturedInput(inputData.input)
+                await testState.setCapturedMetadata(inputData.context)
+            }
+        )
+
+        let request = HandoffRequest(
+            sourceAgentName: "planner",
+            targetAgentName: "target",
+            input: "Execute step 1",
+            context: [
+                "workflow_id": .string("workflow-456")
+            ]
+        )
+
+        let context = AgentContext(input: "Test")
+        _ = try await coordinator.executeHandoff(
+            request,
+            context: context,
+            configuration: config,
+            hooks: nil
+        )
+
+        #expect(await testState.getCapturedSourceName() == "planner")
+        #expect(await testState.getCapturedTargetName() == "target")
+        #expect(await testState.getCapturedInput() == "Execute step 1")
+
+        let capturedContext = await testState.getCapturedMetadata()
+        #expect(capturedContext["workflow_id"]?.stringValue == "workflow-456")
+    }
+
+    @Test("Context values are set in AgentContext after handoff")
+    func testContextValuesSetAfterHandoff() async throws {
+        let targetAgent = MockIntegrationTestAgent(name: "target")
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(targetAgent, as: "target")
+
+        let request = HandoffRequest(
+            sourceAgentName: "source",
+            targetAgentName: "target",
+            input: "Test input",
+            context: [
+                "shared_data": .string("shared_value")
+            ]
+        )
+
+        let context = AgentContext(input: "Test")
+        _ = try await coordinator.executeHandoff(
+            request,
+            context: context,
+            configuration: nil,
+            hooks: nil
+        )
+
+        // Verify context was updated with request context
+        let sharedData = await context.get("shared_data")
+        #expect(sharedData?.stringValue == "shared_value")
+    }
+}
+
+// MARK: - Full Workflow Integration Tests
+
+@Suite("Handoff Full Workflow Integration Tests")
+struct HandoffFullWorkflowIntegrationTests {
+    @Test("Complete handoff workflow with all callbacks")
+    func testCompleteHandoffWorkflow() async throws {
+        let sourceAgent = MockIntegrationTestAgent(name: "planner")
+        let targetAgent = MockIntegrationTestAgent(name: "executor")
+        let testState = HandoffTestState()
+        let hooksState = HooksTestState()
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(sourceAgent, as: "planner")
+        await coordinator.register(targetAgent, as: "executor")
+
+        let hooks = MockRunHooks(state: hooksState)
+
+        let config = AnyHandoffConfiguration(
+            targetAgent: targetAgent,
+            toolNameOverride: "execute_plan",
+            toolDescription: "Execute the planned steps",
+            onHandoff: { context, inputData in
+                await testState.setOnHandoffCalled()
+                await testState.setCapturedNames(
+                    source: inputData.sourceAgentName,
+                    target: inputData.targetAgentName
+                )
+                // Set a value in context to verify callback can modify context
+                await context.set("handoff_logged", value: .bool(true))
+            },
+            inputFilter: { inputData in
+                var modified = inputData
+                modified.metadata["processed_at"] = .double(Date().timeIntervalSince1970)
+                modified.metadata["workflow_step"] = .string("filtered")
+                return modified
+            },
+            isEnabled: { context, _ in
+                // Check if handoff should be enabled based on context
+                await context.get("can_handoff")?.boolValue ?? true
+            },
+            nestHandoffHistory: true
+        )
+
+        let request = HandoffRequest(
+            sourceAgentName: "planner",
+            targetAgentName: "executor",
+            input: "Execute step 1",
+            context: [
+                "plan_id": .string("plan-789")
+            ]
+        )
+
+        let context = AgentContext(input: "Initial input")
+        await context.set("can_handoff", value: .bool(true))
+
+        let result = try await coordinator.executeHandoff(
+            request,
+            context: context,
+            configuration: config,
+            hooks: hooks
+        )
+
+        // Verify all callbacks were invoked
+        #expect(await testState.getOnHandoffCalled())
+        #expect(await testState.getCapturedSourceName() == "planner")
+        #expect(await testState.getCapturedTargetName() == "executor")
+
+        // Verify RunHooks were invoked
+        #expect(await hooksState.getOnHandoffHookCalled())
+        #expect(await hooksState.getCapturedFromAgentName() == "planner")
+        #expect(await hooksState.getCapturedToAgentName() == "executor")
+
+        // Verify context was modified by callback
+        let handoffLogged = await context.get("handoff_logged")?.boolValue
+        #expect(handoffLogged == true)
+
+        // Verify filter metadata was merged
+        #expect(result.transferredContext["processed_at"] != nil)
+        #expect(result.transferredContext["workflow_step"]?.stringValue == "filtered")
+
+        // Verify result
+        #expect(result.targetAgentName == "executor")
+        #expect(result.input == "Execute step 1")
+    }
+
+    @Test("Multiple sequential handoffs maintain context")
+    func testMultipleSequentialHandoffs() async throws {
+        let agent1 = MockIntegrationTestAgent(name: "agent1")
+        let agent2 = MockIntegrationTestAgent(name: "agent2")
+        let agent3 = MockIntegrationTestAgent(name: "agent3")
+
+        let coordinator = HandoffCoordinator()
+        await coordinator.register(agent1, as: "agent1")
+        await coordinator.register(agent2, as: "agent2")
+        await coordinator.register(agent3, as: "agent3")
+
+        let context = AgentContext(input: "Initial")
+
+        // First handoff
+        let request1 = HandoffRequest(
+            sourceAgentName: "agent1",
+            targetAgentName: "agent2",
+            input: "Step 1",
+            context: ["step": .int(1)]
+        )
+
+        let result1 = try await coordinator.executeHandoff(
+            request1,
+            context: context,
+            configuration: nil,
+            hooks: nil
+        )
+        #expect(result1.targetAgentName == "agent2")
+
+        // Second handoff
+        let request2 = HandoffRequest(
+            sourceAgentName: "agent2",
+            targetAgentName: "agent3",
+            input: "Step 2",
+            context: ["step": .int(2)]
+        )
+
+        let result2 = try await coordinator.executeHandoff(
+            request2,
+            context: context,
+            configuration: nil,
+            hooks: nil
+        )
+        #expect(result2.targetAgentName == "agent3")
+
+        // Verify execution path was recorded
+        let executionPath = await context.getExecutionPath()
+        #expect(executionPath.contains("agent2"))
+        #expect(executionPath.contains("agent3"))
+    }
+}

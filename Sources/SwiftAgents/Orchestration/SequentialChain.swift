@@ -43,7 +43,8 @@ public func --> (lhs: SequentialChain, rhs: any Agent) -> SequentialChain {
     return SequentialChain(
         agents: agents,
         configuration: lhs.configuration,
-        transformers: lhs.transformers
+        transformers: lhs.transformers,
+        handoffs: lhs.handoffs
     )
 }
 
@@ -154,6 +155,9 @@ public actor SequentialChain: Agent {
     /// Tracer (chains don't use tracing directly).
     nonisolated public var tracer: (any Tracer)? { nil }
 
+    /// Configured handoffs for this chain.
+    nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
+
     // MARK: - Initialization
 
     /// Creates a new sequential chain.
@@ -162,14 +166,17 @@ public actor SequentialChain: Agent {
     ///   - agents: The agents to execute in order.
     ///   - configuration: Execution configuration. Default: `.default`
     ///   - transformers: Output transformers indexed by agent position. Default: [:]
+    ///   - handoffs: Handoff configurations for chained agents. Default: []
     public init(
         agents: [any Agent],
         configuration: AgentConfiguration = .default,
-        transformers: [Int: OutputTransformer] = [:]
+        transformers: [Int: OutputTransformer] = [:],
+        handoffs: [AnyHandoffConfiguration] = []
     ) {
         chainedAgents = agents
         self.configuration = configuration
         self.transformers = transformers
+        _handoffs = handoffs
     }
 
     // MARK: - Configuration
@@ -194,7 +201,8 @@ public actor SequentialChain: Agent {
         return SequentialChain(
             agents: chainedAgents,
             configuration: configuration,
-            transformers: newTransformers
+            transformers: newTransformers,
+            handoffs: _handoffs
         )
     }
 
@@ -240,13 +248,58 @@ public actor SequentialChain: Agent {
             let agentName = String(describing: type(of: agent))
             await context?.recordExecution(agentName: agentName)
 
+            // Apply handoff configuration if available
+            var effectiveInput = currentInput
+            let handoffContext = context ?? AgentContext(input: input)
+
+            if let config = findHandoffConfiguration(for: agent) {
+                // Check isEnabled callback
+                if let isEnabled = config.isEnabled {
+                    let enabled = await isEnabled(handoffContext, agent)
+                    if !enabled {
+                        throw OrchestrationError.handoffSkipped(
+                            from: "SequentialChain",
+                            to: agentName,
+                            reason: "Handoff disabled by isEnabled callback"
+                        )
+                    }
+                }
+
+                // Create HandoffInputData for callbacks
+                var inputData = HandoffInputData(
+                    sourceAgentName: "SequentialChain",
+                    targetAgentName: agentName,
+                    input: currentInput,
+                    context: [:],
+                    metadata: [:]
+                )
+
+                // Apply inputFilter if present
+                if let inputFilter = config.inputFilter {
+                    inputData = inputFilter(inputData)
+                    effectiveInput = inputData.input
+                }
+
+                // Call onHandoff callback if present
+                if let onHandoff = config.onHandoff {
+                    do {
+                        try await onHandoff(handoffContext, inputData)
+                    } catch {
+                        // Log callback errors but don't fail the handoff
+                        Log.orchestration.warning(
+                            "onHandoff callback failed for SequentialChain -> \(agentName): \(error.localizedDescription)"
+                        )
+                    }
+                }
+            }
+
             // Notify hooks of handoff to next agent
             if let context {
                 await hooks?.onHandoff(context: context, fromAgent: self, toAgent: agent)
             }
 
-            // Run the agent
-            let agentResult = try await agent.run(currentInput, session: session, hooks: hooks)
+            // Run the agent with potentially modified input
+            let agentResult = try await agent.run(effectiveInput, session: session, hooks: hooks)
 
             // Accumulate tool calls and iterations
             for toolCall in agentResult.toolCalls {
@@ -342,6 +395,24 @@ public actor SequentialChain: Agent {
 
     /// Whether execution has been cancelled.
     private var isCancelled: Bool = false
+
+    /// Handoff configurations for chained agents.
+    private let _handoffs: [AnyHandoffConfiguration]
+
+    // MARK: - Private Methods
+
+    /// Finds a handoff configuration for the given target agent.
+    ///
+    /// - Parameter targetAgent: The agent to find configuration for.
+    /// - Returns: The matching handoff configuration, or nil if none found.
+    private func findHandoffConfiguration(for targetAgent: any Agent) -> AnyHandoffConfiguration? {
+        _handoffs.first { config in
+            // Match by type - compare the target agent's type
+            let configTargetType = type(of: config.targetAgent)
+            let currentType = type(of: targetAgent)
+            return configTargetType == currentType
+        }
+    }
 }
 
 // MARK: CustomStringConvertible

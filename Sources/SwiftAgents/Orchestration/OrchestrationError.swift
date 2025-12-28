@@ -22,6 +22,9 @@ public enum OrchestrationError: Error, Sendable, Equatable {
     /// Agent handoff failed between source and target agents.
     case handoffFailed(source: String, target: String, reason: String)
 
+    /// Agent handoff was skipped because it was disabled.
+    case handoffSkipped(from: String, to: String, reason: String)
+
     // MARK: - Routing Errors
 
     /// Routing decision failed to determine the next agent.
@@ -50,6 +53,8 @@ extension OrchestrationError: LocalizedError {
             return "No agents configured in orchestrator"
         case let .handoffFailed(source, target, reason):
             return "Handoff failed from '\(source)' to '\(target)': \(reason)"
+        case let .handoffSkipped(from, to, reason):
+            return "Handoff skipped from '\(from)' to '\(to)': \(reason)"
         case let .routingFailed(reason):
             return "Routing decision failed: \(reason)"
         case let .invalidRouteCondition(reason):

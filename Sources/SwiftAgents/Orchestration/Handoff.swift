@@ -360,6 +360,155 @@ public actor HandoffCoordinator {
         )
     }
 
+    /// Executes a handoff with configuration callbacks.
+    ///
+    /// This method extends the basic handoff with support for:
+    /// - Dynamic enablement checks via `isEnabled` callback
+    /// - Input transformation via `inputFilter` callback
+    /// - Pre-handoff notification via `onHandoff` callback
+    /// - Integration with `RunHooks` for observability
+    ///
+    /// - Parameters:
+    ///   - request: The handoff request specifying source, target, and context.
+    ///   - context: The shared orchestration context.
+    ///   - configuration: Optional handoff configuration with callbacks.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
+    /// - Returns: The result of the handoff.
+    /// - Throws: `OrchestrationError.agentNotFound` if the target agent is not registered,
+    ///           `OrchestrationError.handoffSkipped` if the handoff is disabled,
+    ///           or `AgentError` if the target agent's execution fails.
+    ///
+    /// Example:
+    /// ```swift
+    /// let config = handoff(
+    ///     to: executorAgent,
+    ///     onHandoff: { context, data in
+    ///         Log.agents.info("Handoff: \(data.sourceAgentName) -> \(data.targetAgentName)")
+    ///     },
+    ///     isEnabled: { context, agent in
+    ///         await context.get("ready")?.boolValue ?? false
+    ///     }
+    /// )
+    /// let result = try await coordinator.executeHandoff(
+    ///     request,
+    ///     context: context,
+    ///     configuration: AnyHandoffConfiguration(config),
+    ///     hooks: myHooks
+    /// )
+    /// ```
+    public func executeHandoff(
+        _ request: HandoffRequest,
+        context: AgentContext,
+        configuration: AnyHandoffConfiguration?,
+        hooks: (any RunHooks)?
+    ) async throws -> HandoffResult {
+        // Look up the target agent
+        guard let targetAgent = agents[request.targetAgentName] else {
+            throw OrchestrationError.agentNotFound(name: request.targetAgentName)
+        }
+
+        // Process configuration callbacks if provided
+        var effectiveInput = request.input
+        var effectiveContext = request.context
+
+        if let config = configuration {
+            // Check if handoff is enabled
+            if let isEnabled = config.isEnabled {
+                let enabled = await isEnabled(context, targetAgent)
+                if !enabled {
+                    Log.orchestration.info(
+                        "Handoff skipped: \(request.sourceAgentName) -> \(request.targetAgentName) (disabled by isEnabled callback)"
+                    )
+                    throw OrchestrationError.handoffSkipped(
+                        from: request.sourceAgentName,
+                        to: request.targetAgentName,
+                        reason: "Handoff disabled by isEnabled callback"
+                    )
+                }
+            }
+
+            // Create HandoffInputData for callbacks
+            var inputData = HandoffInputData(
+                sourceAgentName: request.sourceAgentName,
+                targetAgentName: request.targetAgentName,
+                input: request.input,
+                context: request.context,
+                metadata: [:]
+            )
+
+            // Apply input filter if present
+            if let inputFilter = config.inputFilter {
+                inputData = inputFilter(inputData)
+            }
+
+            // Call onHandoff callback if present
+            if let onHandoff = config.onHandoff {
+                do {
+                    try await onHandoff(context, inputData)
+                } catch {
+                    // Log callback errors but don't fail the handoff
+                    Log.orchestration.warning(
+                        "onHandoff callback failed for \(request.sourceAgentName) -> \(request.targetAgentName): \(error.localizedDescription)"
+                    )
+                }
+            }
+
+            // Use potentially modified input from filter
+            effectiveInput = inputData.input
+
+            // Merge filter metadata into context
+            for (key, value) in inputData.metadata {
+                effectiveContext[key] = value
+            }
+        }
+
+        // Invoke RunHooks.onHandoff if hooks provided
+        if let hooks, let sourceAgent = agents[request.sourceAgentName] {
+            await hooks.onHandoff(context: context, fromAgent: sourceAgent, toAgent: targetAgent)
+        }
+
+        // Execute handoff based on agent capabilities
+        let result: AgentResult
+
+        // Create modified request with effective values
+        let effectiveRequest = HandoffRequest(
+            sourceAgentName: request.sourceAgentName,
+            targetAgentName: request.targetAgentName,
+            input: effectiveInput,
+            reason: request.reason,
+            context: effectiveContext
+        )
+
+        if let handoffReceiver = targetAgent as? HandoffReceiver {
+            // Agent implements HandoffReceiver, use specialized handling
+            result = try await handoffReceiver.handleHandoff(effectiveRequest, context: context)
+        } else {
+            // Agent doesn't implement HandoffReceiver, use standard execution
+            // Merge context manually
+            for (key, value) in effectiveContext {
+                await context.set(key, value: value)
+            }
+
+            // Record execution
+            await context.recordExecution(agentName: request.targetAgentName)
+
+            // Execute normally
+            result = try await targetAgent.run(effectiveInput)
+        }
+
+        // Store the result in context
+        await context.setPreviousOutput(result)
+
+        // Create and return handoff result
+        return HandoffResult(
+            targetAgentName: request.targetAgentName,
+            input: effectiveInput,
+            result: result,
+            transferredContext: effectiveContext,
+            timestamp: Date()
+        )
+    }
+
     // MARK: Private
 
     // MARK: - Private Storage

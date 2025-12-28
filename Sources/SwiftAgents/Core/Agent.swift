@@ -59,6 +59,12 @@ public protocol Agent: Sendable {
     /// If any guardrail triggers a tripwire, throws `GuardrailError.outputTripwireTriggered`.
     nonisolated var outputGuardrails: [any OutputGuardrail] { get }
 
+    /// Configured handoffs for this agent.
+    ///
+    /// Handoffs define how this agent can transfer execution to other agents,
+    /// including callbacks, filters, and enablement checks.
+    nonisolated var handoffs: [AnyHandoffConfiguration] { get }
+
     /// Executes the agent with the given input and returns a result.
     /// - Parameters:
     ///   - input: The user's input/query.
@@ -97,6 +103,9 @@ public extension Agent {
 
     /// Default output guardrails (none).
     nonisolated var outputGuardrails: [any OutputGuardrail] { [] }
+
+    /// Default handoffs (none).
+    nonisolated var handoffs: [AnyHandoffConfiguration] { [] }
 }
 
 // MARK: - Agent Backward Compatibility

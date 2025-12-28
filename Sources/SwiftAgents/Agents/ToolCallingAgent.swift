@@ -44,6 +44,10 @@ public actor ToolCallingAgent: Agent {
     nonisolated public let outputGuardrails: [any OutputGuardrail]
     nonisolated public let tracer: (any Tracer)?
     nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
+    private let _handoffs: [AnyHandoffConfiguration]
+
+    /// Configured handoffs for this agent.
+    nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
 
     // MARK: - Initialization
 
@@ -58,6 +62,7 @@ public actor ToolCallingAgent: Agent {
     ///   - inputGuardrails: Input validation guardrails. Default: []
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
+    ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
     public init(
         tools: [any Tool] = [],
         instructions: String = "",
@@ -67,7 +72,8 @@ public actor ToolCallingAgent: Agent {
         tracer: (any Tracer)? = nil,
         inputGuardrails: [any InputGuardrail] = [],
         outputGuardrails: [any OutputGuardrail] = [],
-        guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
+        guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
+        handoffs: [AnyHandoffConfiguration] = []
     ) {
         self.tools = tools
         self.instructions = instructions
@@ -78,6 +84,7 @@ public actor ToolCallingAgent: Agent {
         self.inputGuardrails = inputGuardrails
         self.outputGuardrails = outputGuardrails
         self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
+        _handoffs = handoffs
         toolRegistry = ToolRegistry(tools: tools)
     }
 
@@ -598,6 +605,26 @@ public extension ToolCallingAgent {
             return copy
         }
 
+        /// Sets the handoff configurations.
+        /// - Parameter handoffs: The handoff configurations to use.
+        /// - Returns: A new builder with the updated handoffs.
+        @discardableResult
+        public func handoffs(_ handoffs: [AnyHandoffConfiguration]) -> Builder {
+            var copy = self
+            copy._handoffs = handoffs
+            return copy
+        }
+
+        /// Adds a handoff configuration.
+        /// - Parameter handoff: The handoff configuration to add.
+        /// - Returns: A new builder with the handoff added.
+        @discardableResult
+        public func addHandoff(_ handoff: AnyHandoffConfiguration) -> Builder {
+            var copy = self
+            copy._handoffs.append(handoff)
+            return copy
+        }
+
         /// Builds the agent.
         /// - Returns: A new ToolCallingAgent instance.
         public func build() -> ToolCallingAgent {
@@ -610,7 +637,8 @@ public extension ToolCallingAgent {
                 tracer: _tracer,
                 inputGuardrails: _inputGuardrails,
                 outputGuardrails: _outputGuardrails,
-                guardrailRunnerConfiguration: _guardrailRunnerConfiguration
+                guardrailRunnerConfiguration: _guardrailRunnerConfiguration,
+                handoffs: _handoffs
             )
         }
 
@@ -625,6 +653,7 @@ public extension ToolCallingAgent {
         private var _inputGuardrails: [any InputGuardrail] = []
         private var _outputGuardrails: [any OutputGuardrail] = []
         private var _guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
+        private var _handoffs: [AnyHandoffConfiguration] = []
     }
 }
 
@@ -659,7 +688,8 @@ public extension ToolCallingAgent {
             tracer: components.tracer,
             inputGuardrails: components.inputGuardrails,
             outputGuardrails: components.outputGuardrails,
-            guardrailRunnerConfiguration: components.guardrailRunnerConfiguration ?? .default
+            guardrailRunnerConfiguration: components.guardrailRunnerConfiguration ?? .default,
+            handoffs: components.handoffs
         )
     }
 }
