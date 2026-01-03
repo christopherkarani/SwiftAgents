@@ -30,7 +30,7 @@ private enum TraceContextStorage {
 ///     await context.endSpan(span, status: .ok)
 /// }
 /// ```
-public actor TraceContext: Sendable {
+public actor TraceContext {
     // MARK: Public
 
     // MARK: - Static Task-Local Access

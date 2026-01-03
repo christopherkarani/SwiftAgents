@@ -354,7 +354,11 @@ struct GuardrailIntegrationTests {
         #expect(results[0].result.tripwireTriggered == false)
         #expect(results[0].result.message == "Results validated")
     }
+}
 
+// MARK: - GuardrailIntegrationTests Advanced
+
+extension GuardrailIntegrationTests {
     @Test("ToolRegistry.execute() runs guardrails - full integration")
     func toolRegistryWithGuardrails() async throws {
         // NOTE: This test will require ToolRegistry to be updated with guardrail support

@@ -409,7 +409,11 @@ struct GuardrailErrorTests {
         #expect(description!.contains("AsyncGuard"))
         #expect(description!.contains("Test failure"))
     }
+}
 
+// MARK: - GuardrailErrorTests Sendable and Edge Cases
+
+extension GuardrailErrorTests {
     // MARK: - Sendable Conformance Tests
 
     @Test("GuardrailError is Sendable across async boundaries")
@@ -518,7 +522,7 @@ struct GuardrailErrorTests {
 
         // Then
         if case let .inputTripwireTriggered(_, msg, _) = error {
-            #expect(msg == "")
+            #expect(msg?.isEmpty == true)
         } else {
             Issue.record("Expected inputTripwireTriggered case")
         }

@@ -1,9 +1,7 @@
+// CircularBuffer.swift
+// SwiftAgents Framework
 //
-//  CircularBuffer.swift
-//  SwiftAgents
-//
-//  Created as part of audit remediation - Phase 1
-//
+// Fixed-size circular buffer for bounded memory management.
 
 import Foundation
 

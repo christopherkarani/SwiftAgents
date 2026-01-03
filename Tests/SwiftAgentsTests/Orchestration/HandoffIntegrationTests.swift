@@ -1,154 +1,12 @@
 // HandoffIntegrationTests.swift
 // SwiftAgentsTests
 //
-// Comprehensive integration tests for HandoffCoordinator with configuration callbacks and hooks.
+// Integration tests for agent handoffs.
+// Mock types are defined in HandoffIntegrationTests+Mocks.swift
 
 import Foundation
 @testable import SwiftAgents
 import Testing
-
-// MARK: - HandoffTestState
-
-/// Thread-safe state tracking for handoff callback tests.
-actor HandoffTestState {
-    var onHandoffCalled = false
-    var capturedSourceName: String?
-    var capturedTargetName: String?
-    var capturedInput: String?
-    var capturedMetadata: [String: SendableValue] = [:]
-    var callbackError: Error?
-
-    func setOnHandoffCalled() { onHandoffCalled = true }
-    func setCapturedNames(source: String, target: String) {
-        capturedSourceName = source
-        capturedTargetName = target
-    }
-
-    func setCapturedInput(_ input: String) { capturedInput = input }
-    func setCapturedMetadata(_ metadata: [String: SendableValue]) { capturedMetadata = metadata }
-    func setCallbackError(_ error: Error) { callbackError = error }
-
-    func getOnHandoffCalled() -> Bool { onHandoffCalled }
-    func getCapturedSourceName() -> String? { capturedSourceName }
-    func getCapturedTargetName() -> String? { capturedTargetName }
-    func getCapturedInput() -> String? { capturedInput }
-    func getCapturedMetadata() -> [String: SendableValue] { capturedMetadata }
-    func getCallbackError() -> Error? { callbackError }
-
-    func reset() {
-        onHandoffCalled = false
-        capturedSourceName = nil
-        capturedTargetName = nil
-        capturedInput = nil
-        capturedMetadata = [:]
-        callbackError = nil
-    }
-}
-
-// MARK: - HooksTestState
-
-/// Thread-safe state tracking for RunHooks tests.
-actor HooksTestState {
-    var onHandoffHookCalled = false
-    var capturedFromAgentName: String?
-    var capturedToAgentName: String?
-
-    func setOnHandoffHookCalled() { onHandoffHookCalled = true }
-    func setCapturedAgentNames(from: String, to: String) {
-        capturedFromAgentName = from
-        capturedToAgentName = to
-    }
-
-    func getOnHandoffHookCalled() -> Bool { onHandoffHookCalled }
-    func getCapturedFromAgentName() -> String? { capturedFromAgentName }
-    func getCapturedToAgentName() -> String? { capturedToAgentName }
-
-    func reset() {
-        onHandoffHookCalled = false
-        capturedFromAgentName = nil
-        capturedToAgentName = nil
-    }
-}
-
-// MARK: - MockIntegrationTestAgent
-
-/// Mock agent for integration testing handoff scenarios.
-actor MockIntegrationTestAgent: Agent {
-    nonisolated let tools: [any Tool] = []
-    nonisolated let instructions: String
-    nonisolated let configuration: AgentConfiguration
-
-    private(set) var runCallCount = 0
-    private(set) var lastInput: String?
-
-    nonisolated var memory: (any Memory)? { nil }
-    nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
-
-    init(name: String, instructions: String = "Mock agent instructions") {
-        self.instructions = instructions
-        configuration = AgentConfiguration(name: name)
-    }
-
-    func run(
-        _ input: String,
-        session _: (any Session)? = nil,
-        hooks _: (any RunHooks)? = nil
-    ) async throws -> AgentResult {
-        runCallCount += 1
-        lastInput = input
-        let builder = AgentResult.Builder()
-        builder.start()
-        builder.setOutput("Response from \(configuration.name): \(input)")
-        return builder.build()
-    }
-
-    nonisolated func stream(
-        _ input: String,
-        session _: (any Session)? = nil,
-        hooks _: (any RunHooks)? = nil
-    ) -> AsyncThrowingStream<AgentEvent, Error> {
-        let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
-        Task { @Sendable [weak self] in
-            guard let self else {
-                continuation.finish()
-                return
-            }
-            do {
-                continuation.yield(.started(input: input))
-                let result = try await run(input)
-                continuation.yield(.completed(result: result))
-                continuation.finish()
-            } catch {
-                continuation.finish(throwing: error)
-            }
-        }
-        return stream
-    }
-
-    func cancel() async {}
-
-    func getCallCount() -> Int { runCallCount }
-    func getLastInput() -> String? { lastInput }
-}
-
-// MARK: - MockRunHooks
-
-/// Mock RunHooks implementation for testing hook invocations.
-struct MockRunHooks: RunHooks {
-    let state: HooksTestState
-
-    init(state: HooksTestState) {
-        self.state = state
-    }
-
-    func onHandoff(context _: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async {
-        await state.setOnHandoffHookCalled()
-        await state.setCapturedAgentNames(
-            from: fromAgent.configuration.name,
-            to: toAgent.configuration.name
-        )
-    }
-}
 
 // MARK: - HandoffCoordinatorOnHandoffCallbackTests
 
@@ -185,7 +43,6 @@ struct HandoffCoordinatorOnHandoffCallbackTests {
         let context = AgentContext(input: "Test")
         _ = try await coordinator.executeHandoff(request, context: context, configuration: config, hooks: nil)
 
-        // Verify callback was invoked with correct data
         #expect(await testState.getOnHandoffCalled())
         #expect(await testState.getCapturedSourceName() == "source")
         #expect(await testState.getCapturedTargetName() == "target")
@@ -218,7 +75,6 @@ struct HandoffCoordinatorOnHandoffCallbackTests {
 
         let context = AgentContext(input: "Test")
 
-        // Handoff should succeed despite callback error
         let result = try await coordinator.executeHandoff(
             request,
             context: context,
@@ -266,7 +122,6 @@ struct HandoffCoordinatorInputFilterTests {
         let context = AgentContext(input: "Test")
         _ = try await coordinator.executeHandoff(request, context: context, configuration: config, hooks: nil)
 
-        // Verify filter added metadata
         let capturedMetadata = await testState.getCapturedMetadata()
         #expect(capturedMetadata["filtered"]?.boolValue == true)
         #expect(capturedMetadata["filter_timestamp"] != nil)
@@ -303,7 +158,6 @@ struct HandoffCoordinatorInputFilterTests {
             hooks: nil
         )
 
-        // Verify metadata was merged into transferred context
         #expect(result.transferredContext["custom_key"]?.stringValue == "custom_value")
         #expect(result.transferredContext["priority"]?.intValue == 1)
     }
@@ -384,7 +238,6 @@ struct HandoffCoordinatorIsEnabledTests {
         let config = AnyHandoffConfiguration(
             targetAgent: targetAgent,
             isEnabled: { context, agent in
-                // Verify we receive the correct context
                 let ready = await context.get("ready")?.boolValue ?? false
                 await testState.setCapturedNames(source: "context_check", target: agent.configuration.name)
                 return ready
@@ -483,7 +336,6 @@ struct HandoffCoordinatorRunHooksIntegrationTests {
             hooks: hooks
         )
 
-        // Both hooks and callbacks should be invoked
         #expect(await hooksState.getOnHandoffHookCalled())
         #expect(await testState.getOnHandoffCalled())
     }
@@ -499,7 +351,6 @@ struct HandoffCoordinatorErrorHandlingTests {
 
         let coordinator = HandoffCoordinator()
         await coordinator.register(sourceAgent, as: "source")
-        // Note: "unknown_target" is not registered
 
         let request = HandoffRequest(
             sourceAgentName: "source",
@@ -534,7 +385,6 @@ struct HandoffCoordinatorErrorHandlingTests {
 
         let context = AgentContext(input: "Test")
 
-        // Should work with nil configuration (backward compatible)
         let result = try await coordinator.executeHandoff(
             request,
             context: context,
@@ -577,7 +427,6 @@ struct HandoffCoordinatorContextPropagationTests {
             hooks: nil
         )
 
-        // Verify context was transferred
         #expect(result.transferredContext["plan_id"]?.stringValue == "plan-123")
         #expect(result.transferredContext["step"]?.intValue == 1)
         #expect(result.transferredContext["priority"]?.stringValue == "high")
@@ -607,9 +456,7 @@ struct HandoffCoordinatorContextPropagationTests {
             sourceAgentName: "planner",
             targetAgentName: "target",
             input: "Execute step 1",
-            context: [
-                "workflow_id": .string("workflow-456")
-            ]
+            context: ["workflow_id": .string("workflow-456")]
         )
 
         let context = AgentContext(input: "Test")
@@ -639,9 +486,7 @@ struct HandoffCoordinatorContextPropagationTests {
             sourceAgentName: "source",
             targetAgentName: "target",
             input: "Test input",
-            context: [
-                "shared_data": .string("shared_value")
-            ]
+            context: ["shared_data": .string("shared_value")]
         )
 
         let context = AgentContext(input: "Test")
@@ -652,7 +497,6 @@ struct HandoffCoordinatorContextPropagationTests {
             hooks: nil
         )
 
-        // Verify context was updated with request context
         let sharedData = await context.get("shared_data")
         #expect(sharedData?.stringValue == "shared_value")
     }
@@ -685,7 +529,6 @@ struct HandoffFullWorkflowIntegrationTests {
                     source: inputData.sourceAgentName,
                     target: inputData.targetAgentName
                 )
-                // Set a value in context to verify callback can modify context
                 await context.set("handoff_logged", value: .bool(true))
             },
             inputFilter: { inputData in
@@ -695,7 +538,6 @@ struct HandoffFullWorkflowIntegrationTests {
                 return modified
             },
             isEnabled: { context, _ in
-                // Check if handoff should be enabled based on context
                 await context.get("can_handoff")?.boolValue ?? true
             },
             nestHandoffHistory: true
@@ -705,9 +547,7 @@ struct HandoffFullWorkflowIntegrationTests {
             sourceAgentName: "planner",
             targetAgentName: "executor",
             input: "Execute step 1",
-            context: [
-                "plan_id": .string("plan-789")
-            ]
+            context: ["plan_id": .string("plan-789")]
         )
 
         let context = AgentContext(input: "Initial input")
@@ -720,25 +560,20 @@ struct HandoffFullWorkflowIntegrationTests {
             hooks: hooks
         )
 
-        // Verify all callbacks were invoked
         #expect(await testState.getOnHandoffCalled())
         #expect(await testState.getCapturedSourceName() == "planner")
         #expect(await testState.getCapturedTargetName() == "executor")
 
-        // Verify RunHooks were invoked
         #expect(await hooksState.getOnHandoffHookCalled())
         #expect(await hooksState.getCapturedFromAgentName() == "planner")
         #expect(await hooksState.getCapturedToAgentName() == "executor")
 
-        // Verify context was modified by callback
         let handoffLogged = await context.get("handoff_logged")?.boolValue
         #expect(handoffLogged == true)
 
-        // Verify filter metadata was merged
         #expect(result.transferredContext["processed_at"] != nil)
         #expect(result.transferredContext["workflow_step"]?.stringValue == "filtered")
 
-        // Verify result
         #expect(result.targetAgentName == "executor")
         #expect(result.input == "Execute step 1")
     }
@@ -756,7 +591,6 @@ struct HandoffFullWorkflowIntegrationTests {
 
         let context = AgentContext(input: "Initial")
 
-        // First handoff
         let request1 = HandoffRequest(
             sourceAgentName: "agent1",
             targetAgentName: "agent2",
@@ -772,7 +606,6 @@ struct HandoffFullWorkflowIntegrationTests {
         )
         #expect(result1.targetAgentName == "agent2")
 
-        // Second handoff
         let request2 = HandoffRequest(
             sourceAgentName: "agent2",
             targetAgentName: "agent3",
@@ -788,7 +621,6 @@ struct HandoffFullWorkflowIntegrationTests {
         )
         #expect(result2.targetAgentName == "agent3")
 
-        // Verify execution path was recorded
         let executionPath = await context.getExecutionPath()
         #expect(executionPath.contains("agent2"))
         #expect(executionPath.contains("agent3"))

@@ -112,6 +112,6 @@ struct HTTPMCPServerNameTests {
         let server = HTTPMCPServer(url: url, name: "")
 
         let name = await server.name
-        #expect(name == "")
+        #expect(name.isEmpty)
     }
 }

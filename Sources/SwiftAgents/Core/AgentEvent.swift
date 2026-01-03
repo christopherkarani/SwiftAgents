@@ -279,6 +279,7 @@ extension ToolResult: CustomStringConvertible {
 extension AgentEvent: Equatable {
     public static func == (lhs: AgentEvent, rhs: AgentEvent) -> Bool {
         switch (lhs, rhs) {
+        // Lifecycle events
         case let (.started(lhsInput), .started(rhsInput)):
             lhsInput == rhsInput
         case let (.completed(lhsResult), .completed(rhsResult)):
@@ -289,28 +290,114 @@ extension AgentEvent: Equatable {
             true
         case let (.guardrailFailed(lhsError), .guardrailFailed(rhsError)):
             lhsError == rhsError
+
+        // Thinking events - delegated to helper
+        case (.thinking, .thinking),
+             (.thinkingPartial, .thinkingPartial):
+            lhs.isEqualThinkingEvent(rhs)
+
+        // Tool events - delegated to helper
+        case (.toolCallStarted, .toolCallStarted),
+             (.toolCallCompleted, .toolCallCompleted),
+             (.toolCallFailed, .toolCallFailed):
+            lhs.isEqualToolEvent(rhs)
+
+        // Output events - delegated to helper
+        case (.outputToken, .outputToken),
+             (.outputChunk, .outputChunk):
+            lhs.isEqualOutputEvent(rhs)
+
+        // Iteration events - delegated to helper
+        case (.iterationStarted, .iterationStarted),
+             (.iterationCompleted, .iterationCompleted):
+            lhs.isEqualIterationEvent(rhs)
+
+        // Decision events
+        case let (.decision(lhsDecision, lhsOptions), .decision(rhsDecision, rhsOptions)):
+            lhsDecision == rhsDecision && lhsOptions == rhsOptions
+        case let (.planUpdated(lhsPlan, lhsCount), .planUpdated(rhsPlan, rhsCount)):
+            lhsPlan == rhsPlan && lhsCount == rhsCount
+
+        // Handoff events - delegated to helper
+        case (.handoffRequested, .handoffRequested),
+             (.handoffCompleted, .handoffCompleted),
+             (.handoffStarted, .handoffStarted),
+             (.handoffCompletedWithResult, .handoffCompletedWithResult),
+             (.handoffSkipped, .handoffSkipped):
+            lhs.isEqualHandoffEvent(rhs)
+
+        // Guardrail events - delegated to helper
+        case (.guardrailStarted, .guardrailStarted),
+             (.guardrailPassed, .guardrailPassed),
+             (.guardrailTriggered, .guardrailTriggered):
+            lhs.isEqualGuardrailEvent(rhs)
+
+        // LLM and memory events - delegated to helper
+        case (.memoryAccessed, .memoryAccessed),
+             (.llmStarted, .llmStarted),
+             (.llmCompleted, .llmCompleted):
+            lhs.isEqualLLMAndMemoryEvent(rhs)
+
+        default:
+            false
+        }
+    }
+
+    // MARK: - Private Equality Helpers
+
+    /// Compares thinking events for equality.
+    private func isEqualThinkingEvent(_ other: AgentEvent) -> Bool {
+        switch (self, other) {
         case let (.thinking(lhsThought), .thinking(rhsThought)):
             lhsThought == rhsThought
         case let (.thinkingPartial(lhsPartial), .thinkingPartial(rhsPartial)):
             lhsPartial == rhsPartial
+        default:
+            false
+        }
+    }
+
+    /// Compares tool events for equality.
+    private func isEqualToolEvent(_ other: AgentEvent) -> Bool {
+        switch (self, other) {
         case let (.toolCallStarted(lhsCall), .toolCallStarted(rhsCall)):
             lhsCall == rhsCall
         case let (.toolCallCompleted(lhsCall, lhsResult), .toolCallCompleted(rhsCall, rhsResult)):
             lhsCall == rhsCall && lhsResult == rhsResult
         case let (.toolCallFailed(lhsCall, lhsError), .toolCallFailed(rhsCall, rhsError)):
             lhsCall == rhsCall && lhsError == rhsError
+        default:
+            false
+        }
+    }
+
+    /// Compares output events for equality.
+    private func isEqualOutputEvent(_ other: AgentEvent) -> Bool {
+        switch (self, other) {
         case let (.outputToken(lhsToken), .outputToken(rhsToken)):
             lhsToken == rhsToken
         case let (.outputChunk(lhsChunk), .outputChunk(rhsChunk)):
             lhsChunk == rhsChunk
+        default:
+            false
+        }
+    }
+
+    /// Compares iteration events for equality.
+    private func isEqualIterationEvent(_ other: AgentEvent) -> Bool {
+        switch (self, other) {
         case let (.iterationStarted(lhsNumber), .iterationStarted(rhsNumber)):
             lhsNumber == rhsNumber
         case let (.iterationCompleted(lhsNumber), .iterationCompleted(rhsNumber)):
             lhsNumber == rhsNumber
-        case let (.decision(lhsDecision, lhsOptions), .decision(rhsDecision, rhsOptions)):
-            lhsDecision == rhsDecision && lhsOptions == rhsOptions
-        case let (.planUpdated(lhsPlan, lhsCount), .planUpdated(rhsPlan, rhsCount)):
-            lhsPlan == rhsPlan && lhsCount == rhsCount
+        default:
+            false
+        }
+    }
+
+    /// Compares handoff events for equality.
+    private func isEqualHandoffEvent(_ other: AgentEvent) -> Bool {
+        switch (self, other) {
         case let (.handoffRequested(lhsFrom, lhsTo, lhsReason), .handoffRequested(rhsFrom, rhsTo, rhsReason)):
             lhsFrom == rhsFrom && lhsTo == rhsTo && lhsReason == rhsReason
         case let (.handoffCompleted(lhsFrom, lhsTo), .handoffCompleted(rhsFrom, rhsTo)):
@@ -321,12 +408,28 @@ extension AgentEvent: Equatable {
             lhsFrom == rhsFrom && lhsTo == rhsTo && lhsResult == rhsResult
         case let (.handoffSkipped(lhsFrom, lhsTo, lhsReason), .handoffSkipped(rhsFrom, rhsTo, rhsReason)):
             lhsFrom == rhsFrom && lhsTo == rhsTo && lhsReason == rhsReason
+        default:
+            false
+        }
+    }
+
+    /// Compares guardrail events for equality.
+    private func isEqualGuardrailEvent(_ other: AgentEvent) -> Bool {
+        switch (self, other) {
         case let (.guardrailStarted(lhsName, lhsType), .guardrailStarted(rhsName, rhsType)):
             lhsName == rhsName && lhsType == rhsType
         case let (.guardrailPassed(lhsName, lhsType), .guardrailPassed(rhsName, rhsType)):
             lhsName == rhsName && lhsType == rhsType
         case let (.guardrailTriggered(lhsName, lhsType, lhsMsg), .guardrailTriggered(rhsName, rhsType, rhsMsg)):
             lhsName == rhsName && lhsType == rhsType && lhsMsg == rhsMsg
+        default:
+            false
+        }
+    }
+
+    /// Compares LLM and memory events for equality.
+    private func isEqualLLMAndMemoryEvent(_ other: AgentEvent) -> Bool {
+        switch (self, other) {
         case let (.memoryAccessed(lhsOp, lhsCount), .memoryAccessed(rhsOp, rhsCount)):
             lhsOp == rhsOp && lhsCount == rhsCount
         case let (.llmStarted(lhsModel, lhsTokens), .llmStarted(rhsModel, rhsTokens)):

@@ -417,7 +417,11 @@ struct OutputGuardrailTests {
         #expect(retrieved != nil)
         #expect(retrieved?.name == "stored")
     }
+}
 
+// MARK: - OutputGuardrailTests Multiple and Edge Cases
+
+extension OutputGuardrailTests {
     // MARK: - Multiple Guardrails Tests
 
     @Test("Multiple OutputGuardrails can be composed")

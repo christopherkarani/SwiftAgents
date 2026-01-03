@@ -289,11 +289,12 @@ public actor GuardrailRunner {
         }
     }
 
-    // MARK: Private
+}
 
-    // MARK: - Private Sequential Execution
+// MARK: - GuardrailRunner + Sequential Execution
 
-    private func runInputGuardrailsSequential(
+extension GuardrailRunner {
+    func runInputGuardrailsSequential(
         _ guardrails: [any InputGuardrail],
         input: String,
         context: AgentContext?
@@ -340,7 +341,7 @@ public actor GuardrailRunner {
         return results
     }
 
-    private func runOutputGuardrailsSequential(
+    func runOutputGuardrailsSequential(
         _ guardrails: [any OutputGuardrail],
         output: String,
         agent: any Agent,
@@ -390,7 +391,7 @@ public actor GuardrailRunner {
         return results
     }
 
-    private func runToolInputGuardrailsSequential(
+    func runToolInputGuardrailsSequential(
         _ guardrails: [any ToolInputGuardrail],
         data: ToolGuardrailData
     ) async throws -> [GuardrailExecutionResult] {
@@ -438,7 +439,7 @@ public actor GuardrailRunner {
         return results
     }
 
-    private func runToolOutputGuardrailsSequential(
+    func runToolOutputGuardrailsSequential(
         _ guardrails: [any ToolOutputGuardrail],
         data: ToolGuardrailData,
         output: SendableValue
@@ -486,10 +487,12 @@ public actor GuardrailRunner {
 
         return results
     }
+}
 
-    // MARK: - Private Parallel Execution
+// MARK: - GuardrailRunner + Parallel Execution
 
-    private func runInputGuardrailsParallel(
+extension GuardrailRunner {
+    func runInputGuardrailsParallel(
         _ guardrails: [any InputGuardrail],
         input: String,
         context: AgentContext?
@@ -547,7 +550,7 @@ public actor GuardrailRunner {
         }
     }
 
-    private func runOutputGuardrailsParallel(
+    func runOutputGuardrailsParallel(
         _ guardrails: [any OutputGuardrail],
         output: String,
         agent: any Agent,
@@ -610,7 +613,7 @@ public actor GuardrailRunner {
         }
     }
 
-    private func runToolInputGuardrailsParallel(
+    func runToolInputGuardrailsParallel(
         _ guardrails: [any ToolInputGuardrail],
         data: ToolGuardrailData
     ) async throws -> [GuardrailExecutionResult] {
@@ -671,7 +674,7 @@ public actor GuardrailRunner {
         }
     }
 
-    private func runToolOutputGuardrailsParallel(
+    func runToolOutputGuardrailsParallel(
         _ guardrails: [any ToolOutputGuardrail],
         data: ToolGuardrailData,
         output: SendableValue

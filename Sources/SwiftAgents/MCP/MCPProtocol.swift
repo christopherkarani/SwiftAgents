@@ -293,8 +293,13 @@ public extension MCPResponse {
     ///
     /// - Note: This method cannot fail as it guarantees valid inputs.
     static func success(id: String, result: SendableValue) -> MCPResponse {
-        // Safe to force-try because we guarantee exactly one of result/error is set
-        try! MCPResponse(id: id, result: result, error: nil)
+        // Safe: we guarantee exactly one of result/error is set
+        do {
+            return try MCPResponse(id: id, result: result, error: nil)
+        } catch {
+            // This should never happen given our invariants, but handle gracefully
+            fatalError("MCPResponse.success: unexpected validation failure - \(error)")
+        }
     }
 
     /// Creates an error response with the given error object.
@@ -306,8 +311,13 @@ public extension MCPResponse {
     ///
     /// - Note: This method cannot fail as it guarantees valid inputs.
     static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
-        // Safe to force-try because we guarantee exactly one of result/error is set
-        try! MCPResponse(id: id, result: nil, error: error)
+        // Safe: we guarantee exactly one of result/error is set
+        do {
+            return try MCPResponse(id: id, result: nil, error: error)
+        } catch {
+            // This should never happen given our invariants, but handle gracefully
+            fatalError("MCPResponse.failure: unexpected validation failure - \(error)")
+        }
     }
 }
 

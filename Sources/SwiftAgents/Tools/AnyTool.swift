@@ -1,8 +1,7 @@
+// AnyTool.swift
+// SwiftAgents Framework
 //
-//  AnyTool.swift
-//  SwiftAgents
-//
-//  Created as part of audit remediation - Phase 4
+// Type-erased wrapper for heterogeneous tool collections.
 //
 
 import Foundation
@@ -27,16 +26,16 @@ import Foundation
 public struct AnyTool: Tool, Sendable {
     // MARK: Public
 
-    public var name: String { box._name }
-    public var description: String { box._description }
-    public var parameters: [ToolParameter] { box._parameters }
+    public var name: String { box.wrappedName }
+    public var description: String { box.wrappedDescription }
+    public var parameters: [ToolParameter] { box.wrappedParameters }
 
     public init(_ tool: some Tool) {
         box = ToolBox(tool)
     }
 
     public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
-        try await box._execute(arguments: arguments)
+        try await box.executeWrapped(arguments: arguments)
     }
 
     // MARK: Private
@@ -47,11 +46,11 @@ public struct AnyTool: Tool, Sendable {
 // MARK: - AnyToolBox
 
 private protocol AnyToolBox: Sendable {
-    var _name: String { get }
-    var _description: String { get }
-    var _parameters: [ToolParameter] { get }
+    var wrappedName: String { get }
+    var wrappedDescription: String { get }
+    var wrappedParameters: [ToolParameter] { get }
 
-    func _execute(arguments: [String: SendableValue]) async throws -> SendableValue
+    func executeWrapped(arguments: [String: SendableValue]) async throws -> SendableValue
 }
 
 // MARK: - ToolBox
@@ -59,13 +58,13 @@ private protocol AnyToolBox: Sendable {
 private struct ToolBox<T: Tool>: AnyToolBox, Sendable {
     // MARK: Internal
 
-    var _name: String { tool.name }
-    var _description: String { tool.description }
-    var _parameters: [ToolParameter] { tool.parameters }
+    var wrappedName: String { tool.name }
+    var wrappedDescription: String { tool.description }
+    var wrappedParameters: [ToolParameter] { tool.parameters }
 
     init(_ tool: T) { self.tool = tool }
 
-    func _execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    func executeWrapped(arguments: [String: SendableValue]) async throws -> SendableValue {
         try await tool.execute(arguments: arguments)
     }
 

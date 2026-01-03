@@ -1,9 +1,7 @@
+// EmbeddingProvider.swift
+// SwiftAgents Framework
 //
-//  EmbeddingProvider.swift
-//  SwiftAgents
-//
-//  Created as part of audit remediation - Phase 1
-//
+// Protocol for text-to-vector embeddings for semantic search.
 
 import Foundation
 
@@ -189,38 +187,38 @@ public enum EmbeddingUtils {
     /// Calculate cosine similarity between two vectors
     ///
     /// - Parameters:
-    ///   - a: First vector
-    ///   - b: Second vector
+    ///   - vec1: First vector
+    ///   - vec2: Second vector
     /// - Returns: Similarity score between -1 and 1 (1 = identical)
-    public static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
-        guard a.count == b.count, !a.isEmpty else { return 0 }
+    public static func cosineSimilarity(_ vec1: [Float], _ vec2: [Float]) -> Float {
+        guard vec1.count == vec2.count, !vec1.isEmpty else { return 0 }
 
         var dotProduct: Float = 0
-        var normA: Float = 0
-        var normB: Float = 0
+        var norm1: Float = 0
+        var norm2: Float = 0
 
-        for i in 0..<a.count {
-            dotProduct += a[i] * b[i]
-            normA += a[i] * a[i]
-            normB += b[i] * b[i]
+        for i in 0..<vec1.count {
+            dotProduct += vec1[i] * vec2[i]
+            norm1 += vec1[i] * vec1[i]
+            norm2 += vec2[i] * vec2[i]
         }
 
-        let denominator = sqrt(normA) * sqrt(normB)
+        let denominator = sqrt(norm1) * sqrt(norm2)
         return denominator > 0 ? dotProduct / denominator : 0
     }
 
     /// Calculate Euclidean distance between two vectors
     ///
     /// - Parameters:
-    ///   - a: First vector
-    ///   - b: Second vector
+    ///   - embedding1: First vector
+    ///   - embedding2: Second vector
     /// - Returns: Euclidean distance (lower = more similar)
-    public static func euclideanDistance(_ a: [Float], _ b: [Float]) -> Float {
-        guard a.count == b.count else { return Float.infinity }
+    public static func euclideanDistance(_ embedding1: [Float], _ embedding2: [Float]) -> Float {
+        guard embedding1.count == embedding2.count else { return Float.infinity }
 
         var sum: Float = 0
-        for i in 0..<a.count {
-            let diff = a[i] - b[i]
+        for i in 0..<embedding1.count {
+            let diff = embedding1[i] - embedding2[i]
             sum += diff * diff
         }
 

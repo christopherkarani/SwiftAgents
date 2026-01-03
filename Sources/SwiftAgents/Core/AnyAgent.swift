@@ -1,9 +1,7 @@
+// AnyAgent.swift
+// SwiftAgents Framework
 //
-//  AnyAgent.swift
-//  SwiftAgents
-//
-//  Created as part of audit remediation - Phase 4
-//
+// Type-erased wrapper for heterogeneous agent collections.
 
 import Foundation
 

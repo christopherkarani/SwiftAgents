@@ -81,7 +81,8 @@
                 do {
                     return try await backend.messageCount(conversationId: sessionId)
                 } catch {
-                    Log.memory.error("Failed to get item count for session '\(sessionId)': \(error.localizedDescription). Returning 0 as fallback.")
+                    let errMsg = "Failed to get item count for session '\(sessionId)'"
+                    Log.memory.error("\(errMsg): \(error.localizedDescription). Returning 0.")
                     return 0
                 }
             }

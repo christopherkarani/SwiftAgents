@@ -195,15 +195,6 @@ public actor ReActAgent: Agent {
 
     // MARK: Private
 
-    // MARK: - Response Parsing
-
-    private enum ParsedResponse {
-        case finalAnswer(String)
-        case toolCall(name: String, arguments: [String: SendableValue])
-        case thinking(String)
-        case invalid(String)
-    }
-
     private let _handoffs: [AnyHandoffConfiguration]
 
     // MARK: - Internal State
@@ -262,75 +253,14 @@ public actor ReActAgent: Agent {
                 return answer
 
             case let .toolCall(toolName, arguments):
-                // Agent wants to call a tool
-                let toolCall = ToolCall(
+                // Agent wants to call a tool - delegate to helper method
+                scratchpad = try await handleToolCall(
                     toolName: toolName,
-                    arguments: arguments
+                    arguments: arguments,
+                    scratchpad: scratchpad,
+                    resultBuilder: resultBuilder,
+                    hooks: hooks
                 )
-                _ = resultBuilder.addToolCall(toolCall)
-
-                // Step 4: Execute the tool
-                let startTime = ContinuousClock.now
-                do {
-                    // Notify hooks before tool execution
-                    if let tool = await toolRegistry.tool(named: toolName) {
-                        await hooks?.onToolStart(context: nil, agent: self, tool: tool, arguments: arguments)
-                    }
-
-                    let toolResult = try await toolRegistry.execute(
-                        toolNamed: toolName,
-                        arguments: arguments,
-                        agent: self,
-                        context: nil
-                    )
-                    let duration = ContinuousClock.now - startTime
-
-                    let result = ToolResult.success(
-                        callId: toolCall.id,
-                        output: toolResult,
-                        duration: duration
-                    )
-                    _ = resultBuilder.addToolResult(result)
-
-                    // Notify hooks after successful tool execution
-                    if let tool = await toolRegistry.tool(named: toolName) {
-                        await hooks?.onToolEnd(context: nil, agent: self, tool: tool, result: toolResult)
-                    }
-
-                    // Add to scratchpad
-                    scratchpad += """
-
-                    Thought: I need to use the \(toolName) tool.
-                    Action: \(toolName)(\(formatArguments(arguments)))
-                    Observation: \(toolResult.description)
-                    """
-
-                } catch {
-                    let duration = ContinuousClock.now - startTime
-                    let errorMessage = (error as? AgentError)?.localizedDescription ?? error.localizedDescription
-
-                    let result = ToolResult.failure(
-                        callId: toolCall.id,
-                        error: errorMessage,
-                        duration: duration
-                    )
-                    _ = resultBuilder.addToolResult(result)
-
-                    // Add error to scratchpad
-                    scratchpad += """
-
-                    Thought: I need to use the \(toolName) tool.
-                    Action: \(toolName)(\(formatArguments(arguments)))
-                    Observation: Error - \(errorMessage)
-                    """
-
-                    if configuration.stopOnToolError {
-                        throw AgentError.toolExecutionFailed(
-                            toolName: toolName,
-                            underlyingError: errorMessage
-                        )
-                    }
-                }
 
             case let .thinking(thought):
                 // Agent is just thinking, continue
@@ -344,6 +274,97 @@ public actor ReActAgent: Agent {
 
         // Exceeded max iterations
         throw AgentError.maxIterationsExceeded(iterations: iteration)
+    }
+
+    // MARK: - Tool Call Handling
+
+    /// Handles a tool call during the ReAct loop.
+    /// - Parameters:
+    ///   - toolName: The name of the tool to execute.
+    ///   - arguments: The arguments for the tool call.
+    ///   - scratchpad: The current scratchpad content.
+    ///   - resultBuilder: The result builder to record tool calls and results.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
+    /// - Returns: The updated scratchpad with the tool result.
+    /// - Throws: `AgentError.toolExecutionFailed` if the tool fails and `stopOnToolError` is enabled.
+    private func handleToolCall(
+        toolName: String,
+        arguments: [String: SendableValue],
+        scratchpad: String,
+        resultBuilder: AgentResult.Builder,
+        hooks: (any RunHooks)?
+    ) async throws -> String {
+        var updatedScratchpad = scratchpad
+
+        let toolCall = ToolCall(
+            toolName: toolName,
+            arguments: arguments
+        )
+        _ = resultBuilder.addToolCall(toolCall)
+
+        let startTime = ContinuousClock.now
+        do {
+            // Notify hooks before tool execution
+            if let tool = await toolRegistry.tool(named: toolName) {
+                await hooks?.onToolStart(context: nil, agent: self, tool: tool, arguments: arguments)
+            }
+
+            let toolResult = try await toolRegistry.execute(
+                toolNamed: toolName,
+                arguments: arguments,
+                agent: self,
+                context: nil
+            )
+            let duration = ContinuousClock.now - startTime
+
+            let result = ToolResult.success(
+                callId: toolCall.id,
+                output: toolResult,
+                duration: duration
+            )
+            _ = resultBuilder.addToolResult(result)
+
+            // Notify hooks after successful tool execution
+            if let tool = await toolRegistry.tool(named: toolName) {
+                await hooks?.onToolEnd(context: nil, agent: self, tool: tool, result: toolResult)
+            }
+
+            // Add to scratchpad
+            updatedScratchpad += """
+
+            Thought: I need to use the \(toolName) tool.
+            Action: \(toolName)(\(formatArguments(arguments)))
+            Observation: \(toolResult.description)
+            """
+
+        } catch {
+            let duration = ContinuousClock.now - startTime
+            let errorMessage = (error as? AgentError)?.localizedDescription ?? error.localizedDescription
+
+            let result = ToolResult.failure(
+                callId: toolCall.id,
+                error: errorMessage,
+                duration: duration
+            )
+            _ = resultBuilder.addToolResult(result)
+
+            // Add error to scratchpad
+            updatedScratchpad += """
+
+            Thought: I need to use the \(toolName) tool.
+            Action: \(toolName)(\(formatArguments(arguments)))
+            Observation: Error - \(errorMessage)
+            """
+
+            if configuration.stopOnToolError {
+                throw AgentError.toolExecutionFailed(
+                    toolName: toolName,
+                    underlyingError: errorMessage
+                )
+            }
+        }
+
+        return updatedScratchpad
     }
 
     // MARK: - Prompt Building
@@ -453,150 +474,6 @@ public actor ReActAgent: Agent {
         throw AgentError.inferenceProviderUnavailable(
             reason: "No inference provider configured. Please provide an InferenceProvider."
         )
-    }
-
-    private func parseResponse(_ response: String) -> ParsedResponse {
-        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Check for final answer
-        if let finalAnswerRange = trimmed.range(of: "Final Answer:", options: .caseInsensitive) {
-            let answer = String(trimmed[finalAnswerRange.upperBound...])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return .finalAnswer(answer)
-        }
-
-        // Check for action/tool call
-        if let actionRange = trimmed.range(of: "Action:", options: .caseInsensitive) {
-            let actionPart = String(trimmed[actionRange.upperBound...])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .components(separatedBy: "\n")
-                .first ?? ""
-
-            if let parsed = parseToolCall(actionPart) {
-                return .toolCall(name: parsed.name, arguments: parsed.arguments)
-            }
-        }
-
-        // Check for thought
-        if let thoughtRange = trimmed.range(of: "Thought:", options: .caseInsensitive) {
-            var thought = String(trimmed[thoughtRange.upperBound...])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-
-            // Stop at next section marker if present
-            if let nextMarker = thought.range(of: "Action:", options: .caseInsensitive) {
-                thought = String(thought[..<nextMarker.lowerBound])
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            if let nextMarker = thought.range(of: "Final Answer:", options: .caseInsensitive) {
-                thought = String(thought[..<nextMarker.lowerBound])
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-
-            return .thinking(thought)
-        }
-
-        // Couldn't parse - treat as thinking
-        return .invalid(trimmed)
-    }
-
-    private func parseToolCall(_ text: String) -> (name: String, arguments: [String: SendableValue])? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Parse format: tool_name(arg1: value1, arg2: value2)
-        guard let parenStart = trimmed.firstIndex(of: "("),
-              let parenEnd = trimmed.lastIndex(of: ")") else {
-            // Try simple format: tool_name with no args
-            let name = trimmed.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !name.isEmpty, !name.contains(" "), !name.contains(":") {
-                return (name: name, arguments: [:])
-            }
-            return nil
-        }
-
-        let name = String(trimmed[..<parenStart]).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return nil }
-
-        let argsString = String(trimmed[trimmed.index(after: parenStart)..<parenEnd])
-
-        var arguments: [String: SendableValue] = [:]
-
-        // Parse arguments
-        let argPairs = splitArguments(argsString)
-        for pair in argPairs {
-            let parts = pair.components(separatedBy: ":")
-            guard parts.count >= 2 else { continue }
-
-            let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
-            let valueStr = parts.dropFirst().joined(separator: ":").trimmingCharacters(in: .whitespacesAndNewlines)
-
-            // Parse value
-            let value = parseValue(valueStr)
-            arguments[key] = value
-        }
-
-        return (name: name, arguments: arguments)
-    }
-
-    /// Splits argument string by comma, respecting quotes and nested structures.
-    private func splitArguments(_ str: String) -> [String] {
-        var result: [String] = []
-        var current = ""
-        var depth = 0
-        var inQuote = false
-        var quoteChar: Character = "\""
-
-        for char in str {
-            if !inQuote, char == "\"" || char == "'" {
-                inQuote = true
-                quoteChar = char
-                current.append(char)
-            } else if inQuote, char == quoteChar {
-                inQuote = false
-                current.append(char)
-            } else if !inQuote, char == "(" || char == "[" || char == "{" {
-                depth += 1
-                current.append(char)
-            } else if !inQuote, char == ")" || char == "]" || char == "}" {
-                depth -= 1
-                current.append(char)
-            } else if !inQuote, depth == 0, char == "," {
-                result.append(current.trimmingCharacters(in: .whitespaces))
-                current = ""
-            } else {
-                current.append(char)
-            }
-        }
-
-        if !current.trimmingCharacters(in: .whitespaces).isEmpty {
-            result.append(current.trimmingCharacters(in: .whitespaces))
-        }
-
-        return result
-    }
-
-    private func parseValue(_ valueStr: String) -> SendableValue {
-        let trimmed = valueStr.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Null
-        if trimmed.lowercased() == "null" || trimmed.lowercased() == "nil" {
-            return .null
-        }
-
-        // Boolean
-        if trimmed.lowercased() == "true" { return .bool(true) }
-        if trimmed.lowercased() == "false" { return .bool(false) }
-
-        // Number
-        if let intValue = Int(trimmed) { return .int(intValue) }
-        if let doubleValue = Double(trimmed) { return .double(doubleValue) }
-
-        // String (remove quotes if present)
-        var str = trimmed
-        if (str.hasPrefix("\"") && str.hasSuffix("\"")) ||
-            (str.hasPrefix("'") && str.hasSuffix("'")) {
-            str = String(str.dropFirst().dropLast())
-        }
-        return .string(str)
     }
 
     private func formatArguments(_ arguments: [String: SendableValue]) -> String {

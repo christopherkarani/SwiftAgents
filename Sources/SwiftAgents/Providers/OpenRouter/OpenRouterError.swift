@@ -227,93 +227,29 @@ public extension OpenRouterProviderError {
         body: Data?,
         headers: [AnyHashable: Any]? = nil
     ) -> OpenRouterProviderError {
-        // Try to parse error details from body
-        var errorCode = "unknown"
-        var errorMessage = "An error occurred"
-
-        if let body, let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
-            if let error = json["error"] as? [String: Any] {
-                errorCode = error["code"] as? String ?? errorCode
-                errorMessage = error["message"] as? String ?? errorMessage
-            } else if let message = json["message"] as? String {
-                errorMessage = message
-            } else if let error = json["error"] as? String {
-                errorMessage = error
-            }
-        }
+        let (errorCode, errorMessage) = parseErrorDetails(from: body)
 
         switch statusCode {
         case 400:
-            // Bad request - could be empty prompt or invalid parameters
-            if errorMessage.lowercased().contains("prompt") || errorMessage.lowercased().contains("empty") {
-                return .emptyPrompt
-            }
-            return .apiError(code: errorCode, message: errorMessage, statusCode: statusCode)
-
+            return handleBadRequest(errorCode: errorCode, errorMessage: errorMessage, statusCode: statusCode)
         case 401:
             return .authenticationFailed
-
         case 402:
             return .insufficientCredits
-
         case 403:
-            // Forbidden - could be content filtered or auth issue
-            if errorMessage.lowercased().contains("content") || errorMessage.lowercased().contains("filter") {
-                return .contentFiltered
-            }
-            return .authenticationFailed
-
+            return handleForbidden(errorMessage: errorMessage)
         case 404:
-            // Model not found
             return .modelNotAvailable(model: errorMessage)
-
         case 429:
-            // Rate limited - try to extract retry-after
-            var retryAfter: TimeInterval? = nil
-
-            // First check HTTP headers (standard Retry-After header)
-            if let headers {
-                for (key, value) in headers {
-                    if let keyStr = key as? String,
-                       keyStr.lowercased() == "retry-after",
-                       let valueStr = value as? String,
-                       let seconds = TimeInterval(valueStr) {
-                        retryAfter = seconds
-                        break
-                    }
-                }
-            }
-
-            // Fall back to JSON body
-            if retryAfter == nil, let body,
-               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
-                if let retry = json["retry_after"] as? TimeInterval {
-                    retryAfter = retry
-                } else if let retry = json["retry_after"] as? Int {
-                    retryAfter = TimeInterval(retry)
-                }
-            }
-            return .rateLimitExceeded(retryAfter: retryAfter)
-
-        case 408:
+            return handleRateLimited(body: body, headers: headers)
+        case 408, 504:
             return .timeout(duration: .seconds(60))
-
         case 502:
             return .providerUnavailable(providers: ["upstream_provider"])
-
         case 503:
             return .providerUnavailable(providers: [])
-
-        case 504:
-            return .timeout(duration: .seconds(60))
-
-        case 500,
-             505...599:
-            if errorMessage.lowercased().contains("provider") {
-                return .providerUnavailable(providers: ["unknown"])
-            }
-            return .apiError(code: errorCode, message: errorMessage, statusCode: statusCode)
-
+        case 500, 505...599:
+            return handleServerError(errorCode: errorCode, errorMessage: errorMessage, statusCode: statusCode)
         default:
             return .unknownError(statusCode: statusCode)
         }
@@ -326,29 +262,102 @@ public extension OpenRouterProviderError {
         switch urlError.code {
         case .cancelled:
             .cancelled
-
         case .timedOut:
-            // URLError doesn't provide duration, use a default
             .timeout(duration: .seconds(60))
-
-        case .cannotConnectToHost,
-             .cannotFindHost,
-             .dnsLookupFailed,
-             .networkConnectionLost,
-             .notConnectedToInternet:
+        case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .networkConnectionLost, .notConnectedToInternet:
             .networkError(SendableErrorWrapper(urlError))
-
         case .userAuthenticationRequired:
             .authenticationFailed
-
-        case .cannotDecodeContentData,
-             .cannotDecodeRawData,
-             .cannotParseResponse:
+        case .cannotDecodeContentData, .cannotDecodeRawData, .cannotParseResponse:
             .decodingError(SendableErrorWrapper(urlError))
-
         default:
             .networkError(SendableErrorWrapper(urlError))
         }
+    }
+}
+
+// MARK: - Private HTTP Status Helpers
+
+private extension OpenRouterProviderError {
+    /// Parses error details from response body JSON.
+    static func parseErrorDetails(from body: Data?) -> (errorCode: String, errorMessage: String) {
+        var errorCode = "unknown"
+        var errorMessage = "An error occurred"
+
+        guard let body, let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            return (errorCode, errorMessage)
+        }
+
+        if let error = json["error"] as? [String: Any] {
+            errorCode = error["code"] as? String ?? errorCode
+            errorMessage = error["message"] as? String ?? errorMessage
+        } else if let message = json["message"] as? String {
+            errorMessage = message
+        } else if let error = json["error"] as? String {
+            errorMessage = error
+        }
+
+        return (errorCode, errorMessage)
+    }
+
+    /// Handles HTTP 400 Bad Request errors.
+    static func handleBadRequest(errorCode: String, errorMessage: String, statusCode: Int) -> OpenRouterProviderError {
+        let lowercased = errorMessage.lowercased()
+        if lowercased.contains("prompt") || lowercased.contains("empty") {
+            return .emptyPrompt
+        }
+        return .apiError(code: errorCode, message: errorMessage, statusCode: statusCode)
+    }
+
+    /// Handles HTTP 403 Forbidden errors.
+    static func handleForbidden(errorMessage: String) -> OpenRouterProviderError {
+        let lowercased = errorMessage.lowercased()
+        if lowercased.contains("content") || lowercased.contains("filter") {
+            return .contentFiltered
+        }
+        return .authenticationFailed
+    }
+
+    /// Handles HTTP 429 Rate Limited errors.
+    static func handleRateLimited(body: Data?, headers: [AnyHashable: Any]?) -> OpenRouterProviderError {
+        let retryAfter = extractRetryAfter(from: headers) ?? extractRetryAfterFromBody(body)
+        return .rateLimitExceeded(retryAfter: retryAfter)
+    }
+
+    /// Extracts retry-after value from HTTP headers.
+    static func extractRetryAfter(from headers: [AnyHashable: Any]?) -> TimeInterval? {
+        guard let headers else { return nil }
+        for (key, value) in headers {
+            if let keyStr = key as? String,
+               keyStr.lowercased() == "retry-after",
+               let valueStr = value as? String,
+               let seconds = TimeInterval(valueStr) {
+                return seconds
+            }
+        }
+        return nil
+    }
+
+    /// Extracts retry-after value from JSON body.
+    static func extractRetryAfterFromBody(_ body: Data?) -> TimeInterval? {
+        guard let body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            return nil
+        }
+        if let retry = json["retry_after"] as? TimeInterval {
+            return retry
+        } else if let retry = json["retry_after"] as? Int {
+            return TimeInterval(retry)
+        }
+        return nil
+    }
+
+    /// Handles HTTP 5xx Server errors.
+    static func handleServerError(errorCode: String, errorMessage: String, statusCode: Int) -> OpenRouterProviderError {
+        if errorMessage.lowercased().contains("provider") {
+            return .providerUnavailable(providers: ["unknown"])
+        }
+        return .apiError(code: errorCode, message: errorMessage, statusCode: statusCode)
     }
 }
 

@@ -1,7 +1,7 @@
 // PerformanceMetricsTests.swift
-// SwiftAgents Framework Tests
+// SwiftAgentsTests
 //
-// Tests for PerformanceMetrics and PerformanceTracker.
+// Tests for performance metrics collection.
 
 import Foundation
 @testable import SwiftAgents

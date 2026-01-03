@@ -458,11 +458,9 @@ public struct Router: OrchestrationStep {
 
         // Find the first matching route
         var selectedRoute: RouteDefinition?
-        for route in routes {
-            if await route.condition.matches(input: input, context: nil) {
-                selectedRoute = route
-                break
-            }
+        for route in routes where await route.condition.matches(input: input, context: nil) {
+            selectedRoute = route
+            break
         }
 
         // Execute matched agent or fallback
@@ -540,15 +538,15 @@ public struct RouteDefinition: Sendable {
 ///
 /// Example:
 /// ```swift
-/// Route(.contains("weather"), to: weatherAgent)
+/// orchestrationRoute(.contains("weather"), to: weatherAgent)
 /// ```
-public func OrchestrationRoute(_ condition: RouteCondition, to agent: @escaping @autoclosure () -> any Agent) -> RouteDefinition {
+public func orchestrationRoute(_ condition: RouteCondition, to agent: @escaping @autoclosure () -> any Agent) -> RouteDefinition {
     RouteDefinition(condition: condition, agent: agent())
 }
 
 /// Convenience alias for creating a route definition.
 /// - Note: Use this within an OrchestrationBuilder Router context.
-public func RouteWhen(_ condition: RouteCondition, to agent: @escaping @autoclosure () -> any Agent) -> RouteDefinition {
+public func routeWhen(_ condition: RouteCondition, to agent: @escaping @autoclosure () -> any Agent) -> RouteDefinition {
     RouteDefinition(condition: condition, agent: agent())
 }
 

@@ -1,9 +1,7 @@
+// StreamHelper.swift
+// SwiftAgents Framework
 //
-//  StreamHelper.swift
-//  SwiftAgents
-//
-//  Created as part of audit remediation - Phase 1
-//
+// Centralized stream creation utilities with safe defaults.
 
 import Foundation
 

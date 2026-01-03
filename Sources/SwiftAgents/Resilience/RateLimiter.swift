@@ -1,9 +1,7 @@
+// RateLimiter.swift
+// SwiftAgents Framework
 //
-//  RateLimiter.swift
-//  SwiftAgents
-//
-//  Created as part of audit remediation - Phase 5
-//
+// Token bucket rate limiter for API calls.
 
 import Foundation
 

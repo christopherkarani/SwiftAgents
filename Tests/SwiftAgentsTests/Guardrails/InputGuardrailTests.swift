@@ -547,7 +547,7 @@ struct InputGuardrailTests {
 
         // Then
         let capturedInput = await capture.get()
-        #expect(capturedInput == "")
+        #expect(capturedInput?.isEmpty == true)
         #expect(result.tripwireTriggered == true)
         #expect(result.message == "Empty input")
     }

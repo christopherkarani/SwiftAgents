@@ -1,9 +1,7 @@
+// TracingHelper.swift
+// SwiftAgents Framework
 //
-//  TracingHelper.swift
-//  SwiftAgents
-//
-//  Created as part of audit remediation - Phase 3
-//
+// Helper for standardized trace event emission across agents.
 
 import Foundation
 

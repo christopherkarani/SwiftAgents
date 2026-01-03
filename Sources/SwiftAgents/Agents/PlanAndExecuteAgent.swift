@@ -428,12 +428,12 @@ public actor PlanAndExecuteAgent: Agent {
     // MARK: - Plan JSON Structures
 
     /// Decodable structure for plan responses.
-    private struct PlanResponse: Codable {
+    struct PlanResponse: Codable {
         let steps: [StepData]
     }
 
     /// Decodable structure for individual step data.
-    private struct StepData: Codable {
+    struct StepData: Codable {
         let stepNumber: Int
         let description: String
         let toolName: String?
@@ -446,7 +446,7 @@ public actor PlanAndExecuteAgent: Agent {
     // MARK: - Internal State
 
     private var cancellationState: CancellationState = .active
-    private let toolRegistry: ToolRegistry
+    let toolRegistry: ToolRegistry
 
     // MARK: - Plan-and-Execute Loop
 
@@ -495,11 +495,9 @@ public actor PlanAndExecuteAgent: Agent {
 
                 // CRITICAL: Check for deadlock - pending steps with unsatisfiable dependencies
                 if !plan.pendingSteps.isEmpty {
-                    for index in plan.steps.indices {
-                        if plan.steps[index].status == .pending {
-                            plan.steps[index].status = .skipped
-                            plan.steps[index].error = "Skipped: dependency deadlock or circular dependency detected"
-                        }
+                    for index in plan.steps.indices where plan.steps[index].status == .pending {
+                        plan.steps[index].status = .skipped
+                        plan.steps[index].error = "Skipped: dependency deadlock or circular dependency detected"
                     }
                 }
                 break
@@ -533,68 +531,37 @@ public actor PlanAndExecuteAgent: Agent {
         return try await synthesizeFinalAnswer(plan: plan, input: input, hooks: hooks)
     }
 
-    // MARK: - Plan Generation
+    // MARK: - Helper Methods
 
-    private func generatePlan(for input: String, sessionHistory: [MemoryMessage] = [], hooks: (any RunHooks)? = nil) async throws -> ExecutionPlan {
-        let prompt = buildPlanningPrompt(for: input, sessionHistory: sessionHistory)
-        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
-        let response = try await generateResponse(prompt: prompt)
-        await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
-        return parsePlan(from: response, goal: input)
-    }
-
-    private func buildPlanningPrompt(for input: String, sessionHistory: [MemoryMessage] = []) -> String {
-        let toolDescriptions = buildToolDescriptions()
-        let conversationContext = buildConversationContext(from: sessionHistory)
-
-        return """
-        \(instructions.isEmpty ? "You are a helpful AI assistant that creates structured plans." : instructions)
-
-        You are a planning agent. Your task is to create a step-by-step plan to accomplish the user's goal.
-
-        \(toolDescriptions.isEmpty ? "No tools are available." : "Available Tools:\n\(toolDescriptions)")
-
-        Create a plan with numbered steps. For each step, provide:
-        1. A clear description of what the step accomplishes
-        2. If a tool is needed, specify the tool name and arguments
-        3. If the step depends on previous steps, specify their step numbers
-
-        Format your response as a JSON object with the following structure:
-        {
-          "steps": [
-            {
-              "stepNumber": 1,
-              "description": "Clear description of the step",
-              "toolName": "tool_name",
-              "toolArguments": {"arg1": "value1", "arg2": 42},
-              "dependsOn": []
-            },
-            {
-              "stepNumber": 2,
-              "description": "Another step description",
-              "toolName": null,
-              "toolArguments": {},
-              "dependsOn": [1]
-            }
-          ]
+    func buildToolDescriptions() -> String {
+        var descriptions: [String] = []
+        for tool in tools {
+            let toolDesc = formatToolDescription(tool)
+            descriptions.append(toolDesc)
         }
-
-        Rules:
-        1. Be specific and actionable in each step.
-        2. Only use tools that are available.
-        3. Keep the plan concise but complete.
-        4. Specify dependencies as an array of step numbers.
-        5. If a step has no tool, set toolName to null and toolArguments to {}.
-        6. Respond ONLY with valid JSON - no additional text before or after.
-        \(conversationContext.isEmpty ? "" : "\nConversation History:\n\(conversationContext)")
-
-        User Goal: \(input)
-
-        Create your plan in JSON format:
-        """
+        return descriptions.joined(separator: "\n\n")
     }
 
-    private func buildConversationContext(from sessionHistory: [MemoryMessage]) -> String {
+    func formatToolDescription(_ tool: any Tool) -> String {
+        let params = formatParameterDescriptions(tool.parameters)
+        if params.isEmpty {
+            return "- \(tool.name): \(tool.description)"
+        } else {
+            return "- \(tool.name): \(tool.description)\n  Parameters:\n\(params)"
+        }
+    }
+
+    func formatParameterDescriptions(_ parameters: [ToolParameter]) -> String {
+        var lines: [String] = []
+        for param in parameters {
+            let reqStr = param.isRequired ? "(required)" : "(optional)"
+            let line = "    - \(param.name) \(reqStr): \(param.description)"
+            lines.append(line)
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func buildConversationContext(from sessionHistory: [MemoryMessage]) -> String {
         guard !sessionHistory.isEmpty else { return "" }
 
         var lines: [String] = []
@@ -613,7 +580,7 @@ public actor PlanAndExecuteAgent: Agent {
         return lines.joined(separator: "\n")
     }
 
-    private func parsePlan(from response: String, goal: String) -> ExecutionPlan {
+    func parsePlan(from response: String, goal: String) -> ExecutionPlan {
         // Try to parse as JSON first
         if let plan = parseJSONPlan(from: response, goal: goal) {
             return plan
@@ -629,338 +596,7 @@ public actor PlanAndExecuteAgent: Agent {
         return ExecutionPlan(steps: [step], goal: goal)
     }
 
-    /// Parses a JSON-formatted plan response.
-    /// - Parameters:
-    ///   - response: The LLM response containing JSON.
-    ///   - goal: The goal being planned for.
-    /// - Returns: An ExecutionPlan if parsing succeeds, nil otherwise.
-    private func parseJSONPlan(from response: String, goal: String) -> ExecutionPlan? {
-        // Extract JSON from response (handle cases where LLM adds extra text)
-        let jsonString = extractJSON(from: response)
-        guard let jsonData = jsonString.data(using: .utf8) else {
-            return nil
-        }
-
-        // Decode the plan
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-
-        guard let planResponse = try? decoder.decode(PlanResponse.self, from: jsonData) else {
-            return nil
-        }
-
-        // Convert PlanResponse to ExecutionPlan
-        var steps: [PlanStep] = []
-        var stepNumberToId: [Int: UUID] = [:]
-
-        // First pass: Create all steps with UUIDs
-        for stepData in planResponse.steps {
-            let stepId = UUID()
-            stepNumberToId[stepData.stepNumber] = stepId
-        }
-
-        // Second pass: Build PlanSteps with resolved dependencies
-        for stepData in planResponse.steps {
-            guard let stepId = stepNumberToId[stepData.stepNumber] else { continue }
-
-            // Resolve dependencies from step numbers to UUIDs
-            let dependencyIds = stepData.dependsOn.compactMap { stepNumberToId[$0] }
-
-            let step = PlanStep(
-                id: stepId,
-                stepNumber: stepData.stepNumber,
-                stepDescription: stepData.description,
-                toolName: stepData.toolName,
-                toolArguments: stepData.toolArguments ?? [:],
-                dependsOn: dependencyIds
-            )
-            steps.append(step)
-        }
-
-        // If no steps were parsed, return nil to trigger fallback
-        guard !steps.isEmpty else {
-            return nil
-        }
-
-        return ExecutionPlan(steps: steps, goal: goal)
-    }
-
-    /// Extracts JSON content from a response that may contain additional text.
-    private func extractJSON(from response: String) -> String {
-        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // If response starts with {, try to find the matching closing brace
-        if let firstBrace = trimmed.firstIndex(of: "{") {
-            var depth = 0
-            var inString = false
-            var escapeNext = false
-
-            for (index, char) in trimmed[firstBrace...].enumerated() {
-                if escapeNext {
-                    escapeNext = false
-                    continue
-                }
-
-                if char == "\\" {
-                    escapeNext = true
-                    continue
-                }
-
-                if char == "\"", !escapeNext {
-                    inString.toggle()
-                    continue
-                }
-
-                if !inString {
-                    if char == "{" {
-                        depth += 1
-                    } else if char == "}" {
-                        depth -= 1
-                        if depth == 0 {
-                            let endIndex = trimmed.index(firstBrace, offsetBy: index + 1)
-                            return String(trimmed[firstBrace..<endIndex])
-                        }
-                    }
-                }
-            }
-        }
-
-        // If extraction failed, return original (might still be valid JSON)
-        return trimmed
-    }
-
-    // MARK: - Step Execution
-
-    private func executeStep(
-        _ step: PlanStep,
-        plan: ExecutionPlan,
-        resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)? = nil
-    ) async throws -> String {
-        // If the step has a tool, execute it
-        if let toolName = step.toolName {
-            let toolCall = ToolCall(
-                toolName: toolName,
-                arguments: step.toolArguments
-            )
-            _ = resultBuilder.addToolCall(toolCall)
-
-            let startTime = ContinuousClock.now
-            do {
-                // Notify hooks before tool execution
-                if let tool = await toolRegistry.tool(named: toolName) {
-                    await hooks?.onToolStart(context: nil, agent: self, tool: tool, arguments: step.toolArguments)
-                }
-
-                let toolResult = try await toolRegistry.execute(
-                    toolNamed: toolName,
-                    arguments: step.toolArguments,
-                    agent: self,
-                    context: nil
-                )
-                let duration = ContinuousClock.now - startTime
-
-                let result = ToolResult.success(
-                    callId: toolCall.id,
-                    output: toolResult,
-                    duration: duration
-                )
-                _ = resultBuilder.addToolResult(result)
-
-                // Notify hooks after successful tool execution
-                if let tool = await toolRegistry.tool(named: toolName) {
-                    await hooks?.onToolEnd(context: nil, agent: self, tool: tool, result: toolResult)
-                }
-
-                return toolResult.description
-            } catch {
-                let duration = ContinuousClock.now - startTime
-                let errorMessage = (error as? AgentError)?.localizedDescription ?? error.localizedDescription
-
-                let result = ToolResult.failure(
-                    callId: toolCall.id,
-                    error: errorMessage,
-                    duration: duration
-                )
-                _ = resultBuilder.addToolResult(result)
-
-                throw AgentError.toolExecutionFailed(
-                    toolName: toolName,
-                    underlyingError: errorMessage
-                )
-            }
-        }
-
-        // For steps without tools, use the LLM to execute
-        let prompt = buildStepExecutionPrompt(step: step, plan: plan)
-        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
-        let response = try await generateResponse(prompt: prompt)
-        await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
-        return response
-    }
-
-    private func buildStepExecutionPrompt(step: PlanStep, plan: ExecutionPlan) -> String {
-        // Gather results from completed dependencies
-        var contextFromDeps = ""
-        for depId in step.dependsOn {
-            if let depStep = plan.steps.first(where: { $0.id == depId }),
-               let result = depStep.result {
-                contextFromDeps += "Result from Step \(depStep.stepNumber): \(result)\n"
-            }
-        }
-
-        return """
-        \(instructions.isEmpty ? "You are a helpful AI assistant." : instructions)
-
-        You are executing step \(step.stepNumber) of a plan to achieve: \(plan.goal)
-
-        Step description: \(step.stepDescription)
-
-        \(contextFromDeps.isEmpty ? "" : "Context from previous steps:\n\(contextFromDeps)")
-
-        Execute this step and provide the result. Be concise and focused.
-        """
-    }
-
-    // MARK: - Replanning
-
-    private func replan(original: ExecutionPlan, input: String, hooks: (any RunHooks)? = nil) async throws -> ExecutionPlan {
-        let prompt = buildReplanPrompt(original: original, input: input)
-        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
-        let response = try await generateResponse(prompt: prompt)
-        await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
-        var newPlan = parsePlan(from: response, goal: input)
-        newPlan.revisionCount = original.revisionCount + 1
-        return newPlan
-    }
-
-    private func buildReplanPrompt(original: ExecutionPlan, input: String) -> String {
-        let toolDescriptions = buildToolDescriptions()
-
-        // Summarize what worked and what failed
-        var completedSummary = ""
-        for step in original.completedSteps {
-            completedSummary += "- Step \(step.stepNumber) (completed): \(step.stepDescription)"
-            if let result = step.result {
-                completedSummary += " -> Result: \(result.prefix(100))"
-            }
-            completedSummary += "\n"
-        }
-
-        var failedSummary = ""
-        for step in original.failedSteps {
-            failedSummary += "- Step \(step.stepNumber) (failed): \(step.stepDescription)"
-            if let error = step.error {
-                failedSummary += " -> Error: \(error)"
-            }
-            failedSummary += "\n"
-        }
-
-        return """
-        \(instructions.isEmpty ? "You are a helpful AI assistant that creates structured plans." : instructions)
-
-        The previous plan encountered failures and needs revision.
-
-        Original Goal: \(input)
-
-        \(completedSummary.isEmpty ? "No steps completed." : "Completed steps:\n\(completedSummary)")
-
-        \(failedSummary.isEmpty ? "" : "Failed steps:\n\(failedSummary)")
-
-        \(toolDescriptions.isEmpty ? "No tools are available." : "Available Tools:\n\(toolDescriptions)")
-
-        Create a REVISED plan that:
-        1. Builds on the successful steps (do not repeat them)
-        2. Addresses the failures with alternative approaches
-        3. Achieves the original goal
-
-        Format your response as a JSON object with the following structure:
-        {
-          "steps": [
-            {
-              "stepNumber": 1,
-              "description": "Clear description of the step",
-              "toolName": "tool_name",
-              "toolArguments": {"arg1": "value1"},
-              "dependsOn": []
-            }
-          ]
-        }
-
-        Rules:
-        1. Be specific and actionable in each step.
-        2. Only use tools that are available.
-        3. Specify dependencies as an array of step numbers.
-        4. If a step has no tool, set toolName to null and toolArguments to {}.
-        5. Respond ONLY with valid JSON - no additional text before or after.
-
-        Create your revised plan in JSON format:
-        """
-    }
-
-    // MARK: - Final Answer Synthesis
-
-    private func synthesizeFinalAnswer(plan: ExecutionPlan, input: String, hooks: (any RunHooks)? = nil) async throws -> String {
-        // Gather all results
-        var results = ""
-        for step in plan.steps where step.status == .completed {
-            if let result = step.result {
-                results += "Step \(step.stepNumber) (\(step.stepDescription)): \(result)\n"
-            }
-        }
-
-        let prompt = """
-        \(instructions.isEmpty ? "You are a helpful AI assistant." : instructions)
-
-        You have completed executing a plan to answer the user's question.
-
-        User Question: \(input)
-
-        Results from execution:
-        \(results.isEmpty ? "No results were gathered." : results)
-
-        \(plan.hasFailed ? "Note: Some steps failed during execution. Provide the best answer you can with the available information." : "")
-
-        Synthesize a clear, concise final answer for the user based on the results above.
-        """
-
-        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
-        let response = try await generateResponse(prompt: prompt)
-        await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
-        return response
-    }
-
-    // MARK: - Helper Methods
-
-    private func buildToolDescriptions() -> String {
-        var descriptions: [String] = []
-        for tool in tools {
-            let toolDesc = formatToolDescription(tool)
-            descriptions.append(toolDesc)
-        }
-        return descriptions.joined(separator: "\n\n")
-    }
-
-    private func formatToolDescription(_ tool: any Tool) -> String {
-        let params = formatParameterDescriptions(tool.parameters)
-        if params.isEmpty {
-            return "- \(tool.name): \(tool.description)"
-        } else {
-            return "- \(tool.name): \(tool.description)\n  Parameters:\n\(params)"
-        }
-    }
-
-    private func formatParameterDescriptions(_ parameters: [ToolParameter]) -> String {
-        var lines: [String] = []
-        for param in parameters {
-            let reqStr = param.isRequired ? "(required)" : "(optional)"
-            let line = "    - \(param.name) \(reqStr): \(param.description)"
-            lines.append(line)
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    private func generateResponse(prompt: String) async throws -> String {
+    func generateResponse(prompt: String) async throws -> String {
         if let provider = inferenceProvider {
             let options = InferenceOptions(
                 temperature: configuration.temperature,

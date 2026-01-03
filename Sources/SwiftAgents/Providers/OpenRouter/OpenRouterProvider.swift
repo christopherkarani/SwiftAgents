@@ -279,126 +279,178 @@ public actor OpenRouterProvider: InferenceProvider {
             try Task.checkCancellation()
 
             do {
-                #if canImport(FoundationNetworking)
-                    // Linux: Use data(for:) and manual line splitting
-                    let (data, response) = try await session.data(for: request)
-
-                    guard let httpResponse = response as? HTTPURLResponse else {
-                        throw AgentError.generationFailed(reason: "Invalid response type")
-                    }
-
-                    // Update rate limit info
-                    rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
-
-                    // Handle HTTP errors
-                    if httpResponse.statusCode != 200 {
-                        try handleHTTPError(statusCode: httpResponse.statusCode, data: data, attempt: attempt, maxRetries: maxRetries)
-                        continue
-                    }
-
-                    // Process SSE stream by splitting data into lines
-                    guard let responseString = String(data: data, encoding: .utf8) else {
-                        throw AgentError.generationFailed(reason: "Invalid UTF-8 data")
-                    }
-
-                    let lines = responseString.components(separatedBy: .newlines)
-                    for line in lines {
-                        try Task.checkCancellation()
-
-                        guard line.hasPrefix("data: ") else { continue }
-                        let jsonString = String(line.dropFirst(6))
-
-                        if jsonString == "[DONE]" {
-                            continuation.finish()
-                            return
-                        }
-
-                        guard let jsonData = jsonString.data(using: .utf8) else { continue }
-
-                        do {
-                            let chunk = try decoder.decode(OpenRouterStreamChunk.self, from: jsonData)
-                            if let content = chunk.choices?.first?.delta?.content {
-                                continuation.yield(content)
-                            }
-                        } catch {
-                            // Skip malformed chunks
-                            continue
-                        }
-                    }
-                #else
-                    /// Apple platforms: Use bytes(for:) with line iterator
-                    let (bytes, response) = try await session.bytes(for: request)
-
-                    guard let httpResponse = response as? HTTPURLResponse else {
-                        throw AgentError.generationFailed(reason: "Invalid response type")
-                    }
-
-                    // Update rate limit info
-                    rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
-
-                    // Handle HTTP errors by collecting error data
-                    if httpResponse.statusCode != 200 {
-                        var errorData = Data()
-                        errorData.reserveCapacity(10000) // Pre-allocate buffer to avoid reallocations
-                        for try await byte in bytes {
-                            errorData.append(byte)
-                            if errorData.count >= 10000 { break }
-                        }
-                        try handleHTTPError(statusCode: httpResponse.statusCode, data: errorData, attempt: attempt, maxRetries: maxRetries)
-                        continue
-                    }
-
-                    // Process SSE stream
-                    for try await line in bytes.lines {
-                        try Task.checkCancellation()
-
-                        guard line.hasPrefix("data: ") else { continue }
-                        let jsonString = String(line.dropFirst(6))
-
-                        if jsonString == "[DONE]" {
-                            continuation.finish()
-                            return
-                        }
-
-                        guard let jsonData = jsonString.data(using: String.Encoding.utf8) else { continue }
-
-                        do {
-                            let chunk = try decoder.decode(OpenRouterStreamChunk.self, from: jsonData)
-                            if let content = chunk.choices?.first?.delta?.content {
-                                continuation.yield(content)
-                            }
-                        } catch {
-                            // Skip malformed chunks
-                            continue
-                        }
-                    }
-                #endif
-
-                continuation.finish()
-                return
-
+                let completed = try await executeStreamRequest(request: request, attempt: attempt, maxRetries: maxRetries, continuation: continuation)
+                if completed {
+                    return
+                }
+                // If not completed, continue to retry
             } catch let error as AgentError {
-                if attempt == maxRetries {
-                    throw error
-                }
-                if case .rateLimitExceeded = error {
-                    let delay = configuration.retryStrategy.delay(forAttempt: attempt + 1)
-                    try await Task.sleep(for: .seconds(delay))
-                    continue
-                }
-                throw error
+                try handleStreamError(error: error, attempt: attempt, maxRetries: maxRetries)
             } catch is CancellationError {
                 throw AgentError.cancelled
             } catch {
-                if attempt == maxRetries {
-                    throw AgentError.generationFailed(reason: error.localizedDescription)
-                }
-                let delay = configuration.retryStrategy.delay(forAttempt: attempt + 1)
-                try await Task.sleep(for: .seconds(delay))
+                try await handleGenericStreamError(error: error, attempt: attempt, maxRetries: maxRetries)
             }
         }
 
         throw AgentError.generationFailed(reason: "Max retries exceeded")
+    }
+
+    /// Executes a single stream request attempt.
+    /// - Returns: `true` if the stream completed successfully, `false` if a retry is needed.
+    private func executeStreamRequest(
+        request: URLRequest,
+        attempt: Int,
+        maxRetries: Int,
+        continuation: AsyncThrowingStream<String, Error>.Continuation
+    ) async throws -> Bool {
+        #if canImport(FoundationNetworking)
+            return try await executeLinuxStreamRequest(request: request, attempt: attempt, maxRetries: maxRetries, continuation: continuation)
+        #else
+            return try await executeAppleStreamRequest(request: request, attempt: attempt, maxRetries: maxRetries, continuation: continuation)
+        #endif
+    }
+
+    #if canImport(FoundationNetworking)
+    /// Linux-specific stream execution using data(for:) and manual line splitting.
+    private func executeLinuxStreamRequest(
+        request: URLRequest,
+        attempt: Int,
+        maxRetries: Int,
+        continuation: AsyncThrowingStream<String, Error>.Continuation
+    ) async throws -> Bool {
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AgentError.generationFailed(reason: "Invalid response type")
+        }
+
+        rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
+
+        if httpResponse.statusCode != 200 {
+            try handleHTTPError(statusCode: httpResponse.statusCode, data: data, attempt: attempt, maxRetries: maxRetries)
+            return false // Retry needed
+        }
+
+        guard let responseString = String(data: data, encoding: .utf8) else {
+            throw AgentError.generationFailed(reason: "Invalid UTF-8 data")
+        }
+
+        try processSSELines(responseString.components(separatedBy: .newlines), continuation: continuation)
+        return true
+    }
+    #else
+    /// Apple platforms stream execution using bytes(for:) with async line iterator.
+    private func executeAppleStreamRequest(
+        request: URLRequest,
+        attempt: Int,
+        maxRetries: Int,
+        continuation: AsyncThrowingStream<String, Error>.Continuation
+    ) async throws -> Bool {
+        let (bytes, response) = try await session.bytes(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AgentError.generationFailed(reason: "Invalid response type")
+        }
+
+        rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
+
+        if httpResponse.statusCode != 200 {
+            let errorData = try await collectErrorData(from: bytes)
+            try handleHTTPError(statusCode: httpResponse.statusCode, data: errorData, attempt: attempt, maxRetries: maxRetries)
+            return false // Retry needed
+        }
+
+        try await processAsyncSSEStream(bytes: bytes, continuation: continuation)
+        return true
+    }
+
+    /// Collects error data from an async byte stream.
+    private func collectErrorData(from bytes: URLSession.AsyncBytes) async throws -> Data {
+        var errorData = Data()
+        errorData.reserveCapacity(10000)
+        for try await byte in bytes {
+            errorData.append(byte)
+            if errorData.count >= 10000 { break }
+        }
+        return errorData
+    }
+
+    /// Processes an async SSE stream from Apple platforms.
+    private func processAsyncSSEStream(
+        bytes: URLSession.AsyncBytes,
+        continuation: AsyncThrowingStream<String, Error>.Continuation
+    ) async throws {
+        for try await line in bytes.lines {
+            try Task.checkCancellation()
+            if try processSSELine(line, continuation: continuation) {
+                return
+            }
+        }
+        continuation.finish()
+    }
+    #endif
+
+    /// Processes an array of SSE lines (Linux path).
+    private func processSSELines(
+        _ lines: [String],
+        continuation: AsyncThrowingStream<String, Error>.Continuation
+    ) throws {
+        for line in lines {
+            try Task.checkCancellation()
+            if try processSSELine(line, continuation: continuation) {
+                return
+            }
+        }
+        continuation.finish()
+    }
+
+    /// Processes a single SSE line and yields content to continuation.
+    /// - Returns: `true` if stream is done, `false` to continue processing.
+    private func processSSELine(
+        _ line: String,
+        continuation: AsyncThrowingStream<String, Error>.Continuation
+    ) throws -> Bool {
+        guard line.hasPrefix("data: ") else { return false }
+        let jsonString = String(line.dropFirst(6))
+
+        if jsonString == "[DONE]" {
+            continuation.finish()
+            return true
+        }
+
+        guard let jsonData = jsonString.data(using: .utf8) else { return false }
+
+        do {
+            let chunk = try decoder.decode(OpenRouterStreamChunk.self, from: jsonData)
+            if let content = chunk.choices?.first?.delta?.content {
+                continuation.yield(content)
+            }
+        } catch {
+            // Skip malformed chunks
+        }
+        return false
+    }
+
+    /// Handles AgentError during streaming with retry logic.
+    private func handleStreamError(error: AgentError, attempt: Int, maxRetries: Int) throws {
+        if attempt == maxRetries {
+            throw error
+        }
+        if case .rateLimitExceeded = error {
+            // Let the caller handle retry delay
+            return
+        }
+        throw error
+    }
+
+    /// Handles generic errors during streaming with retry delay.
+    private func handleGenericStreamError(error: Error, attempt: Int, maxRetries: Int) async throws {
+        if attempt == maxRetries {
+            throw AgentError.generationFailed(reason: error.localizedDescription)
+        }
+        let delay = configuration.retryStrategy.delay(forAttempt: attempt + 1)
+        try await Task.sleep(for: .seconds(delay))
     }
 
     private func buildRequest(

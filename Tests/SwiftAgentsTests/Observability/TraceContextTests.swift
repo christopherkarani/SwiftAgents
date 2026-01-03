@@ -583,7 +583,7 @@ struct TraceContextEdgeCasesTests {
     func emptyTraceNameIsValid() async throws {
         await TraceContext.withTrace("") {
             let name = await TraceContext.current?.name
-            #expect(name == "")
+            #expect(name?.isEmpty == true)
         }
     }
 

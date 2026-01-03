@@ -240,166 +240,147 @@ public actor ToolCallingAgent: Agent {
         hooks: (any RunHooks)? = nil
     ) async throws -> String {
         var iteration = 0
-        var conversationHistory: [ConversationMessage] = []
+        var conversationHistory = buildInitialConversationHistory(sessionHistory: sessionHistory, input: input)
         let startTime = ContinuousClock.now
-
-        // Add system message with instructions
         let systemMessage = buildSystemMessage()
-        conversationHistory.append(.system(systemMessage))
-
-        // Add session history as conversation context
-        for msg in sessionHistory {
-            switch msg.role {
-            case .user:
-                conversationHistory.append(.user(msg.content))
-            case .assistant:
-                conversationHistory.append(.assistant(msg.content))
-            case .system:
-                conversationHistory.append(.system(msg.content))
-            case .tool:
-                conversationHistory.append(.toolResult(toolName: "previous", result: msg.content))
-            }
-        }
-
-        // Add user input
-        conversationHistory.append(.user(input))
 
         while iteration < configuration.maxIterations {
             iteration += 1
             _ = resultBuilder.incrementIteration()
 
-            try Task.checkCancellation()
-            if isCancelled {
-                throw AgentError.cancelled
-            }
+            try checkCancellationAndTimeout(startTime: startTime)
 
-            // Check timeout
-            let elapsed = ContinuousClock.now - startTime
-            if elapsed > configuration.timeout {
-                throw AgentError.timeout(duration: configuration.timeout)
-            }
-
-            // Build prompt from conversation history
             let prompt = buildPrompt(from: conversationHistory)
-
-            // Get tool definitions
             let toolDefinitions = await toolRegistry.definitions
 
-            // If no tools defined, just generate normally without tool calling
+            // If no tools defined, generate without tool calling
             if toolDefinitions.isEmpty {
-                guard let provider = inferenceProvider else {
-                    throw AgentError.inferenceProviderUnavailable(reason: "No inference provider configured.")
-                }
-
-                // Notify hooks of LLM start
-                await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemMessage, inputMessages: [MemoryMessage.user(prompt)])
-
-                let content = try await provider.generate(
-                    prompt: prompt,
-                    options: InferenceOptions(temperature: configuration.temperature, maxTokens: configuration.maxTokens)
-                )
-
-                // Notify hooks of LLM end
-                await hooks?.onLLMEnd(context: nil, agent: self, response: content, usage: nil)
-
-                // Return content - memory storage handled by run() after guardrails
-                return content
+                return try await generateWithoutTools(prompt: prompt, systemPrompt: systemMessage, hooks: hooks)
             }
 
             // Generate response with tool calls
-            let response = try await generateWithTools(
-                prompt: prompt,
-                tools: toolDefinitions,
-                systemPrompt: systemMessage,
-                hooks: hooks
-            )
+            let response = try await generateWithTools(prompt: prompt, tools: toolDefinitions, systemPrompt: systemMessage, hooks: hooks)
 
-            // Check if model wants to call tools
             if response.hasToolCalls {
-                // ALWAYS add assistant message indicating tool call intent BEFORE executing tools
-                let toolCallSummary = response.toolCalls.map { "Calling tool: \($0.name)" }.joined(separator: ", ")
-                let assistantMessage = response.content ?? toolCallSummary
-                conversationHistory.append(.assistant(assistantMessage))
-
-                // Execute each tool call
-                for parsedCall in response.toolCalls {
-                    let toolCall = ToolCall(
-                        toolName: parsedCall.name,
-                        arguments: parsedCall.arguments
-                    )
-                    _ = resultBuilder.addToolCall(toolCall)
-
-                    let startTime = ContinuousClock.now
-                    do {
-                        // Get the tool for hook notification
-                        if let tool = await toolRegistry.tool(named: parsedCall.name) {
-                            // Notify hooks of tool start
-                            await hooks?.onToolStart(context: nil, agent: self, tool: tool, arguments: parsedCall.arguments)
-                        }
-
-                        let toolOutput = try await toolRegistry.execute(
-                            toolNamed: parsedCall.name,
-                            arguments: parsedCall.arguments,
-                            agent: self,
-                            context: nil
-                        )
-                        let duration = ContinuousClock.now - startTime
-
-                        // Notify hooks of tool end
-                        if let tool = await toolRegistry.tool(named: parsedCall.name) {
-                            await hooks?.onToolEnd(context: nil, agent: self, tool: tool, result: toolOutput)
-                        }
-
-                        let result = ToolResult.success(
-                            callId: toolCall.id,
-                            output: toolOutput,
-                            duration: duration
-                        )
-                        _ = resultBuilder.addToolResult(result)
-
-                        // Add tool result to conversation history
-                        conversationHistory.append(.toolResult(
-                            toolName: parsedCall.name,
-                            result: toolOutput.description
-                        ))
-
-                    } catch {
-                        let duration = ContinuousClock.now - startTime
-                        let errorMessage = (error as? AgentError)?.localizedDescription ?? error.localizedDescription
-
-                        let result = ToolResult.failure(
-                            callId: toolCall.id,
-                            error: errorMessage,
-                            duration: duration
-                        )
-                        _ = resultBuilder.addToolResult(result)
-
-                        // Add error to conversation history
-                        conversationHistory.append(.toolResult(
-                            toolName: parsedCall.name,
-                            result: "[TOOL ERROR] Execution failed: \(errorMessage). Please try a different approach or tool."
-                        ))
-
-                        if configuration.stopOnToolError {
-                            throw AgentError.toolExecutionFailed(
-                                toolName: parsedCall.name,
-                                underlyingError: errorMessage
-                            )
-                        }
-                    }
-                }
-
+                try await processToolCalls(
+                    response: response,
+                    conversationHistory: &conversationHistory,
+                    resultBuilder: resultBuilder,
+                    hooks: hooks
+                )
             } else {
-                // No tool calls - return final answer
-                if let content = response.content {
-                    return content
-                } else {
+                guard let content = response.content else {
                     throw AgentError.generationFailed(reason: "Model returned no content or tool calls")
                 }
+                return content
             }
         }
 
         throw AgentError.maxIterationsExceeded(iterations: iteration)
+    }
+
+    /// Builds the initial conversation history from session history and user input.
+    private func buildInitialConversationHistory(sessionHistory: [MemoryMessage], input: String) -> [ConversationMessage] {
+        var history: [ConversationMessage] = []
+        history.append(.system(buildSystemMessage()))
+
+        for msg in sessionHistory {
+            switch msg.role {
+            case .user: history.append(.user(msg.content))
+            case .assistant: history.append(.assistant(msg.content))
+            case .system: history.append(.system(msg.content))
+            case .tool: history.append(.toolResult(toolName: "previous", result: msg.content))
+            }
+        }
+
+        history.append(.user(input))
+        return history
+    }
+
+    /// Checks for cancellation and timeout conditions.
+    private func checkCancellationAndTimeout(startTime: ContinuousClock.Instant) throws {
+        try Task.checkCancellation()
+        if isCancelled { throw AgentError.cancelled }
+
+        let elapsed = ContinuousClock.now - startTime
+        if elapsed > configuration.timeout {
+            throw AgentError.timeout(duration: configuration.timeout)
+        }
+    }
+
+    /// Generates a response without tool calling.
+    private func generateWithoutTools(prompt: String, systemPrompt: String, hooks: (any RunHooks)?) async throws -> String {
+        guard let provider = inferenceProvider else {
+            throw AgentError.inferenceProviderUnavailable(reason: "No inference provider configured.")
+        }
+
+        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
+
+        let content = try await provider.generate(
+            prompt: prompt,
+            options: InferenceOptions(temperature: configuration.temperature, maxTokens: configuration.maxTokens)
+        )
+
+        await hooks?.onLLMEnd(context: nil, agent: self, response: content, usage: nil)
+        return content
+    }
+
+    /// Processes tool calls from the model response.
+    private func processToolCalls(
+        response: InferenceResponse,
+        conversationHistory: inout [ConversationMessage],
+        resultBuilder: AgentResult.Builder,
+        hooks: (any RunHooks)?
+    ) async throws {
+        let toolCallSummary = response.toolCalls.map { "Calling tool: \($0.name)" }.joined(separator: ", ")
+        conversationHistory.append(.assistant(response.content ?? toolCallSummary))
+
+        for parsedCall in response.toolCalls {
+            try await executeSingleToolCall(
+                parsedCall: parsedCall,
+                conversationHistory: &conversationHistory,
+                resultBuilder: resultBuilder,
+                hooks: hooks
+            )
+        }
+    }
+
+    /// Executes a single tool call and updates conversation history.
+    private func executeSingleToolCall(
+        parsedCall: InferenceResponse.ParsedToolCall,
+        conversationHistory: inout [ConversationMessage],
+        resultBuilder: AgentResult.Builder,
+        hooks: (any RunHooks)?
+    ) async throws {
+        let toolCall = ToolCall(toolName: parsedCall.name, arguments: parsedCall.arguments)
+        _ = resultBuilder.addToolCall(toolCall)
+
+        let callStartTime = ContinuousClock.now
+        do {
+            if let tool = await toolRegistry.tool(named: parsedCall.name) {
+                await hooks?.onToolStart(context: nil, agent: self, tool: tool, arguments: parsedCall.arguments)
+            }
+
+            let toolOutput = try await toolRegistry.execute(toolNamed: parsedCall.name, arguments: parsedCall.arguments, agent: self, context: nil)
+            let duration = ContinuousClock.now - callStartTime
+
+            if let tool = await toolRegistry.tool(named: parsedCall.name) {
+                await hooks?.onToolEnd(context: nil, agent: self, tool: tool, result: toolOutput)
+            }
+
+            _ = resultBuilder.addToolResult(ToolResult.success(callId: toolCall.id, output: toolOutput, duration: duration))
+            conversationHistory.append(.toolResult(toolName: parsedCall.name, result: toolOutput.description))
+        } catch {
+            let duration = ContinuousClock.now - callStartTime
+            let errorMessage = (error as? AgentError)?.localizedDescription ?? error.localizedDescription
+
+            _ = resultBuilder.addToolResult(ToolResult.failure(callId: toolCall.id, error: errorMessage, duration: duration))
+            conversationHistory.append(.toolResult(toolName: parsedCall.name, result: "[TOOL ERROR] Execution failed: \(errorMessage). Please try a different approach or tool."))
+
+            if configuration.stopOnToolError {
+                throw AgentError.toolExecutionFailed(toolName: parsedCall.name, underlyingError: errorMessage)
+            }
+        }
     }
 
     // MARK: - Prompt Building

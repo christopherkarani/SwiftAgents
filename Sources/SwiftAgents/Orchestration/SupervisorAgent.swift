@@ -562,22 +562,14 @@ public actor SupervisorAgent: Agent {
             // Find the selected agent
             guard let selectedEntry = agentRegistry.first(where: { $0.name == decision.selectedAgentName }) else {
                 // Agent not found, use fallback if available
-                if let fallback = fallbackAgent {
-                    // Notify hooks of handoff to fallback agent
-                    if let context {
-                        await hooks?.onHandoff(context: context, fromAgent: self, toAgent: fallback)
-                    }
-
-                    let result = try await fallback.run(input, session: session, hooks: hooks)
-                    builder.setOutput(result.output)
-                    builder.setMetadata("routing_decision", .string("fallback"))
-                    builder.setMetadata("routing_confidence", .double(0.0))
-                    return builder.build()
-                } else {
-                    throw AgentError.internalError(
-                        reason: "Selected agent '\(decision.selectedAgentName)' not found and no fallback configured"
-                    )
-                }
+                return try await handleFallback(
+                    input: input,
+                    session: session,
+                    hooks: hooks,
+                    context: context,
+                    builder: builder,
+                    reason: "agent_not_found"
+                )
             }
 
             // Track execution in context
@@ -585,50 +577,13 @@ public actor SupervisorAgent: Agent {
                 await context.recordExecution(agentName: decision.selectedAgentName)
             }
 
-            // Apply handoff configuration if available
-            var effectiveInput = input
-            let handoffContext = context ?? AgentContext(input: input)
-
-            if let config = findHandoffConfiguration(for: selectedEntry.agent) {
-                // Check isEnabled callback
-                if let isEnabled = config.isEnabled {
-                    let enabled = await isEnabled(handoffContext, selectedEntry.agent)
-                    if !enabled {
-                        throw OrchestrationError.handoffSkipped(
-                            from: "SupervisorAgent",
-                            to: selectedEntry.name,
-                            reason: "Handoff disabled by isEnabled callback"
-                        )
-                    }
-                }
-
-                // Create HandoffInputData for callbacks
-                var inputData = HandoffInputData(
-                    sourceAgentName: "SupervisorAgent",
-                    targetAgentName: selectedEntry.name,
-                    input: input,
-                    context: [:],
-                    metadata: [:]
-                )
-
-                // Apply inputFilter if present
-                if let inputFilter = config.inputFilter {
-                    inputData = inputFilter(inputData)
-                    effectiveInput = inputData.input
-                }
-
-                // Call onHandoff callback if present
-                if let onHandoff = config.onHandoff {
-                    do {
-                        try await onHandoff(handoffContext, inputData)
-                    } catch {
-                        // Log callback errors but don't fail the handoff
-                        Log.orchestration.warning(
-                            "onHandoff callback failed for SupervisorAgent -> \(selectedEntry.name): \(error.localizedDescription)"
-                        )
-                    }
-                }
-            }
+            // Apply handoff configuration and get effective input
+            let effectiveInput = try await applyHandoffConfiguration(
+                for: selectedEntry.agent,
+                name: selectedEntry.name,
+                input: input,
+                context: context
+            )
 
             // Notify hooks of handoff to selected agent
             if let context {
@@ -643,43 +598,188 @@ public actor SupervisorAgent: Agent {
                 await context.setPreviousOutput(result)
             }
 
-            // Build final result
-            builder.setOutput(result.output)
-            builder.setMetadata("selected_agent", .string(decision.selectedAgentName))
-            builder.setMetadata("routing_confidence", .double(decision.confidence))
-            if let reasoning = decision.reasoning {
-                builder.setMetadata("routing_reasoning", .string(reasoning))
-            }
-
-            // Copy tool calls from sub-agent result
-            for toolCall in result.toolCalls {
-                builder.addToolCall(toolCall)
-            }
-            for toolResult in result.toolResults {
-                builder.addToolResult(toolResult)
-            }
-
-            return builder.build()
+            // Build and return final result
+            return buildResultFromExecution(
+                decision: decision,
+                subAgentResult: result,
+                builder: builder
+            )
 
         } catch {
-            // If routing fails and we have a fallback, use it
-            if let fallback = fallbackAgent, error is AgentError {
-                // Notify hooks of handoff to fallback agent after error
-                let errorContext = AgentContext(input: input)
-                await hooks?.onHandoff(context: errorContext, fromAgent: self, toAgent: fallback)
+            return try await handleRoutingError(
+                error,
+                input: input,
+                session: session,
+                hooks: hooks,
+                builder: builder
+            )
+        }
+    }
 
-                let result = try await fallback.run(input, session: session, hooks: hooks)
-                builder.setOutput(result.output)
-                builder.setMetadata("routing_decision", .string("fallback_after_error"))
-                builder.setMetadata("routing_error", .string(error.localizedDescription))
-                return builder.build()
+    // MARK: - Run Helper Methods
+
+    /// Applies handoff configuration for the target agent.
+    /// - Parameters:
+    ///   - targetAgent: The agent to hand off to.
+    ///   - name: The name of the target agent.
+    ///   - input: The original input.
+    ///   - context: The agent context.
+    /// - Returns: The effective input after applying handoff configuration.
+    /// - Throws: `OrchestrationError` if handoff is disabled.
+    private func applyHandoffConfiguration(
+        for targetAgent: any Agent,
+        name: String,
+        input: String,
+        context: AgentContext?
+    ) async throws -> String {
+        var effectiveInput = input
+        let handoffContext = context ?? AgentContext(input: input)
+
+        guard let config = findHandoffConfiguration(for: targetAgent) else {
+            return effectiveInput
+        }
+
+        // Check isEnabled callback
+        if let isEnabled = config.isEnabled {
+            let enabled = await isEnabled(handoffContext, targetAgent)
+            if !enabled {
+                throw OrchestrationError.handoffSkipped(
+                    from: "SupervisorAgent",
+                    to: name,
+                    reason: "Handoff disabled by isEnabled callback"
+                )
+            }
+        }
+
+        // Create HandoffInputData for callbacks
+        var inputData = HandoffInputData(
+            sourceAgentName: "SupervisorAgent",
+            targetAgentName: name,
+            input: input,
+            context: [:],
+            metadata: [:]
+        )
+
+        // Apply inputFilter if present
+        if let inputFilter = config.inputFilter {
+            inputData = inputFilter(inputData)
+            effectiveInput = inputData.input
+        }
+
+        // Call onHandoff callback if present
+        if let onHandoff = config.onHandoff {
+            do {
+                try await onHandoff(handoffContext, inputData)
+            } catch {
+                // Log callback errors but don't fail the handoff
+                Log.orchestration.warning(
+                    "onHandoff callback failed for SupervisorAgent -> \(name): \(error.localizedDescription)"
+                )
+            }
+        }
+
+        return effectiveInput
+    }
+
+    /// Builds the final result from a successful sub-agent execution.
+    /// - Parameters:
+    ///   - decision: The routing decision.
+    ///   - subAgentResult: The result from the sub-agent.
+    ///   - builder: The result builder.
+    /// - Returns: The final agent result.
+    private func buildResultFromExecution(
+        decision: RoutingDecision,
+        subAgentResult: AgentResult,
+        builder: AgentResult.Builder
+    ) -> AgentResult {
+        builder.setOutput(subAgentResult.output)
+        builder.setMetadata("selected_agent", .string(decision.selectedAgentName))
+        builder.setMetadata("routing_confidence", .double(decision.confidence))
+        if let reasoning = decision.reasoning {
+            builder.setMetadata("routing_reasoning", .string(reasoning))
+        }
+
+        // Copy tool calls from sub-agent result
+        for toolCall in subAgentResult.toolCalls {
+            builder.addToolCall(toolCall)
+        }
+        for toolResult in subAgentResult.toolResults {
+            builder.addToolResult(toolResult)
+        }
+
+        return builder.build()
+    }
+
+    /// Handles fallback when no suitable agent is found.
+    /// - Parameters:
+    ///   - input: The original input.
+    ///   - session: The session.
+    ///   - hooks: The run hooks.
+    ///   - context: The agent context.
+    ///   - builder: The result builder.
+    ///   - reason: The reason for fallback.
+    /// - Returns: The fallback agent result.
+    /// - Throws: `AgentError` if no fallback is configured.
+    private func handleFallback(
+        input: String,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        context: AgentContext?,
+        builder: AgentResult.Builder,
+        reason: String
+    ) async throws -> AgentResult {
+        guard let fallback = fallbackAgent else {
+            throw AgentError.internalError(
+                reason: "No suitable agent found and no fallback configured"
+            )
+        }
+
+        // Notify hooks of handoff to fallback agent
+        if let context {
+            await hooks?.onHandoff(context: context, fromAgent: self, toAgent: fallback)
+        }
+
+        let result = try await fallback.run(input, session: session, hooks: hooks)
+        builder.setOutput(result.output)
+        builder.setMetadata("routing_decision", .string("fallback"))
+        builder.setMetadata("fallback_reason", .string(reason))
+        builder.setMetadata("routing_confidence", .double(0.0))
+        return builder.build()
+    }
+
+    /// Handles errors during routing or execution.
+    /// - Parameters:
+    ///   - error: The error that occurred.
+    ///   - input: The original input.
+    ///   - session: The session.
+    ///   - hooks: The run hooks.
+    ///   - builder: The result builder.
+    /// - Returns: The fallback result.
+    /// - Throws: The original error if no fallback is available.
+    private func handleRoutingError(
+        _ error: Error,
+        input: String,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        builder: AgentResult.Builder
+    ) async throws -> AgentResult {
+        // If routing fails and we have a fallback, use it
+        if let fallback = fallbackAgent, error is AgentError {
+            // Notify hooks of handoff to fallback agent after error
+            let errorContext = AgentContext(input: input)
+            await hooks?.onHandoff(context: errorContext, fromAgent: self, toAgent: fallback)
+
+            let result = try await fallback.run(input, session: session, hooks: hooks)
+            builder.setOutput(result.output)
+            builder.setMetadata("routing_decision", .string("fallback_after_error"))
+            builder.setMetadata("routing_error", .string(error.localizedDescription))
+            return builder.build()
+        } else {
+            // Convert to AgentError if needed
+            if let agentError = error as? AgentError {
+                throw agentError
             } else {
-                // Convert to AgentError if needed
-                if let agentError = error as? AgentError {
-                    throw agentError
-                } else {
-                    throw AgentError.internalError(reason: error.localizedDescription)
-                }
+                throw AgentError.internalError(reason: error.localizedDescription)
             }
         }
     }

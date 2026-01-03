@@ -409,7 +409,11 @@ final class AgentMacroTests: XCTestCase {
             throw XCTSkip("macros are only supported when running tests for the host platform")
         #endif
     }
+}
 
+// MARK: - AgentMacroTests Error Cases
+
+extension AgentMacroTests {
     // MARK: - Error Cases
 
     func testAgentOnlyAppliesToActor() throws {

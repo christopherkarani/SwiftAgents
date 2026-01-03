@@ -48,7 +48,7 @@ struct MCPRequestTests {
         // Verify encoding doesn't throw
         let encoder = JSONEncoder()
         let data = try encoder.encode(request)
-        #expect(data.count > 0)
+        #expect(!data.isEmpty)
 
         // Note: SendableValue uses Swift's default enum Codable, which encodes as
         // discriminated unions (e.g., {"string": {"_0": "calculator"}}) rather than

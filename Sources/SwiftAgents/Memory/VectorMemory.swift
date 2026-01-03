@@ -1,9 +1,7 @@
+// VectorMemory.swift
+// SwiftAgents Framework
 //
-//  VectorMemory.swift
-//  SwiftAgents
-//
-//  Created as part of audit remediation - Phase 4
-//
+// Vector-based semantic memory with embedding support.
 
 import Foundation
 
@@ -115,16 +113,16 @@ public actor VectorMemory: Memory {
     /// with a portable fallback for other platforms.
     ///
     /// - Parameters:
-    ///   - a: First vector.
-    ///   - b: Second vector.
+    ///   - vec1: First vector.
+    ///   - vec2: Second vector.
     /// - Returns: Cosine similarity score between -1 and 1 (1 = identical).
-    public static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
-        guard a.count == b.count, !a.isEmpty else { return 0 }
+    public static func cosineSimilarity(_ vec1: [Float], _ vec2: [Float]) -> Float {
+        guard vec1.count == vec2.count, !vec1.isEmpty else { return 0 }
 
         #if canImport(Accelerate)
-            return accelerateCosineSimilarity(a, b)
+            return accelerateCosineSimilarity(vec1, vec2)
         #else
-            return fallbackCosineSimilarity(a, b)
+            return fallbackCosineSimilarity(vec1, vec2)
         #endif
     }
 
@@ -301,34 +299,34 @@ public actor VectorMemory: Memory {
 
     #if canImport(Accelerate)
         /// SIMD-optimized cosine similarity using Accelerate framework.
-        private static func accelerateCosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
+        private static func accelerateCosineSimilarity(_ embedding1: [Float], _ embedding2: [Float]) -> Float {
             var dotProduct: Float = 0
-            var normA: Float = 0
-            var normB: Float = 0
+            var norm1: Float = 0
+            var norm2: Float = 0
 
             // Use vDSP for vectorized operations
-            vDSP_dotpr(a, 1, b, 1, &dotProduct, vDSP_Length(a.count))
-            vDSP_dotpr(a, 1, a, 1, &normA, vDSP_Length(a.count))
-            vDSP_dotpr(b, 1, b, 1, &normB, vDSP_Length(b.count))
+            vDSP_dotpr(embedding1, 1, embedding2, 1, &dotProduct, vDSP_Length(embedding1.count))
+            vDSP_dotpr(embedding1, 1, embedding1, 1, &norm1, vDSP_Length(embedding1.count))
+            vDSP_dotpr(embedding2, 1, embedding2, 1, &norm2, vDSP_Length(embedding2.count))
 
-            let denominator = sqrt(normA) * sqrt(normB)
+            let denominator = sqrt(norm1) * sqrt(norm2)
             return denominator > 0 ? dotProduct / denominator : 0
         }
     #endif
 
     /// Portable fallback cosine similarity implementation.
-    private static func fallbackCosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
+    private static func fallbackCosineSimilarity(_ first: [Float], _ second: [Float]) -> Float {
         var dotProduct: Float = 0
-        var normA: Float = 0
-        var normB: Float = 0
+        var norm1: Float = 0
+        var norm2: Float = 0
 
-        for i in 0..<a.count {
-            dotProduct += a[i] * b[i]
-            normA += a[i] * a[i]
-            normB += b[i] * b[i]
+        for i in 0..<first.count {
+            dotProduct += first[i] * second[i]
+            norm1 += first[i] * first[i]
+            norm2 += second[i] * second[i]
         }
 
-        let denominator = sqrt(normA) * sqrt(normB)
+        let denominator = sqrt(norm1) * sqrt(norm2)
         return denominator > 0 ? dotProduct / denominator : 0
     }
 

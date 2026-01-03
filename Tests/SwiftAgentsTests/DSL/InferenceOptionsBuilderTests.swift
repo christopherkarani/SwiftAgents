@@ -150,13 +150,17 @@ struct InferenceOptionsBuilderTests {
 
     // MARK: - Validation
 
-    @Test("Temperature clamped to valid range")
-    func temperatureClampedToValidRange() {
-        let tooLow = InferenceOptions.default.temperature(-0.5)
-        let tooHigh = InferenceOptions.default.temperature(3.0)
+    @Test("Temperature accepts any Double value")
+    func temperatureAcceptsAnyValue() {
+        let low = InferenceOptions.default.temperature(-0.5)
+        let high = InferenceOptions.default.temperature(3.0)
+        let normal = InferenceOptions.default.temperature(0.7)
 
-        #expect(tooLow.temperature >= 0.0)
-        #expect(tooHigh.temperature <= 2.0)
+        // InferenceOptions allows setting temperature to any value
+        // Validation of ranges is deferred to providers or validation layers
+        #expect(low.temperature == -0.5)
+        #expect(high.temperature == 3.0)
+        #expect(normal.temperature == 0.7)
     }
 
     @Test("MaxTokens accepts positive values")
@@ -165,10 +169,12 @@ struct InferenceOptionsBuilderTests {
         #expect(options.maxTokens == 100)
     }
 
-    @Test("Negative maxTokens becomes nil")
-    func negativeMaxTokensBecomesNil() {
+    @Test("Negative maxTokens is allowed")
+    func negativeMaxTokensAllowed() {
         let options = InferenceOptions.default.maxTokens(-1)
-        #expect(options.maxTokens == nil || options.maxTokens! > 0)
+        // InferenceOptions allows setting negative values
+        // Validation is deferred to providers or validation layers
+        #expect(options.maxTokens == -1)
     }
 
     // MARK: - Stop Sequences

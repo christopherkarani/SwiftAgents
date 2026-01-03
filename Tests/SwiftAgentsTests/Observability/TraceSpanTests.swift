@@ -354,7 +354,7 @@ struct TraceSpanTests {
     @Test("Span with empty name")
     func spanEmptyName() {
         let span = TraceSpan(name: "")
-        #expect(span.name == "")
+        #expect(span.name.isEmpty)
     }
 
     @Test("Span with empty metadata")
