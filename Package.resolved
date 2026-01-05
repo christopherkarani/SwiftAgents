@@ -1,13 +1,13 @@
 {
-  "originHash" : "54e688ed49e4347adcdc4324479a74e02e4cc61a5cd22926788441e2181fbd48",
+  "originHash" : "c5819230f50173528f6b5c2e75a3540c919ca10418b15333c02801cfeb8468df",
   "pins" : [
     {
       "identity" : "conduit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/Conduit.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "233f0449fb96a973cd979b0ab5bbeb19142bc345"
+        "revision" : "e67d451844d494177649590a2a3feec86d6d34bc",
+        "version" : "1.0.0"
       }
     },
     {

@@ -20,7 +20,7 @@ let package = Package(
         // Swift Logging API
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
         // Conduit - Unified LLM inference layer
-        .package(url: "https://github.com/christopherkarani/Conduit.git", branch: "main")
+        .package(url: "https://github.com/christopherkarani/Conduit.git", from: "1.0.0")
     ],
     targets: [
         // MARK: - Macro Implementation (Compiler Plugin)
