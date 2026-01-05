@@ -18,7 +18,9 @@ let package = Package(
         // Swift Syntax for macro implementations
         .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
         // Swift Logging API
-        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
+        // Conduit - Unified LLM inference layer
+        .package(url: "https://github.com/christopherkarani/Conduit.git", branch: "main")
     ],
     targets: [
         // MARK: - Macro Implementation (Compiler Plugin)
@@ -40,7 +42,8 @@ let package = Package(
             name: "SwiftAgents",
             dependencies: [
                 "SwiftAgentsMacros",
-                .product(name: "Logging", package: "swift-log")
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "Conduit", package: "Conduit")
             ],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
