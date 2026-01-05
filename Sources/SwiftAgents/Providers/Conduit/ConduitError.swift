@@ -86,7 +86,7 @@ public enum ConduitProviderError: Error, Sendable, Equatable {
     case unknown(underlyingError: String)
 }
 
-// MARK: - LocalizedError
+// MARK: LocalizedError
 
 extension ConduitProviderError: LocalizedError {
     public var errorDescription: String? {
@@ -151,46 +151,46 @@ public extension ConduitProviderError {
     func toAgentError() -> AgentError {
         switch self {
         case let .modelNotCached(model):
-            return .modelNotAvailable(model: "\(model) (not cached)")
+            .modelNotAvailable(model: "\(model) (not cached)")
 
         case let .modelNotAvailable(model):
-            return .modelNotAvailable(model: model)
+            .modelNotAvailable(model: model)
 
         case let .providerUnavailable(reason):
-            return .inferenceProviderUnavailable(reason: reason)
+            .inferenceProviderUnavailable(reason: reason)
 
         case .authenticationFailed:
-            return .inferenceProviderUnavailable(reason: "Authentication failed")
+            .inferenceProviderUnavailable(reason: "Authentication failed")
 
         case let .tokenLimitExceeded(count, limit):
-            return .contextWindowExceeded(tokenCount: count, limit: limit)
+            .contextWindowExceeded(tokenCount: count, limit: limit)
 
         case let .networkError(message):
-            return .inferenceProviderUnavailable(reason: "Network error: \(message)")
+            .inferenceProviderUnavailable(reason: "Network error: \(message)")
 
         case let .timeout(duration):
-            return .timeout(duration: .seconds(Int64(duration)))
+            .timeout(duration: .seconds(Int64(duration)))
 
         case let .contentFiltered(reason):
-            return .contentFiltered(reason: reason)
+            .contentFiltered(reason: reason)
 
         case let .generationFailed(reason):
-            return .generationFailed(reason: reason)
+            .generationFailed(reason: reason)
 
         case .emptyPrompt:
-            return .invalidInput(reason: "Prompt cannot be empty")
+            .invalidInput(reason: "Prompt cannot be empty")
 
         case .cancelled:
-            return .cancelled
+            .cancelled
 
         case let .rateLimitExceeded(retryAfter):
-            return .rateLimitExceeded(retryAfter: retryAfter)
+            .rateLimitExceeded(retryAfter: retryAfter)
 
         case let .internalError(reason):
-            return .internalError(reason: reason)
+            .internalError(reason: reason)
 
         case let .unknown(underlyingError):
-            return .internalError(reason: underlyingError)
+            .internalError(reason: underlyingError)
         }
     }
 }
@@ -300,7 +300,7 @@ public extension ConduitProviderError {
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension ConduitProviderError: CustomDebugStringConvertible {
     public var debugDescription: String {

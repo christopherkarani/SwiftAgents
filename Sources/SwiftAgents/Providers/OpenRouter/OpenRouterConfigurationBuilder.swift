@@ -20,23 +20,7 @@ public extension OpenRouterConfiguration {
     ///     .build()
     /// ```
     struct Builder: Sendable {
-        // MARK: - Properties
-
-        private let _apiKey: String
-        private let _model: OpenRouterModel
-        private let _baseURL: URL
-        private let _timeout: Duration
-        private let _maxTokens: Int
-        private let _systemPrompt: String?
-        private let _temperature: Double?
-        private let _topP: Double?
-        private let _topK: Int?
-        private let _appName: String?
-        private let _siteURL: URL?
-        private let _providerPreferences: OpenRouterProviderPreferences?
-        private let _fallbackModels: [OpenRouterModel]
-        private let _routingStrategy: OpenRouterRoutingStrategy
-        private let _retryStrategy: OpenRouterRetryStrategy
+        // MARK: Public
 
         // MARK: - Initialization
 
@@ -57,41 +41,6 @@ public extension OpenRouterConfiguration {
             _fallbackModels = []
             _routingStrategy = .fallback
             _retryStrategy = .default
-        }
-
-        /// Private initializer for copy-on-write pattern.
-        private init(
-            apiKey: String,
-            model: OpenRouterModel,
-            baseURL: URL,
-            timeout: Duration,
-            maxTokens: Int,
-            systemPrompt: String?,
-            temperature: Double?,
-            topP: Double?,
-            topK: Int?,
-            appName: String?,
-            siteURL: URL?,
-            providerPreferences: OpenRouterProviderPreferences?,
-            fallbackModels: [OpenRouterModel],
-            routingStrategy: OpenRouterRoutingStrategy,
-            retryStrategy: OpenRouterRetryStrategy
-        ) {
-            _apiKey = apiKey
-            _model = model
-            _baseURL = baseURL
-            _timeout = timeout
-            _maxTokens = maxTokens
-            _systemPrompt = systemPrompt
-            _temperature = temperature
-            _topP = topP
-            _topK = topK
-            _appName = appName
-            _siteURL = siteURL
-            _providerPreferences = providerPreferences
-            _fallbackModels = fallbackModels
-            _routingStrategy = routingStrategy
-            _retryStrategy = retryStrategy
         }
 
         // MARK: - Builder Methods
@@ -447,6 +396,59 @@ public extension OpenRouterConfiguration {
                 routingStrategy: _routingStrategy,
                 retryStrategy: _retryStrategy
             )
+        }
+
+        // MARK: Private
+
+        private let _apiKey: String
+        private let _model: OpenRouterModel
+        private let _baseURL: URL
+        private let _timeout: Duration
+        private let _maxTokens: Int
+        private let _systemPrompt: String?
+        private let _temperature: Double?
+        private let _topP: Double?
+        private let _topK: Int?
+        private let _appName: String?
+        private let _siteURL: URL?
+        private let _providerPreferences: OpenRouterProviderPreferences?
+        private let _fallbackModels: [OpenRouterModel]
+        private let _routingStrategy: OpenRouterRoutingStrategy
+        private let _retryStrategy: OpenRouterRetryStrategy
+
+        /// Private initializer for copy-on-write pattern.
+        private init(
+            apiKey: String,
+            model: OpenRouterModel,
+            baseURL: URL,
+            timeout: Duration,
+            maxTokens: Int,
+            systemPrompt: String?,
+            temperature: Double?,
+            topP: Double?,
+            topK: Int?,
+            appName: String?,
+            siteURL: URL?,
+            providerPreferences: OpenRouterProviderPreferences?,
+            fallbackModels: [OpenRouterModel],
+            routingStrategy: OpenRouterRoutingStrategy,
+            retryStrategy: OpenRouterRetryStrategy
+        ) {
+            _apiKey = apiKey
+            _model = model
+            _baseURL = baseURL
+            _timeout = timeout
+            _maxTokens = maxTokens
+            _systemPrompt = systemPrompt
+            _temperature = temperature
+            _topP = topP
+            _topK = topK
+            _appName = appName
+            _siteURL = siteURL
+            _providerPreferences = providerPreferences
+            _fallbackModels = fallbackModels
+            _routingStrategy = routingStrategy
+            _retryStrategy = retryStrategy
         }
     }
 }

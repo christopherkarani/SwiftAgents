@@ -32,6 +32,68 @@ import Foundation
 /// )
 /// ```
 public enum ConduitProviderType: Sendable {
+    // MARK: Public
+
+    /// The model identifier associated with this provider type.
+    ///
+    /// For `foundationModels`, this returns the `.foundationModels` model ID.
+    /// This returns a string representation of the model.
+    public var modelString: String {
+        switch self {
+        case let .mlx(model):
+            model.rawValue
+        case let .anthropic(model, _):
+            model.rawValue
+        case let .openAI(model, _):
+            model.rawValue
+        case let .huggingFace(model, _):
+            model.rawValue
+        case .foundationModels:
+            ModelIdentifier.foundationModels.rawValue
+        }
+    }
+
+    /// A human-readable display name for the provider.
+    ///
+    /// Useful for logging, debugging, and UI display.
+    public var displayName: String {
+        switch self {
+        case .mlx:
+            "MLX (Local)"
+        case .anthropic:
+            "Anthropic"
+        case .openAI:
+            "OpenAI"
+        case .huggingFace:
+            "HuggingFace"
+        case .foundationModels:
+            "Apple Foundation Models"
+        }
+    }
+
+    /// Indicates whether this provider requires network access.
+    ///
+    /// Returns `false` for local providers (MLX, Foundation Models),
+    /// `true` for cloud providers (Anthropic, OpenAI, HuggingFace).
+    public var requiresNetwork: Bool {
+        switch self {
+        case .foundationModels,
+             .mlx:
+            false
+        case .anthropic,
+             .huggingFace,
+             .openAI:
+            true
+        }
+    }
+
+    /// Indicates whether this provider runs on-device.
+    ///
+    /// On-device providers offer privacy benefits and work offline.
+    public var isOnDevice: Bool {
+        !requiresNetwork
+    }
+
     // MARK: - Provider Cases
 
     /// Local MLX inference on Apple Silicon devices.
@@ -75,108 +137,49 @@ public enum ConduitProviderType: Sendable {
     /// System-integrated on-device AI managed by the OS. Zero setup required.
     /// Only available on iOS 26+ devices with Apple Silicon.
     case foundationModels
-
-    // MARK: - Computed Properties
-
-    /// The model identifier associated with this provider type.
-    ///
-    /// For `foundationModels`, this returns the `.foundationModels` model ID.
-    /// This returns a string representation of the model.
-    public var modelString: String {
-        switch self {
-        case let .mlx(model):
-            return model.rawValue
-        case let .anthropic(model, _):
-            return model.rawValue
-        case let .openAI(model, _):
-            return model.rawValue
-        case let .huggingFace(model, _):
-            return model.rawValue
-        case .foundationModels:
-            return ModelIdentifier.foundationModels.rawValue
-        }
-    }
-
-    /// A human-readable display name for the provider.
-    ///
-    /// Useful for logging, debugging, and UI display.
-    public var displayName: String {
-        switch self {
-        case .mlx:
-            return "MLX (Local)"
-        case .anthropic:
-            return "Anthropic"
-        case .openAI:
-            return "OpenAI"
-        case .huggingFace:
-            return "HuggingFace"
-        case .foundationModels:
-            return "Apple Foundation Models"
-        }
-    }
-
-    /// Indicates whether this provider requires network access.
-    ///
-    /// Returns `false` for local providers (MLX, Foundation Models),
-    /// `true` for cloud providers (Anthropic, OpenAI, HuggingFace).
-    public var requiresNetwork: Bool {
-        switch self {
-        case .mlx, .foundationModels:
-            return false
-        case .anthropic, .openAI, .huggingFace:
-            return true
-        }
-    }
-
-    /// Indicates whether this provider runs on-device.
-    ///
-    /// On-device providers offer privacy benefits and work offline.
-    public var isOnDevice: Bool {
-        !requiresNetwork
-    }
 }
 
-// MARK: - Equatable
+// MARK: Equatable
 
 extension ConduitProviderType: Equatable {
     public static func == (lhs: ConduitProviderType, rhs: ConduitProviderType) -> Bool {
         switch (lhs, rhs) {
         case let (.mlx(lhsModel), .mlx(rhsModel)):
-            return lhsModel == rhsModel
+            lhsModel == rhsModel
         case let (.anthropic(lhsModel, lhsKey), .anthropic(rhsModel, rhsKey)):
-            return lhsModel == rhsModel && lhsKey == rhsKey
+            lhsModel == rhsModel && lhsKey == rhsKey
         case let (.openAI(lhsModel, lhsKey), .openAI(rhsModel, rhsKey)):
-            return lhsModel == rhsModel && lhsKey == rhsKey
+            lhsModel == rhsModel && lhsKey == rhsKey
         case let (.huggingFace(lhsModel, lhsToken), .huggingFace(rhsModel, rhsToken)):
-            return lhsModel == rhsModel && lhsToken == rhsToken
+            lhsModel == rhsModel && lhsToken == rhsToken
         case (.foundationModels, .foundationModels):
-            return true
+            true
         default:
-            return false
+            false
         }
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension ConduitProviderType: CustomStringConvertible {
     public var description: String {
         switch self {
         case let .mlx(model):
-            return "ConduitProviderType.mlx(\(model))"
+            "ConduitProviderType.mlx(\(model))"
         case let .anthropic(model, _):
-            return "ConduitProviderType.anthropic(\(model))"
+            "ConduitProviderType.anthropic(\(model))"
         case let .openAI(model, _):
-            return "ConduitProviderType.openAI(\(model))"
+            "ConduitProviderType.openAI(\(model))"
         case let .huggingFace(model, _):
-            return "ConduitProviderType.huggingFace(\(model))"
+            "ConduitProviderType.huggingFace(\(model))"
         case .foundationModels:
-            return "ConduitProviderType.foundationModels"
+            "ConduitProviderType.foundationModels"
         }
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension ConduitProviderType: CustomDebugStringConvertible {
     public var debugDescription: String {

@@ -8,7 +8,31 @@ import Foundation
 
 // MARK: - InferenceOptions to GenerateConfig
 
-extension InferenceOptions {
+public extension InferenceOptions {
+    /// Creates `InferenceOptions` from a Conduit `GenerateConfig`.
+    ///
+    /// This reverse mapper allows converting Conduit configuration back to
+    /// SwiftAgents format for consistency in multi-provider scenarios.
+    ///
+    /// - Note: Float to Double conversion is lossless. Any precision that was lost
+    ///   during the original Double to Float conversion (see `toConduitConfig()`)
+    ///   cannot be recovered by this reverse conversion.
+    ///
+    /// - Parameter config: The Conduit `GenerateConfig` to convert.
+    /// - Returns: Equivalent SwiftAgents `InferenceOptions`.
+    static func from(conduitConfig config: GenerateConfig) -> InferenceOptions {
+        // Float to Double is lossless; any precision lost in toConduitConfig() remains lost
+        InferenceOptions(
+            temperature: Double(config.temperature),
+            maxTokens: config.maxTokens,
+            stopSequences: config.stopSequences,
+            topP: Double(config.topP),
+            topK: config.topK,
+            presencePenalty: Double(config.presencePenalty),
+            frequencyPenalty: Double(config.frequencyPenalty)
+        )
+    }
+
     /// Converts SwiftAgents `InferenceOptions` to Conduit `GenerateConfig`.
     ///
     /// This mapper handles the conversion of generation parameters including:
@@ -26,7 +50,7 @@ extension InferenceOptions {
     ///   significant digits (e.g., temperature=0.7, topP=0.95).
     ///
     /// - Returns: A Conduit `GenerateConfig` with equivalent settings.
-    public func toConduitConfig() -> GenerateConfig {
+    func toConduitConfig() -> GenerateConfig {
         // Note: Double to Float conversion for temperature, topP, and penalties.
         // Precision loss beyond 6-7 decimal places is acceptable for LLM parameters.
         GenerateConfig(
@@ -39,35 +63,11 @@ extension InferenceOptions {
             stopSequences: stopSequences
         )
     }
-
-    /// Creates `InferenceOptions` from a Conduit `GenerateConfig`.
-    ///
-    /// This reverse mapper allows converting Conduit configuration back to
-    /// SwiftAgents format for consistency in multi-provider scenarios.
-    ///
-    /// - Note: Float to Double conversion is lossless. Any precision that was lost
-    ///   during the original Double to Float conversion (see `toConduitConfig()`)
-    ///   cannot be recovered by this reverse conversion.
-    ///
-    /// - Parameter config: The Conduit `GenerateConfig` to convert.
-    /// - Returns: Equivalent SwiftAgents `InferenceOptions`.
-    public static func from(conduitConfig config: GenerateConfig) -> InferenceOptions {
-        // Float to Double is lossless; any precision lost in toConduitConfig() remains lost
-        InferenceOptions(
-            temperature: Double(config.temperature),
-            maxTokens: config.maxTokens,
-            stopSequences: config.stopSequences,
-            topP: Double(config.topP),
-            topK: config.topK,
-            presencePenalty: Double(config.presencePenalty),
-            frequencyPenalty: Double(config.frequencyPenalty)
-        )
-    }
 }
 
 // MARK: - GenerationResult to InferenceResponse
 
-extension GenerationResult {
+public extension GenerationResult {
     /// Converts Conduit `GenerationResult` to SwiftAgents `InferenceResponse`.
     ///
     /// This mapper handles:
@@ -78,7 +78,7 @@ extension GenerationResult {
     ///
     /// - Returns: A SwiftAgents `InferenceResponse` with equivalent data.
     /// - Throws: `ConduitMappingError` if tool call conversion fails.
-    public func toInferenceResponse() throws -> InferenceResponse {
+    func toInferenceResponse() throws -> InferenceResponse {
         let parsedToolCalls = try toolCalls.map { call in
             try call.toParsedToolCall()
         }
@@ -94,7 +94,7 @@ extension GenerationResult {
 
 // MARK: - FinishReason Mapping
 
-extension FinishReason {
+public extension FinishReason {
     /// Converts Conduit `FinishReason` to SwiftAgents `InferenceResponse.FinishReason`.
     ///
     /// Mapping:
@@ -106,52 +106,55 @@ extension FinishReason {
     /// - `.pauseTurn`, `.modelContextWindowExceeded` -> `.completed` (graceful fallback)
     ///
     /// - Returns: The equivalent SwiftAgents finish reason.
-    public func toSwiftAgentsFinishReason() -> InferenceResponse.FinishReason {
+    func toSwiftAgentsFinishReason() -> InferenceResponse.FinishReason {
         switch self {
-        case .stop, .stopSequence:
-            return .completed
+        case .stop,
+             .stopSequence:
+            .completed
         case .maxTokens:
-            return .maxTokens
-        case .toolCall, .toolCalls:
-            return .toolCall
+            .maxTokens
+        case .toolCall,
+             .toolCalls:
+            .toolCall
         case .contentFilter:
-            return .contentFilter
+            .contentFilter
         case .cancelled:
-            return .cancelled
-        case .pauseTurn, .modelContextWindowExceeded:
+            .cancelled
+        case .modelContextWindowExceeded,
+             .pauseTurn:
             // These don't have direct equivalents; treat as completed
-            return .completed
+            .completed
         }
     }
 }
 
-extension InferenceResponse.FinishReason {
+public extension InferenceResponse.FinishReason {
     /// Converts SwiftAgents `FinishReason` to Conduit `FinishReason`.
     ///
     /// - Returns: The equivalent Conduit finish reason.
-    public func toConduitFinishReason() -> FinishReason {
+    func toConduitFinishReason() -> FinishReason {
         switch self {
         case .completed:
-            return .stop
+            .stop
         case .maxTokens:
-            return .maxTokens
+            .maxTokens
         case .toolCall:
-            return .toolCall
+            .toolCall
         case .contentFilter:
-            return .contentFilter
+            .contentFilter
         case .cancelled:
-            return .cancelled
+            .cancelled
         }
     }
 }
 
 // MARK: - UsageStats to TokenUsage
 
-extension UsageStats {
+public extension UsageStats {
     /// Converts Conduit `UsageStats` to SwiftAgents `InferenceResponse.TokenUsage`.
     ///
     /// - Returns: Equivalent SwiftAgents token usage statistics.
-    public func toTokenUsage() -> InferenceResponse.TokenUsage {
+    func toTokenUsage() -> InferenceResponse.TokenUsage {
         InferenceResponse.TokenUsage(
             inputTokens: promptTokens,
             outputTokens: completionTokens
@@ -159,11 +162,11 @@ extension UsageStats {
     }
 }
 
-extension InferenceResponse.TokenUsage {
+public extension InferenceResponse.TokenUsage {
     /// Converts SwiftAgents `TokenUsage` to Conduit `UsageStats`.
     ///
     /// - Returns: Equivalent Conduit usage statistics.
-    public func toConduitUsageStats() -> UsageStats {
+    func toConduitUsageStats() -> UsageStats {
         UsageStats(
             promptTokens: inputTokens,
             completionTokens: outputTokens
@@ -173,7 +176,7 @@ extension InferenceResponse.TokenUsage {
 
 // MARK: - AIToolCall to ParsedToolCall
 
-extension AIToolCall {
+public extension AIToolCall {
     /// Converts Conduit `AIToolCall` to SwiftAgents `InferenceResponse.ParsedToolCall`.
     ///
     /// This performs deep conversion of the tool call arguments from
@@ -181,7 +184,7 @@ extension AIToolCall {
     ///
     /// - Returns: Equivalent SwiftAgents parsed tool call.
     /// - Throws: `ConduitMappingError.argumentConversionFailed` if arguments cannot be converted.
-    public func toParsedToolCall() throws -> InferenceResponse.ParsedToolCall {
+    func toParsedToolCall() throws -> InferenceResponse.ParsedToolCall {
         let convertedArguments = try arguments.toSendableValueDictionary()
 
         return InferenceResponse.ParsedToolCall(
@@ -194,7 +197,7 @@ extension AIToolCall {
 
 // MARK: - StructuredContent to SendableValue
 
-extension StructuredContent {
+public extension StructuredContent {
     /// Converts Conduit `StructuredContent` to SwiftAgents `SendableValue`.
     ///
     /// This performs recursive conversion of all JSON-like types:
@@ -206,7 +209,7 @@ extension StructuredContent {
     /// - object -> .dictionary
     ///
     /// - Returns: Equivalent SwiftAgents `SendableValue`.
-    public func toSendableValue() -> SendableValue {
+    func toSendableValue() -> SendableValue {
         switch kind {
         case .null:
             return .null
@@ -214,8 +217,8 @@ extension StructuredContent {
             return .bool(value)
         case let .number(value):
             // Convert to int if it's a whole number, otherwise keep as double
-            if value.isFinite && value == value.rounded() &&
-                value >= Double(Int.min) && value <= Double(Int.max) {
+            if value.isFinite, value == value.rounded(),
+               value >= Double(Int.min), value <= Double(Int.max) {
                 return .int(Int(value))
             }
             return .double(value)
@@ -239,7 +242,7 @@ extension StructuredContent {
     ///
     /// - Returns: A dictionary of `SendableValue` entries.
     /// - Throws: `ConduitMappingError.argumentConversionFailed` if content is not an object.
-    public func toSendableValueDictionary() throws -> [String: SendableValue] {
+    func toSendableValueDictionary() throws -> [String: SendableValue] {
         guard case let .object(properties) = kind else {
             throw ConduitMappingError.argumentConversionFailed(
                 "Expected object for tool arguments, got \(kind.typeName)"
@@ -256,7 +259,7 @@ extension StructuredContent {
 
 // MARK: - SendableValue to StructuredContent
 
-extension SendableValue {
+public extension SendableValue {
     /// Converts SwiftAgents `SendableValue` to Conduit `StructuredContent`.
     ///
     /// This performs recursive conversion back to Conduit's type system:
@@ -269,7 +272,7 @@ extension SendableValue {
     /// - .dictionary -> object
     ///
     /// - Returns: Equivalent Conduit `StructuredContent`.
-    public func toStructuredContent() -> StructuredContent {
+    func toStructuredContent() -> StructuredContent {
         switch self {
         case .null:
             return .null
@@ -297,6 +300,19 @@ extension SendableValue {
 
 /// Errors that can occur during type mapping between SwiftAgents and Conduit.
 public enum ConduitMappingError: Error, LocalizedError, Sendable {
+    // MARK: Public
+
+    public var errorDescription: String? {
+        switch self {
+        case let .argumentConversionFailed(details):
+            "Failed to convert tool arguments: \(details)"
+        case let .toolCallCreationFailed(details):
+            "Failed to create tool call: \(details)"
+        case let .unexpectedType(expected, actual):
+            "Type mismatch: expected \(expected), got \(actual)"
+        }
+    }
+
     /// Failed to convert tool arguments.
     case argumentConversionFailed(String)
 
@@ -305,17 +321,6 @@ public enum ConduitMappingError: Error, LocalizedError, Sendable {
 
     /// An unexpected type was encountered.
     case unexpectedType(expected: String, actual: String)
-
-    public var errorDescription: String? {
-        switch self {
-        case let .argumentConversionFailed(details):
-            return "Failed to convert tool arguments: \(details)"
-        case let .toolCallCreationFailed(details):
-            return "Failed to create tool call: \(details)"
-        case let .unexpectedType(expected, actual):
-            return "Type mismatch: expected \(expected), got \(actual)"
-        }
-    }
 }
 
 // MARK: - StructuredContent.Kind Extension

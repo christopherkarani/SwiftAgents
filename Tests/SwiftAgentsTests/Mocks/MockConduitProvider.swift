@@ -6,6 +6,8 @@
 import Foundation
 @testable import SwiftAgents
 
+// MARK: - MockConduitProvider
+
 // No Conduit import needed - this mock only uses SwiftAgents types
 
 /// A mock Conduit provider for testing agents without real LLM backends.
@@ -25,6 +27,8 @@ import Foundation
 /// let result = try await agent.run("What is Swift?")
 /// ```
 public actor MockConduitProvider: InferenceProvider {
+    // MARK: Public
+
     // MARK: - Configurable Behavior
 
     /// Responses to return in sequence. Each call to `generate` consumes one response.
@@ -300,7 +304,7 @@ public actor MockConduitProvider: InferenceProvider {
         responseDelay = .milliseconds(chunkDelay)
     }
 
-    // MARK: - Private
+    // MARK: Private
 
     /// Current index in the responses array.
     private var responseIndex = 0
@@ -316,32 +320,32 @@ public actor MockConduitProvider: InferenceProvider {
 
 // MARK: - Convenience Extensions for Testing
 
-extension MockConduitProvider {
+public extension MockConduitProvider {
+    /// Gets all prompts from generate calls.
+    var allPrompts: [String] {
+        generateCalls.map(\.prompt)
+    }
+
+    /// Gets all tool names from tool call generations.
+    var allToolNames: [String] {
+        toolCallCalls.flatMap { call in
+            call.tools.map(\.name)
+        }
+    }
+
     /// Verifies that a generate call was made with the expected prompt.
     /// - Parameter prompt: The expected prompt (partial match).
     /// - Returns: True if a call with matching prompt was found.
-    public func verifyGenerateCalled(withPrompt prompt: String) -> Bool {
+    func verifyGenerateCalled(withPrompt prompt: String) -> Bool {
         generateCalls.contains { $0.prompt.contains(prompt) }
     }
 
     /// Verifies that a tool call generation was made with the expected tool.
     /// - Parameter toolName: The expected tool name.
     /// - Returns: True if a call with the tool was found.
-    public func verifyToolCallCalled(withTool toolName: String) -> Bool {
+    func verifyToolCallCalled(withTool toolName: String) -> Bool {
         toolCallCalls.contains { call in
             call.tools.contains { $0.name == toolName }
-        }
-    }
-
-    /// Gets all prompts from generate calls.
-    public var allPrompts: [String] {
-        generateCalls.map(\.prompt)
-    }
-
-    /// Gets all tool names from tool call generations.
-    public var allToolNames: [String] {
-        toolCallCalls.flatMap { call in
-            call.tools.map { $0.name }
         }
     }
 }

@@ -416,14 +416,7 @@ public actor PlanAndExecuteAgent: Agent {
         cancellationState = .cancelled
     }
 
-    // MARK: Private
-
-    // MARK: - Cancellation State
-
-    private enum CancellationState: Sendable {
-        case active
-        case cancelled
-    }
+    // MARK: Internal
 
     // MARK: - Plan JSON Structures
 
@@ -441,12 +434,101 @@ public actor PlanAndExecuteAgent: Agent {
         let dependsOn: [Int]
     }
 
+    let toolRegistry: ToolRegistry
+
+    // MARK: - Helper Methods
+
+    func buildToolDescriptions() -> String {
+        var descriptions: [String] = []
+        for tool in tools {
+            let toolDesc = formatToolDescription(tool)
+            descriptions.append(toolDesc)
+        }
+        return descriptions.joined(separator: "\n\n")
+    }
+
+    func formatToolDescription(_ tool: any Tool) -> String {
+        let params = formatParameterDescriptions(tool.parameters)
+        if params.isEmpty {
+            return "- \(tool.name): \(tool.description)"
+        } else {
+            return "- \(tool.name): \(tool.description)\n  Parameters:\n\(params)"
+        }
+    }
+
+    func formatParameterDescriptions(_ parameters: [ToolParameter]) -> String {
+        var lines: [String] = []
+        for param in parameters {
+            let reqStr = param.isRequired ? "(required)" : "(optional)"
+            let line = "    - \(param.name) \(reqStr): \(param.description)"
+            lines.append(line)
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func buildConversationContext(from sessionHistory: [MemoryMessage]) -> String {
+        guard !sessionHistory.isEmpty else { return "" }
+
+        var lines: [String] = []
+        for message in sessionHistory {
+            switch message.role {
+            case .user:
+                lines.append("User: \(message.content)")
+            case .assistant:
+                lines.append("Assistant: \(message.content)")
+            case .system:
+                lines.append("System: \(message.content)")
+            case .tool:
+                lines.append("Tool: \(message.content)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func parsePlan(from response: String, goal: String) -> ExecutionPlan {
+        // Try to parse as JSON first
+        if let plan = parseJSONPlan(from: response, goal: goal) {
+            return plan
+        }
+
+        // Fallback: If JSON parsing fails, create a single generic step
+        Log.agents.warning("Failed to parse plan as JSON, creating fallback plan")
+        let step = PlanStep(
+            stepNumber: 1,
+            stepDescription: "Execute the task: \(goal)",
+            toolName: nil
+        )
+        return ExecutionPlan(steps: [step], goal: goal)
+    }
+
+    func generateResponse(prompt: String) async throws -> String {
+        if let provider = inferenceProvider {
+            let options = InferenceOptions(
+                temperature: configuration.temperature,
+                maxTokens: configuration.maxTokens
+            )
+            return try await provider.generate(prompt: prompt, options: options)
+        }
+
+        throw AgentError.inferenceProviderUnavailable(
+            reason: "No inference provider configured. Please provide an InferenceProvider."
+        )
+    }
+
+    // MARK: Private
+
+    // MARK: - Cancellation State
+
+    private enum CancellationState: Sendable {
+        case active
+        case cancelled
+    }
+
     private let _handoffs: [AnyHandoffConfiguration]
 
     // MARK: - Internal State
 
     private var cancellationState: CancellationState = .active
-    let toolRegistry: ToolRegistry
 
     // MARK: - Plan-and-Execute Loop
 
@@ -529,85 +611,6 @@ public actor PlanAndExecuteAgent: Agent {
 
         // Phase 4: Synthesize final answer
         return try await synthesizeFinalAnswer(plan: plan, input: input, hooks: hooks)
-    }
-
-    // MARK: - Helper Methods
-
-    func buildToolDescriptions() -> String {
-        var descriptions: [String] = []
-        for tool in tools {
-            let toolDesc = formatToolDescription(tool)
-            descriptions.append(toolDesc)
-        }
-        return descriptions.joined(separator: "\n\n")
-    }
-
-    func formatToolDescription(_ tool: any Tool) -> String {
-        let params = formatParameterDescriptions(tool.parameters)
-        if params.isEmpty {
-            return "- \(tool.name): \(tool.description)"
-        } else {
-            return "- \(tool.name): \(tool.description)\n  Parameters:\n\(params)"
-        }
-    }
-
-    func formatParameterDescriptions(_ parameters: [ToolParameter]) -> String {
-        var lines: [String] = []
-        for param in parameters {
-            let reqStr = param.isRequired ? "(required)" : "(optional)"
-            let line = "    - \(param.name) \(reqStr): \(param.description)"
-            lines.append(line)
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    func buildConversationContext(from sessionHistory: [MemoryMessage]) -> String {
-        guard !sessionHistory.isEmpty else { return "" }
-
-        var lines: [String] = []
-        for message in sessionHistory {
-            switch message.role {
-            case .user:
-                lines.append("User: \(message.content)")
-            case .assistant:
-                lines.append("Assistant: \(message.content)")
-            case .system:
-                lines.append("System: \(message.content)")
-            case .tool:
-                lines.append("Tool: \(message.content)")
-            }
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    func parsePlan(from response: String, goal: String) -> ExecutionPlan {
-        // Try to parse as JSON first
-        if let plan = parseJSONPlan(from: response, goal: goal) {
-            return plan
-        }
-
-        // Fallback: If JSON parsing fails, create a single generic step
-        Log.agents.warning("Failed to parse plan as JSON, creating fallback plan")
-        let step = PlanStep(
-            stepNumber: 1,
-            stepDescription: "Execute the task: \(goal)",
-            toolName: nil
-        )
-        return ExecutionPlan(steps: [step], goal: goal)
-    }
-
-    func generateResponse(prompt: String) async throws -> String {
-        if let provider = inferenceProvider {
-            let options = InferenceOptions(
-                temperature: configuration.temperature,
-                maxTokens: configuration.maxTokens
-            )
-            return try await provider.generate(prompt: prompt, options: options)
-        }
-
-        throw AgentError.inferenceProviderUnavailable(
-            reason: "No inference provider configured. Please provide an InferenceProvider."
-        )
     }
 }
 

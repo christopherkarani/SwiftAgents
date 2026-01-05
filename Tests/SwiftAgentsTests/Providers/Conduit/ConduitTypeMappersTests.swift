@@ -236,7 +236,7 @@ struct ConduitTypeMappersTests {
         let content = StructuredContent.string("Hello, world!")
         let sendableValue = content.toSendableValue()
 
-        if case .string(let text) = sendableValue {
+        if case let .string(text) = sendableValue {
             #expect(text == "Hello, world!")
         } else {
             Issue.record("Expected string SendableValue, got \(sendableValue)")
@@ -248,7 +248,7 @@ struct ConduitTypeMappersTests {
         let content = StructuredContent.number(42.0)
         let sendableValue = content.toSendableValue()
 
-        if case .int(let value) = sendableValue {
+        if case let .int(value) = sendableValue {
             #expect(value == 42)
         } else {
             Issue.record("Expected int SendableValue, got \(sendableValue)")
@@ -260,7 +260,7 @@ struct ConduitTypeMappersTests {
         let content = StructuredContent.number(42.5)
         let sendableValue = content.toSendableValue()
 
-        if case .double(let value) = sendableValue {
+        if case let .double(value) = sendableValue {
             #expect(value == 42.5)
         } else {
             Issue.record("Expected double SendableValue, got \(sendableValue)")
@@ -272,7 +272,7 @@ struct ConduitTypeMappersTests {
         let content = StructuredContent.bool(true)
         let sendableValue = content.toSendableValue()
 
-        if case .bool(let value) = sendableValue {
+        if case let .bool(value) = sendableValue {
             #expect(value == true)
         } else {
             Issue.record("Expected bool SendableValue, got \(sendableValue)")
@@ -301,7 +301,7 @@ struct ConduitTypeMappersTests {
 
         let sendableValue = content.toSendableValue()
 
-        if case .array(let items) = sendableValue {
+        if case let .array(items) = sendableValue {
             #expect(items.count == 3)
         } else {
             Issue.record("Expected array SendableValue, got \(sendableValue)")
@@ -317,7 +317,7 @@ struct ConduitTypeMappersTests {
 
         let sendableValue = content.toSendableValue()
 
-        if case .dictionary(let dict) = sendableValue {
+        if case let .dictionary(dict) = sendableValue {
             #expect(dict.count == 2)
             #expect(dict["name"] != nil)
             #expect(dict["age"] != nil)
@@ -333,7 +333,7 @@ struct ConduitTypeMappersTests {
         let value = SendableValue.string("Test")
         let content = value.toStructuredContent()
 
-        if case .string(let text) = content.kind {
+        if case let .string(text) = content.kind {
             #expect(text == "Test")
         } else {
             Issue.record("Expected string StructuredContent, got \(content)")
@@ -345,7 +345,7 @@ struct ConduitTypeMappersTests {
         let value = SendableValue.int(42)
         let content = value.toStructuredContent()
 
-        if case .number(let num) = content.kind {
+        if case let .number(num) = content.kind {
             #expect(num == 42.0)
         } else {
             Issue.record("Expected number StructuredContent, got \(content)")
@@ -357,7 +357,7 @@ struct ConduitTypeMappersTests {
         let value = SendableValue.double(42.5)
         let content = value.toStructuredContent()
 
-        if case .number(let num) = content.kind {
+        if case let .number(num) = content.kind {
             #expect(num == 42.5)
         } else {
             Issue.record("Expected number StructuredContent, got \(content)")
@@ -369,7 +369,7 @@ struct ConduitTypeMappersTests {
         let value = SendableValue.bool(true)
         let content = value.toStructuredContent()
 
-        if case .bool(let bool) = content.kind {
+        if case let .bool(bool) = content.kind {
             #expect(bool == true)
         } else {
             Issue.record("Expected bool StructuredContent, got \(content)")
@@ -397,7 +397,7 @@ struct ConduitTypeMappersTests {
 
         let content = value.toStructuredContent()
 
-        if case .array(let items) = content.kind {
+        if case let .array(items) = content.kind {
             #expect(items.count == 2)
         } else {
             Issue.record("Expected array StructuredContent, got \(content)")
@@ -412,7 +412,7 @@ struct ConduitTypeMappersTests {
 
         let content = value.toStructuredContent()
 
-        if case .object(let dict) = content.kind {
+        if case let .object(dict) = content.kind {
             #expect(dict.count == 1)
             #expect(dict["key"] != nil)
         } else {
@@ -428,7 +428,7 @@ struct ConduitTypeMappersTests {
         let sendable = original.toSendableValue()
         let result = sendable.toStructuredContent()
 
-        if case .string(let text) = result.kind {
+        if case let .string(text) = result.kind {
             #expect(text == "Hello")
         } else {
             Issue.record("Round trip failed for string")
@@ -452,7 +452,7 @@ struct ConduitTypeMappersTests {
         let sendable = original.toSendableValue()
         let result = sendable.toStructuredContent()
 
-        if case .object(let dict) = result.kind {
+        if case let .object(dict) = result.kind {
             #expect(dict.count == 2)
             #expect(dict["user"] != nil)
             #expect(dict["items"] != nil)

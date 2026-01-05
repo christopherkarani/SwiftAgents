@@ -312,83 +312,83 @@ public actor OpenRouterProvider: InferenceProvider {
     }
 
     #if canImport(FoundationNetworking)
-    /// Linux-specific stream execution using data(for:) and manual line splitting.
-    private func executeLinuxStreamRequest(
-        request: URLRequest,
-        attempt: Int,
-        maxRetries: Int,
-        continuation: AsyncThrowingStream<String, Error>.Continuation
-    ) async throws -> Bool {
-        let (data, response) = try await session.data(for: request)
+        /// Linux-specific stream execution using data(for:) and manual line splitting.
+        private func executeLinuxStreamRequest(
+            request: URLRequest,
+            attempt: Int,
+            maxRetries: Int,
+            continuation: AsyncThrowingStream<String, Error>.Continuation
+        ) async throws -> Bool {
+            let (data, response) = try await session.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AgentError.generationFailed(reason: "Invalid response type")
-        }
-
-        rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
-
-        if httpResponse.statusCode != 200 {
-            try handleHTTPError(statusCode: httpResponse.statusCode, data: data, attempt: attempt, maxRetries: maxRetries)
-            return false // Retry needed
-        }
-
-        guard let responseString = String(data: data, encoding: .utf8) else {
-            throw AgentError.generationFailed(reason: "Invalid UTF-8 data")
-        }
-
-        try processSSELines(responseString.components(separatedBy: .newlines), continuation: continuation)
-        return true
-    }
-    #else
-    /// Apple platforms stream execution using bytes(for:) with async line iterator.
-    private func executeAppleStreamRequest(
-        request: URLRequest,
-        attempt: Int,
-        maxRetries: Int,
-        continuation: AsyncThrowingStream<String, Error>.Continuation
-    ) async throws -> Bool {
-        let (bytes, response) = try await session.bytes(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AgentError.generationFailed(reason: "Invalid response type")
-        }
-
-        rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
-
-        if httpResponse.statusCode != 200 {
-            let errorData = try await collectErrorData(from: bytes)
-            try handleHTTPError(statusCode: httpResponse.statusCode, data: errorData, attempt: attempt, maxRetries: maxRetries)
-            return false // Retry needed
-        }
-
-        try await processAsyncSSEStream(bytes: bytes, continuation: continuation)
-        return true
-    }
-
-    /// Collects error data from an async byte stream.
-    private func collectErrorData(from bytes: URLSession.AsyncBytes) async throws -> Data {
-        var errorData = Data()
-        errorData.reserveCapacity(10000)
-        for try await byte in bytes {
-            errorData.append(byte)
-            if errorData.count >= 10000 { break }
-        }
-        return errorData
-    }
-
-    /// Processes an async SSE stream from Apple platforms.
-    private func processAsyncSSEStream(
-        bytes: URLSession.AsyncBytes,
-        continuation: AsyncThrowingStream<String, Error>.Continuation
-    ) async throws {
-        for try await line in bytes.lines {
-            try Task.checkCancellation()
-            if try processSSELine(line, continuation: continuation) {
-                return
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw AgentError.generationFailed(reason: "Invalid response type")
             }
+
+            rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
+
+            if httpResponse.statusCode != 200 {
+                try handleHTTPError(statusCode: httpResponse.statusCode, data: data, attempt: attempt, maxRetries: maxRetries)
+                return false // Retry needed
+            }
+
+            guard let responseString = String(data: data, encoding: .utf8) else {
+                throw AgentError.generationFailed(reason: "Invalid UTF-8 data")
+            }
+
+            try processSSELines(responseString.components(separatedBy: .newlines), continuation: continuation)
+            return true
         }
-        continuation.finish()
-    }
+    #else
+        /// Apple platforms stream execution using bytes(for:) with async line iterator.
+        private func executeAppleStreamRequest(
+            request: URLRequest,
+            attempt: Int,
+            maxRetries: Int,
+            continuation: AsyncThrowingStream<String, Error>.Continuation
+        ) async throws -> Bool {
+            let (bytes, response) = try await session.bytes(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw AgentError.generationFailed(reason: "Invalid response type")
+            }
+
+            rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
+
+            if httpResponse.statusCode != 200 {
+                let errorData = try await collectErrorData(from: bytes)
+                try handleHTTPError(statusCode: httpResponse.statusCode, data: errorData, attempt: attempt, maxRetries: maxRetries)
+                return false // Retry needed
+            }
+
+            try await processAsyncSSEStream(bytes: bytes, continuation: continuation)
+            return true
+        }
+
+        /// Collects error data from an async byte stream.
+        private func collectErrorData(from bytes: URLSession.AsyncBytes) async throws -> Data {
+            var errorData = Data()
+            errorData.reserveCapacity(10000)
+            for try await byte in bytes {
+                errorData.append(byte)
+                if errorData.count >= 10000 { break }
+            }
+            return errorData
+        }
+
+        /// Processes an async SSE stream from Apple platforms.
+        private func processAsyncSSEStream(
+            bytes: URLSession.AsyncBytes,
+            continuation: AsyncThrowingStream<String, Error>.Continuation
+        ) async throws {
+            for try await line in bytes.lines {
+                try Task.checkCancellation()
+                if try processSSELine(line, continuation: continuation) {
+                    return
+                }
+            }
+            continuation.finish()
+        }
     #endif
 
     /// Processes an array of SSE lines (Linux path).

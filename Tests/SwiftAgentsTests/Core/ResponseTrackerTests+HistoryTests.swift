@@ -11,6 +11,8 @@ import Testing
 
 @Suite("ResponseTracker History Tests")
 struct ResponseTrackerHistoryTests {
+    // MARK: Internal
+
     // MARK: - History Limiting Tests (CRITICAL)
 
     @Test("History is limited to maxHistorySize")
@@ -271,6 +273,8 @@ struct ResponseTrackerHistoryTests {
 
         #expect(latestId == nil)
     }
+
+    // MARK: Private
 
     // MARK: - Test Helpers
 

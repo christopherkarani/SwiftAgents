@@ -11,6 +11,8 @@ import Testing
 
 @Suite("ResponseTracker Cleanup Tests")
 struct ResponseTrackerCleanupTests {
+    // MARK: Internal
+
     // MARK: - Session Cleanup Tests
 
     @Test("Remove sessions by absolute date threshold")
@@ -190,6 +192,8 @@ struct ResponseTrackerCleanupTests {
         #expect(await tracker.getAllSessionIds().isEmpty)
         #expect(await tracker.getAllSessionMetadata().isEmpty)
     }
+
+    // MARK: Private
 
     // MARK: - Test Helpers
 

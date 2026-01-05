@@ -37,38 +37,10 @@ import OrderedCollections
 /// }
 /// ```
 public actor ConduitProvider: InferenceProvider {
-    // MARK: - Types
-
-    /// Internal backend representation for different provider types.
-    ///
-    /// This enum is `@unchecked Sendable` because all associated values are actors
-    /// (which are inherently `Sendable`) or value types that conform to `Sendable`:
-    /// - `AnthropicProvider`, `OpenAIProvider`, `MLXProvider`, `HuggingFaceProvider` are actors
-    /// - `AnthropicModelID`, `OpenAIModelID`, `ModelIdentifier` are `Sendable` value types
-    ///
-    /// The `@unchecked` annotation is required because the Swift compiler cannot verify
-    /// Sendable conformance through conditional compilation (`#if canImport`) blocks.
-    private enum Backend: @unchecked Sendable {
-        case anthropic(AnthropicProvider, AnthropicModelID)
-        case openAI(OpenAIProvider, OpenAIModelID)
-        #if canImport(MLX)
-        case mlx(MLXProvider, ModelIdentifier)
-        #endif
-        case huggingFace(HuggingFaceProvider, ModelIdentifier)
-        // Note: Foundation Models not yet supported in Conduit
-        // case foundationModels(FoundationModelsProvider)
-    }
-
-    // MARK: - Properties
+    // MARK: Public
 
     /// The configuration used to create this provider.
     public let configuration: ConduitConfiguration
-
-    /// The underlying Conduit backend.
-    private let backend: Backend
-
-    /// Cached provider description for nonisolated access.
-    private let providerDescription: String
 
     // MARK: - Initialization
 
@@ -79,8 +51,8 @@ public actor ConduitProvider: InferenceProvider {
     /// - Throws: `AgentError.inferenceProviderUnavailable` if the provider cannot be created.
     public init(configuration: ConduitConfiguration) throws {
         self.configuration = configuration
-        self.backend = try Self.createBackend(for: configuration.providerType)
-        self.providerDescription = "ConduitProvider(\(configuration.providerType.displayName))"
+        backend = try Self.createBackend(for: configuration.providerType)
+        providerDescription = "ConduitProvider(\(configuration.providerType.displayName))"
     }
 
     /// Convenience initializer for creating a provider from a provider type.
@@ -233,6 +205,36 @@ public actor ConduitProvider: InferenceProvider {
         throw AgentError.generationFailed(reason: "Max retries exceeded")
     }
 
+    // MARK: Private
+
+    // MARK: - Types
+
+    /// Internal backend representation for different provider types.
+    ///
+    /// This enum is `@unchecked Sendable` because all associated values are actors
+    /// (which are inherently `Sendable`) or value types that conform to `Sendable`:
+    /// - `AnthropicProvider`, `OpenAIProvider`, `MLXProvider`, `HuggingFaceProvider` are actors
+    /// - `AnthropicModelID`, `OpenAIModelID`, `ModelIdentifier` are `Sendable` value types
+    ///
+    /// The `@unchecked` annotation is required because the Swift compiler cannot verify
+    /// Sendable conformance through conditional compilation (`#if canImport`) blocks.
+    private enum Backend: @unchecked Sendable {
+        case anthropic(AnthropicProvider, AnthropicModelID)
+        case openAI(OpenAIProvider, OpenAIModelID)
+        #if canImport(MLX)
+            case mlx(MLXProvider, ModelIdentifier)
+        #endif
+        case huggingFace(HuggingFaceProvider, ModelIdentifier)
+        // Note: Foundation Models not yet supported in Conduit
+        // case foundationModels(FoundationModelsProvider)
+    }
+
+    /// The underlying Conduit backend.
+    private let backend: Backend
+
+    /// Cached provider description for nonisolated access.
+    private let providerDescription: String
+
     // MARK: - Private Methods
 
     /// Creates the appropriate backend for the given provider type.
@@ -240,12 +242,12 @@ public actor ConduitProvider: InferenceProvider {
         switch providerType {
         case let .mlx(model):
             #if canImport(MLX)
-            let provider = MLXProvider()
-            return .mlx(provider, model)
+                let provider = MLXProvider()
+                return .mlx(provider, model)
             #else
-            throw AgentError.inferenceProviderUnavailable(
-                reason: "MLX is only available on Apple Silicon. Use cloud providers instead."
-            )
+                throw AgentError.inferenceProviderUnavailable(
+                    reason: "MLX is only available on Apple Silicon. Use cloud providers instead."
+                )
             #endif
 
         case let .anthropic(model, apiKey):
@@ -317,8 +319,8 @@ public actor ConduitProvider: InferenceProvider {
             return try await provider.generate(messages: messages, model: model, config: config)
 
         #if canImport(MLX)
-        case let .mlx(provider, model):
-            return try await provider.generate(messages: messages, model: model, config: config)
+            case let .mlx(provider, model):
+                return try await provider.generate(messages: messages, model: model, config: config)
         #endif
 
         case let .huggingFace(provider, model):
@@ -397,8 +399,8 @@ public actor ConduitProvider: InferenceProvider {
             return provider.stream(messages: messages, model: model, config: config)
 
         #if canImport(MLX)
-        case let .mlx(provider, model):
-            return provider.stream(messages: messages, model: model, config: config)
+            case let .mlx(provider, model):
+                return provider.stream(messages: messages, model: model, config: config)
         #endif
 
         case let .huggingFace(provider, model):
@@ -417,7 +419,7 @@ public actor ConduitProvider: InferenceProvider {
         switch error {
         case .rateLimitExceeded:
             return true
-        case .inferenceProviderUnavailable(let reason):
+        case let .inferenceProviderUnavailable(reason):
             // Retry on network errors
             let lowerReason = reason.lowercased()
             return lowerReason.contains("network") || lowerReason.contains("timeout")
@@ -443,7 +445,7 @@ public actor ConduitProvider: InferenceProvider {
         let configuredDelay = configuration.retryStrategy.delay(forAttempt: attempt)
 
         // Respect retryAfter hint from rate limit errors
-        if case .rateLimitExceeded(let retryAfter) = error, let serverHint = retryAfter {
+        if case let .rateLimitExceeded(retryAfter) = error, let serverHint = retryAfter {
             return max(configuredDelay, serverHint)
         }
 
@@ -468,7 +470,7 @@ public actor ConduitProvider: InferenceProvider {
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension ConduitProvider: CustomStringConvertible {
     nonisolated public var description: String {
@@ -479,6 +481,8 @@ extension ConduitProvider: CustomStringConvertible {
 // MARK: - ToolDefinition Extension
 
 extension ToolDefinition {
+    // MARK: Internal
+
     /// Converts a SwiftAgents ToolDefinition to a Conduit ToolDefinition.
     ///
     /// This maps the SwiftAgents tool definition format to Conduit's
@@ -492,6 +496,8 @@ extension ToolDefinition {
             parameters: buildConduitSchema()
         )
     }
+
+    // MARK: Private
 
     /// Builds a Conduit Schema from the tool parameters.
     ///
@@ -562,4 +568,3 @@ extension ToolParameter.ParameterType {
         }
     }
 }
-

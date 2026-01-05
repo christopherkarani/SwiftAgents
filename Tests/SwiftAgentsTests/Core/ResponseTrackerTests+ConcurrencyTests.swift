@@ -194,7 +194,6 @@ struct ResponseTrackerConcurrencyTests {
         let finalCount = await tracker.getCount(for: "clear_session")
         #expect(finalCount >= 0)
     }
-
 }
 
 // MARK: - Module-level helper for concurrent tasks

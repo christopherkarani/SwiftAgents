@@ -47,6 +47,7 @@ import OrderedCollections
 /// All methods are thread-safe and can be called from any context.
 /// The converter uses only pure functions with no mutable state.
 public enum ConduitToolConverter {
+    // MARK: Public
 
     // MARK: - Public Methods
 
@@ -116,6 +117,8 @@ public enum ConduitToolConverter {
             return .string(constraints: [])
         }
     }
+
+    // MARK: Internal
 
     // MARK: - Internal Conversion Methods
 
@@ -227,47 +230,47 @@ public struct ConduitToolDefinition: Sendable {
 
 // MARK: - ToolDefinition Convenience Extension
 
-extension ToolDefinition {
+public extension ToolDefinition {
     /// Converts this SwiftAgents tool definition to a Conduit tool definition.
     ///
     /// This is a convenience method that delegates to `ConduitToolConverter`.
     ///
     /// - Returns: A Conduit-compatible tool definition.
-    public func toConduitDefinition() -> ConduitToolDefinition {
+    func toConduitDefinition() -> ConduitToolDefinition {
         ConduitToolConverter.toConduitToolDefinition(self)
     }
 }
 
 // MARK: - Tool Convenience Extension
 
-extension Tool {
+public extension Tool {
     /// Converts this tool to a Conduit tool definition.
     ///
     /// This is a convenience method that creates a `ToolDefinition` from
     /// this tool and converts it to Conduit format.
     ///
     /// - Returns: A Conduit-compatible tool definition.
-    public func toConduitDefinition() -> ConduitToolDefinition {
+    func toConduitDefinition() -> ConduitToolDefinition {
         definition.toConduitDefinition()
     }
 }
 
 // MARK: - Array Extensions
 
-extension Array where Element == ToolDefinition {
+public extension [ToolDefinition] {
     /// Converts all tool definitions to Conduit format.
     ///
     /// - Returns: An array of Conduit-compatible tool definitions.
-    public func toConduitDefinitions() -> [ConduitToolDefinition] {
+    func toConduitDefinitions() -> [ConduitToolDefinition] {
         ConduitToolConverter.toConduitToolDefinitions(self)
     }
 }
 
-extension Array where Element == any Tool {
+public extension [any Tool] {
     /// Converts all tools to Conduit definitions.
     ///
     /// - Returns: An array of Conduit-compatible tool definitions.
-    public func toConduitDefinitions() -> [ConduitToolDefinition] {
-        map { $0.definition }.toConduitDefinitions()
+    func toConduitDefinitions() -> [ConduitToolDefinition] {
+        map(\.definition).toConduitDefinitions()
     }
 }

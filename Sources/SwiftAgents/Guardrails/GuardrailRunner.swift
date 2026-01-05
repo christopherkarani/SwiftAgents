@@ -163,8 +163,6 @@ public struct GuardrailExecutionResult: Sendable, Equatable {
 /// }
 /// ```
 public actor GuardrailRunner {
-    // MARK: Public
-
     /// The configuration controlling execution behavior.
     public let configuration: GuardrailRunnerConfiguration
 
@@ -288,7 +286,6 @@ public actor GuardrailRunner {
             try await runToolOutputGuardrailsSequential(guardrails, data: data, output: output)
         }
     }
-
 }
 
 // MARK: - GuardrailRunner + Sequential Execution

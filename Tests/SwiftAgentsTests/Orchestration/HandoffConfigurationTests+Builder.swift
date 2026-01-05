@@ -124,7 +124,7 @@ struct HandoffBuilderTests {
     }
 }
 
-// MARK: - handoff() Convenience Function Tests
+// MARK: - HandoffConvenienceFunctionTests
 
 @Suite("handoff() Convenience Function Tests")
 struct HandoffConvenienceFunctionTests {

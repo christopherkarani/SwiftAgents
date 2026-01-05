@@ -9,6 +9,8 @@ import OrderedCollections
 @testable import SwiftAgents
 import Testing
 
+// MARK: - ConduitToolConverterTests
+
 // Note: ToolDefinition from SwiftAgents is used (imported via @testable import SwiftAgents)
 
 @Suite("ConduitToolConverter Tests")
@@ -343,7 +345,7 @@ struct ConduitToolConverterTests {
     }
 }
 
-// MARK: - Test Helpers
+// MARK: - TestCalculatorTool
 
 private struct TestCalculatorTool: Tool {
     let name = "calculator"

@@ -61,13 +61,15 @@ struct ConduitProviderTests {
         #expect(config.providerType.displayName == "HuggingFace")
     }
 
-    @Test("init with Foundation Models configuration succeeds")
-    func initWithFoundationModelsConfigurationSucceeds() async throws {
+    @Test("init with Foundation Models configuration throws unsupported error")
+    func initWithFoundationModelsConfigurationThrowsUnsupportedError() throws {
         let config = try ConduitConfiguration.foundationModels(
             systemPrompt: "You are helpful"
         )
 
-        let provider = try await ConduitProvider(configuration: config)
+        #expect(throws: AgentError.self) {
+            _ = try ConduitProvider(configuration: config)
+        }
 
         #expect(config.providerType.displayName == "Apple Foundation Models")
     }
@@ -166,7 +168,7 @@ struct ConduitProviderTests {
         let conduitError = ConduitProviderError.networkError(message: "Connection failed")
         let agentError = conduitError.toAgentError()
 
-        if case .inferenceProviderUnavailable(let reason) = agentError {
+        if case let .inferenceProviderUnavailable(reason) = agentError {
             #expect(reason.contains("Network"))
         } else {
             Issue.record("Expected inferenceProviderUnavailable AgentError")
@@ -178,7 +180,7 @@ struct ConduitProviderTests {
         let conduitError = ConduitProviderError.rateLimitExceeded(retryAfter: 60)
         let agentError = conduitError.toAgentError()
 
-        if case .rateLimitExceeded(let retryAfter) = agentError {
+        if case let .rateLimitExceeded(retryAfter) = agentError {
             #expect(retryAfter == 60)
         } else {
             Issue.record("Expected rateLimitExceeded AgentError with retry hint")
@@ -190,7 +192,7 @@ struct ConduitProviderTests {
         let conduitError = ConduitProviderError.tokenLimitExceeded(count: 10000, limit: 8000)
         let agentError = conduitError.toAgentError()
 
-        if case .contextWindowExceeded(let tokenCount, let limit) = agentError {
+        if case let .contextWindowExceeded(tokenCount, limit) = agentError {
             #expect(tokenCount == 10000)
             #expect(limit == 8000)
         } else {
@@ -203,7 +205,7 @@ struct ConduitProviderTests {
         let conduitError = ConduitProviderError.modelNotAvailable(model: "test-model")
         let agentError = conduitError.toAgentError()
 
-        if case .modelNotAvailable(let model) = agentError {
+        if case let .modelNotAvailable(model) = agentError {
             #expect(model == "test-model")
         } else {
             Issue.record("Expected modelNotAvailable AgentError")

@@ -242,13 +242,15 @@ public extension OpenRouterProviderError {
             return .modelNotAvailable(model: errorMessage)
         case 429:
             return handleRateLimited(body: body, headers: headers)
-        case 408, 504:
+        case 408,
+             504:
             return .timeout(duration: .seconds(60))
         case 502:
             return .providerUnavailable(providers: ["upstream_provider"])
         case 503:
             return .providerUnavailable(providers: [])
-        case 500, 505...599:
+        case 500,
+             505...599:
             return handleServerError(errorCode: errorCode, errorMessage: errorMessage, statusCode: statusCode)
         default:
             return .unknownError(statusCode: statusCode)
@@ -264,11 +266,17 @@ public extension OpenRouterProviderError {
             .cancelled
         case .timedOut:
             .timeout(duration: .seconds(60))
-        case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .networkConnectionLost, .notConnectedToInternet:
+        case .cannotConnectToHost,
+             .cannotFindHost,
+             .dnsLookupFailed,
+             .networkConnectionLost,
+             .notConnectedToInternet:
             .networkError(SendableErrorWrapper(urlError))
         case .userAuthenticationRequired:
             .authenticationFailed
-        case .cannotDecodeContentData, .cannotDecodeRawData, .cannotParseResponse:
+        case .cannotDecodeContentData,
+             .cannotDecodeRawData,
+             .cannotParseResponse:
             .decodingError(SendableErrorWrapper(urlError))
         default:
             .networkError(SendableErrorWrapper(urlError))

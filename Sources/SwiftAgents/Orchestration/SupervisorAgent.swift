@@ -616,6 +616,77 @@ public actor SupervisorAgent: Agent {
         }
     }
 
+    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+        StreamHelper.makeTrackedStream(for: self) { actor, continuation in
+            continuation.yield(.started(input: input))
+            do {
+                let result = try await actor.run(input, session: session, hooks: hooks)
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch let error as AgentError {
+                continuation.yield(.failed(error: error))
+                continuation.finish(throwing: error)
+            } catch {
+                let agentError = AgentError.internalError(reason: error.localizedDescription)
+                continuation.yield(.failed(error: agentError))
+                continuation.finish(throwing: error)
+            }
+        }
+    }
+
+    public func cancel() async {
+        // Cancellation is handled via continuation.onTermination
+    }
+
+    /// Gets the description for a specific agent.
+    ///
+    /// - Parameter name: The agent name.
+    /// - Returns: The agent description, or nil if not found.
+    public func description(for name: String) -> AgentDescription? {
+        agentRegistry.first(where: { $0.name == name })?.description
+    }
+
+    /// Executes a specific agent by name, bypassing routing.
+    ///
+    /// - Parameters:
+    ///   - agentName: The name of the agent to execute.
+    ///   - input: The input to pass to the agent.
+    ///   - session: Optional session for conversation context.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
+    /// - Returns: The agent's result.
+    /// - Throws: `AgentError.internalError` if agent not found.
+    public func executeAgent(
+        named agentName: String,
+        input: String,
+        session: (any Session)? = nil,
+        hooks: (any RunHooks)? = nil
+    ) async throws -> AgentResult {
+        guard let entry = agentRegistry.first(where: { $0.name == agentName }) else {
+            throw AgentError.internalError(reason: "Agent '\(agentName)' not found")
+        }
+
+        return try await entry.agent.run(input, session: session, hooks: hooks)
+    }
+
+    // MARK: Private
+
+    // MARK: - Supervisor Properties
+
+    /// Registry of sub-agents with their descriptions.
+    private let agentRegistry: [(name: String, agent: any Agent, description: AgentDescription)]
+
+    /// Strategy for routing requests to agents.
+    private let routingStrategy: any RoutingStrategy
+
+    /// Optional fallback agent when routing fails.
+    private let fallbackAgent: (any Agent)?
+
+    /// Whether to track execution in a shared context.
+    private let enableContextTracking: Bool
+
+    /// Handoff configurations for sub-agents.
+    private let _handoffs: [AnyHandoffConfiguration]
+
     // MARK: - Run Helper Methods
 
     /// Applies handoff configuration for the target agent.
@@ -783,77 +854,6 @@ public actor SupervisorAgent: Agent {
             }
         }
     }
-
-    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
-        StreamHelper.makeTrackedStream(for: self) { actor, continuation in
-            continuation.yield(.started(input: input))
-            do {
-                let result = try await actor.run(input, session: session, hooks: hooks)
-                continuation.yield(.completed(result: result))
-                continuation.finish()
-            } catch let error as AgentError {
-                continuation.yield(.failed(error: error))
-                continuation.finish(throwing: error)
-            } catch {
-                let agentError = AgentError.internalError(reason: error.localizedDescription)
-                continuation.yield(.failed(error: agentError))
-                continuation.finish(throwing: error)
-            }
-        }
-    }
-
-    public func cancel() async {
-        // Cancellation is handled via continuation.onTermination
-    }
-
-    /// Gets the description for a specific agent.
-    ///
-    /// - Parameter name: The agent name.
-    /// - Returns: The agent description, or nil if not found.
-    public func description(for name: String) -> AgentDescription? {
-        agentRegistry.first(where: { $0.name == name })?.description
-    }
-
-    /// Executes a specific agent by name, bypassing routing.
-    ///
-    /// - Parameters:
-    ///   - agentName: The name of the agent to execute.
-    ///   - input: The input to pass to the agent.
-    ///   - session: Optional session for conversation context.
-    ///   - hooks: Optional hooks for lifecycle callbacks.
-    /// - Returns: The agent's result.
-    /// - Throws: `AgentError.internalError` if agent not found.
-    public func executeAgent(
-        named agentName: String,
-        input: String,
-        session: (any Session)? = nil,
-        hooks: (any RunHooks)? = nil
-    ) async throws -> AgentResult {
-        guard let entry = agentRegistry.first(where: { $0.name == agentName }) else {
-            throw AgentError.internalError(reason: "Agent '\(agentName)' not found")
-        }
-
-        return try await entry.agent.run(input, session: session, hooks: hooks)
-    }
-
-    // MARK: Private
-
-    // MARK: - Supervisor Properties
-
-    /// Registry of sub-agents with their descriptions.
-    private let agentRegistry: [(name: String, agent: any Agent, description: AgentDescription)]
-
-    /// Strategy for routing requests to agents.
-    private let routingStrategy: any RoutingStrategy
-
-    /// Optional fallback agent when routing fails.
-    private let fallbackAgent: (any Agent)?
-
-    /// Whether to track execution in a shared context.
-    private let enableContextTracking: Bool
-
-    /// Handoff configurations for sub-agents.
-    private let _handoffs: [AnyHandoffConfiguration]
 
     // MARK: - Private Methods
 

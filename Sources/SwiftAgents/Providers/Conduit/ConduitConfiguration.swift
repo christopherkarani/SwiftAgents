@@ -10,6 +10,29 @@ import Foundation
 
 /// Errors that can occur during Conduit configuration.
 public enum ConduitConfigurationError: Error, Sendable, LocalizedError, Equatable {
+    // MARK: Public
+
+    public var errorDescription: String? {
+        switch self {
+        case .emptyAPIKey:
+            "ConduitConfiguration: apiKey cannot be empty"
+        case .emptyToken:
+            "ConduitConfiguration: token cannot be empty"
+        case let .invalidTimeout(value):
+            "ConduitConfiguration: timeout must be positive, got \(value)"
+        case let .invalidMaxRetries(value):
+            "ConduitConfiguration: maxRetries cannot be negative, got \(value)"
+        case let .invalidTemperature(value):
+            "ConduitConfiguration: temperature must be 0.0-2.0, got \(value)"
+        case let .invalidTopP(value):
+            "ConduitConfiguration: topP must be 0.0-1.0, got \(value)"
+        case let .invalidTopK(value):
+            "ConduitConfiguration: topK must be positive, got \(value)"
+        case let .invalidMaxTokens(value):
+            "ConduitConfiguration: maxTokens must be positive, got \(value)"
+        }
+    }
+
     /// The API key is empty or contains only whitespace.
     case emptyAPIKey
 
@@ -33,27 +56,6 @@ public enum ConduitConfigurationError: Error, Sendable, LocalizedError, Equatabl
 
     /// The maxTokens value is not positive.
     case invalidMaxTokens(Int)
-
-    public var errorDescription: String? {
-        switch self {
-        case .emptyAPIKey:
-            return "ConduitConfiguration: apiKey cannot be empty"
-        case .emptyToken:
-            return "ConduitConfiguration: token cannot be empty"
-        case let .invalidTimeout(value):
-            return "ConduitConfiguration: timeout must be positive, got \(value)"
-        case let .invalidMaxRetries(value):
-            return "ConduitConfiguration: maxRetries cannot be negative, got \(value)"
-        case let .invalidTemperature(value):
-            return "ConduitConfiguration: temperature must be 0.0-2.0, got \(value)"
-        case let .invalidTopP(value):
-            return "ConduitConfiguration: topP must be 0.0-1.0, got \(value)"
-        case let .invalidTopK(value):
-            return "ConduitConfiguration: topK must be positive, got \(value)"
-        case let .invalidMaxTokens(value):
-            return "ConduitConfiguration: maxTokens must be positive, got \(value)"
-        }
-    }
 }
 
 // MARK: - ConduitRetryStrategy
@@ -93,8 +95,6 @@ public struct ConduitRetryStrategy: Sendable, Equatable {
         maxDelay: 60.0,
         backoffMultiplier: 2.0
     )
-
-    // MARK: - Properties
 
     /// Maximum number of retry attempts.
     public let maxRetries: Int
@@ -173,6 +173,8 @@ public struct ConduitRetryStrategy: Sendable, Equatable {
 /// )
 /// ```
 public struct ConduitConfiguration: Sendable {
+    // MARK: Public
+
     // MARK: - Default Values
 
     /// Default timeout for requests.
@@ -180,8 +182,6 @@ public struct ConduitConfiguration: Sendable {
 
     /// Default maximum number of retries.
     public static let defaultMaxRetries: Int = 3
-
-    // MARK: - Properties
 
     /// The provider type including model and credentials.
     public let providerType: ConduitProviderType
@@ -254,7 +254,7 @@ public struct ConduitConfiguration: Sendable {
 
         // Validate topP if provided
         if let top = topP {
-            guard top > 0.0, top <= 1.0 else {
+            guard top >= 0.0, top <= 1.0 else {
                 throw ConduitConfigurationError.invalidTopP(top)
             }
         }
@@ -287,6 +287,8 @@ public struct ConduitConfiguration: Sendable {
         self.maxTokens = maxTokens
     }
 
+    // MARK: Private
+
     // MARK: - Private Helpers
 
     /// Validates credentials for the given provider type.
@@ -307,7 +309,8 @@ public struct ConduitConfiguration: Sendable {
             guard !trimmed.isEmpty else {
                 throw ConduitConfigurationError.emptyToken
             }
-        case .mlx, .foundationModels:
+        case .foundationModels,
+             .mlx:
             // No credentials required for local providers
             break
         }
@@ -439,7 +442,7 @@ public extension ConduitConfiguration {
     }
 }
 
-// MARK: - Equatable
+// MARK: Equatable
 
 extension ConduitConfiguration: Equatable {
     public static func == (lhs: ConduitConfiguration, rhs: ConduitConfiguration) -> Bool {
@@ -455,7 +458,7 @@ extension ConduitConfiguration: Equatable {
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension ConduitConfiguration: CustomStringConvertible {
     public var description: String {
@@ -463,7 +466,7 @@ extension ConduitConfiguration: CustomStringConvertible {
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension ConduitConfiguration: CustomDebugStringConvertible {
     public var debugDescription: String {

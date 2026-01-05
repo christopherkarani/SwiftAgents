@@ -11,6 +11,8 @@ import Testing
 
 @Suite("ResponseTracker Basic Tests")
 struct ResponseTrackerBasicTests {
+    // MARK: Internal
+
     // MARK: - Record and Retrieve Tests
 
     @Test("Record and retrieve response")
@@ -175,6 +177,8 @@ struct ResponseTrackerBasicTests {
         #expect(retrieved?.usage?.inputTokens == 100)
         #expect(retrieved?.usage?.outputTokens == 50)
     }
+
+    // MARK: Private
 
     // MARK: - Test Helpers
 

@@ -7,6 +7,8 @@ import Foundation
 @testable import SwiftAgents
 import Testing
 
+// MARK: - InMemorySessionTests
+
 @Suite("InMemorySession Tests")
 struct InMemorySessionTests {
     // MARK: - Initialization Tests

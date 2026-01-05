@@ -11,8 +11,6 @@
 
     @Suite("PersistentSession Tests")
     struct PersistentSessionTests {
-        // MARK: Internal
-
         // MARK: - Factory Method Tests
 
         @Test("Creates in-memory session with factory method")
@@ -417,205 +415,209 @@
         }
     }
 
-// MARK: - PersistentSessionTests Isolation and Advanced
+    // MARK: - PersistentSessionTests Isolation and Advanced
 
-extension PersistentSessionTests {
-    // MARK: - Multiple Sessions Isolation Tests
+    extension PersistentSessionTests {
+        // MARK: Internal
 
-    @Test("Multiple sessions in same backend are isolated")
-    func sessionIsolation() async throws {
-        let backend = try SwiftDataBackend.inMemory()
+        // MARK: - Multiple Sessions Isolation Tests
 
-        let session1 = PersistentSession(sessionId: "session-1", backend: backend)
-        let session2 = PersistentSession(sessionId: "session-2", backend: backend)
+        @Test("Multiple sessions in same backend are isolated")
+        func sessionIsolation() async throws {
+            let backend = try SwiftDataBackend.inMemory()
 
-        try await session1.addItem(MemoryMessage.user("Message for session 1"))
-        try await session2.addItem(MemoryMessage.user("Message for session 2"))
-        try await session2.addItem(MemoryMessage.user("Another for session 2"))
+            let session1 = PersistentSession(sessionId: "session-1", backend: backend)
+            let session2 = PersistentSession(sessionId: "session-2", backend: backend)
 
-        #expect(await session1.itemCount == 1)
-        #expect(await session2.itemCount == 2)
+            try await session1.addItem(MemoryMessage.user("Message for session 1"))
+            try await session2.addItem(MemoryMessage.user("Message for session 2"))
+            try await session2.addItem(MemoryMessage.user("Another for session 2"))
 
-        let items1 = try await session1.getAllItems()
-        let items2 = try await session2.getAllItems()
+            #expect(await session1.itemCount == 1)
+            #expect(await session2.itemCount == 2)
 
-        #expect(items1[0].content == "Message for session 1")
-        #expect(items2[0].content == "Message for session 2")
-        #expect(items2[1].content == "Another for session 2")
-    }
+            let items1 = try await session1.getAllItems()
+            let items2 = try await session2.getAllItems()
 
-    @Test("Clearing one session does not affect others")
-    func clearingOneSessionIsolated() async throws {
-        let backend = try SwiftDataBackend.inMemory()
-
-        let session1 = PersistentSession(sessionId: "clear-1", backend: backend)
-        let session2 = PersistentSession(sessionId: "clear-2", backend: backend)
-
-        try await session1.addItem(MemoryMessage.user("Session 1 message"))
-        try await session2.addItem(MemoryMessage.user("Session 2 message"))
-
-        try await session1.clearSession()
-
-        #expect(await session1.isEmpty == true)
-        #expect(await session2.itemCount == 1)
-    }
-
-    // MARK: - Persistence Verification Tests
-
-    @Test("Data persists across session instances with same backend")
-    func dataPersistsWithSameBackend() async throws {
-        let backend = try SwiftDataBackend.inMemory()
-
-        // Create first session and add data
-        let session1 = PersistentSession(sessionId: "persist-test", backend: backend)
-        try await session1.addItem(MemoryMessage.user("Persisted message"))
-        try await session1.addItem(MemoryMessage.assistant("Another persisted"))
-
-        // Create second session with same backend and session ID
-        let session2 = PersistentSession(sessionId: "persist-test", backend: backend)
-
-        // Data should be accessible
-        let items = try await session2.getAllItems()
-        #expect(items.count == 2)
-        #expect(items[0].content == "Persisted message")
-        #expect(items[1].content == "Another persisted")
-    }
-
-    // MARK: - Edge Cases
-
-    @Test("Handles empty content messages")
-    func handlesEmptyContent() async throws {
-        let session = try PersistentSession.inMemory(sessionId: "empty-content-test")
-
-        try await session.addItem(MemoryMessage.user(""))
-
-        let items = try await session.getAllItems()
-        #expect(items.count == 1)
-        #expect(items[0].content.isEmpty)
-    }
-
-    @Test("Handles messages with special characters")
-    func handlesSpecialCharacters() async throws {
-        let session = try PersistentSession.inMemory(sessionId: "special-char-test")
-        let specialContent = "Hello\n\t\"World\" <>&'"
-
-        try await session.addItem(MemoryMessage.user(specialContent))
-
-        let items = try await session.getAllItems()
-        #expect(items[0].content == specialContent)
-    }
-
-    @Test("Handles unicode content")
-    func handlesUnicodeContent() async throws {
-        let session = try PersistentSession.inMemory(sessionId: "unicode-test")
-        let unicodeContent = "Hello World! Emoji: 123 Chinese: Ni hao Arabic: Marhaba"
-
-        try await session.addItem(MemoryMessage.user(unicodeContent))
-
-        let items = try await session.getAllItems()
-        #expect(items[0].content == unicodeContent)
-    }
-
-    @Test("Handles very long content")
-    func handlesVeryLongContent() async throws {
-        let session = try PersistentSession.inMemory(sessionId: "long-content-test")
-        let longContent = String(repeating: "a", count: 10000)
-
-        try await session.addItem(MemoryMessage.user(longContent))
-
-        let items = try await session.getAllItems()
-        #expect(items[0].content == longContent)
-        #expect(items[0].content.count == 10000)
-    }
-
-    @Test("All message roles are supported")
-    func allRolesSupported() async throws {
-        let session = try PersistentSession.inMemory(sessionId: "roles-test")
-
-        let baseDate = Date()
-        try await session.addItems([
-            makeMessage("User message", role: .user, offsetSeconds: 0, baseDate: baseDate),
-            makeMessage("Assistant message", role: .assistant, offsetSeconds: 1, baseDate: baseDate),
-            makeMessage("System message", role: .system, offsetSeconds: 2, baseDate: baseDate),
-            MemoryMessage(role: .tool, content: "Tool output", timestamp: baseDate.addingTimeInterval(3), metadata: ["tool_name": "calculator"])
-        ])
-
-        let items = try await session.getAllItems()
-
-        #expect(items[0].role == .user)
-        #expect(items[1].role == .assistant)
-        #expect(items[2].role == .system)
-        #expect(items[3].role == .tool)
-    }
-
-    // MARK: - Session Identity Tests
-
-    @Test("Session ID remains constant throughout lifecycle")
-    func sessionIdConstant() async throws {
-        let session = try PersistentSession.inMemory(sessionId: "constant-id")
-
-        let id1 = await session.sessionId
-
-        try await session.addItem(MemoryMessage.user("Test"))
-        let id2 = await session.sessionId
-
-        try await session.clearSession()
-        let id3 = await session.sessionId
-
-        #expect(id1 == "constant-id")
-        #expect(id2 == "constant-id")
-        #expect(id3 == "constant-id")
-    }
-
-    // MARK: - Large Data Tests
-
-    @Test("Handles large number of items")
-    func handlesLargeNumberOfItems() async throws {
-        let session = try PersistentSession.inMemory(sessionId: "large-data-test")
-        let itemCount = 100
-
-        for i in 1...itemCount {
-            try await session.addItem(MemoryMessage.user("Message \(i)"))
+            #expect(items1[0].content == "Message for session 1")
+            #expect(items2[0].content == "Message for session 2")
+            #expect(items2[1].content == "Another for session 2")
         }
 
-        #expect(await session.itemCount == itemCount)
+        @Test("Clearing one session does not affect others")
+        func clearingOneSessionIsolated() async throws {
+            let backend = try SwiftDataBackend.inMemory()
 
-        let items = try await session.getAllItems()
-        #expect(items.count == itemCount)
-        #expect(items[0].content == "Message 1")
-        #expect(items[itemCount - 1].content == "Message \(itemCount)")
-    }
+            let session1 = PersistentSession(sessionId: "clear-1", backend: backend)
+            let session2 = PersistentSession(sessionId: "clear-2", backend: backend)
 
-    @Test("getItems with limit works on large dataset")
-    func getItemsLimitOnLargeDataset() async throws {
-        let session = try PersistentSession.inMemory(sessionId: "large-limit-dataset-test")
+            try await session1.addItem(MemoryMessage.user("Session 1 message"))
+            try await session2.addItem(MemoryMessage.user("Session 2 message"))
 
-        for i in 1...50 {
-            try await session.addItem(MemoryMessage.user("Message \(i)"))
+            try await session1.clearSession()
+
+            #expect(await session1.isEmpty == true)
+            #expect(await session2.itemCount == 1)
         }
 
-        let lastTen = try await session.getItems(limit: 10)
+        // MARK: - Persistence Verification Tests
 
-        #expect(lastTen.count == 10)
-        #expect(lastTen[0].content == "Message 41")
-        #expect(lastTen[9].content == "Message 50")
+        @Test("Data persists across session instances with same backend")
+        func dataPersistsWithSameBackend() async throws {
+            let backend = try SwiftDataBackend.inMemory()
+
+            // Create first session and add data
+            let session1 = PersistentSession(sessionId: "persist-test", backend: backend)
+            try await session1.addItem(MemoryMessage.user("Persisted message"))
+            try await session1.addItem(MemoryMessage.assistant("Another persisted"))
+
+            // Create second session with same backend and session ID
+            let session2 = PersistentSession(sessionId: "persist-test", backend: backend)
+
+            // Data should be accessible
+            let items = try await session2.getAllItems()
+            #expect(items.count == 2)
+            #expect(items[0].content == "Persisted message")
+            #expect(items[1].content == "Another persisted")
+        }
+
+        // MARK: - Edge Cases
+
+        @Test("Handles empty content messages")
+        func handlesEmptyContent() async throws {
+            let session = try PersistentSession.inMemory(sessionId: "empty-content-test")
+
+            try await session.addItem(MemoryMessage.user(""))
+
+            let items = try await session.getAllItems()
+            #expect(items.count == 1)
+            #expect(items[0].content.isEmpty)
+        }
+
+        @Test("Handles messages with special characters")
+        func handlesSpecialCharacters() async throws {
+            let session = try PersistentSession.inMemory(sessionId: "special-char-test")
+            let specialContent = "Hello\n\t\"World\" <>&'"
+
+            try await session.addItem(MemoryMessage.user(specialContent))
+
+            let items = try await session.getAllItems()
+            #expect(items[0].content == specialContent)
+        }
+
+        @Test("Handles unicode content")
+        func handlesUnicodeContent() async throws {
+            let session = try PersistentSession.inMemory(sessionId: "unicode-test")
+            let unicodeContent = "Hello World! Emoji: 123 Chinese: Ni hao Arabic: Marhaba"
+
+            try await session.addItem(MemoryMessage.user(unicodeContent))
+
+            let items = try await session.getAllItems()
+            #expect(items[0].content == unicodeContent)
+        }
+
+        @Test("Handles very long content")
+        func handlesVeryLongContent() async throws {
+            let session = try PersistentSession.inMemory(sessionId: "long-content-test")
+            let longContent = String(repeating: "a", count: 10000)
+
+            try await session.addItem(MemoryMessage.user(longContent))
+
+            let items = try await session.getAllItems()
+            #expect(items[0].content == longContent)
+            #expect(items[0].content.count == 10000)
+        }
+
+        @Test("All message roles are supported")
+        func allRolesSupported() async throws {
+            let session = try PersistentSession.inMemory(sessionId: "roles-test")
+
+            let baseDate = Date()
+            try await session.addItems([
+                makeMessage("User message", role: .user, offsetSeconds: 0, baseDate: baseDate),
+                makeMessage("Assistant message", role: .assistant, offsetSeconds: 1, baseDate: baseDate),
+                makeMessage("System message", role: .system, offsetSeconds: 2, baseDate: baseDate),
+                MemoryMessage(role: .tool, content: "Tool output", timestamp: baseDate.addingTimeInterval(3), metadata: ["tool_name": "calculator"])
+            ])
+
+            let items = try await session.getAllItems()
+
+            #expect(items[0].role == .user)
+            #expect(items[1].role == .assistant)
+            #expect(items[2].role == .system)
+            #expect(items[3].role == .tool)
+        }
+
+        // MARK: - Session Identity Tests
+
+        @Test("Session ID remains constant throughout lifecycle")
+        func sessionIdConstant() async throws {
+            let session = try PersistentSession.inMemory(sessionId: "constant-id")
+
+            let id1 = await session.sessionId
+
+            try await session.addItem(MemoryMessage.user("Test"))
+            let id2 = await session.sessionId
+
+            try await session.clearSession()
+            let id3 = await session.sessionId
+
+            #expect(id1 == "constant-id")
+            #expect(id2 == "constant-id")
+            #expect(id3 == "constant-id")
+        }
+
+        // MARK: - Large Data Tests
+
+        @Test("Handles large number of items")
+        func handlesLargeNumberOfItems() async throws {
+            let session = try PersistentSession.inMemory(sessionId: "large-data-test")
+            let itemCount = 100
+
+            for i in 1...itemCount {
+                try await session.addItem(MemoryMessage.user("Message \(i)"))
+            }
+
+            #expect(await session.itemCount == itemCount)
+
+            let items = try await session.getAllItems()
+            #expect(items.count == itemCount)
+            #expect(items[0].content == "Message 1")
+            #expect(items[itemCount - 1].content == "Message \(itemCount)")
+        }
+
+        @Test("getItems with limit works on large dataset")
+        func getItemsLimitOnLargeDataset() async throws {
+            let session = try PersistentSession.inMemory(sessionId: "large-limit-dataset-test")
+
+            for i in 1...50 {
+                try await session.addItem(MemoryMessage.user("Message \(i)"))
+            }
+
+            let lastTen = try await session.getItems(limit: 10)
+
+            #expect(lastTen.count == 10)
+            #expect(lastTen[0].content == "Message 41")
+            #expect(lastTen[9].content == "Message 50")
+        }
+
+        // MARK: Private
+
+        // MARK: - Helpers
+
+        /// Creates a MemoryMessage with an explicit timestamp offset from a base date.
+        /// This ensures deterministic ordering when testing batch operations.
+        private func makeMessage(
+            _ content: String,
+            role: MemoryMessage.Role = .user,
+            offsetSeconds: Double,
+            baseDate: Date = Date()
+        ) -> MemoryMessage {
+            MemoryMessage(
+                role: role,
+                content: content,
+                timestamp: baseDate.addingTimeInterval(offsetSeconds)
+            )
+        }
     }
-
-    // MARK: - Helpers
-
-    /// Creates a MemoryMessage with an explicit timestamp offset from a base date.
-    /// This ensures deterministic ordering when testing batch operations.
-    private func makeMessage(
-        _ content: String,
-        role: MemoryMessage.Role = .user,
-        offsetSeconds: Double,
-        baseDate: Date = Date()
-    ) -> MemoryMessage {
-        MemoryMessage(
-            role: role,
-            content: content,
-            timestamp: baseDate.addingTimeInterval(offsetSeconds)
-        )
-    }
-}
 #endif

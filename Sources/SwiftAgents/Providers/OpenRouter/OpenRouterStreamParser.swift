@@ -49,6 +49,8 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
 
     /// A single choice in the streaming response.
     public struct StreamChoice: Decodable, Sendable {
+        // MARK: Public
+
         /// Index of this choice.
         public let index: Int
 
@@ -60,6 +62,8 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
 
         /// Log probabilities (if requested).
         public let logprobs: LogProbs?
+
+        // MARK: Private
 
         private enum CodingKeys: String, CodingKey {
             case index
@@ -73,6 +77,8 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
 
     /// The incremental content in a streaming chunk.
     public struct Delta: Decodable, Sendable {
+        // MARK: Public
+
         /// Role of the message (usually only in first chunk).
         public let role: String?
 
@@ -84,6 +90,8 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
 
         /// Function call (legacy format).
         public let functionCall: FunctionCallDelta?
+
+        // MARK: Private
 
         private enum CodingKeys: String, CodingKey {
             case role
@@ -136,6 +144,8 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
 
     /// Token usage information.
     public struct StreamUsage: Decodable, Sendable {
+        // MARK: Public
+
         /// Number of tokens in the prompt.
         public let promptTokens: Int
 
@@ -144,6 +154,8 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
 
         /// Total tokens used.
         public let totalTokens: Int
+
+        // MARK: Private
 
         private enum CodingKeys: String, CodingKey {
             case promptTokens = "prompt_tokens"

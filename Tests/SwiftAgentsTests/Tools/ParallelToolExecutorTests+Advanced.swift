@@ -11,6 +11,8 @@ import Testing
 
 @Suite("ParallelToolExecutor Advanced Tests")
 struct ParallelToolExecutorAdvancedTests {
+    // MARK: Internal
+
     // MARK: - Convenience Method Tests
 
     @Test("executeAllCapturingErrors works correctly")
@@ -93,7 +95,7 @@ struct ParallelToolExecutorAdvancedTests {
         )
 
         #expect(results.count == 3)
-        #expect(results.allSatisfy { $0.isSuccess })
+        #expect(results.allSatisfy(\.isSuccess))
         #expect(results[0].value == SendableValue.string("result1"))
         #expect(results[1].value == SendableValue.int(42))
         #expect(results[2].value == SendableValue.bool(true))
@@ -152,13 +154,15 @@ struct ParallelToolExecutorAdvancedTests {
 
         #expect(results.count == 3)
         #expect(results.allSatisfy { $0.toolName == "reusable" })
-        #expect(results.allSatisfy { $0.isSuccess })
+        #expect(results.allSatisfy(\.isSuccess))
 
         // Verify arguments are preserved for each call
         #expect(results[0].arguments["id"] == .int(1))
         #expect(results[1].arguments["id"] == .int(2))
         #expect(results[2].arguments["id"] == .int(3))
     }
+
+    // MARK: Private
 
     // MARK: - Test Helpers
 

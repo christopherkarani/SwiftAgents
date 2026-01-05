@@ -12,6 +12,8 @@ import Testing
 
 @Suite("ParallelToolExecutor Tests")
 struct ParallelToolExecutorTests {
+    // MARK: Internal
+
     // MARK: - Order Preservation Tests
 
     @Test("Parallel execution maintains order regardless of completion time")
@@ -488,6 +490,8 @@ struct ParallelToolExecutorTests {
         #expect(results.count == 1)
         #expect(results[0].arguments == arguments)
     }
+
+    // MARK: Private
 
     // MARK: - Test Helpers
 

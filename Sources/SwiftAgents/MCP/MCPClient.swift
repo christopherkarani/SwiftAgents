@@ -410,33 +410,6 @@ public actor MCPClient {
         resourceCacheTTL = ttl
     }
 
-    /// Internal method that performs the actual resource discovery and cache update.
-    /// This is called by both `getAllResources()` and `refreshResources()`.
-    private func refreshResourcesInternal() async throws -> [MCPResource] {
-        // Clear the cache
-        resourceCache.removeAll()
-
-        // Collect resources from all servers
-        for (_, server) in servers {
-            let capabilities = await server.capabilities
-            guard capabilities.resources else {
-                continue
-            }
-
-            let resources = try await server.listResources()
-            for resource in resources {
-                // Use URI as the key since it uniquely identifies the resource
-                resourceCache[resource.uri] = resource
-            }
-        }
-
-        // Mark cache as valid and set timestamp
-        resourceCacheValid = true
-        resourceCacheTimestamp = Date()
-
-        return Array(resourceCache.values)
-    }
-
     /// Reads the content of a resource by URI.
     ///
     /// This method searches all connected servers for a resource matching
@@ -531,7 +504,7 @@ public actor MCPClient {
         if !errors.isEmpty {
             let errorDetails = errors.map { "\($0.serverName): \($0.error.localizedDescription)" }
                 .joined(separator: "; ")
-            let failedServers = errors.map { $0.serverName }
+            let failedServers = errors.map(\.serverName)
 
             throw MCPError(
                 code: MCPError.internalErrorCode,
@@ -585,4 +558,31 @@ public actor MCPClient {
     /// Used for request deduplication - if a refresh is in progress,
     /// subsequent calls wait for the same task instead of starting new ones.
     private var resourceRefreshTask: Task<[MCPResource], Error>?
+
+    /// Internal method that performs the actual resource discovery and cache update.
+    /// This is called by both `getAllResources()` and `refreshResources()`.
+    private func refreshResourcesInternal() async throws -> [MCPResource] {
+        // Clear the cache
+        resourceCache.removeAll()
+
+        // Collect resources from all servers
+        for (_, server) in servers {
+            let capabilities = await server.capabilities
+            guard capabilities.resources else {
+                continue
+            }
+
+            let resources = try await server.listResources()
+            for resource in resources {
+                // Use URI as the key since it uniquely identifies the resource
+                resourceCache[resource.uri] = resource
+            }
+        }
+
+        // Mark cache as valid and set timestamp
+        resourceCacheValid = true
+        resourceCacheTimestamp = Date()
+
+        return Array(resourceCache.values)
+    }
 }
