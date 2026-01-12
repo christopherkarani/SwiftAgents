@@ -28,7 +28,7 @@ SwiftAgents provides everything you need to build AI agents: autonomous reasonin
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/chriskarani/SwiftAgents.git", from: "0.3.0")
+    .package(url: "https://github.com/christopherkarani/SwiftAgents.git", from: "0.3.0")
 ]
 ```
 
