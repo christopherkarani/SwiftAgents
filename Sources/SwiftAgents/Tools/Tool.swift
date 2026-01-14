@@ -49,7 +49,7 @@ public protocol Tool: Sendable {
     /// - Parameter arguments: The arguments passed to the tool.
     /// - Returns: The result of the tool execution.
     /// - Throws: `AgentError.toolExecutionFailed` or `AgentError.invalidToolArguments` on failure.
-    func execute(arguments: [String: SendableValue]) async throws -> SendableValue
+    mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue
 }
 
 // MARK: - Tool Protocol Extensions
@@ -313,7 +313,7 @@ public actor ToolRegistry {
         // Check for cancellation before proceeding
         try Task.checkCancellation()
 
-        guard let tool = tools[name] else {
+        guard var tool = tools[name] else {
             throw AgentError.toolNotFound(name: name)
         }
 

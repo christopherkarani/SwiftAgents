@@ -24,7 +24,7 @@ import Foundation
 ///         ToolParameter(name: "location", description: "City name", type: .string)
 ///     ]
 ///
-///     func executeTyped(arguments: [String: SendableValue]) async throws -> WeatherData {
+///     mutating func executeTyped(arguments: [String: SendableValue]) async throws -> WeatherData {
 ///         guard let location = arguments["location"]?.stringValue else {
 ///             throw AgentError.invalidToolArguments(toolName: name, reason: "Missing location")
 ///         }
@@ -41,7 +41,7 @@ public protocol TypedTool<Output>: Tool {
     /// - Parameter arguments: The arguments passed to the tool.
     /// - Returns: The typed result of the tool execution.
     /// - Throws: `AgentError.toolExecutionFailed` or `AgentError.invalidToolArguments` on failure.
-    func executeTyped(arguments: [String: SendableValue]) async throws -> Output
+    mutating func executeTyped(arguments: [String: SendableValue]) async throws -> Output
 }
 
 // MARK: - TypedTool Default Implementation
@@ -51,7 +51,7 @@ public extension TypedTool {
     ///
     /// This allows `TypedTool` to be used anywhere a `Tool` is expected,
     /// automatically converting the typed output to `SendableValue`.
-    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         let result = try await executeTyped(arguments: arguments)
         return try SendableValue(encoding: result)
     }
@@ -73,7 +73,7 @@ public extension ToolRegistry {
         toolNamed name: String,
         arguments: [String: SendableValue]
     ) async throws -> T.Output {
-        guard let tool = tool(named: name) as? T else {
+        guard var tool = tool(named: name) as? T else {
             throw AgentError.toolNotFound(name: name)
         }
         return try await tool.executeTyped(arguments: arguments)

@@ -148,7 +148,7 @@ struct MCPBridgedTool: Tool, Sendable {
     /// - Throws: `MCPError.methodNotFound` if the tool does not exist on the server.
     ///           `MCPError.invalidParams` if the arguments are invalid.
     ///           `MCPError.internalError` if execution fails.
-    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         try await server.callTool(name: name, arguments: arguments)
     }
 }

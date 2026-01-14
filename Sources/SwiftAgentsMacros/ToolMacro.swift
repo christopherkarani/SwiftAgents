@@ -345,6 +345,11 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
     /// Converts a default value to SendableValue syntax.
     private static func convertToSendableValue(_ value: String, type: String) -> String {
         let cleanValue = value.trimmingCharacters(in: .whitespaces)
+        
+        if cleanValue == "nil" {
+            return "nil"
+        }
+
         let cleanType = type.replacingOccurrences(of: "?", with: "").trimmingCharacters(in: .whitespaces)
 
         switch cleanType {

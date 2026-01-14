@@ -75,7 +75,7 @@ public struct MockTool: Tool, Sendable {
         resultHandler = handler
     }
 
-    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         try await resultHandler(arguments)
     }
 
@@ -170,7 +170,7 @@ public actor SpyTool: Tool {
         self.delay = delay
     }
 
-    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         calls.append((arguments, Date()))
 
         if delay > .zero {
@@ -219,7 +219,7 @@ public struct EchoTool: Tool, Sendable {
         self.outputGuardrails = outputGuardrails
     }
 
-    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         .dictionary(arguments)
     }
 }

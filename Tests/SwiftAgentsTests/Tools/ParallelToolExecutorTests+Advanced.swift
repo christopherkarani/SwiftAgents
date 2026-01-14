@@ -95,7 +95,7 @@ struct ParallelToolExecutorAdvancedTests {
         )
 
         #expect(results.count == 3)
-        #expect(results.allSatisfy(\.isSuccess))
+        #expect(results.allSatisfy { $0.isSuccess })
         #expect(results[0].value == SendableValue.string("result1"))
         #expect(results[1].value == SendableValue.int(42))
         #expect(results[2].value == SendableValue.bool(true))
@@ -154,7 +154,7 @@ struct ParallelToolExecutorAdvancedTests {
 
         #expect(results.count == 3)
         #expect(results.allSatisfy { $0.toolName == "reusable" })
-        #expect(results.allSatisfy(\.isSuccess))
+        #expect(results.allSatisfy { $0.isSuccess })
 
         // Verify arguments are preserved for each call
         #expect(results[0].arguments["id"] == .int(1))

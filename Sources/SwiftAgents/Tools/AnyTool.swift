@@ -34,13 +34,13 @@ public struct AnyTool: Tool, Sendable {
         box = ToolBox(tool)
     }
 
-    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         try await box.executeWrapped(arguments: arguments)
     }
 
     // MARK: Private
 
-    private let box: any AnyToolBox
+    private var box: any AnyToolBox
 }
 
 // MARK: - AnyToolBox
@@ -50,7 +50,7 @@ private protocol AnyToolBox: Sendable {
     var wrappedDescription: String { get }
     var wrappedParameters: [ToolParameter] { get }
 
-    func executeWrapped(arguments: [String: SendableValue]) async throws -> SendableValue
+    mutating func executeWrapped(arguments: [String: SendableValue]) async throws -> SendableValue
 }
 
 // MARK: - ToolBox
@@ -64,11 +64,11 @@ private struct ToolBox<T: Tool>: AnyToolBox, Sendable {
 
     init(_ tool: T) { self.tool = tool }
 
-    func executeWrapped(arguments: [String: SendableValue]) async throws -> SendableValue {
+    mutating func executeWrapped(arguments: [String: SendableValue]) async throws -> SendableValue {
         try await tool.execute(arguments: arguments)
     }
 
     // MARK: Private
 
-    private let tool: T
+    private var tool: T
 }

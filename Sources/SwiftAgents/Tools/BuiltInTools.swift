@@ -45,7 +45,7 @@ import Foundation
         /// Creates a new calculator tool.
         public init() {}
 
-        public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
             guard let expression = arguments["expression"]?.stringValue else {
                 throw AgentError.invalidToolArguments(
                     toolName: name,
@@ -132,7 +132,7 @@ public struct DateTimeTool: Tool, Sendable {
     /// Creates a new date/time tool.
     public init() {}
 
-    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         let formatString = arguments["format"]?.stringValue ?? "full"
         let timezoneId = arguments["timezone"]?.stringValue
 
@@ -250,7 +250,7 @@ public struct StringTool: Tool, Sendable {
     /// Creates a new string tool.
     public init() {}
 
-    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         guard let operation = arguments["operation"]?.stringValue else {
             throw AgentError.invalidToolArguments(
                 toolName: name,
@@ -335,6 +335,19 @@ public struct StringTool: Tool, Sendable {
     }
 }
 
+// MARK: - WebSearchTool
+
+/// A tool that performs web searches using the Tavily API.
+///
+/// Requires a Tavily API key.
+public extension WebSearchTool {
+    /// Initializer for use as a built-in tool with an environment-provided key.
+    static func fromEnvironment() -> WebSearchTool {
+        let key = ProcessInfo.processInfo.environment["TAVILY_API_KEY"] ?? ""
+        return WebSearchTool(apiKey: key)
+    }
+}
+
 // MARK: - BuiltInTools
 
 /// Provides access to all built-in tools.
@@ -360,15 +373,18 @@ public enum BuiltInTools {
     /// The string manipulation tool.
     public static let string = StringTool()
 
+    /// The semantic compaction and summarization tool.
+    public static let semanticCompactor = SemanticCompactorTool()
+
     /// All available built-in tools for the current platform.
     ///
-    /// - Apple platforms: calculator, dateTime, string
-    /// - Linux: dateTime, string
+    /// - Apple platforms: calculator, dateTime, string, semanticCompactor
+    /// - Linux: dateTime, string, semanticCompactor
     public static var all: [any Tool] {
+        var tools: [any Tool] = [dateTime, string, SemanticCompactorTool()]
         #if canImport(Darwin)
-            [calculator, dateTime, string]
-        #else
-            [dateTime, string]
+            tools.append(calculator)
         #endif
+        return tools
     }
 }

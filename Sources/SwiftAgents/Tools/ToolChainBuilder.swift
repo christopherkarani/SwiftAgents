@@ -127,7 +127,7 @@ public extension Tool {
     /// - Parameter input: The input value from the previous step.
     /// - Returns: The tool's execution result.
     /// - Throws: Tool execution errors.
-    func execute(input: SendableValue) async throws -> SendableValue {
+    mutating func execute(input: SendableValue) async throws -> SendableValue {
         let arguments: [String: SendableValue] = if let dict = input.dictionaryValue {
             dict
         } else {
@@ -292,7 +292,8 @@ public struct ToolStep: ToolChainStep, Sendable {
             try Task.checkCancellation()
 
             do {
-                return try await tool.execute(input: input)
+                var mutableTool = tool
+                return try await mutableTool.execute(input: input)
             } catch {
                 lastError = error
 
@@ -307,7 +308,7 @@ public struct ToolStep: ToolChainStep, Sendable {
         }
 
         // All retries failed, try fallback if available
-        if let fallback = fallbackTool {
+        if var fallback = fallbackTool {
             do {
                 return try await fallback.execute(input: input)
             } catch {
