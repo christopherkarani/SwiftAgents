@@ -480,7 +480,7 @@ extension OpenRouterPropertySchema {
 
 // MARK: - Tool Array Extension
 
-public extension [any Tool] {
+public extension [any AnyJSONTool] {
     /// Converts an array of tools to OpenRouter tool definitions.
     /// - Returns: The array of OpenRouter tool definitions.
     func toOpenRouterTools() -> [OpenRouterToolDefinition] {

@@ -50,19 +50,19 @@ public struct Instructions: AgentComponent {
 /// ```
 public struct Tools: AgentComponent {
     /// The tools to provide to the agent.
-    public let tools: [any Tool]
+    public let tools: [any AnyJSONTool]
 
     /// Creates a tools container using the builder DSL.
     ///
     /// - Parameter content: A closure that builds the tool array.
-    public init(@ToolArrayBuilder _ content: () -> [any Tool]) {
+    public init(@ToolArrayBuilder _ content: () -> [any AnyJSONTool]) {
         tools = content()
     }
 
     /// Creates a tools container from an array.
     ///
     /// - Parameter tools: The tools to include.
-    public init(_ tools: [any Tool]) {
+    public init(_ tools: [any AnyJSONTool]) {
         self.tools = tools
     }
 }
@@ -435,7 +435,7 @@ public struct AgentBuilder {
     /// The aggregated components from the builder.
     public struct Components {
         var instructions: String?
-        var tools: [any Tool] = []
+        var tools: [any AnyJSONTool] = []
         var memory: (any Memory)?
         var configuration: AgentConfiguration?
         var inferenceProvider: (any InferenceProvider)?

@@ -81,7 +81,7 @@ public protocol RunHooks: Sendable {
     ///   - agent: The agent calling the tool.
     ///   - tool: The tool being executed.
     ///   - arguments: The arguments passed to the tool.
-    func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async
+    func onToolStart(context: AgentContext?, agent: any Agent, call: ToolCall) async
 
     /// Called when a tool execution completes successfully.
     ///
@@ -90,7 +90,7 @@ public protocol RunHooks: Sendable {
     ///   - agent: The agent that called the tool.
     ///   - tool: The tool that was executed.
     ///   - result: The result returned by the tool.
-    func onToolEnd(context: AgentContext?, agent: any Agent, tool: any Tool, result: SendableValue) async
+    func onToolEnd(context: AgentContext?, agent: any Agent, result: ToolResult) async
 
     /// Called when an LLM inference begins.
     ///
@@ -118,6 +118,38 @@ public protocol RunHooks: Sendable {
     ///   - guardrailType: The type of guardrail (input, output, toolInput, toolOutput).
     ///   - result: The result of the guardrail check.
     func onGuardrailTriggered(context: AgentContext?, guardrailName: String, guardrailType: GuardrailType, result: GuardrailResult) async
+
+    /// Called when an agent makes a thinking/reasoning step.
+    ///
+    /// - Parameters:
+    ///   - context: Optional agent context.
+    ///   - agent: The agent that is thinking.
+    ///   - thought: The reasoning or thought content.
+    func onThinking(context: AgentContext?, agent: any Agent, thought: String) async
+
+    /// Called during streaming of a thinking/reasoning step.
+    ///
+    /// - Parameters:
+    ///   - context: Optional agent context.
+    ///   - agent: The agent that is thinking.
+    ///   - partialThought: The partial reasoning or thought content.
+    func onThinkingPartial(context: AgentContext?, agent: any Agent, partialThought: String) async
+
+    /// Called when a new iteration begins in an agent loop.
+    ///
+    /// - Parameters:
+    ///   - context: Optional agent context.
+    ///   - agent: The agent starting an iteration.
+    ///   - number: The iteration number (1-indexed).
+    func onIterationStart(context: AgentContext?, agent: any Agent, number: Int) async
+
+    /// Called when an iteration completes in an agent loop.
+    ///
+    /// - Parameters:
+    ///   - context: Optional agent context.
+    ///   - agent: The agent completing an iteration.
+    ///   - number: The iteration number.
+    func onIterationEnd(context: AgentContext?, agent: any Agent, number: Int) async
 }
 
 // MARK: - RunHooks Default Implementations
@@ -136,10 +168,10 @@ public extension RunHooks {
     func onHandoff(context _: AgentContext?, fromAgent _: any Agent, toAgent _: any Agent) async {}
 
     /// Default no-op implementation for tool start.
-    func onToolStart(context _: AgentContext?, agent _: any Agent, tool _: any Tool, arguments _: [String: SendableValue]) async {}
+    func onToolStart(context: AgentContext?, agent: any Agent, call: ToolCall) async {}
 
     /// Default no-op implementation for tool end.
-    func onToolEnd(context _: AgentContext?, agent _: any Agent, tool _: any Tool, result _: SendableValue) async {}
+    func onToolEnd(context: AgentContext?, agent: any Agent, result: ToolResult) async {}
 
     /// Default no-op implementation for LLM start.
     func onLLMStart(context _: AgentContext?, agent _: any Agent, systemPrompt _: String?, inputMessages _: [MemoryMessage]) async {}
@@ -149,6 +181,18 @@ public extension RunHooks {
 
     /// Default no-op implementation for guardrail triggered.
     func onGuardrailTriggered(context _: AgentContext?, guardrailName _: String, guardrailType _: GuardrailType, result _: GuardrailResult) async {}
+
+    /// Default no-op implementation for thinking.
+    func onThinking(context _: AgentContext?, agent _: any Agent, thought _: String) async {}
+
+    /// Default no-op implementation for partial thinking.
+    func onThinkingPartial(context _: AgentContext?, agent _: any Agent, partialThought _: String) async {}
+
+    /// Default no-op implementation for iteration start.
+    func onIterationStart(context _: AgentContext?, agent _: any Agent, number _: Int) async {}
+
+    /// Default no-op implementation for iteration end.
+    func onIterationEnd(context _: AgentContext?, agent _: any Agent, number _: Int) async {}
 }
 
 // MARK: - CompositeRunHooks
@@ -234,21 +278,21 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
-    public func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {
+    public func onToolStart(context: AgentContext?, agent: any Agent, call: ToolCall) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
-                    await hook.onToolStart(context: context, agent: agent, tool: tool, arguments: arguments)
+                    await hook.onToolStart(context: context, agent: agent, call: call)
                 }
             }
         }
     }
 
-    public func onToolEnd(context: AgentContext?, agent: any Agent, tool: any Tool, result: SendableValue) async {
+    public func onToolEnd(context: AgentContext?, agent: any Agent, result: ToolResult) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
-                    await hook.onToolEnd(context: context, agent: agent, tool: tool, result: result)
+                    await hook.onToolEnd(context: context, agent: agent, result: result)
                 }
             }
         }
@@ -279,6 +323,46 @@ public struct CompositeRunHooks: RunHooks {
             for hook in hooks {
                 group.addTask {
                     await hook.onGuardrailTriggered(context: context, guardrailName: guardrailName, guardrailType: guardrailType, result: result)
+                }
+            }
+        }
+    }
+
+    public func onThinking(context: AgentContext?, agent: any Agent, thought: String) async {
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onThinking(context: context, agent: agent, thought: thought)
+                }
+            }
+        }
+    }
+
+    public func onThinkingPartial(context: AgentContext?, agent: any Agent, partialThought: String) async {
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onThinkingPartial(context: context, agent: agent, partialThought: partialThought)
+                }
+            }
+        }
+    }
+
+    public func onIterationStart(context: AgentContext?, agent: any Agent, number: Int) async {
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onIterationStart(context: context, agent: agent, number: number)
+                }
+            }
+        }
+    }
+
+    public func onIterationEnd(context: AgentContext?, agent: any Agent, number: Int) async {
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onIterationEnd(context: context, agent: agent, number: number)
                 }
             }
         }
@@ -360,22 +444,25 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("Agent handoff\(contextId) - from: \(fromName) to: \(toName)")
     }
 
-    public func onToolStart(context: AgentContext?, agent _: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {
+    public func onToolStart(context: AgentContext?, agent _: any Agent, call: ToolCall) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
             ""
         }
-        Log.agents.info("Tool started\(contextId) - name: \(tool.name), args: \(arguments.count) parameter(s)")
+        Log.agents.info("Tool started\(contextId) - name: \(call.toolName), args: \(call.arguments.count) parameter(s)")
     }
 
-    public func onToolEnd(context: AgentContext?, agent _: any Agent, tool: any Tool, result _: SendableValue) async {
+    public func onToolEnd(context: AgentContext?, agent _: any Agent, result: ToolResult) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
             ""
         }
-        Log.agents.info("Tool completed\(contextId) - name: \(tool.name)")
+        // Can't easily get tool name here unless we look it up or it's added to ToolResult
+        // For logging, we'll just log success/failure
+        let status = result.isSuccess ? "succeeded" : "failed"
+        Log.agents.info("Tool execution \(status)\(contextId) - duration: \(result.duration)")
     }
 
     public func onLLMStart(context: AgentContext?, agent _: any Agent, systemPrompt _: String?, inputMessages: [MemoryMessage]) async {
@@ -409,6 +496,25 @@ public struct LoggingRunHooks: RunHooks {
         }
         let message = result.message ?? "No message provided"
         Log.agents.warning("Guardrail triggered\(contextId) - name: \(guardrailName), type: \(guardrailType.rawValue), message: \(message)")
+    }
+
+    public func onThinking(context: AgentContext?, agent _: any Agent, thought: String) async {
+        let contextId = if let context {
+            " [context: \(context.executionId)]"
+        } else {
+            ""
+        }
+        let truncatedThought = thought.count > 100 ? String(thought.prefix(100)) + "..." : thought
+        Log.agents.info("Agent thinking\(contextId): \"\(truncatedThought)\"")
+    }
+
+    public func onIterationStart(context: AgentContext?, agent _: any Agent, number: Int) async {
+        let contextId = if let context {
+            " [context: \(context.executionId)]"
+        } else {
+            ""
+        }
+        Log.agents.info("Iteration started\(contextId) - number: \(number)")
     }
 
     // MARK: Private

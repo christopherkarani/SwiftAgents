@@ -12,7 +12,7 @@ SwiftAgents provides everything you need to build AI agents: autonomous reasonin
 ## Highlights
 
 - **Agents** — ReAct, PlanAndExecute, and ToolCalling patterns
-- **Tools** — Type-safe tool creation with `@Tool` macro
+- **Tools** — Typed `Tool` API, `@Tool` macro, and `AnyJSONTool` ABI
 - **Memory** — Conversation, summary, and vector memory systems
 - **Multi-Agent** — Supervisor routing, chains, and parallel execution
 - **Streaming** — Real-time event streaming for responsive UIs

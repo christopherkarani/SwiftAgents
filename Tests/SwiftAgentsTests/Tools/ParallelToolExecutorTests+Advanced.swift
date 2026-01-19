@@ -166,7 +166,7 @@ struct ParallelToolExecutorAdvancedTests {
 
     // MARK: - Test Helpers
 
-    private func createRegistry(tools: [any Tool]) async -> ToolRegistry {
+    private func createRegistry(tools: [any AnyJSONTool]) async -> ToolRegistry {
         let registry = ToolRegistry()
         await registry.register(tools)
         return registry

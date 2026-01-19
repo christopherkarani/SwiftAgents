@@ -45,23 +45,29 @@ let result = AgentResult(
 A type-safe container for values that can be sent across concurrency boundaries.
 
 ```swift
-public enum SendableValue: Sendable, Equatable {
-    case string(String)
+public enum SendableValue: Sendable, Equatable, Hashable, Codable {
+    case null
+    case bool(Bool)
     case int(Int)
     case double(Double)
-    case bool(Bool)
+    case string(String)
     case array([SendableValue])
-    case object([String: SendableValue])
+    case dictionary([String: SendableValue])
 }
 ```
 
 **Example:**
 ```swift
-let value = SendableValue.object([
+let value = SendableValue.dictionary([
     "name": .string("John"),
     "age": .int(30),
     "active": .bool(true)
 ])
+
+// Or using subscript access
+if let name = value["name"]?.stringValue {
+    print(name) // "John"
+}
 ```
 
 ## Tool System

@@ -198,8 +198,16 @@ public actor ResponseTracker {
 
         responseHistory[sessionId] = history
 
-        // Update session access time for LRU tracking
-        sessionAccessTimes[sessionId] = Date()
+        // Update session access time for LRU tracking.
+        //
+        // Prefer the response timestamp so callers can backfill/persist history with
+        // meaningful access times; never allow the access time to move backwards.
+        let candidate = response.timestamp
+        if let existing = sessionAccessTimes[sessionId] {
+            sessionAccessTimes[sessionId] = max(existing, candidate)
+        } else {
+            sessionAccessTimes[sessionId] = candidate
+        }
 
         // CRITICAL: Enforce maximum session limit using LRU eviction
         if let maxSessions, sessionAccessTimes.count > maxSessions {

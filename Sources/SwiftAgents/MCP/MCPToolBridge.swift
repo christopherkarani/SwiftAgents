@@ -66,7 +66,7 @@ public actor MCPToolBridge {
     ///     print("Bridged tool: \(tool.name)")
     /// }
     /// ```
-    public func bridgeTools() async throws -> [any Tool] {
+    public func bridgeTools() async throws -> [any AnyJSONTool] {
         let definitions = try await server.listTools()
         return definitions.map { definition in
             MCPBridgedTool(definition: definition, server: server)
@@ -117,7 +117,7 @@ public actor MCPToolBridge {
 ///     }
 /// }
 /// ```
-struct MCPBridgedTool: Tool, Sendable {
+struct MCPBridgedTool: AnyJSONTool, Sendable {
     /// The tool definition from the MCP server.
     let definition: ToolDefinition
 
@@ -148,7 +148,7 @@ struct MCPBridgedTool: Tool, Sendable {
     /// - Throws: `MCPError.methodNotFound` if the tool does not exist on the server.
     ///           `MCPError.invalidParams` if the arguments are invalid.
     ///           `MCPError.internalError` if execution fails.
-    mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         try await server.callTool(name: name, arguments: arguments)
     }
 }

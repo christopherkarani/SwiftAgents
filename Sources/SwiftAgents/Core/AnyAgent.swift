@@ -33,7 +33,7 @@ public struct AnyAgent: Agent, @unchecked Sendable {
     // MARK: - Agent Protocol Properties
 
     /// The tools available to this agent.
-    nonisolated public var tools: [any Tool] {
+    nonisolated public var tools: [any AnyJSONTool] {
         box.tools
     }
 
@@ -60,6 +60,21 @@ public struct AnyAgent: Agent, @unchecked Sendable {
     /// Optional tracer for observability.
     nonisolated public var tracer: (any Tracer)? {
         box.tracer
+    }
+
+    /// Input guardrails that validate user input before processing.
+    nonisolated public var inputGuardrails: [any InputGuardrail] {
+        box.inputGuardrails
+    }
+
+    /// Output guardrails that validate agent responses before returning.
+    nonisolated public var outputGuardrails: [any OutputGuardrail] {
+        box.outputGuardrails
+    }
+
+    /// Configured handoffs for this agent.
+    nonisolated public var handoffs: [AnyHandoffConfiguration] {
+        box.handoffs
     }
 
     /// Creates a type-erased wrapper around the given agent.
@@ -106,12 +121,15 @@ public struct AnyAgent: Agent, @unchecked Sendable {
 /// Private protocol for type erasure implementation.
 private protocol AnyAgentBox: Sendable {
     // Properties
-    var tools: [any Tool] { get }
+    var tools: [any AnyJSONTool] { get }
     var instructions: String { get }
     var configuration: AgentConfiguration { get }
     var memory: (any Memory)? { get }
     var inferenceProvider: (any InferenceProvider)? { get }
     var tracer: (any Tracer)? { get }
+    var inputGuardrails: [any InputGuardrail] { get }
+    var outputGuardrails: [any OutputGuardrail] { get }
+    var handoffs: [AnyHandoffConfiguration] { get }
 
     // Methods
     func run(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) async throws -> AgentResult
@@ -125,7 +143,7 @@ private protocol AnyAgentBox: Sendable {
 private final class AgentBox<A: Agent>: AnyAgentBox, @unchecked Sendable {
     // MARK: Internal
 
-    var tools: [any Tool] {
+    var tools: [any AnyJSONTool] {
         agent.tools
     }
 
@@ -147,6 +165,18 @@ private final class AgentBox<A: Agent>: AnyAgentBox, @unchecked Sendable {
 
     var tracer: (any Tracer)? {
         agent.tracer
+    }
+
+    var inputGuardrails: [any InputGuardrail] {
+        agent.inputGuardrails
+    }
+
+    var outputGuardrails: [any OutputGuardrail] {
+        agent.outputGuardrails
+    }
+
+    var handoffs: [AnyHandoffConfiguration] {
+        agent.handoffs
     }
 
     init(_ agent: A) {

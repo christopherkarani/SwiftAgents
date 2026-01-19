@@ -72,8 +72,13 @@ public struct ToolChainBuilder {
     }
 
     /// Converts a single tool to a chain step.
-    public static func buildExpression(_ tool: any Tool) -> ToolChainStep {
+    public static func buildExpression(_ tool: any AnyJSONTool) -> ToolChainStep {
         ToolStep(tool)
+    }
+
+    /// Converts a typed tool to a chain step.
+    public static func buildExpression<T: Tool>(_ tool: T) -> ToolChainStep {
+        ToolStep(AnyTool(tool))
     }
 
     /// Converts a step to a chain step array.
@@ -117,7 +122,7 @@ public protocol ToolChainStep: Sendable {
 
 // MARK: - Tool Extension
 
-public extension Tool {
+public extension AnyJSONTool {
     /// Executes this tool as a chain step.
     ///
     /// Automatically converts the input to tool arguments:
@@ -158,7 +163,7 @@ public struct ToolStep: ToolChainStep, Sendable {
     /// Creates a tool step from a tool.
     ///
     /// - Parameter tool: The tool to wrap.
-    public init(_ tool: any Tool) {
+    public init(_ tool: any AnyJSONTool) {
         self.tool = tool
         retryCount = 0
         retryDelay = .seconds(1)
@@ -208,7 +213,7 @@ public struct ToolStep: ToolChainStep, Sendable {
     ///
     /// - Parameter tool: The fallback tool to use on failure.
     /// - Returns: A configured tool step.
-    public func fallback(to tool: any Tool) -> ToolStep {
+    public func fallback(to tool: any AnyJSONTool) -> ToolStep {
         ToolStep(
             tool: self.tool,
             retryCount: retryCount,
@@ -235,18 +240,18 @@ public struct ToolStep: ToolChainStep, Sendable {
 
     // MARK: Private
 
-    private let tool: any Tool
+    private let tool: any AnyJSONTool
     private let retryCount: Int
     private let retryDelay: Duration
     private let timeoutDuration: Duration?
-    private let fallbackTool: (any Tool)?
+    private let fallbackTool: (any AnyJSONTool)?
 
     private init(
-        tool: any Tool,
+        tool: any AnyJSONTool,
         retryCount: Int,
         retryDelay: Duration,
         timeoutDuration: Duration?,
-        fallbackTool: (any Tool)?
+        fallbackTool: (any AnyJSONTool)?
     ) {
         self.tool = tool
         self.retryCount = retryCount

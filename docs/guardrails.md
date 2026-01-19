@@ -220,7 +220,7 @@ All tool guardrails receive a `ToolGuardrailData` container with execution conte
 ```swift
 public struct ToolGuardrailData: Sendable {
     /// The tool being validated.
-    public let tool: any Tool
+    public let tool: any AnyJSONTool
 
     /// The arguments passed to the tool.
     public let arguments: [String: SendableValue]

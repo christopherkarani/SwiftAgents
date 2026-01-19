@@ -20,73 +20,89 @@ Tools are the fundamental building blocks that enable agents to perform actions 
 
 ## Overview
 
-SwiftAgents provides two approaches to creating tools:
+SwiftAgents provides three ways to create tools:
 
-1. **Manual Implementation**: Implement the `Tool` protocol directly for full control
-2. **@Tool Macro**: Use the `@Tool` macro to eliminate boilerplate (recommended)
+1. **Typed Tools (recommended)**: Implement the typed `Tool` protocol with `Codable` input and typed output
+2. **@Tool Macro (recommended for speed)**: Use `@Tool` + `@Parameter` to generate an `AnyJSONTool`
+3. **AnyJSONTool (advanced)**: Implement the dynamic `AnyJSONTool` ABI directly when you need full control
 
-Both approaches are fully compatible and can be mixed in the same application.
+All approaches are compatible and can be mixed in the same application.
 
 ---
 
 ## Tool Protocol
 
-The `Tool` protocol defines the core contract for all tools:
+SwiftAgents has two tool protocols:
+
+- `Tool` (typed): the primary developer-facing API
+- `AnyJSONTool` (dynamic): the runtime ABI used at the model boundary
+
+### Typed Tool
+
+The typed `Tool` protocol is the recommended way to build tools:
 
 ```swift
 public protocol Tool: Sendable {
-    /// The unique name of the tool.
+    associatedtype Input: Codable & Sendable
+    associatedtype Output: Encodable & Sendable
+
     var name: String { get }
-
-    /// A description of what the tool does (used in prompts to help the model understand).
     var description: String { get }
-
-    /// The parameters this tool accepts.
     var parameters: [ToolParameter] { get }
-
-    /// Input guardrails for this tool (optional).
     var inputGuardrails: [any ToolInputGuardrail] { get }
-
-    /// Output guardrails for this tool (optional).
     var outputGuardrails: [any ToolOutputGuardrail] { get }
 
-    /// Executes the tool with the given arguments.
+    func execute(_ input: Input) async throws -> Output
+}
+```
+
+### AnyJSONTool
+
+`AnyJSONTool` is the dynamic tool ABI used for provider tool calling:
+
+```swift
+public protocol AnyJSONTool: Sendable {
+    var name: String { get }
+    var description: String { get }
+    var parameters: [ToolParameter] { get }
+    var inputGuardrails: [any ToolInputGuardrail] { get }
+    var outputGuardrails: [any ToolOutputGuardrail] { get }
+
     func execute(arguments: [String: SendableValue]) async throws -> SendableValue
 }
 ```
 
 ### Manual Tool Implementation
 
-**Before** (without @Tool macro):
+**Example** (typed `Tool`):
 
 ```swift
 struct WeatherTool: Tool, Sendable {
+    struct Input: Codable, Sendable {
+        let location: String
+    }
+
+    struct Output: Codable, Sendable {
+        let temperatureF: Double
+        let conditions: String
+    }
+
     let name = "weather"
     let description = "Gets the current weather for a location"
     let parameters: [ToolParameter] = [
         ToolParameter(name: "location", description: "City name", type: .string)
     ]
 
-    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
-        guard let location = arguments["location"]?.stringValue else {
-            throw AgentError.invalidToolArguments(
-                toolName: name,
-                reason: "Missing location"
-            )
-        }
-
+    func execute(_ input: Input) async throws -> Output {
         // Fetch weather data...
-        let temperature = 72.0
-        return .string("\(temperature)°F and sunny in \(location)")
+        Output(temperatureF: 72.0, conditions: "Sunny")
     }
 }
 ```
 
 This manual approach requires:
-- Explicit parameter extraction and type casting
-- Manual error handling for missing parameters
-- Wrapping return values in `SendableValue`
-- Boilerplate for parameter definitions
+- Defining a provider-facing parameter schema (`parameters`)
+- Codable input/output types for safety and maintainability
 
 ---
 
@@ -236,10 +252,12 @@ let parameters: [ToolParameter] = [
 
 ## TypedTool Protocol
 
-For tools that need stronger type safety, SwiftAgents provides the `TypedTool` protocol with compile-time type checking for outputs.
+`TypedTool` is a legacy convenience for tools that still use the dynamic `AnyJSONTool` argument ABI but want a strongly-typed output.
+
+For new code, prefer the typed `Tool` protocol (Codable input + typed output) and let SwiftAgents bridge it to `AnyJSONTool` automatically.
 
 ```swift
-public protocol TypedTool<Output>: Tool {
+public protocol TypedTool<Output>: AnyJSONTool {
     associatedtype Output: Sendable & Encodable
 
     func executeTyped(arguments: [String: SendableValue]) async throws -> Output
@@ -818,7 +836,7 @@ struct SensitiveOutputFilter: ToolOutputGuardrail {
     }
 }
 
-struct SecureWeatherTool: Tool, Sendable {
+struct SecureWeatherTool: AnyJSONTool, Sendable {
     let name = "weather"
     let description = "Gets weather"
     let parameters: [ToolParameter] = [...]
@@ -837,8 +855,8 @@ struct SecureWeatherTool: Tool, Sendable {
 Build tools at runtime based on configuration:
 
 ```swift
-func createToolsFromConfig(_ config: ToolConfiguration) async -> [any Tool] {
-    var tools: [any Tool] = []
+func createToolsFromConfig(_ config: ToolConfiguration) async -> [any AnyJSONTool] {
+    var tools: [any AnyJSONTool] = []
 
     if config.enableWeather {
         tools.append(WeatherTool())
@@ -945,7 +963,7 @@ struct APITool {
 Track tool usage with custom metrics:
 
 ```swift
-struct MetricsWeatherTool: Tool, Sendable {
+struct MetricsWeatherTool: AnyJSONTool, Sendable {
     let name = "weather"
     let description = "Gets weather with metrics"
     let parameters: [ToolParameter] = [...]

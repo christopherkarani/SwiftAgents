@@ -243,7 +243,7 @@ public func Parameter(
 /// Example:
 /// ```swift
 /// @ToolArrayBuilder
-/// func makeTools() -> [any Tool] {
+/// func makeTools() -> [any AnyJSONTool] {
 ///     CalculatorTool()
 ///     WeatherTool()
 ///     if includeDebug {
@@ -254,47 +254,52 @@ public func Parameter(
 @resultBuilder
 public struct ToolArrayBuilder {
     /// Builds a tool array from multiple tools.
-    public static func buildBlock(_ components: (any Tool)...) -> [any Tool] {
+    public static func buildBlock(_ components: (any AnyJSONTool)...) -> [any AnyJSONTool] {
         components
     }
 
     /// Builds a tool array from arrays of tools.
-    public static func buildBlock(_ components: [any Tool]...) -> [any Tool] {
+    public static func buildBlock(_ components: [any AnyJSONTool]...) -> [any AnyJSONTool] {
         components.flatMap(\.self)
     }
 
     /// Builds a tool array from an optional tool.
-    public static func buildOptional(_ component: [any Tool]?) -> [any Tool] {
+    public static func buildOptional(_ component: [any AnyJSONTool]?) -> [any AnyJSONTool] {
         component ?? []
     }
 
     /// Builds a tool array from the first branch of an if-else.
-    public static func buildEither(first component: [any Tool]) -> [any Tool] {
+    public static func buildEither(first component: [any AnyJSONTool]) -> [any AnyJSONTool] {
         component
     }
 
     /// Builds a tool array from the second branch of an if-else.
-    public static func buildEither(second component: [any Tool]) -> [any Tool] {
+    public static func buildEither(second component: [any AnyJSONTool]) -> [any AnyJSONTool] {
         component
     }
 
     /// Builds a tool array from a for-in loop.
-    public static func buildArray(_ components: [[any Tool]]) -> [any Tool] {
+    public static func buildArray(_ components: [[any AnyJSONTool]]) -> [any AnyJSONTool] {
         components.flatMap(\.self)
     }
 
     /// Converts a single tool to an array.
-    public static func buildExpression(_ expression: any Tool) -> [any Tool] {
+    public static func buildExpression(_ expression: any AnyJSONTool) -> [any AnyJSONTool] {
         [expression]
     }
 
+    /// Converts a typed tool to a dynamic tool array.
+    public static func buildExpression<T: Tool>(_ expression: T) -> [any AnyJSONTool] {
+        [AnyTool(expression)]
+    }
+
     /// Passes through an array of tools.
-    public static func buildExpression(_ expression: [any Tool]) -> [any Tool] {
+    public static func buildExpression(_ expression: [any AnyJSONTool]) -> [any AnyJSONTool] {
         expression
     }
 
     /// Builds from a limited availability check.
-    public static func buildLimitedAvailability(_ component: [any Tool]) -> [any Tool] {
+    public static func buildLimitedAvailability(_ component: [any AnyJSONTool]) -> [any AnyJSONTool] {
         component
     }
 }

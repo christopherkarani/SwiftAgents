@@ -80,7 +80,7 @@
 /// - `let parameters: [ToolParameter]` - From `@Parameter` annotated properties
 /// - `init()` - If not already present
 /// - `execute(arguments:)` - Wrapper that extracts parameters and calls your execute()
-/// - `Tool` and `Sendable` conformance
+/// - `AnyJSONTool` and `Sendable` conformance
 ///
 /// ## Requirements
 ///
@@ -91,7 +91,7 @@
     member,
     names: named(name), named(description), named(parameters), named(init), named(execute), named(_userExecute)
 )
-@attached(extension, conformances: Tool, Sendable)
+@attached(extension, conformances: AnyJSONTool, Sendable)
 public macro Tool(_ description: String) = #externalMacro(module: "SwiftAgentsMacros", type: "ToolMacro")
 
 // MARK: - @Parameter Macro

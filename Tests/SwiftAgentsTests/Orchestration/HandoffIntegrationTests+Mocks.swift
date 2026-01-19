@@ -73,7 +73,7 @@ actor HooksTestState {
 
 /// Mock agent for integration testing handoff scenarios.
 actor MockIntegrationTestAgent: Agent {
-    nonisolated let tools: [any Tool] = []
+    nonisolated let tools: [any AnyJSONTool] = []
     nonisolated let instructions: String
     nonisolated let configuration: AgentConfiguration
 

@@ -8,7 +8,7 @@ import Foundation
 
 // MARK: - AnyTool
 
-/// Type-erased wrapper for any Tool
+/// Type-erased wrapper for any `AnyJSONTool`
 ///
 /// Enables storing heterogeneous tools in collections without
 /// losing type information at runtime:
@@ -23,18 +23,24 @@ import Foundation
 ///     print("Tool: \(tool.name) - \(tool.description)")
 /// }
 /// ```
-public struct AnyTool: Tool, Sendable {
+public struct AnyTool: AnyJSONTool, Sendable {
     // MARK: Public
 
     public var name: String { box.wrappedName }
     public var description: String { box.wrappedDescription }
     public var parameters: [ToolParameter] { box.wrappedParameters }
+    public var inputGuardrails: [any ToolInputGuardrail] { box.wrappedInputGuardrails }
+    public var outputGuardrails: [any ToolOutputGuardrail] { box.wrappedOutputGuardrails }
 
-    public init(_ tool: some Tool) {
+    public init(_ tool: some AnyJSONTool) {
         box = ToolBox(tool)
     }
 
-    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public init(_ tool: some Tool) {
+        box = ToolBox(AnyJSONToolAdapter(tool))
+    }
+
+    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         try await box.executeWrapped(arguments: arguments)
     }
 
@@ -49,22 +55,26 @@ private protocol AnyToolBox: Sendable {
     var wrappedName: String { get }
     var wrappedDescription: String { get }
     var wrappedParameters: [ToolParameter] { get }
+    var wrappedInputGuardrails: [any ToolInputGuardrail] { get }
+    var wrappedOutputGuardrails: [any ToolOutputGuardrail] { get }
 
-    mutating func executeWrapped(arguments: [String: SendableValue]) async throws -> SendableValue
+    func executeWrapped(arguments: [String: SendableValue]) async throws -> SendableValue
 }
 
 // MARK: - ToolBox
 
-private struct ToolBox<T: Tool>: AnyToolBox, Sendable {
+private struct ToolBox<T: AnyJSONTool>: AnyToolBox, Sendable {
     // MARK: Internal
 
     var wrappedName: String { tool.name }
     var wrappedDescription: String { tool.description }
     var wrappedParameters: [ToolParameter] { tool.parameters }
+    var wrappedInputGuardrails: [any ToolInputGuardrail] { tool.inputGuardrails }
+    var wrappedOutputGuardrails: [any ToolOutputGuardrail] { tool.outputGuardrails }
 
     init(_ tool: T) { self.tool = tool }
 
-    mutating func executeWrapped(arguments: [String: SendableValue]) async throws -> SendableValue {
+    func executeWrapped(arguments: [String: SendableValue]) async throws -> SendableValue {
         try await tool.execute(arguments: arguments)
     }
 

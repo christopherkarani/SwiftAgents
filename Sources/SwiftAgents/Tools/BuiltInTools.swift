@@ -24,7 +24,7 @@ import Foundation
     /// let result = try await calc.execute(arguments: ["expression": "2 + 3 * 4"])
     /// // result == .double(14.0)
     /// ```
-    public struct CalculatorTool: Tool, Sendable {
+    public struct CalculatorTool: AnyJSONTool, Sendable {
         // MARK: Public
 
         public let name = "calculator"
@@ -45,7 +45,7 @@ import Foundation
         /// Creates a new calculator tool.
         public init() {}
 
-        public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
             guard let expression = arguments["expression"]?.stringValue else {
                 throw AgentError.invalidToolArguments(
                     toolName: name,
@@ -106,7 +106,7 @@ import Foundation
 /// let result = try await dt.execute(arguments: ["format": "iso8601"])
 /// // result == .string("2024-01-15T10:30:45Z")
 /// ```
-public struct DateTimeTool: Tool, Sendable {
+public struct DateTimeTool: AnyJSONTool, Sendable {
     public let name = "datetime"
     public let description = "Gets the current date and time in various formats."
 
@@ -132,7 +132,7 @@ public struct DateTimeTool: Tool, Sendable {
     /// Creates a new date/time tool.
     public init() {}
 
-    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         let formatString = arguments["format"]?.stringValue ?? "full"
         let timezoneId = arguments["timezone"]?.stringValue
 
@@ -198,7 +198,7 @@ public struct DateTimeTool: Tool, Sendable {
 /// ])
 /// // result == .string("hello Swift")
 /// ```
-public struct StringTool: Tool, Sendable {
+public struct StringTool: AnyJSONTool, Sendable {
     public let name = "string"
     public let description = """
     Performs string operations: length, uppercase, lowercase, trim, split, \
@@ -250,7 +250,7 @@ public struct StringTool: Tool, Sendable {
     /// Creates a new string tool.
     public init() {}
 
-    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         guard let operation = arguments["operation"]?.stringValue else {
             throw AgentError.invalidToolArguments(
                 toolName: name,
@@ -380,10 +380,10 @@ public enum BuiltInTools {
     ///
     /// - Apple platforms: calculator, dateTime, string, semanticCompactor
     /// - Linux: dateTime, string, semanticCompactor
-    public static var all: [any Tool] {
-        var tools: [any Tool] = [dateTime, string, SemanticCompactorTool()]
+    public static var all: [any AnyJSONTool] {
+        var tools: [any AnyJSONTool] = [dateTime, string, SemanticCompactorTool()]
         #if canImport(Darwin)
-            tools.append(calculator)
+        tools.append(calculator)
         #endif
         return tools
     }

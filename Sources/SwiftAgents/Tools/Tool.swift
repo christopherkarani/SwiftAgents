@@ -1,20 +1,20 @@
 // Tool.swift
 // SwiftAgents Framework
 //
-// Tool protocol and supporting types for agent tool execution.
+// Dynamic (JSON) tool protocol and supporting types for tool execution.
 
 import Foundation
 
-// MARK: - Tool
+// MARK: - AnyJSONTool
 
-/// A tool that can be used by an agent to perform actions.
+/// A dynamically-typed tool that operates on JSON-like values.
 ///
-/// Tools encapsulate functionality that agents can invoke during execution.
-/// Each tool has a name, description, parameters, and an execute method.
+/// `AnyJSONTool` is the low-level ABI used at the model boundary, where tool
+/// arguments and results are JSON-shaped and validated at runtime.
 ///
 /// Example:
 /// ```swift
-/// struct WeatherTool: Tool {
+/// struct WeatherTool: AnyJSONTool {
 ///     let name = "weather"
 ///     let description = "Gets the current weather for a location"
 ///     let parameters: [ToolParameter] = [
@@ -29,7 +29,7 @@ import Foundation
 ///     }
 /// }
 /// ```
-public protocol Tool: Sendable {
+public protocol AnyJSONTool: Sendable {
     /// The unique name of the tool.
     var name: String { get }
 
@@ -49,12 +49,12 @@ public protocol Tool: Sendable {
     /// - Parameter arguments: The arguments passed to the tool.
     /// - Returns: The result of the tool execution.
     /// - Throws: `AgentError.toolExecutionFailed` or `AgentError.invalidToolArguments` on failure.
-    mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue
 }
 
-// MARK: - Tool Protocol Extensions
+// MARK: - AnyJSONTool Protocol Extensions
 
-public extension Tool {
+public extension AnyJSONTool {
     /// Creates a ToolDefinition from this tool.
     var definition: ToolDefinition {
         ToolDefinition(from: self)
@@ -70,14 +70,27 @@ public extension Tool {
     /// - Parameter arguments: The arguments to validate.
     /// - Throws: `AgentError.invalidToolArguments` if validation fails.
     func validateArguments(_ arguments: [String: SendableValue]) throws {
-        for param in parameters where param.isRequired {
-            guard arguments[param.name] != nil else {
-                throw AgentError.invalidToolArguments(
-                    toolName: name,
-                    reason: "Missing required parameter: \(param.name)"
-                )
-            }
-        }
+        try ToolArgumentProcessor.validate(
+            toolName: name,
+            parameters: parameters,
+            arguments: arguments
+        )
+    }
+
+    /// Applies default values and performs best-effort type coercion for tool arguments.
+    ///
+    /// This is primarily intended for LLM-generated tool calls where values may be quoted
+    /// or loosely typed (e.g. `"42"` for an integer parameter).
+    ///
+    /// - Parameter arguments: The raw arguments passed to the tool.
+    /// - Returns: A normalized arguments dictionary suitable for execution.
+    /// - Throws: `AgentError.invalidToolArguments` if normalization fails.
+    func normalizeArguments(_ arguments: [String: SendableValue]) throws -> [String: SendableValue] {
+        try ToolArgumentProcessor.normalize(
+            toolName: name,
+            parameters: parameters,
+            arguments: arguments
+        )
     }
 
     /// Gets a required string argument or throws.
@@ -104,6 +117,289 @@ public extension Tool {
     /// - Returns: The string value or default.
     func optionalString(_ key: String, from arguments: [String: SendableValue], default defaultValue: String? = nil) -> String? {
         arguments[key]?.stringValue ?? defaultValue
+    }
+}
+
+// MARK: - ToolArgumentProcessor
+
+/// Shared argument validation + normalization logic for `AnyJSONTool`.
+private enum ToolArgumentProcessor {
+    // MARK: Internal
+
+    static func validate(
+        toolName: String,
+        parameters: [ToolParameter],
+        arguments: [String: SendableValue]
+    ) throws {
+        try validate(toolName: toolName, parameters: parameters, arguments: arguments, pathPrefix: nil)
+    }
+
+    static func normalize(
+        toolName: String,
+        parameters: [ToolParameter],
+        arguments: [String: SendableValue]
+    ) throws -> [String: SendableValue] {
+        try normalize(toolName: toolName, parameters: parameters, arguments: arguments, pathPrefix: nil)
+    }
+
+    // MARK: Private
+
+    private static func validate(
+        toolName: String,
+        parameters: [ToolParameter],
+        arguments: [String: SendableValue],
+        pathPrefix: String?
+    ) throws {
+        for param in parameters where param.isRequired {
+            guard arguments[param.name] != nil else {
+                let fullPath = join(pathPrefix, param.name)
+                throw AgentError.invalidToolArguments(
+                    toolName: toolName,
+                    reason: "Missing required parameter: \(fullPath)"
+                )
+            }
+        }
+
+        for param in parameters {
+            guard let value = arguments[param.name] else { continue }
+            let fullPath = join(pathPrefix, param.name)
+            try validateValue(toolName: toolName, value: value, expected: param.type, path: fullPath)
+        }
+    }
+
+    private static func normalize(
+        toolName: String,
+        parameters: [ToolParameter],
+        arguments: [String: SendableValue],
+        pathPrefix: String?
+    ) throws -> [String: SendableValue] {
+        var normalized = arguments
+
+        // Apply default values
+        for param in parameters {
+            if normalized[param.name] == nil, let defaultValue = param.defaultValue {
+                normalized[param.name] = defaultValue
+            }
+        }
+
+        // Coerce known parameters to expected types
+        for param in parameters {
+            guard let value = normalized[param.name] else { continue }
+            let fullPath = join(pathPrefix, param.name)
+            normalized[param.name] = try coerceValue(toolName: toolName, value: value, expected: param.type, path: fullPath)
+        }
+
+        // Validate after applying defaults + coercion
+        try validate(toolName: toolName, parameters: parameters, arguments: normalized, pathPrefix: pathPrefix)
+        return normalized
+    }
+
+    private static func validateValue(
+        toolName: String,
+        value: SendableValue,
+        expected: ToolParameter.ParameterType,
+        path: String
+    ) throws {
+        switch expected {
+        case .any:
+            return
+
+        case .string:
+            guard case .string = value else {
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+
+        case .int:
+            switch value {
+            case .int:
+                return
+            case let .double(d) where d.truncatingRemainder(dividingBy: 1) == 0
+                && d >= Double(Int.min)
+                && d <= Double(Int.max):
+                return
+            default:
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+
+        case .double:
+            switch value {
+            case .double, .int:
+                return
+            default:
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+
+        case .bool:
+            guard case .bool = value else {
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+
+        case let .array(elementType):
+            guard case let .array(elements) = value else {
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+            for (index, element) in elements.enumerated() {
+                try validateValue(
+                    toolName: toolName,
+                    value: element,
+                    expected: elementType,
+                    path: "\(path)[\(index)]"
+                )
+            }
+
+        case let .object(properties):
+            guard case let .dictionary(dict) = value else {
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+            try validate(toolName: toolName, parameters: properties, arguments: dict, pathPrefix: path)
+
+        case let .oneOf(options):
+            guard case let .string(s) = value else {
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+            guard options.contains(where: { $0.caseInsensitiveCompare(s) == .orderedSame }) else {
+                throw AgentError.invalidToolArguments(
+                    toolName: toolName,
+                    reason: "Invalid value for parameter: \(path). Expected oneOf(\(options.joined(separator: ", ")))"
+                )
+            }
+        }
+    }
+
+    private static func coerceValue(
+        toolName: String,
+        value: SendableValue,
+        expected: ToolParameter.ParameterType,
+        path: String
+    ) throws -> SendableValue {
+        switch expected {
+        case .any:
+            return value
+
+        case .string:
+            guard case .string = value else {
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+            return value
+
+        case .int:
+            switch value {
+            case .int:
+                return value
+            case let .double(d) where d.truncatingRemainder(dividingBy: 1) == 0
+                && d >= Double(Int.min)
+                && d <= Double(Int.max):
+                return .int(Int(d))
+            case let .string(s):
+                if let i = Int(s.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    return .int(i)
+                }
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            default:
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+
+        case .double:
+            switch value {
+            case let .double(d):
+                return .double(d)
+            case let .int(i):
+                return .double(Double(i))
+            case let .string(s):
+                if let d = Double(s.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    return .double(d)
+                }
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            default:
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+
+        case .bool:
+            switch value {
+            case .bool:
+                return value
+            case let .string(s):
+                switch s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                case "true":
+                    return .bool(true)
+                case "false":
+                    return .bool(false)
+                default:
+                    throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+                }
+            default:
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+
+        case let .array(elementType):
+            guard case let .array(elements) = value else {
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+            let coerced = try elements.enumerated().map { index, element in
+                try coerceValue(
+                    toolName: toolName,
+                    value: element,
+                    expected: elementType,
+                    path: "\(path)[\(index)]"
+                )
+            }
+            return .array(coerced)
+
+        case let .object(properties):
+            guard case let .dictionary(dict) = value else {
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+            let coerced = try normalize(toolName: toolName, parameters: properties, arguments: dict, pathPrefix: path)
+            return .dictionary(coerced)
+
+        case let .oneOf(options):
+            guard case let .string(s) = value else {
+                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+            }
+            if let matched = options.first(where: { $0.caseInsensitiveCompare(s) == .orderedSame }) {
+                return .string(matched)
+            }
+            throw AgentError.invalidToolArguments(
+                toolName: toolName,
+                reason: "Invalid value for parameter: \(path). Expected oneOf(\(options.joined(separator: ", ")))"
+            )
+        }
+    }
+
+    private static func invalidType(
+        toolName: String,
+        path: String,
+        expected: ToolParameter.ParameterType,
+        actual: SendableValue
+    ) -> AgentError {
+        AgentError.invalidToolArguments(
+            toolName: toolName,
+            reason: "Invalid type for parameter: \(path). Expected \(expected.description), got \(jsonTypeDescription(actual))"
+        )
+    }
+
+    private static func join(_ prefix: String?, _ key: String) -> String {
+        guard let prefix, !prefix.isEmpty else { return key }
+        return "\(prefix).\(key)"
+    }
+
+    private static func jsonTypeDescription(_ value: SendableValue) -> String {
+        switch value {
+        case .null:
+            "null"
+        case .bool:
+            "boolean"
+        case .int:
+            "integer"
+        case .double:
+            "number"
+        case .string:
+            "string"
+        case .array:
+            "array"
+        case .dictionary:
+            "object"
+        }
     }
 }
 
@@ -202,9 +498,9 @@ public struct ToolDefinition: Sendable, Equatable {
         self.parameters = parameters
     }
 
-    /// Creates a ToolDefinition from a Tool.
+    /// Creates a ToolDefinition from an `AnyJSONTool`.
     /// - Parameter tool: The tool to create a definition from.
-    public init(from tool: any Tool) {
+    public init(from tool: any AnyJSONTool) {
         name = tool.name
         description = tool.description
         parameters = tool.parameters
@@ -228,7 +524,7 @@ public actor ToolRegistry {
     // MARK: Public
 
     /// Gets all registered tools.
-    public var allTools: [any Tool] {
+    public var allTools: [any AnyJSONTool] {
         Array(tools.values)
     }
 
@@ -252,7 +548,7 @@ public actor ToolRegistry {
 
     /// Creates a tool registry with the given tools.
     /// - Parameter tools: The initial tools to register.
-    public init(tools: [any Tool]) {
+    public init(tools: [any AnyJSONTool]) {
         for tool in tools {
             self.tools[tool.name] = tool
         }
@@ -260,13 +556,18 @@ public actor ToolRegistry {
 
     /// Registers a tool.
     /// - Parameter tool: The tool to register.
-    public func register(_ tool: any Tool) {
+    public func register(_ tool: any AnyJSONTool) {
         tools[tool.name] = tool
+    }
+
+    /// Registers a typed tool by bridging it to `AnyJSONTool`.
+    public func register<T: Tool>(_ tool: T) {
+        tools[tool.name] = AnyJSONToolAdapter(tool)
     }
 
     /// Registers multiple tools.
     /// - Parameter newTools: The tools to register.
-    public func register(_ newTools: [any Tool]) {
+    public func register(_ newTools: [any AnyJSONTool]) {
         for tool in newTools {
             tools[tool.name] = tool
         }
@@ -281,7 +582,7 @@ public actor ToolRegistry {
     /// Gets a tool by name.
     /// - Parameter name: The tool name.
     /// - Returns: The tool, or nil if not found.
-    public func tool(named name: String) -> (any Tool)? {
+    public func tool(named name: String) -> (any AnyJSONTool)? {
         tools[name]
     }
 
@@ -313,13 +614,16 @@ public actor ToolRegistry {
         // Check for cancellation before proceeding
         try Task.checkCancellation()
 
-        guard var tool = tools[name] else {
+        guard let tool = tools[name] else {
             throw AgentError.toolNotFound(name: name)
         }
 
+        // Normalize arguments (defaults + coercion) before guardrails/execution.
+        let normalizedArguments = try tool.normalizeArguments(arguments)
+
         // Create a single GuardrailRunner instance for both input and output guardrails
         let runner = GuardrailRunner()
-        let data = ToolGuardrailData(tool: tool, arguments: arguments, agent: agent, context: context)
+        let data = ToolGuardrailData(tool: tool, arguments: normalizedArguments, agent: agent, context: context)
 
         do {
             // Run input guardrails
@@ -327,7 +631,7 @@ public actor ToolRegistry {
                 _ = try await runner.runToolInputGuardrails(tool.inputGuardrails, data: data)
             }
 
-            let result = try await tool.execute(arguments: arguments)
+            let result = try await tool.execute(arguments: normalizedArguments)
 
             // Run output guardrails
             if !tool.outputGuardrails.isEmpty {
@@ -338,16 +642,16 @@ public actor ToolRegistry {
         } catch {
             // Notify hooks for any error (guardrail, execution, or otherwise)
             if let agent, let hooks {
-                let notificationError = (error as? AgentError) ?? AgentError.toolExecutionFailed(
-                    toolName: name,
-                    underlyingError: error.localizedDescription
-                )
-                await hooks.onError(context: context, agent: agent, error: notificationError)
+                await hooks.onError(context: context, agent: agent, error: error)
             }
 
             // Re-throw original error or wrap it
             if let agentError = error as? AgentError {
                 throw agentError
+            } else if error is CancellationError {
+                throw error
+            } else if let guardrailError = error as? GuardrailError {
+                throw guardrailError
             } else {
                 throw AgentError.toolExecutionFailed(
                     toolName: name,
@@ -359,5 +663,5 @@ public actor ToolRegistry {
 
     // MARK: Private
 
-    private var tools: [String: any Tool] = [:]
+    private var tools: [String: any AnyJSONTool] = [:]
 }

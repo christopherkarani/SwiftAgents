@@ -73,17 +73,17 @@ public struct OpenRouterModel: Sendable, Hashable, ExpressibleByStringLiteral {
     /// Anthropic Claude 3.5 Sonnet model.
     public static let claude35Sonnet: OpenRouterModel = "anthropic/claude-3.5-sonnet"
 
-    /// Anthropic Claude 3.5 Haiku model.
-    public static let claude35Haiku: OpenRouterModel = "anthropic/claude-3.5-haiku"
+    /// Anthropic Claude 4.5 Haiku model.
+    public static let claude45Haiku: OpenRouterModel = "anthropic/claude-4.5-haiku"
 
-    /// Anthropic Claude 3 Opus model.
-    public static let claude3Opus: OpenRouterModel = "anthropic/claude-3-opus"
+    /// Anthropic Claude 4 Opus model.
+    public static let claude45Opus: OpenRouterModel = "anthropic/claude-4-opus"
 
-    /// Google Gemini Pro 1.5 model.
-    public static let geminiPro15: OpenRouterModel = "google/gemini-pro-1.5"
+    /// Google Gemini Pro 2.5 model.
+    public static let geminiPro3: OpenRouterModel = "google/gemini-pro-3.0"
 
     /// Google Gemini Flash 1.5 model.
-    public static let geminiFlash15: OpenRouterModel = "google/gemini-flash-1.5"
+    public static let geminiFlash3: OpenRouterModel = "google/gemini-flash-3.0"
 
     /// Meta Llama 3.1 405B Instruct model.
     public static let llama31405B: OpenRouterModel = "meta-llama/llama-3.1-405b-instruct"

@@ -20,16 +20,40 @@
 /// ```swift
 /// import SwiftAgents
 ///
+/// // Create an agent with tools and an inference provider
 /// let agent = ReActAgent(
-///     model: FoundationModel.default,
-///     tools: [SearchTool(), CalculatorTool()]
+///     tools: [CalculatorTool(), DateTimeTool()],
+///     instructions: "You are a helpful assistant that can perform calculations.",
+///     inferenceProvider: myProvider
 /// )
-/// let response = try await agent.execute("What is 25 * 4?")
+///
+/// // Run the agent
+/// let result = try await agent.run("What is 25 * 4?")
+/// print(result.output)
+///
+/// // Or use the fluent builder API
+/// let agent2 = ReActAgent.Builder()
+///     .tools([CalculatorTool()])
+///     .instructions("You are a math assistant.")
+///     .inferenceProvider(myProvider)
+///     .build()
 /// ```
+///
+/// ## Supported Platforms
+///
+/// - macOS 15.0+
+/// - iOS 17.0+
+/// - watchOS 10.0+
+/// - tvOS 17.0+
+/// - visionOS 1.0+
+///
 public enum SwiftAgents {
     /// The current version of the SwiftAgents framework.
     public static let version = "0.1.0"
 
-    /// The minimum platform versions required by SwiftAgents.
-    public static let minimumPlatformVersion = "26.0"
+    /// The minimum macOS platform version required by SwiftAgents.
+    public static let minimumMacOSVersion = "15.0"
+
+    /// The minimum iOS platform version required by SwiftAgents.
+    public static let minimumiOSVersion = "17.0"
 }

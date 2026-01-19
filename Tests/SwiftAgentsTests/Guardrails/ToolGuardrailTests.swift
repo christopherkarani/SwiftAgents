@@ -438,7 +438,7 @@ struct MockToolOutputGuardrail: ToolOutputGuardrail {
 
 /// Mock Agent for guardrail testing
 struct MockAgentForGuardrails: Agent {
-    let tools: [any Tool] = []
+    let tools: [any AnyJSONTool] = []
     let instructions: String = "Mock agent for guardrail tests"
     let configuration: AgentConfiguration
 

@@ -35,7 +35,7 @@ public actor ToolCallingAgent: Agent {
 
     // MARK: - Agent Protocol Properties
 
-    nonisolated public let tools: [any Tool]
+    nonisolated public let tools: [any AnyJSONTool]
     nonisolated public let instructions: String
     nonisolated public let configuration: AgentConfiguration
     nonisolated public let memory: (any Memory)?
@@ -63,7 +63,7 @@ public actor ToolCallingAgent: Agent {
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
     public init(
-        tools: [any Tool] = [],
+        tools: [any AnyJSONTool] = [],
         instructions: String = "",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
@@ -101,12 +101,18 @@ public actor ToolCallingAgent: Agent {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
 
+        let tracing = TracingHelper(
+            tracer: tracer,
+            agentName: configuration.name.isEmpty ? "ToolCallingAgent" : configuration.name
+        )
+        await tracing.traceStart(input: input)
+
         // Notify hooks of agent start
         await hooks?.onAgentStart(context: nil, agent: self, input: input)
 
         do {
-            // Run input guardrails
-            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration)
+            // Run input guardrails (with hooks for event emission)
+            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
             _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
             isCancelled = false
@@ -136,7 +142,8 @@ public actor ToolCallingAgent: Agent {
                 input: input,
                 sessionHistory: sessionHistory,
                 resultBuilder: resultBuilder,
-                hooks: hooks
+                hooks: hooks,
+                tracing: tracing
             )
 
             _ = resultBuilder.setOutput(output)
@@ -156,6 +163,7 @@ public actor ToolCallingAgent: Agent {
             }
 
             let result = resultBuilder.build()
+            await tracing.traceComplete(result: result)
 
             // Notify hooks of agent completion
             await hooks?.onAgentEnd(context: nil, agent: self, result: result)
@@ -164,6 +172,7 @@ public actor ToolCallingAgent: Agent {
         } catch {
             // Notify hooks of error
             await hooks?.onError(context: nil, agent: self, error: error)
+            await tracing.traceError(error)
             throw error
         }
     }
@@ -176,17 +185,22 @@ public actor ToolCallingAgent: Agent {
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { agent, continuation in
-            continuation.yield(.started(input: input))
+            // Create event bridge hooks
+            let streamHooks = EventStreamHooks(continuation: continuation)
+
+            // Combine with user-provided hooks
+            let combinedHooks: any RunHooks
+            if let userHooks = hooks {
+                combinedHooks = CompositeRunHooks(hooks: [userHooks, streamHooks])
+            } else {
+                combinedHooks = streamHooks
+            }
+
             do {
-                let result = try await agent.run(input, session: session, hooks: hooks)
-                continuation.yield(.completed(result: result))
+                _ = try await agent.run(input, session: session, hooks: combinedHooks)
                 continuation.finish()
-            } catch let error as AgentError {
-                continuation.yield(.failed(error: error))
-                continuation.finish(throwing: error)
             } catch {
-                let agentError = AgentError.internalError(reason: error.localizedDescription)
-                continuation.yield(.failed(error: agentError))
+                // Error is handled by EventStreamHooks.onError
                 continuation.finish(throwing: error)
             }
         }
@@ -237,16 +251,30 @@ public actor ToolCallingAgent: Agent {
         input: String,
         sessionHistory: [MemoryMessage] = [],
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)? = nil
+        hooks: (any RunHooks)? = nil,
+        tracing: TracingHelper? = nil
     ) async throws -> String {
         var iteration = 0
-        var conversationHistory = buildInitialConversationHistory(sessionHistory: sessionHistory, input: input)
         let startTime = ContinuousClock.now
-        let systemMessage = buildSystemMessage()
+
+        // Retrieve relevant context from memory (enables RAG for VectorMemory)
+        var memoryContext = ""
+        if let mem = memory {
+            let tokenLimit = configuration.maxTokens ?? 2000
+            memoryContext = await mem.context(for: input, tokenLimit: tokenLimit)
+        }
+
+        var conversationHistory = buildInitialConversationHistory(
+            sessionHistory: sessionHistory,
+            input: input,
+            memoryContext: memoryContext
+        )
+        let systemMessage = buildSystemMessage(memoryContext: memoryContext)
 
         while iteration < configuration.maxIterations {
             iteration += 1
             _ = resultBuilder.incrementIteration()
+            await hooks?.onIterationStart(context: nil, agent: self, number: iteration)
 
             try checkCancellationAndTimeout(startTime: startTime)
 
@@ -266,7 +294,8 @@ public actor ToolCallingAgent: Agent {
                     response: response,
                     conversationHistory: &conversationHistory,
                     resultBuilder: resultBuilder,
-                    hooks: hooks
+                    hooks: hooks,
+                    tracing: tracing
                 )
             } else {
                 guard let content = response.content else {
@@ -274,15 +303,21 @@ public actor ToolCallingAgent: Agent {
                 }
                 return content
             }
+
+            await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
         }
 
         throw AgentError.maxIterationsExceeded(iterations: iteration)
     }
 
     /// Builds the initial conversation history from session history and user input.
-    private func buildInitialConversationHistory(sessionHistory: [MemoryMessage], input: String) -> [ConversationMessage] {
+    private func buildInitialConversationHistory(
+        sessionHistory: [MemoryMessage],
+        input: String,
+        memoryContext: String = ""
+    ) -> [ConversationMessage] {
         var history: [ConversationMessage] = []
-        history.append(.system(buildSystemMessage()))
+        history.append(.system(buildSystemMessage(memoryContext: memoryContext)))
 
         for msg in sessionHistory {
             switch msg.role {
@@ -318,7 +353,7 @@ public actor ToolCallingAgent: Agent {
 
         let content = try await provider.generate(
             prompt: prompt,
-            options: InferenceOptions(temperature: configuration.temperature, maxTokens: configuration.maxTokens)
+            options: configuration.inferenceOptions
         )
 
         await hooks?.onLLMEnd(context: nil, agent: self, response: content, usage: nil)
@@ -330,7 +365,8 @@ public actor ToolCallingAgent: Agent {
         response: InferenceResponse,
         conversationHistory: inout [ConversationMessage],
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)?
+        hooks: (any RunHooks)?,
+        tracing: TracingHelper?
     ) async throws {
         let toolCallSummary = response.toolCalls.map { "Calling tool: \($0.name)" }.joined(separator: ", ")
         conversationHistory.append(.assistant(response.content ?? toolCallSummary))
@@ -340,7 +376,8 @@ public actor ToolCallingAgent: Agent {
                 parsedCall: parsedCall,
                 conversationHistory: &conversationHistory,
                 resultBuilder: resultBuilder,
-                hooks: hooks
+                hooks: hooks,
+                tracing: tracing
             )
         }
     }
@@ -350,32 +387,29 @@ public actor ToolCallingAgent: Agent {
         parsedCall: InferenceResponse.ParsedToolCall,
         conversationHistory: inout [ConversationMessage],
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)?
+        hooks: (any RunHooks)?,
+        tracing: TracingHelper?
     ) async throws {
-        let toolCall = ToolCall(toolName: parsedCall.name, arguments: parsedCall.arguments)
-        _ = resultBuilder.addToolCall(toolCall)
+        let engine = ToolExecutionEngine()
+        let outcome = try await engine.execute(
+            parsedCall,
+            registry: toolRegistry,
+            agent: self,
+            context: nil,
+            resultBuilder: resultBuilder,
+            hooks: hooks,
+            tracing: tracing,
+            stopOnToolError: false
+        )
 
-        let callStartTime = ContinuousClock.now
-        do {
-            if let tool = await toolRegistry.tool(named: parsedCall.name) {
-                await hooks?.onToolStart(context: nil, agent: self, tool: tool, arguments: parsedCall.arguments)
-            }
-
-            let toolOutput = try await toolRegistry.execute(toolNamed: parsedCall.name, arguments: parsedCall.arguments, agent: self, context: nil)
-            let duration = ContinuousClock.now - callStartTime
-
-            if let tool = await toolRegistry.tool(named: parsedCall.name) {
-                await hooks?.onToolEnd(context: nil, agent: self, tool: tool, result: toolOutput)
-            }
-
-            _ = resultBuilder.addToolResult(ToolResult.success(callId: toolCall.id, output: toolOutput, duration: duration))
-            conversationHistory.append(.toolResult(toolName: parsedCall.name, result: toolOutput.description))
-        } catch {
-            let duration = ContinuousClock.now - callStartTime
-            let errorMessage = (error as? AgentError)?.localizedDescription ?? error.localizedDescription
-
-            _ = resultBuilder.addToolResult(ToolResult.failure(callId: toolCall.id, error: errorMessage, duration: duration))
-            conversationHistory.append(.toolResult(toolName: parsedCall.name, result: "[TOOL ERROR] Execution failed: \(errorMessage). Please try a different approach or tool."))
+        if outcome.result.isSuccess {
+            conversationHistory.append(.toolResult(toolName: parsedCall.name, result: outcome.result.output.description))
+        } else {
+            let errorMessage = outcome.result.errorMessage ?? "Unknown error"
+            conversationHistory.append(.toolResult(
+                toolName: parsedCall.name,
+                result: "[TOOL ERROR] Execution failed: \(errorMessage). Please try a different approach or tool."
+            ))
 
             if configuration.stopOnToolError {
                 throw AgentError.toolExecutionFailed(toolName: parsedCall.name, underlyingError: errorMessage)
@@ -385,11 +419,20 @@ public actor ToolCallingAgent: Agent {
 
     // MARK: - Prompt Building
 
-    private func buildSystemMessage() -> String {
-        if instructions.isEmpty {
-            "You are a helpful AI assistant with access to tools."
+    private func buildSystemMessage(memoryContext: String = "") -> String {
+        let baseInstructions = instructions.isEmpty
+            ? "You are a helpful AI assistant with access to tools."
+            : instructions
+
+        if memoryContext.isEmpty {
+            return baseInstructions
         } else {
-            instructions
+            return """
+            \(baseInstructions)
+
+            Relevant Context from Memory:
+            \(memoryContext)
+            """
         }
     }
 
@@ -411,10 +454,7 @@ public actor ToolCallingAgent: Agent {
             )
         }
 
-        let options = InferenceOptions(
-            temperature: configuration.temperature,
-            maxTokens: configuration.maxTokens
-        )
+        let options = configuration.inferenceOptions
 
         // Notify hooks of LLM start
         await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
@@ -462,7 +502,7 @@ public extension ToolCallingAgent {
         /// - Parameter tools: The tools to use.
         /// - Returns: A new builder with the tools set.
         @discardableResult
-        public func tools(_ tools: [any Tool]) -> Builder {
+        public func tools(_ tools: [any AnyJSONTool]) -> Builder {
             var copy = self
             copy._tools = tools
             return copy
@@ -472,7 +512,7 @@ public extension ToolCallingAgent {
         /// - Parameter tool: The tool to add.
         /// - Returns: A new builder with the tool added.
         @discardableResult
-        public func addTool(_ tool: any Tool) -> Builder {
+        public func addTool(_ tool: any AnyJSONTool) -> Builder {
             var copy = self
             copy._tools.append(tool)
             return copy
@@ -626,7 +666,7 @@ public extension ToolCallingAgent {
 
         // MARK: Private
 
-        private var _tools: [any Tool] = []
+        private var _tools: [any AnyJSONTool] = []
         private var _instructions: String = ""
         private var _configuration: AgentConfiguration = .default
         private var _memory: (any Memory)?

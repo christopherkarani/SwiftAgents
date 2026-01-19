@@ -1,3 +1,55 @@
+# Migration Guide
+
+## SwiftAgents 1.x → 2.0 (Tooling Overhaul)
+
+This release introduces a breaking redesign of tools to improve reliability, schema support, and developer experience.
+
+### Breaking Changes
+
+- `Tool` (dynamic) has been renamed to `AnyJSONTool`
+- New typed `Tool` protocol (`Codable` input + typed output)
+- Tool arrays/registries still operate on `AnyJSONTool` at runtime; typed tools are bridged via:
+  - `AnyJSONToolAdapter<T: Tool>`
+  - `AnyTool` (type-erased wrapper)
+- `ToolCall` now includes `providerCallId` to preserve provider-native tool call IDs when available
+
+### Migration Examples
+
+**Old dynamic tool:**
+```swift
+struct WeatherTool: Tool { ... }
+```
+
+**New dynamic tool:**
+```swift
+struct WeatherTool: AnyJSONTool { ... }
+```
+
+**New typed tool (recommended):**
+```swift
+struct WeatherTool: Tool {
+    struct Input: Codable { let location: String }
+    struct Output: Codable { let temperatureF: Double }
+
+    let name = "weather"
+    let description = "Gets weather data"
+    let parameters: [ToolParameter] = [
+        ToolParameter(name: "location", description: "City name", type: .string)
+    ]
+
+    func execute(_ input: Input) async throws -> Output {
+        Output(temperatureF: 72)
+    }
+}
+```
+
+To pass a typed tool into an agent/registry, wrap it:
+```swift
+let tools: [any AnyJSONTool] = [AnyTool(WeatherTool())]
+```
+
+---
+
 # Migration Guide: SwiftAgents 1.0 to 1.1
 
 This guide helps you migrate your SwiftAgents code from version 1.0 to 1.1, which introduces API ergonomics improvements and enhanced error handling.

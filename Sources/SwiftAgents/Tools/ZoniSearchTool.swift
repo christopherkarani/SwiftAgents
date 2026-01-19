@@ -13,7 +13,7 @@ import Foundation
 /// This tool allows an agent to query a knowledge base (PDFs, Markdown, Web pages)
 /// that has been indexed using Zoni's technical pipeline.
 @Tool("Searches a private knowledge base of documents to find specific, factual information.")
-public struct ZoniSearchTool: Sendable {
+public struct ZoniSearchTool {
     
     @Parameter("The specific question or information to look up in the documents")
     var query: String

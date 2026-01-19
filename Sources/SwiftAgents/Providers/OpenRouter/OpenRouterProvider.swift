@@ -27,7 +27,7 @@ import Foundation
 ///     options: .default
 /// )
 /// ```
-public actor OpenRouterProvider: InferenceProvider {
+public actor OpenRouterProvider: InferenceProvider, InferenceStreamingProvider {
     // MARK: Public
 
     // MARK: - Initialization
@@ -136,6 +136,39 @@ public actor OpenRouterProvider: InferenceProvider {
             let task = Task {
                 do {
                     try await self.performStream(prompt: prompt, options: options, continuation: continuation)
+                } catch is CancellationError {
+                    continuation.finish(throwing: AgentError.cancelled)
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
+        }
+    }
+
+    /// Streams a response with tool-call deltas for the given prompt.
+    /// - Parameters:
+    ///   - prompt: The input prompt.
+    ///   - tools: Available tool definitions.
+    ///   - options: Generation options.
+    /// - Returns: An async stream of inference events.
+    nonisolated public func streamWithToolCalls(
+        prompt: String,
+        tools: [ToolDefinition],
+        options: InferenceOptions
+    ) -> AsyncThrowingStream<InferenceStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    try await self.performToolCallStream(
+                        prompt: prompt,
+                        tools: tools,
+                        options: options,
+                        continuation: continuation
+                    )
                 } catch is CancellationError {
                     continuation.finish(throwing: AgentError.cancelled)
                 } catch {
@@ -296,6 +329,44 @@ public actor OpenRouterProvider: InferenceProvider {
         throw AgentError.generationFailed(reason: "Max retries exceeded")
     }
 
+    private func performToolCallStream(
+        prompt: String,
+        tools: [ToolDefinition],
+        options: InferenceOptions,
+        continuation: AsyncThrowingStream<InferenceStreamEvent, Error>.Continuation
+    ) async throws {
+        guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AgentError.invalidInput(reason: "Prompt cannot be empty")
+        }
+
+        let request = try buildRequest(prompt: prompt, options: options, stream: true, tools: tools)
+        let maxRetries = configuration.retryStrategy.maxRetries
+
+        for attempt in 0..<(maxRetries + 1) {
+            try Task.checkCancellation()
+
+            do {
+                let completed = try await executeToolCallStreamRequest(
+                    request: request,
+                    attempt: attempt,
+                    maxRetries: maxRetries,
+                    continuation: continuation
+                )
+                if completed {
+                    return
+                }
+            } catch let error as AgentError {
+                try handleStreamError(error: error, attempt: attempt, maxRetries: maxRetries)
+            } catch is CancellationError {
+                throw AgentError.cancelled
+            } catch {
+                try await handleGenericStreamError(error: error, attempt: attempt, maxRetries: maxRetries)
+            }
+        }
+
+        throw AgentError.generationFailed(reason: "Max retries exceeded")
+    }
+
     /// Executes a single stream request attempt.
     /// - Returns: `true` if the stream completed successfully, `false` if a retry is needed.
     private func executeStreamRequest(
@@ -308,6 +379,29 @@ public actor OpenRouterProvider: InferenceProvider {
             return try await executeLinuxStreamRequest(request: request, attempt: attempt, maxRetries: maxRetries, continuation: continuation)
         #else
             return try await executeAppleStreamRequest(request: request, attempt: attempt, maxRetries: maxRetries, continuation: continuation)
+        #endif
+    }
+
+    private func executeToolCallStreamRequest(
+        request: URLRequest,
+        attempt: Int,
+        maxRetries: Int,
+        continuation: AsyncThrowingStream<InferenceStreamEvent, Error>.Continuation
+    ) async throws -> Bool {
+        #if canImport(FoundationNetworking)
+            return try await executeLinuxToolCallStreamRequest(
+                request: request,
+                attempt: attempt,
+                maxRetries: maxRetries,
+                continuation: continuation
+            )
+        #else
+            return try await executeAppleToolCallStreamRequest(
+                request: request,
+                attempt: attempt,
+                maxRetries: maxRetries,
+                continuation: continuation
+            )
         #endif
     }
 
@@ -339,6 +433,39 @@ public actor OpenRouterProvider: InferenceProvider {
             try processSSELines(responseString.components(separatedBy: .newlines), continuation: continuation)
             return true
         }
+
+        /// Linux-specific tool-call stream execution using data(for:) and manual line splitting.
+        private func executeLinuxToolCallStreamRequest(
+            request: URLRequest,
+            attempt: Int,
+            maxRetries: Int,
+            continuation: AsyncThrowingStream<InferenceStreamEvent, Error>.Continuation
+        ) async throws -> Bool {
+            let (data, response) = try await session.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw AgentError.generationFailed(reason: "Invalid response type")
+            }
+
+            rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
+
+            if httpResponse.statusCode != 200 {
+                try handleHTTPError(statusCode: httpResponse.statusCode, data: data, attempt: attempt, maxRetries: maxRetries)
+                return false // Retry needed
+            }
+
+            guard let responseString = String(data: data, encoding: .utf8) else {
+                throw AgentError.generationFailed(reason: "Invalid UTF-8 data")
+            }
+
+            let parser = OpenRouterStreamParser()
+            try processToolCallSSELines(
+                responseString.components(separatedBy: .newlines),
+                parser: parser,
+                continuation: continuation
+            )
+            return true
+        }
     #else
         /// Apple platforms stream execution using bytes(for:) with async line iterator.
         private func executeAppleStreamRequest(
@@ -362,6 +489,36 @@ public actor OpenRouterProvider: InferenceProvider {
             }
 
             try await processAsyncSSEStream(bytes: bytes, continuation: continuation)
+            return true
+        }
+
+        /// Apple platforms tool-call stream execution using bytes(for:) with async line iterator.
+        private func executeAppleToolCallStreamRequest(
+            request: URLRequest,
+            attempt: Int,
+            maxRetries: Int,
+            continuation: AsyncThrowingStream<InferenceStreamEvent, Error>.Continuation
+        ) async throws -> Bool {
+            let (bytes, response) = try await session.bytes(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw AgentError.generationFailed(reason: "Invalid response type")
+            }
+
+            rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
+
+            if httpResponse.statusCode != 200 {
+                let errorData = try await collectErrorData(from: bytes)
+                try handleHTTPError(statusCode: httpResponse.statusCode, data: errorData, attempt: attempt, maxRetries: maxRetries)
+                return false // Retry needed
+            }
+
+            let parser = OpenRouterStreamParser()
+            try await processAsyncToolCallSSEStream(
+                bytes: bytes,
+                parser: parser,
+                continuation: continuation
+            )
             return true
         }
 
@@ -389,6 +546,21 @@ public actor OpenRouterProvider: InferenceProvider {
             }
             continuation.finish()
         }
+
+        /// Processes an async SSE tool-call stream from Apple platforms.
+        private func processAsyncToolCallSSEStream(
+            bytes: URLSession.AsyncBytes,
+            parser: OpenRouterStreamParser,
+            continuation: AsyncThrowingStream<InferenceStreamEvent, Error>.Continuation
+        ) async throws {
+            for try await line in bytes.lines {
+                try Task.checkCancellation()
+                if try processToolCallSSELine(line, parser: parser, continuation: continuation) {
+                    return
+                }
+            }
+            continuation.finish()
+        }
     #endif
 
     /// Processes an array of SSE lines (Linux path).
@@ -399,6 +571,21 @@ public actor OpenRouterProvider: InferenceProvider {
         for line in lines {
             try Task.checkCancellation()
             if try processSSELine(line, continuation: continuation) {
+                return
+            }
+        }
+        continuation.finish()
+    }
+
+    /// Processes an array of SSE lines for tool-call streaming (Linux path).
+    private func processToolCallSSELines(
+        _ lines: [String],
+        parser: OpenRouterStreamParser,
+        continuation: AsyncThrowingStream<InferenceStreamEvent, Error>.Continuation
+    ) throws {
+        for line in lines {
+            try Task.checkCancellation()
+            if try processToolCallSSELine(line, parser: parser, continuation: continuation) {
                 return
             }
         }
@@ -429,6 +616,39 @@ public actor OpenRouterProvider: InferenceProvider {
         } catch {
             // Skip malformed chunks
         }
+        return false
+    }
+
+    /// Processes a single SSE line and yields tool-call stream events.
+    /// - Returns: `true` if stream is done, `false` to continue processing.
+    private func processToolCallSSELine(
+        _ line: String,
+        parser: OpenRouterStreamParser,
+        continuation: AsyncThrowingStream<InferenceStreamEvent, Error>.Continuation
+    ) throws -> Bool {
+        guard let events = parser.parse(line: line) else {
+            return false
+        }
+
+        for event in events {
+            switch event {
+            case let .textDelta(text):
+                continuation.yield(.textDelta(text))
+            case let .toolCallDelta(index, id, name, arguments):
+                continuation.yield(.toolCallDelta(index: index, id: id, name: name, arguments: arguments))
+            case let .finishReason(reason):
+                continuation.yield(.finishReason(reason))
+            case let .usage(prompt, completion):
+                continuation.yield(.usage(promptTokens: prompt, completionTokens: completion))
+            case .done:
+                continuation.yield(.done)
+                continuation.finish()
+                return true
+            case let .error(providerError):
+                throw providerError.toAgentError()
+            }
+        }
+
         return false
     }
 
@@ -480,6 +700,14 @@ public actor OpenRouterProvider: InferenceProvider {
         }
         messages.append(.user(prompt))
 
+        let openRouterToolChoice: OpenRouterToolChoice? = if let tools,
+                                                             !tools.isEmpty,
+                                                             let choice = options.toolChoice {
+            OpenRouterToolChoice(from: choice)
+        } else {
+            nil
+        }
+
         // Build typed request
         let openRouterRequest = OpenRouterRequest(
             model: configuration.model.identifier,
@@ -492,7 +720,8 @@ public actor OpenRouterProvider: InferenceProvider {
             presencePenalty: options.presencePenalty,
             maxTokens: options.maxTokens,
             stop: options.stopSequences.isEmpty ? nil : options.stopSequences,
-            tools: tools?.toOpenRouterTools()
+            tools: tools?.toOpenRouterTools(),
+            toolChoice: openRouterToolChoice
         )
 
         // Encode the typed request
@@ -548,5 +777,22 @@ public actor OpenRouterProvider: InferenceProvider {
 extension OpenRouterProvider: CustomStringConvertible {
     nonisolated public var description: String {
         "OpenRouterProvider(model: \(modelDescription))"
+    }
+}
+
+// MARK: - ToolChoice Mapping
+
+private extension OpenRouterToolChoice {
+    init(from toolChoice: ToolChoice) {
+        switch toolChoice {
+        case .auto:
+            self = .auto
+        case .none:
+            self = .none
+        case .required:
+            self = .required
+        case let .specific(toolName):
+            self = .function(name: toolName)
+        }
     }
 }

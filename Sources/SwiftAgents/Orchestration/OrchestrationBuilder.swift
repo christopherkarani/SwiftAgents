@@ -5,6 +5,114 @@
 
 import Foundation
 
+// MARK: - OrchestrationStepContext
+
+/// Shared execution context passed to orchestration steps.
+public struct OrchestrationStepContext: Sendable {
+    /// Shared agent context for the orchestration run.
+    public let agentContext: AgentContext
+
+    /// Optional session for conversation history.
+    public let session: (any Session)?
+
+    /// Optional run hooks for lifecycle callbacks.
+    public let hooks: (any RunHooks)?
+
+    /// The orchestrator running this workflow.
+    public let orchestrator: (any Agent)?
+
+    /// The orchestrator name used for handoff metadata.
+    public let orchestratorName: String
+
+    /// Handoff configurations applied by the orchestrator.
+    public let handoffs: [AnyHandoffConfiguration]
+
+    /// Creates a new orchestration step context.
+    public init(
+        agentContext: AgentContext,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        orchestrator: (any Agent)?,
+        orchestratorName: String,
+        handoffs: [AnyHandoffConfiguration]
+    ) {
+        self.agentContext = agentContext
+        self.session = session
+        self.hooks = hooks
+        self.orchestrator = orchestrator
+        self.orchestratorName = orchestratorName
+        self.handoffs = handoffs
+    }
+}
+
+public extension OrchestrationStepContext {
+    /// Returns a stable display name for an agent.
+    func agentName(for agent: any Agent) -> String {
+        let configured = agent.configuration.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !configured.isEmpty {
+            return configured
+        }
+        return String(describing: type(of: agent))
+    }
+
+    /// Finds a handoff configuration for the given target agent.
+    func findHandoffConfiguration(for targetAgent: any Agent) -> AnyHandoffConfiguration? {
+        handoffs.first { config in
+            let configTargetType = type(of: config.targetAgent)
+            let currentType = type(of: targetAgent)
+            return configTargetType == currentType
+        }
+    }
+
+    /// Applies handoff configuration for the target agent if present.
+    func applyHandoffConfiguration(
+        for targetAgent: any Agent,
+        input: String,
+        targetName: String? = nil
+    ) async throws -> String {
+        let resolvedName = targetName ?? agentName(for: targetAgent)
+
+        guard let config = findHandoffConfiguration(for: targetAgent) else {
+            return input
+        }
+
+        if let isEnabled = config.isEnabled {
+            let enabled = await isEnabled(agentContext, targetAgent)
+            if !enabled {
+                throw OrchestrationError.handoffSkipped(
+                    from: orchestratorName,
+                    to: resolvedName,
+                    reason: "Handoff disabled by isEnabled callback"
+                )
+            }
+        }
+
+        var inputData = HandoffInputData(
+            sourceAgentName: orchestratorName,
+            targetAgentName: resolvedName,
+            input: input,
+            context: await agentContext.snapshot,
+            metadata: [:]
+        )
+
+        if let inputFilter = config.inputFilter {
+            inputData = inputFilter(inputData)
+        }
+
+        if let onHandoff = config.onHandoff {
+            do {
+                try await onHandoff(agentContext, inputData)
+            } catch {
+                Log.orchestration.warning(
+                    "onHandoff callback failed for \(orchestratorName) -> \(resolvedName): \(error.localizedDescription)"
+                )
+            }
+        }
+
+        return inputData.input
+    }
+}
+
 // MARK: - OrchestrationStep
 
 /// A step in an orchestrated multi-agent workflow.
@@ -22,10 +130,31 @@ public protocol OrchestrationStep: Sendable {
     /// Executes this step with the given input.
     /// - Parameters:
     ///   - input: The input string to process.
-    ///   - hooks: Optional hooks for lifecycle callbacks.
+    ///   - context: Shared orchestration context.
     /// - Returns: The result of executing this step.
     /// - Throws: `AgentError` or `OrchestrationError` if execution fails.
+    func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult
+
+    /// Executes this step with the given input and hooks (legacy signature).
     func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult
+}
+
+public extension OrchestrationStep {
+    func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
+        let context = OrchestrationStepContext(
+            agentContext: AgentContext(input: input),
+            session: nil,
+            hooks: hooks,
+            orchestrator: nil,
+            orchestratorName: "Orchestration",
+            handoffs: []
+        )
+        return try await execute(input, context: context)
+    }
+
+    func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
+        try await execute(input, hooks: context.hooks)
+    }
 }
 
 // MARK: - OrchestrationBuilder
@@ -118,8 +247,32 @@ public struct AgentStep: OrchestrationStep {
         self.name = name
     }
 
-    public func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
-        try await agent.run(input, hooks: hooks)
+    public func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
+        let agentName = name ?? context.agentName(for: agent)
+        await context.agentContext.recordExecution(agentName: agentName)
+
+        let effectiveInput = try await context.applyHandoffConfiguration(
+            for: agent,
+            input: input,
+            targetName: agentName
+        )
+
+        if let orchestrator = context.orchestrator {
+            await context.hooks?.onHandoff(
+                context: context.agentContext,
+                fromAgent: orchestrator,
+                toAgent: agent
+            )
+        }
+
+        let result = try await agent.run(
+            effectiveInput,
+            session: context.session,
+            hooks: context.hooks
+        )
+
+        await context.agentContext.setPreviousOutput(result)
+        return result
     }
 }
 
@@ -177,7 +330,7 @@ public struct Sequential: OrchestrationStep {
         self.transformer = transformer
     }
 
-    public func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
+    public func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
         guard !steps.isEmpty else {
             return AgentResult(output: input)
         }
@@ -191,7 +344,7 @@ public struct Sequential: OrchestrationStep {
         var allMetadata: [String: SendableValue] = [:]
 
         for (index, step) in steps.enumerated() {
-            let result = try await step.execute(currentInput, hooks: hooks)
+            let result = try await step.execute(currentInput, context: context)
 
             // Accumulate tool calls and results
             allToolCalls.append(contentsOf: result.toolCalls)
@@ -286,6 +439,9 @@ public struct Parallel: OrchestrationStep {
     /// The strategy for merging results.
     public let mergeStrategy: MergeStrategy
 
+    /// Strategy for handling errors during parallel execution.
+    public let errorHandling: ParallelErrorHandling
+
     /// Optional limit on concurrent executions.
     public let maxConcurrency: Int?
 
@@ -293,57 +449,108 @@ public struct Parallel: OrchestrationStep {
     /// - Parameters:
     ///   - merge: How to merge parallel results. Default: `.concatenate`
     ///   - maxConcurrency: Maximum number of concurrent executions. Default: nil (unlimited)
+    ///   - errorHandling: Strategy for handling errors. Default: `.continueOnPartialFailure`
     ///   - content: A builder closure that produces named agents to execute.
     public init(
         merge: MergeStrategy = .concatenate,
         maxConcurrency: Int? = nil,
+        errorHandling: ParallelErrorHandling = .continueOnPartialFailure,
         @ParallelBuilder _ content: () -> [(String, any Agent)]
     ) {
         agents = content()
         mergeStrategy = merge
         self.maxConcurrency = maxConcurrency
+        self.errorHandling = errorHandling
     }
 
-    public func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
+    public func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
         guard !agents.isEmpty else {
             return AgentResult(output: input)
         }
 
         let startTime = ContinuousClock.now
 
-        // Execute agents in parallel using task group
-        let results = try await withThrowingTaskGroup(
-            of: (String, AgentResult).self,
-            returning: [(String, AgentResult)].self
-        ) { group in
-            var pendingAgents = agents
-            var completedResults: [(String, AgentResult)] = []
+        var results: [(String, AgentResult)] = []
+        var errors: [String: Error] = [:]
 
-            // Add initial tasks up to maxConcurrency limit
-            let initialCount = maxConcurrency.map { min($0, agents.count) } ?? agents.count
-            for agent in pendingAgents.prefix(initialCount) {
+        let concurrencyLimit = maxConcurrency.map { min($0, agents.count) } ?? agents.count
+        var pendingAgents = agents
+
+        await withTaskGroup(of: (String, Result<AgentResult, Error>).self) { group in
+            func addTask(name: String, agent: any Agent) {
                 group.addTask {
-                    let result = try await agent.1.run(input, hooks: hooks)
-                    return (agent.0, result)
-                }
-            }
-            pendingAgents.removeFirst(initialCount)
+                    do {
+                        await context.agentContext.recordExecution(agentName: name)
 
-            // Collect results and add more tasks as they complete
-            while let result = try await group.next() {
-                completedResults.append(result)
+                        let effectiveInput = try await context.applyHandoffConfiguration(
+                            for: agent,
+                            input: input,
+                            targetName: name
+                        )
 
-                // If there are more agents and we haven't hit the limit, add another task
-                if !pendingAgents.isEmpty {
-                    let nextAgent = pendingAgents.removeFirst()
-                    group.addTask {
-                        let result = try await nextAgent.1.run(input, hooks: hooks)
-                        return (nextAgent.0, result)
+                        if let orchestrator = context.orchestrator {
+                            await context.hooks?.onHandoff(
+                                context: context.agentContext,
+                                fromAgent: orchestrator,
+                                toAgent: agent
+                            )
+                        }
+
+                        let result = try await agent.run(
+                            effectiveInput,
+                            session: context.session,
+                            hooks: context.hooks
+                        )
+                        return (name, .success(result))
+                    } catch {
+                        return (name, .failure(error))
                     }
                 }
             }
 
-            return completedResults
+            let initialCount = min(concurrencyLimit, pendingAgents.count)
+            for _ in 0..<initialCount {
+                let next = pendingAgents.removeFirst()
+                addTask(name: next.0, agent: next.1)
+            }
+
+            while let (name, result) = await group.next() {
+                switch result {
+                case let .success(agentResult):
+                    results.append((name, agentResult))
+                case let .failure(error):
+                    errors[name] = error
+                    if case .failFast = errorHandling {
+                        group.cancelAll()
+                    }
+                }
+
+                if case .failFast = errorHandling, !errors.isEmpty {
+                    continue
+                }
+
+                if !pendingAgents.isEmpty {
+                    let next = pendingAgents.removeFirst()
+                    addTask(name: next.0, agent: next.1)
+                }
+            }
+        }
+
+        if !errors.isEmpty {
+            switch errorHandling {
+            case .failFast:
+                if let error = errors.values.first {
+                    if let agentError = error as? AgentError {
+                        throw agentError
+                    }
+                    throw AgentError.internalError(reason: error.localizedDescription)
+                }
+            case .continueOnPartialFailure, .collectErrors:
+                if results.isEmpty {
+                    let messages = errors.values.map { $0.localizedDescription }
+                    throw OrchestrationError.allAgentsFailed(errors: messages)
+                }
+            }
         }
 
         let duration = ContinuousClock.now - startTime
@@ -385,10 +592,16 @@ public struct Parallel: OrchestrationStep {
         }
 
         allMetadata["parallel.agent_count"] = .int(agents.count)
+        allMetadata["parallel.success_count"] = .int(results.count)
+        allMetadata["parallel.error_count"] = .int(errors.count)
         allMetadata["parallel.total_duration"] = .double(
             Double(duration.components.seconds) +
                 Double(duration.components.attoseconds) / 1e18
         )
+        if !errors.isEmpty {
+            let errorMessages = errors.map { "\($0.key): \($0.value.localizedDescription)" }
+            allMetadata["parallel.errors"] = .array(errorMessages.map { .string($0) })
+        }
 
         return AgentResult(
             output: mergedOutput,
@@ -453,12 +666,12 @@ public struct Router: OrchestrationStep {
         fallbackAgent = fallback
     }
 
-    public func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
+    public func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
         let startTime = ContinuousClock.now
 
         // Find the first matching route
         var selectedRoute: RouteDefinition?
-        for route in routes where await route.condition.matches(input: input, context: nil) {
+        for route in routes where await route.condition.matches(input: input, context: context.agentContext) {
             selectedRoute = route
             break
         }
@@ -468,10 +681,52 @@ public struct Router: OrchestrationStep {
         let routeName: String
 
         if let route = selectedRoute {
-            result = try await route.agent.run(input, hooks: hooks)
-            routeName = route.name ?? "unnamed"
+            let agentName = context.agentName(for: route.agent)
+            await context.agentContext.recordExecution(agentName: agentName)
+
+            let effectiveInput = try await context.applyHandoffConfiguration(
+                for: route.agent,
+                input: input,
+                targetName: route.name ?? agentName
+            )
+
+            if let orchestrator = context.orchestrator {
+                await context.hooks?.onHandoff(
+                    context: context.agentContext,
+                    fromAgent: orchestrator,
+                    toAgent: route.agent
+                )
+            }
+
+            result = try await route.agent.run(
+                effectiveInput,
+                session: context.session,
+                hooks: context.hooks
+            )
+            routeName = route.name ?? agentName
         } else if let fallback = fallbackAgent {
-            result = try await fallback.run(input, hooks: hooks)
+            let fallbackName = context.agentName(for: fallback)
+            await context.agentContext.recordExecution(agentName: fallbackName)
+
+            let effectiveInput = try await context.applyHandoffConfiguration(
+                for: fallback,
+                input: input,
+                targetName: fallbackName
+            )
+
+            if let orchestrator = context.orchestrator {
+                await context.hooks?.onHandoff(
+                    context: context.agentContext,
+                    fromAgent: orchestrator,
+                    toAgent: fallback
+                )
+            }
+
+            result = try await fallback.run(
+                effectiveInput,
+                session: context.session,
+                hooks: context.hooks
+            )
             routeName = "fallback"
         } else {
             throw OrchestrationError.routingFailed(
@@ -609,7 +864,7 @@ public struct Transform: OrchestrationStep {
         self.transformer = transformer
     }
 
-    public func execute(_ input: String, hooks _: (any RunHooks)?) async throws -> AgentResult {
+    public func execute(_ input: String, context _: OrchestrationStepContext) async throws -> AgentResult {
         let startTime = ContinuousClock.now
         let output = try await transformer(input)
         let duration = ContinuousClock.now - startTime
@@ -659,28 +914,123 @@ public struct Transform: OrchestrationStep {
 ///
 /// let result = try await workflow.run("Process this data")
 /// ```
-public struct Orchestration: Sendable {
+public struct Orchestration: Sendable, OrchestratorProtocol {
     /// The steps in this orchestration.
     public let steps: [OrchestrationStep]
 
-    /// Creates a new orchestration.
-    /// - Parameter content: A builder closure that produces the orchestration steps.
-    public init(@OrchestrationBuilder _ content: () -> [OrchestrationStep]) {
-        steps = content()
+    /// Configuration for this orchestration agent.
+    public let configuration: AgentConfiguration
+
+    /// Handoff configurations applied to sub-agents.
+    public let handoffs: [AnyHandoffConfiguration]
+
+    // MARK: - Agent Protocol Properties
+
+    public var tools: [any AnyJSONTool] { [] }
+
+    public var instructions: String {
+        "Orchestration workflow with \(steps.count) steps"
     }
 
-    /// Executes the orchestration workflow.
+    public var memory: (any Memory)? { nil }
+
+    public var inferenceProvider: (any InferenceProvider)? { nil }
+
+    public var tracer: (any Tracer)? { nil }
+
+    /// Creates a new orchestration.
     /// - Parameters:
-    ///   - input: The input string to process.
-    ///   - hooks: Optional hooks for lifecycle callbacks.
-    /// - Returns: The final result after all steps complete.
-    /// - Throws: `AgentError` or `OrchestrationError` if execution fails.
-    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    ///   - configuration: Agent configuration for this orchestration. Default: `.default`
+    ///   - handoffs: Handoff configurations for sub-agents. Default: []
+    ///   - content: A builder closure that produces the orchestration steps.
+    public init(
+        configuration: AgentConfiguration = .default,
+        handoffs: [AnyHandoffConfiguration] = [],
+        @OrchestrationBuilder _ content: () -> [OrchestrationStep]
+    ) {
+        steps = content()
+        self.configuration = configuration
+        self.handoffs = handoffs
+    }
+
+    // MARK: - Agent Protocol Methods
+
+    public func run(
+        _ input: String,
+        session: (any Session)? = nil,
+        hooks: (any RunHooks)? = nil
+    ) async throws -> AgentResult {
+        try await executeSteps(
+            input: input,
+            session: session,
+            hooks: hooks,
+            onIterationStart: nil,
+            onIterationEnd: nil
+        )
+    }
+
+    public func stream(
+        _ input: String,
+        session: (any Session)? = nil,
+        hooks: (any RunHooks)? = nil
+    ) -> AsyncThrowingStream<AgentEvent, Error> {
+        StreamHelper.makeTrackedStream { continuation in
+            continuation.yield(.started(input: input))
+            do {
+                let result = try await executeSteps(
+                    input: input,
+                    session: session,
+                    hooks: hooks,
+                    onIterationStart: { iteration in
+                        continuation.yield(.iterationStarted(number: iteration))
+                    },
+                    onIterationEnd: { iteration in
+                        continuation.yield(.iterationCompleted(number: iteration))
+                    }
+                )
+                continuation.yield(.completed(result: result))
+                continuation.finish()
+            } catch let error as AgentError {
+                continuation.yield(.failed(error: error))
+                continuation.finish(throwing: error)
+            } catch {
+                let agentError = AgentError.internalError(reason: error.localizedDescription)
+                continuation.yield(.failed(error: agentError))
+                continuation.finish(throwing: error)
+            }
+        }
+    }
+
+    public func cancel() async {
+        for agent in collectAgents(from: steps) {
+            await agent.cancel()
+        }
+    }
+
+    // MARK: - Private Helpers
+
+    private func executeSteps(
+        input: String,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        onIterationStart: ((Int) -> Void)?,
+        onIterationEnd: ((Int) -> Void)?
+    ) async throws -> AgentResult {
         guard !steps.isEmpty else {
             return AgentResult(output: input)
         }
 
         let startTime = ContinuousClock.now
+        let context = AgentContext(input: input)
+        let stepContext = OrchestrationStepContext(
+            agentContext: context,
+            session: session,
+            hooks: hooks,
+            orchestrator: self,
+            orchestratorName: orchestratorName,
+            handoffs: handoffs
+        )
+        await context.recordExecution(agentName: orchestratorName)
 
         var currentInput = input
         var allToolCalls: [ToolCall] = []
@@ -689,20 +1039,26 @@ public struct Orchestration: Sendable {
         var allMetadata: [String: SendableValue] = [:]
 
         for (index, step) in steps.enumerated() {
-            let result = try await step.execute(currentInput, hooks: hooks)
+            if Task.isCancelled {
+                throw AgentError.cancelled
+            }
 
-            // Accumulate results
+            onIterationStart?(index + 1)
+
+            let result = try await step.execute(currentInput, context: stepContext)
+
             allToolCalls.append(contentsOf: result.toolCalls)
             allToolResults.append(contentsOf: result.toolResults)
             totalIterations += result.iterationCount
 
-            // Merge metadata
             for (key, value) in result.metadata {
                 allMetadata["orchestration.step_\(index).\(key)"] = value
             }
 
-            // Use output as input for next step
+            await context.setPreviousOutput(result)
             currentInput = result.output
+
+            onIterationEnd?(index + 1)
         }
 
         let duration = ContinuousClock.now - startTime
@@ -723,35 +1079,25 @@ public struct Orchestration: Sendable {
         )
     }
 
-    /// Streams the execution of the orchestration workflow.
-    /// - Parameter input: The input string to process.
-    /// - Returns: An async stream of agent events from all steps.
-    public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        let stepsCopy = steps
-        return StreamHelper.makeTrackedStream { continuation in
-            continuation.yield(.started(input: input))
-            do {
-                var currentInput = input
-                for (index, step) in stepsCopy.enumerated() {
-                    continuation.yield(.iterationStarted(number: index + 1))
-
-                    let result = try await step.execute(currentInput, hooks: nil)
-                    currentInput = result.output
-
-                    continuation.yield(.iterationCompleted(number: index + 1))
-                }
-
-                let finalResult = AgentResult(output: currentInput)
-                continuation.yield(.completed(result: finalResult))
-                continuation.finish()
-            } catch let error as AgentError {
-                continuation.yield(.failed(error: error))
-                continuation.finish(throwing: error)
-            } catch {
-                let agentError = AgentError.internalError(reason: error.localizedDescription)
-                continuation.yield(.failed(error: agentError))
-                continuation.finish(throwing: error)
+    private func collectAgents(from steps: [OrchestrationStep]) -> [any Agent] {
+        steps.flatMap { step in
+            if let agentStep = step as? AgentStep {
+                return [agentStep.agent]
             }
+            if let sequential = step as? Sequential {
+                return collectAgents(from: sequential.steps)
+            }
+            if let parallel = step as? Parallel {
+                return parallel.agents.map(\.1)
+            }
+            if let router = step as? Router {
+                let routeAgents = router.routes.map(\.agent)
+                if let fallback = router.fallbackAgent {
+                    return routeAgents + [fallback]
+                }
+                return routeAgents
+            }
+            return []
         }
     }
 }

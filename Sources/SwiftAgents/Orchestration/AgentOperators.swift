@@ -108,12 +108,13 @@ public func |? (lhs: any Agent, rhs: any Agent) -> ConditionalFallback {
 ///
 /// let result = try await configured.run("What's happening today?")
 /// ```
+@available(*, deprecated, message: "Use ParallelGroup for parallel orchestration.")
 public actor ParallelComposition: Agent {
     // MARK: Public
 
     // MARK: - Agent Protocol (nonisolated)
 
-    nonisolated public let tools: [any Tool] = []
+    nonisolated public let tools: [any AnyJSONTool] = []
     nonisolated public let instructions: String = "Parallel composition of agents"
     nonisolated public let configuration: AgentConfiguration
 
@@ -132,7 +133,7 @@ public actor ParallelComposition: Agent {
     public init(
         agents: [any Agent],
         mergeStrategy: ParallelMergeStrategy = .concatenate(separator: "\n"),
-        errorHandling: ParallelErrorHandling = .failFast,
+        errorHandling: ParallelErrorHandling = .continueOnPartialFailure,
         configuration: AgentConfiguration = .default
     ) {
         parallelAgents = agents
@@ -325,12 +326,13 @@ public actor ParallelComposition: Agent {
 /// let sequence = fetchAgent ~> processAgent ~> formatAgent
 /// let result = try await sequence.run("Process data")
 /// ```
+@available(*, deprecated, message: "Use SequentialChain for sequential orchestration.")
 public actor AgentSequence: Agent {
     // MARK: Public
 
     // MARK: - Agent Protocol (nonisolated)
 
-    nonisolated public let tools: [any Tool] = []
+    nonisolated public let tools: [any AnyJSONTool] = []
     nonisolated public let instructions: String = "Sequential composition of agents"
     nonisolated public let configuration: AgentConfiguration
 
@@ -464,7 +466,7 @@ public actor ConditionalFallback: Agent {
 
     // MARK: - Agent Protocol (nonisolated)
 
-    nonisolated public let tools: [any Tool] = []
+    nonisolated public let tools: [any AnyJSONTool] = []
     nonisolated public let instructions: String = "Conditional fallback agent"
     nonisolated public let configuration: AgentConfiguration
 

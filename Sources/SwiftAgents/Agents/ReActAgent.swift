@@ -33,7 +33,7 @@ public actor ReActAgent: Agent {
 
     // MARK: - Agent Protocol Properties
 
-    nonisolated public let tools: [any Tool]
+    nonisolated public let tools: [any AnyJSONTool]
     nonisolated public let instructions: String
     nonisolated public let configuration: AgentConfiguration
     nonisolated public let memory: (any Memory)?
@@ -61,7 +61,7 @@ public actor ReActAgent: Agent {
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
     public init(
-        tools: [any Tool] = [],
+        tools: [any AnyJSONTool] = [],
         instructions: String = "",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
@@ -99,12 +99,18 @@ public actor ReActAgent: Agent {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
 
+        let tracing = TracingHelper(
+            tracer: tracer,
+            agentName: configuration.name.isEmpty ? "ReActAgent" : configuration.name
+        )
+        await tracing.traceStart(input: input)
+
         // Notify hooks of agent start
         await hooks?.onAgentStart(context: nil, agent: self, input: input)
 
         do {
-            // Run input guardrails
-            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration)
+            // Run input guardrails (with hooks for event emission)
+            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
             _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
             isCancelled = false
@@ -134,7 +140,8 @@ public actor ReActAgent: Agent {
                 input: input,
                 sessionHistory: sessionHistory,
                 resultBuilder: resultBuilder,
-                hooks: hooks
+                hooks: hooks,
+                tracing: tracing
             )
 
             _ = resultBuilder.setOutput(output)
@@ -154,10 +161,12 @@ public actor ReActAgent: Agent {
             }
 
             let result = resultBuilder.build()
+            await tracing.traceComplete(result: result)
             await hooks?.onAgentEnd(context: nil, agent: self, result: result)
             return result
         } catch {
             await hooks?.onError(context: nil, agent: self, error: error)
+            await tracing.traceError(error)
             throw error
         }
     }
@@ -170,17 +179,22 @@ public actor ReActAgent: Agent {
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { agent, continuation in
-            continuation.yield(.started(input: input))
+            // Create event bridge hooks
+            let streamHooks = EventStreamHooks(continuation: continuation)
+
+            // Combine with user-provided hooks
+            let combinedHooks: any RunHooks
+            if let userHooks = hooks {
+                combinedHooks = CompositeRunHooks(hooks: [userHooks, streamHooks])
+            } else {
+                combinedHooks = streamHooks
+            }
+
             do {
-                let result = try await agent.run(input, session: session, hooks: hooks)
-                continuation.yield(.completed(result: result))
+                _ = try await agent.run(input, session: session, hooks: combinedHooks)
                 continuation.finish()
-            } catch let error as AgentError {
-                continuation.yield(.failed(error: error))
-                continuation.finish(throwing: error)
             } catch {
-                let agentError = AgentError.internalError(reason: error.localizedDescription)
-                continuation.yield(.failed(error: agentError))
+                // Error is handled by EventStreamHooks.onError
                 continuation.finish(throwing: error)
             }
         }
@@ -209,11 +223,22 @@ public actor ReActAgent: Agent {
         input: String,
         sessionHistory: [MemoryMessage] = [],
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)? = nil
+        hooks: (any RunHooks)? = nil,
+        tracing: TracingHelper? = nil
     ) async throws -> String {
         var iteration = 0
         var scratchpad = "" // Accumulates Thought-Action-Observation history
         let startTime = ContinuousClock.now
+        let toolDefinitions = tools.map(\.definition)
+
+        // Retrieve relevant context from memory once at the start
+        // This enables RAG-style retrieval for VectorMemory or summarization for SummaryMemory
+        var memoryContext = ""
+        if let mem = memory {
+            // Use a reasonable token limit for context (configurable via maxTokens or default)
+            let tokenLimit = configuration.maxTokens ?? 2000
+            memoryContext = await mem.context(for: input, tokenLimit: tokenLimit)
+        }
 
         while iteration < configuration.maxIterations {
             // Check for cancellation
@@ -230,46 +255,80 @@ public actor ReActAgent: Agent {
 
             iteration += 1
             _ = resultBuilder.incrementIteration()
+            await hooks?.onIterationStart(context: nil, agent: self, number: iteration)
 
-            // Step 1: Build prompt with current context
+            // Step 1: Build prompt with current context (including memory context)
             let prompt = buildPrompt(
                 input: input,
                 sessionHistory: sessionHistory,
                 scratchpad: scratchpad,
-                iteration: iteration
+                iteration: iteration,
+                memoryContext: memoryContext
             )
 
             // Step 2: Generate response from model
             await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
-            let response = try await generateResponse(prompt: prompt)
-            await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
+            let inference = try await generateResponse(prompt: prompt, tools: toolDefinitions)
+            let modelText = inference.content ?? ""
+            let llmResponseForHooks = modelText.isEmpty
+                ? inference.toolCalls.map { "Calling tool: \($0.name)" }.joined(separator: ", ")
+                : modelText
+            await hooks?.onLLMEnd(context: nil, agent: self, response: llmResponseForHooks, usage: inference.usage)
 
-            // Step 3: Parse the response
-            let parsed = parseResponse(response)
+            // Emit thinking event if a thought block is present in the response
+            if let thoughtRange = modelText.range(of: "Thought:", options: .caseInsensitive) {
+                var thought = String(modelText[thoughtRange.upperBound...])
+                if let nextMarker = thought.range(of: "Action:", options: .caseInsensitive) {
+                    thought = String(thought[..<nextMarker.lowerBound])
+                } else if let nextMarker = thought.range(of: "Final Answer:", options: .caseInsensitive) {
+                    thought = String(thought[..<nextMarker.lowerBound])
+                }
+                let cleanThought = thought.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !cleanThought.isEmpty {
+                    if let tracing { await tracing.traceThought(cleanThought) }
+                    await hooks?.onThinking(context: nil, agent: self, thought: cleanThought)
+                }
+            }
 
-            switch parsed {
-            case let .finalAnswer(answer):
-                // Agent has decided on a final answer
-                return answer
-
-            case let .toolCall(toolName, arguments):
-                // Agent wants to call a tool - delegate to helper method
-                scratchpad = try await handleToolCall(
-                    toolName: toolName,
-                    arguments: arguments,
+            if !inference.toolCalls.isEmpty {
+                // Native tool calls - execute them and continue.
+                scratchpad = try await handleToolCalls(
+                    calls: inference.toolCalls,
                     scratchpad: scratchpad,
                     resultBuilder: resultBuilder,
-                    hooks: hooks
+                    hooks: hooks,
+                    tracing: tracing
                 )
+            } else {
+                // Step 3: Parse the response (text-based ReAct fallback)
+                let parsed = parseResponse(modelText)
 
-            case let .thinking(thought):
-                // Agent is just thinking, continue
-                scratchpad += "\nThought: \(thought)"
+                switch parsed {
+                case let .finalAnswer(answer):
+                    // Agent has decided on a final answer
+                    return answer
 
-            case let .invalid(raw):
-                // Couldn't parse response, treat as thinking
-                scratchpad += "\nThought: \(raw)"
+                case let .toolCall(call):
+                    // Agent wants to call a tool - delegate to helper method
+                    scratchpad = try await handleToolCall(
+                        call: call,
+                        scratchpad: scratchpad,
+                        resultBuilder: resultBuilder,
+                        hooks: hooks,
+                        tracing: tracing
+                    )
+
+                case let .thinking(thought):
+                    // Agent is just thinking, continue
+                    scratchpad += "\nThought: \(thought)"
+
+                case let .invalid(raw):
+                    // Couldn't parse response, treat as thinking
+                    scratchpad += "\nThought: \(raw)"
+                }
             }
+
+            await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
         }
 
         // Exceeded max iterations
@@ -288,79 +347,120 @@ public actor ReActAgent: Agent {
     /// - Returns: The updated scratchpad with the tool result.
     /// - Throws: `AgentError.toolExecutionFailed` if the tool fails and `stopOnToolError` is enabled.
     private func handleToolCall(
-        toolName: String,
-        arguments: [String: SendableValue],
+        call: InferenceResponse.ParsedToolCall,
         scratchpad: String,
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)?
+        hooks: (any RunHooks)?,
+        tracing: TracingHelper?
     ) async throws -> String {
         var updatedScratchpad = scratchpad
-
-        let toolCall = ToolCall(
-            toolName: toolName,
-            arguments: arguments
+        let engine = ToolExecutionEngine()
+        let outcome = try await engine.execute(
+            call,
+            registry: toolRegistry,
+            agent: self,
+            context: nil,
+            resultBuilder: resultBuilder,
+            hooks: hooks,
+            tracing: tracing,
+            stopOnToolError: false
         )
-        _ = resultBuilder.addToolCall(toolCall)
 
-        let startTime = ContinuousClock.now
-        do {
-            // Notify hooks before tool execution
-            if let tool = await toolRegistry.tool(named: toolName) {
-                await hooks?.onToolStart(context: nil, agent: self, tool: tool, arguments: arguments)
-            }
-
-            let toolResult = try await toolRegistry.execute(
-                toolNamed: toolName,
-                arguments: arguments,
-                agent: self,
-                context: nil
-            )
-            let duration = ContinuousClock.now - startTime
-
-            let result = ToolResult.success(
-                callId: toolCall.id,
-                output: toolResult,
-                duration: duration
-            )
-            _ = resultBuilder.addToolResult(result)
-
-            // Notify hooks after successful tool execution
-            if let tool = await toolRegistry.tool(named: toolName) {
-                await hooks?.onToolEnd(context: nil, agent: self, tool: tool, result: toolResult)
-            }
-
-            // Add to scratchpad
+        if outcome.result.isSuccess {
             updatedScratchpad += """
 
-            Thought: I need to use the \(toolName) tool.
-            Action: \(toolName)(\(formatArguments(arguments)))
-            Observation: \(toolResult.description)
+            Thought: I need to use the \(call.name) tool.
+            Action: \(call.name)(\(formatArguments(call.arguments)))
+            Observation: \(outcome.result.output.description)
             """
-
-        } catch {
-            let duration = ContinuousClock.now - startTime
-            let errorMessage = (error as? AgentError)?.localizedDescription ?? error.localizedDescription
-
-            let result = ToolResult.failure(
-                callId: toolCall.id,
-                error: errorMessage,
-                duration: duration
-            )
-            _ = resultBuilder.addToolResult(result)
-
-            // Add error to scratchpad
+        } else {
+            let errorMessage = outcome.result.errorMessage ?? "Unknown error"
             updatedScratchpad += """
 
-            Thought: I need to use the \(toolName) tool.
-            Action: \(toolName)(\(formatArguments(arguments)))
+            Thought: I need to use the \(call.name) tool.
+            Action: \(call.name)(\(formatArguments(call.arguments)))
             Observation: Error - \(errorMessage)
             """
 
             if configuration.stopOnToolError {
-                throw AgentError.toolExecutionFailed(
-                    toolName: toolName,
-                    underlyingError: errorMessage
+                throw AgentError.toolExecutionFailed(toolName: call.name, underlyingError: errorMessage)
+            }
+        }
+
+        return updatedScratchpad
+    }
+
+    /// Executes one or more tool calls and appends observations to the scratchpad.
+    private func handleToolCalls(
+        calls: [InferenceResponse.ParsedToolCall],
+        scratchpad: String,
+        resultBuilder: AgentResult.Builder,
+        hooks: (any RunHooks)?,
+        tracing: TracingHelper?
+    ) async throws -> String {
+        guard !calls.isEmpty else { return scratchpad }
+
+        // If we need fail-fast behavior, execute sequentially.
+        if configuration.stopOnToolError || calls.count == 1 || !configuration.parallelToolCalls {
+            var updatedScratchpad = scratchpad
+            for call in calls {
+                updatedScratchpad = try await handleToolCall(
+                    call: call,
+                    scratchpad: updatedScratchpad,
+                    resultBuilder: resultBuilder,
+                    hooks: hooks,
+                    tracing: tracing
                 )
+            }
+            return updatedScratchpad
+        }
+
+        // Parallel execution: execute tool calls concurrently, then append observations in order.
+        let engine = ToolExecutionEngine()
+        let outcomes = try await withThrowingTaskGroup(of: (Int, ToolExecutionEngine.Outcome).self) { group in
+            for (index, call) in calls.enumerated() {
+                group.addTask { [toolRegistry, resultBuilder, hooks, tracing] in
+                    let outcome = try await engine.execute(
+                        call,
+                        registry: toolRegistry,
+                        agent: self,
+                        context: nil,
+                        resultBuilder: resultBuilder,
+                        hooks: hooks,
+                        tracing: tracing,
+                        stopOnToolError: false
+                    )
+                    return (index, outcome)
+                }
+            }
+
+            var results: [(Int, ToolExecutionEngine.Outcome)] = []
+            results.reserveCapacity(calls.count)
+            for try await result in group {
+                results.append(result)
+            }
+
+            results.sort { $0.0 < $1.0 }
+            return results.map(\.1)
+        }
+
+        var updatedScratchpad = scratchpad
+        for (call, outcome) in zip(calls, outcomes) {
+            if outcome.result.isSuccess {
+                updatedScratchpad += """
+
+                Thought: I need to use the \(call.name) tool.
+                Action: \(call.name)(\(formatArguments(call.arguments)))
+                Observation: \(outcome.result.output.description)
+                """
+            } else {
+                let errorMessage = outcome.result.errorMessage ?? "Unknown error"
+                updatedScratchpad += """
+
+                Thought: I need to use the \(call.name) tool.
+                Action: \(call.name)(\(formatArguments(call.arguments)))
+                Observation: Error - \(errorMessage)
+                """
             }
         }
 
@@ -373,10 +473,18 @@ public actor ReActAgent: Agent {
         input: String,
         sessionHistory: [MemoryMessage] = [],
         scratchpad: String,
-        iteration _: Int
+        iteration _: Int,
+        memoryContext: String = ""
     ) -> String {
         let toolDescriptions = buildToolDescriptions()
         let conversationContext = buildConversationContext(from: sessionHistory)
+
+        // Build memory context section if available
+        let memorySection = memoryContext.isEmpty ? "" : """
+
+        Relevant Context from Memory:
+        \(memoryContext)
+        """
 
         let basePrompt = """
         \(instructions.isEmpty ? "You are a helpful AI assistant." : instructions)
@@ -387,7 +495,9 @@ public actor ReActAgent: Agent {
 
         Format your response EXACTLY as follows:
         - To reason: Start with "Thought:" followed by your reasoning about what to do next.
-        - To use a tool: Write "Action: tool_name(arg1: value1, arg2: value2)"
+        - To use a tool: Write one of:
+          - Action: tool_name(arg1: value1, arg2: value2)
+          - Action: {"tool":"tool_name","arguments":{"arg1":value1,"arg2":value2}}
         - To give your final answer: Write "Final Answer:" followed by your complete response to the user.
 
         Rules:
@@ -395,7 +505,8 @@ public actor ReActAgent: Agent {
         2. After an Observation, decide if you need another Action or can give the Final Answer.
         3. Only use tools that are available in the list above.
         4. When you have enough information, provide the Final Answer.
-        \(conversationContext.isEmpty ? "" : "\nConversation History:\n\(conversationContext)")
+        5. Use parameter types shown in the tool list (quote strings; keep numbers/booleans unquoted).
+        \(conversationContext.isEmpty ? "" : "\nConversation History:\n\(conversationContext)")\(memorySection)
 
         User Query: \(input)
         """
@@ -435,7 +546,7 @@ public actor ReActAgent: Agent {
         return descriptions.joined(separator: "\n\n")
     }
 
-    private func formatToolDescription(_ tool: any Tool) -> String {
+    private func formatToolDescription(_ tool: any AnyJSONTool) -> String {
         let params = formatParameterDescriptions(tool.parameters)
         if params.isEmpty {
             return "- \(tool.name): \(tool.description)"
@@ -451,7 +562,9 @@ public actor ReActAgent: Agent {
             let desc = param.description
             let required = param.isRequired
             let reqStr = required ? "(required)" : "(optional)"
-            let line = "    - " + name + " " + reqStr + ": " + desc
+            let typeStr = param.type.description
+            let defaultStr = if let defaultValue = param.defaultValue { " default=\(defaultValue.description)" } else { "" }
+            let line = "    - \(name) \(reqStr) (\(typeStr))\(defaultStr): \(desc)"
             lines.append(line)
         }
         return lines.joined(separator: "\n")
@@ -459,17 +572,23 @@ public actor ReActAgent: Agent {
 
     // MARK: - Response Generation
 
-    private func generateResponse(prompt: String) async throws -> String {
+    private func generateResponse(prompt: String, tools: [ToolDefinition]) async throws -> InferenceResponse {
         // Use custom inference provider if available
         if let provider = inferenceProvider {
-            let options = InferenceOptions(
-                temperature: configuration.temperature,
-                maxTokens: configuration.maxTokens
+            // Avoid tool-calling APIs when no tools are available.
+            // Some providers reject requests with an empty tools array.
+            if tools.isEmpty {
+                let content = try await provider.generate(prompt: prompt, options: configuration.inferenceOptions)
+                return InferenceResponse(content: content, toolCalls: [], finishReason: .completed, usage: nil)
+            }
+
+            return try await provider.generateWithToolCalls(
+                prompt: prompt,
+                tools: tools,
+                options: configuration.inferenceOptions
             )
-            return try await provider.generate(prompt: prompt, options: options)
         }
 
-        // Foundation Models is not available in this context
         // Throw an error indicating an inference provider is required
         throw AgentError.inferenceProviderUnavailable(
             reason: "No inference provider configured. Please provide an InferenceProvider."
@@ -514,7 +633,7 @@ public extension ReActAgent {
         /// - Parameter tools: The tools to use.
         /// - Returns: A new builder with the updated tools.
         @discardableResult
-        public func tools(_ tools: [any Tool]) -> Builder {
+        public func tools(_ tools: [any AnyJSONTool]) -> Builder {
             var copy = self
             copy.tools = tools
             return copy
@@ -524,7 +643,7 @@ public extension ReActAgent {
         /// - Parameter tool: The tool to add.
         /// - Returns: A new builder with the tool added.
         @discardableResult
-        public func addTool(_ tool: any Tool) -> Builder {
+        public func addTool(_ tool: any AnyJSONTool) -> Builder {
             var copy = self
             copy.tools.append(tool)
             return copy
@@ -678,7 +797,7 @@ public extension ReActAgent {
 
         // MARK: Private
 
-        private var tools: [any Tool]
+        private var tools: [any AnyJSONTool]
         private var instructions: String
         private var configuration: AgentConfiguration
         private var memory: (any Memory)?

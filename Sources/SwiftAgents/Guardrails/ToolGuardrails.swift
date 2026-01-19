@@ -32,7 +32,7 @@ public typealias ToolOutputValidationHandler =
 /// ```
 public struct ToolGuardrailData: Sendable {
     /// The tool being validated.
-    public let tool: any Tool
+    public let tool: any AnyJSONTool
 
     /// The arguments passed to the tool.
     public let arguments: [String: SendableValue]
@@ -53,7 +53,7 @@ public struct ToolGuardrailData: Sendable {
     ///   - agent: Optional agent executing the tool.
     ///   - context: Optional orchestration context.
     public init(
-        tool: any Tool,
+        tool: any AnyJSONTool,
         arguments: [String: SendableValue],
         agent: (any Agent)?,
         context: AgentContext?

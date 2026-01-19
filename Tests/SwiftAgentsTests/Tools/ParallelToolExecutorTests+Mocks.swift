@@ -9,7 +9,7 @@ import Foundation
 // MARK: - MockDelayTool
 
 /// A mock tool with configurable delay for testing parallel execution order.
-struct MockDelayTool: Tool, Sendable {
+struct MockDelayTool: AnyJSONTool, Sendable {
     let name: String
     let delay: Duration
     let resultValue: SendableValue
@@ -30,7 +30,7 @@ struct MockDelayTool: Tool, Sendable {
 // MARK: - MockErrorTool
 
 /// A mock tool that always throws an error.
-struct MockErrorTool: Tool, Sendable {
+struct MockErrorTool: AnyJSONTool, Sendable {
     let name: String
     let error: Error
 
@@ -53,7 +53,7 @@ struct MockErrorTool: Tool, Sendable {
 
 /// A minimal mock agent for testing parallel tool execution.
 struct ParallelTestMockAgent: Agent {
-    let tools: [any Tool]
+    let tools: [any AnyJSONTool]
     let instructions: String
     let configuration: AgentConfiguration
     let memory: (any Memory)?
@@ -64,7 +64,7 @@ struct ParallelTestMockAgent: Agent {
     let handoffs: [AnyHandoffConfiguration]
 
     init(
-        tools: [any Tool] = [],
+        tools: [any AnyJSONTool] = [],
         instructions: String = "Test agent",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
@@ -101,7 +101,7 @@ struct ParallelTestMockAgent: Agent {
 // MARK: - DelayedTestTool
 
 /// A test tool that delays for a specified duration before returning
-struct DelayedTestTool: Tool, Sendable {
+struct DelayedTestTool: AnyJSONTool, Sendable {
     let name: String
     let delay: Duration
     let result: SendableValue

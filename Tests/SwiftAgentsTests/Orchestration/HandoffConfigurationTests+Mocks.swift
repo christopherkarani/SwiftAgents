@@ -10,7 +10,7 @@ import Foundation
 
 /// Simple mock agent for testing handoff configurations.
 actor MockHandoffAgent: Agent {
-    nonisolated let tools: [any Tool] = []
+    nonisolated let tools: [any AnyJSONTool] = []
     nonisolated let instructions: String
     nonisolated let configuration: AgentConfiguration
     private(set) var runCallCount = 0

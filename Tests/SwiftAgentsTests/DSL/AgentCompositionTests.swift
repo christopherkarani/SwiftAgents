@@ -282,7 +282,7 @@ func | (lhs: any Agent, rhs: any Agent) -> ConditionalRouter {
 actor ParallelComposition: Agent {
     // MARK: Internal
 
-    nonisolated let tools: [any Tool] = []
+        nonisolated let tools: [any AnyJSONTool] = []
     nonisolated let instructions: String = "Parallel composition"
     nonisolated let configuration: AgentConfiguration = .default
 
@@ -426,7 +426,7 @@ actor ParallelComposition: Agent {
 actor SequentialComposition: Agent {
     // MARK: Internal
 
-    nonisolated let tools: [any Tool] = []
+        nonisolated let tools: [any AnyJSONTool] = []
     nonisolated let instructions: String = "Sequential composition"
     nonisolated let configuration: AgentConfiguration = .default
 
@@ -485,7 +485,7 @@ actor SequentialComposition: Agent {
 actor ConditionalRouter: Agent {
     // MARK: Internal
 
-    nonisolated let tools: [any Tool] = []
+        nonisolated let tools: [any AnyJSONTool] = []
     nonisolated let instructions: String = "Conditional router"
     nonisolated let configuration: AgentConfiguration = .default
 
@@ -555,7 +555,7 @@ enum ErrorHandlingStrategy: Sendable {
 
 /// Empty agent (identity for parallel composition)
 struct EmptyAgent: Agent {
-    let tools: [any Tool] = []
+    let tools: [any AnyJSONTool] = []
     let instructions: String = ""
     let configuration: AgentConfiguration = .default
 

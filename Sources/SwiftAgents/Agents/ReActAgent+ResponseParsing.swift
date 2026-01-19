@@ -13,7 +13,7 @@ extension ReActAgent {
     /// Represents the parsed response from the LLM.
     enum ParsedResponse {
         case finalAnswer(String)
-        case toolCall(name: String, arguments: [String: SendableValue])
+        case toolCall(InferenceResponse.ParsedToolCall)
         case thinking(String)
         case invalid(String)
     }
@@ -41,7 +41,7 @@ extension ReActAgent {
                 .first ?? ""
 
             if let parsed = parseToolCall(actionPart) {
-                return .toolCall(name: parsed.name, arguments: parsed.arguments)
+                return .toolCall(parsed)
             }
         }
 
@@ -70,8 +70,29 @@ extension ReActAgent {
     /// Parses a tool call from a text string.
     /// - Parameter text: The text containing the tool call.
     /// - Returns: A tuple of tool name and arguments, or nil if parsing fails.
-    func parseToolCall(_ text: String) -> (name: String, arguments: [String: SendableValue])? {
+    func parseToolCall(_ text: String) -> InferenceResponse.ParsedToolCall? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // JSON format:
+        //   {"tool":"tool_name","arguments":{...}}
+        //   {"name":"tool_name","arguments":{...}}
+        if trimmed.first == "{", let data = trimmed.data(using: .utf8) {
+            if let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let callIdRaw = (jsonObject["id"] as? String) ?? (jsonObject["call_id"] as? String)
+                let toolNameRaw = (jsonObject["tool"] as? String) ?? (jsonObject["name"] as? String)
+                let toolName = toolNameRaw?.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let toolName, !toolName.isEmpty else { return nil }
+
+                var arguments: [String: SendableValue] = [:]
+                if let argsObject = jsonObject["arguments"] as? [String: Any] {
+                    for (key, value) in argsObject {
+                        arguments[key] = SendableValue.fromJSONValue(value)
+                    }
+                }
+
+                return InferenceResponse.ParsedToolCall(id: callIdRaw, name: toolName, arguments: arguments)
+            }
+        }
 
         // Parse format: tool_name(arg1: value1, arg2: value2)
         guard let parenStart = trimmed.firstIndex(of: "("),
@@ -79,7 +100,7 @@ extension ReActAgent {
             // Try simple format: tool_name with no args
             let name = trimmed.trimmingCharacters(in: .whitespacesAndNewlines)
             if !name.isEmpty, !name.contains(" "), !name.contains(":") {
-                return (name: name, arguments: [:])
+                return InferenceResponse.ParsedToolCall(name: name, arguments: [:])
             }
             return nil
         }
@@ -105,7 +126,7 @@ extension ReActAgent {
             arguments[key] = value
         }
 
-        return (name: name, arguments: arguments)
+        return InferenceResponse.ParsedToolCall(name: name, arguments: arguments)
     }
 
     /// Splits argument string by comma, respecting quotes and nested structures.

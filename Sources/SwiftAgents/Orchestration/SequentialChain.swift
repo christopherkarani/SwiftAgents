@@ -139,7 +139,7 @@ public actor SequentialChain: Agent {
     // MARK: - Agent Protocol Properties (nonisolated)
 
     /// Tools available to this chain (always empty - agents have their own tools).
-    nonisolated public var tools: [any Tool] { [] }
+    nonisolated public var tools: [any AnyJSONTool] { [] }
 
     /// Instructions describing this sequential chain.
     nonisolated public var instructions: String {
@@ -343,9 +343,134 @@ public actor SequentialChain: Agent {
     nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
+
+            let chainName = actor.configuration.name.isEmpty ? "SequentialChain" : actor.configuration.name
+
+            func forwardStream(
+                toAgentName: String,
+                agent: any Agent,
+                input: String
+            ) async throws -> AgentResult {
+                continuation.yield(.handoffStarted(from: chainName, to: toAgentName, input: input))
+                var result: AgentResult?
+
+                for try await event in agent.stream(input, session: session, hooks: hooks) {
+                    switch event {
+                    case .started:
+                        continue
+                    case let .completed(subResult):
+                        result = subResult
+                    case let .failed(error):
+                        throw error
+                    default:
+                        continuation.yield(event)
+                    }
+                }
+
+                guard let finalResult = result else {
+                    throw AgentError.internalError(reason: "SequentialChain stream ended without completion")
+                }
+
+                continuation.yield(.handoffCompletedWithResult(
+                    from: chainName,
+                    to: toAgentName,
+                    result: finalResult
+                ))
+
+                return finalResult
+            }
+
             do {
-                let result = try await actor.run(input, session: session, hooks: hooks)
-                continuation.yield(.completed(result: result))
+                guard !actor.chainedAgents.isEmpty else {
+                    throw AgentError.invalidInput(reason: "No agents configured in sequential chain")
+                }
+
+                let sharedContext = AgentContext(input: input)
+                await actor.setContext(sharedContext)
+
+                let builder = AgentResult.Builder()
+                builder.start()
+
+                var currentInput = input
+
+                for (index, agent) in actor.chainedAgents.enumerated() {
+                    if await actor.isCancelled {
+                        throw AgentError.cancelled
+                    }
+
+                    let agentName = String(describing: type(of: agent))
+                    await sharedContext.recordExecution(agentName: agentName)
+
+                    var effectiveInput = currentInput
+                    let handoffContext = sharedContext
+
+                    if let config = await actor.findHandoffConfiguration(for: agent) {
+                        if let isEnabled = config.isEnabled {
+                            let enabled = await isEnabled(handoffContext, agent)
+                            if !enabled {
+                                throw OrchestrationError.handoffSkipped(
+                                    from: "SequentialChain",
+                                    to: agentName,
+                                    reason: "Handoff disabled by isEnabled callback"
+                                )
+                            }
+                        }
+
+                        var inputData = HandoffInputData(
+                            sourceAgentName: "SequentialChain",
+                            targetAgentName: agentName,
+                            input: currentInput,
+                            context: [:],
+                            metadata: [:]
+                        )
+
+                        if let inputFilter = config.inputFilter {
+                            inputData = inputFilter(inputData)
+                            effectiveInput = inputData.input
+                        }
+
+                        if let onHandoff = config.onHandoff {
+                            do {
+                                try await onHandoff(handoffContext, inputData)
+                            } catch {
+                                Log.orchestration.warning(
+                                    "onHandoff callback failed for SequentialChain -> \(agentName): \(error.localizedDescription)"
+                                )
+                            }
+                        }
+                    }
+
+                    await hooks?.onHandoff(context: sharedContext, fromAgent: actor, toAgent: agent)
+
+                    let agentResult = try await forwardStream(
+                        toAgentName: agentName,
+                        agent: agent,
+                        input: effectiveInput
+                    )
+
+                    for toolCall in agentResult.toolCalls {
+                        builder.addToolCall(toolCall)
+                    }
+
+                    for toolResult in agentResult.toolResults {
+                        builder.addToolResult(toolResult)
+                    }
+
+                    for _ in 0..<agentResult.iterationCount {
+                        builder.incrementIteration()
+                    }
+
+                    await sharedContext.setPreviousOutput(agentResult)
+
+                    let transformer = actor.transformers[index] ?? .passthrough
+                    currentInput = transformer.apply(agentResult)
+
+                    if index == actor.chainedAgents.count - 1 {
+                        builder.setOutput(agentResult.output)
+                    }
+                }
+
+                continuation.yield(.completed(result: builder.build()))
                 continuation.finish()
             } catch let error as AgentError {
                 continuation.yield(.failed(error: error))
@@ -353,7 +478,7 @@ public actor SequentialChain: Agent {
             } catch {
                 let agentError = AgentError.internalError(reason: error.localizedDescription)
                 continuation.yield(.failed(error: agentError))
-                continuation.finish(throwing: error)
+                continuation.finish(throwing: agentError)
             }
         }
     }
@@ -412,6 +537,10 @@ public actor SequentialChain: Agent {
             let currentType = type(of: targetAgent)
             return configTargetType == currentType
         }
+    }
+
+    private func setContext(_ context: AgentContext?) {
+        self.context = context
     }
 }
 

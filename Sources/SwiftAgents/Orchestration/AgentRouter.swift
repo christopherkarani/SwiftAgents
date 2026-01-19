@@ -350,7 +350,7 @@ public actor AgentRouter: Agent {
 
     // MARK: - Agent Protocol Properties
 
-    nonisolated public let tools: [any Tool] = []
+    nonisolated public let tools: [any AnyJSONTool] = []
     nonisolated public let instructions: String
     nonisolated public let configuration: AgentConfiguration
 
@@ -533,8 +533,133 @@ public actor AgentRouter: Agent {
     nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
+
+            let routerName = actor.configuration.name.isEmpty ? "AgentRouter" : actor.configuration.name
+
+            func forwardStream(
+                toAgentName: String,
+                agent: any Agent,
+                input: String
+            ) async throws -> AgentResult {
+                continuation.yield(.handoffStarted(from: routerName, to: toAgentName, input: input))
+                var result: AgentResult?
+
+                for try await event in agent.stream(input, session: session, hooks: hooks) {
+                    switch event {
+                    case .started:
+                        continue
+                    case let .completed(subResult):
+                        result = subResult
+                    case let .failed(error):
+                        throw error
+                    default:
+                        continuation.yield(event)
+                    }
+                }
+
+                guard let finalResult = result else {
+                    throw AgentError.internalError(reason: "AgentRouter stream ended without completion")
+                }
+
+                continuation.yield(.handoffCompletedWithResult(
+                    from: routerName,
+                    to: toAgentName,
+                    result: finalResult
+                ))
+
+                return finalResult
+            }
+
             do {
-                let result = try await actor.run(input, session: session, hooks: hooks)
+                if await actor.isCancelled {
+                    throw AgentError.cancelled
+                }
+
+                let startTime = ContinuousClock.now
+                let routingContext = AgentContext(input: input)
+                let selectedRoute = await actor.findMatchingRoute(input: input, context: routingContext)
+
+                guard let route = selectedRoute else {
+                    if let fallback = actor.fallbackAgent {
+                        await hooks?.onHandoff(context: routingContext, fromAgent: actor, toAgent: fallback)
+                        let fallbackName = fallback.configuration.name.isEmpty ? String(describing: type(of: fallback)) : fallback.configuration.name
+                        let result = try await forwardStream(
+                            toAgentName: fallbackName,
+                            agent: fallback,
+                            input: input
+                        )
+                        continuation.yield(.completed(result: result))
+                        continuation.finish()
+                        return
+                    }
+
+                    throw OrchestrationError.routingFailed(
+                        reason: "No route matched input and no fallback agent configured"
+                    )
+                }
+
+                var effectiveInput = input
+                let routeName = route.name ?? String(describing: type(of: route.agent))
+
+                if let config = await actor.findHandoffConfiguration(for: route.agent) {
+                    if let isEnabled = config.isEnabled {
+                        let enabled = await isEnabled(routingContext, route.agent)
+                        if !enabled {
+                            throw OrchestrationError.handoffSkipped(
+                                from: "AgentRouter",
+                                to: routeName,
+                                reason: "Handoff disabled by isEnabled callback"
+                            )
+                        }
+                    }
+
+                    var inputData = HandoffInputData(
+                        sourceAgentName: "AgentRouter",
+                        targetAgentName: routeName,
+                        input: input,
+                        context: [:],
+                        metadata: [:]
+                    )
+
+                    if let inputFilter = config.inputFilter {
+                        inputData = inputFilter(inputData)
+                        effectiveInput = inputData.input
+                    }
+
+                    if let onHandoff = config.onHandoff {
+                        do {
+                            try await onHandoff(routingContext, inputData)
+                        } catch {
+                            Log.orchestration.warning(
+                                "onHandoff callback failed for AgentRouter -> \(routeName): \(error.localizedDescription)"
+                            )
+                        }
+                    }
+                }
+
+                await hooks?.onHandoff(context: routingContext, fromAgent: actor, toAgent: route.agent)
+
+                let agentResult = try await forwardStream(
+                    toAgentName: routeName,
+                    agent: route.agent,
+                    input: effectiveInput
+                )
+
+                let duration = ContinuousClock.now - startTime
+                var metadata = agentResult.metadata
+                metadata["router.matched_route"] = .string(route.name ?? "unnamed")
+                metadata["router.duration"] = .double(Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18)
+
+                let result = AgentResult(
+                    output: agentResult.output,
+                    toolCalls: agentResult.toolCalls,
+                    toolResults: agentResult.toolResults,
+                    iterationCount: agentResult.iterationCount,
+                    duration: agentResult.duration,
+                    tokenUsage: agentResult.tokenUsage,
+                    metadata: metadata
+                )
+
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {
@@ -543,7 +668,7 @@ public actor AgentRouter: Agent {
             } catch {
                 let agentError = AgentError.internalError(reason: error.localizedDescription)
                 continuation.yield(.failed(error: agentError))
-                continuation.finish(throwing: error)
+                continuation.finish(throwing: agentError)
             }
         }
     }

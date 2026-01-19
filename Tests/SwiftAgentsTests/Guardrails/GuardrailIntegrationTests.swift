@@ -14,7 +14,7 @@ import Testing
 private actor MockGuardrailAgent: Agent {
     // MARK: Internal
 
-    nonisolated let tools: [any Tool]
+    nonisolated let tools: [any AnyJSONTool]
     nonisolated let instructions: String
     nonisolated let configuration: AgentConfiguration
     nonisolated let memory: (any Memory)? = nil
@@ -23,7 +23,7 @@ private actor MockGuardrailAgent: Agent {
 
     init(
         name: String = "MockAgent",
-        tools: [any Tool] = [],
+        tools: [any AnyJSONTool] = [],
         instructions: String = "Test agent",
         inferenceProvider: (any InferenceProvider)? = nil,
         responseHandler: @escaping @Sendable (String) async throws -> String = { input in "Mock response to: \(input)" }
@@ -257,7 +257,7 @@ struct GuardrailIntegrationTests {
     @Test("Tool execution with input guardrail - validates arguments before execution")
     func toolExecutionWithInputGuardrail() async throws {
         // Given: A tool with input guardrail
-        let tool = MockTool(
+        var tool = MockTool(
             name: "calculator",
             parameters: [
                 ToolParameter(name: "expression", description: "Math expression", type: .string, isRequired: true)
@@ -301,7 +301,7 @@ struct GuardrailIntegrationTests {
     @Test("Tool execution with output guardrail - validates result after execution")
     func toolExecutionWithOutputGuardrail() async throws {
         // Given: A tool with output guardrail
-        let tool = MockTool(
+        var tool = MockTool(
             name: "web_search",
             result: .dictionary([
                 "results": .array([

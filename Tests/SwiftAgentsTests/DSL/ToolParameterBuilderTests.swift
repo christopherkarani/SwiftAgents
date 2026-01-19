@@ -259,7 +259,7 @@ struct ToolParameterBuilderTests {
 // MARK: - BuilderBasedTool
 
 /// A tool that uses ToolParameterBuilder for its parameters
-struct BuilderBasedTool: Tool {
+struct BuilderBasedTool: AnyJSONTool {
     let name = "builder_tool"
     let description = "A tool using builder DSL"
 

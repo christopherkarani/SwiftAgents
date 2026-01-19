@@ -9,7 +9,7 @@ import Foundation
 
 /// A tool with a strongly-typed output.
 ///
-/// `TypedTool` extends the base `Tool` protocol with an associated `Output` type,
+/// `TypedTool` extends the base `AnyJSONTool` protocol with an associated `Output` type,
 /// enabling compile-time type safety for tool results. Tools implementing this
 /// protocol return concrete types instead of `SendableValue`.
 ///
@@ -24,7 +24,7 @@ import Foundation
 ///         ToolParameter(name: "location", description: "City name", type: .string)
 ///     ]
 ///
-///     mutating func executeTyped(arguments: [String: SendableValue]) async throws -> WeatherData {
+///     func executeTyped(arguments: [String: SendableValue]) async throws -> WeatherData {
 ///         guard let location = arguments["location"]?.stringValue else {
 ///             throw AgentError.invalidToolArguments(toolName: name, reason: "Missing location")
 ///         }
@@ -32,7 +32,7 @@ import Foundation
 ///     }
 /// }
 /// ```
-public protocol TypedTool<Output>: Tool {
+public protocol TypedTool<Output>: AnyJSONTool {
     /// The strongly-typed output of this tool.
     associatedtype Output: Sendable & Encodable
 
@@ -41,7 +41,7 @@ public protocol TypedTool<Output>: Tool {
     /// - Parameter arguments: The arguments passed to the tool.
     /// - Returns: The typed result of the tool execution.
     /// - Throws: `AgentError.toolExecutionFailed` or `AgentError.invalidToolArguments` on failure.
-    mutating func executeTyped(arguments: [String: SendableValue]) async throws -> Output
+    func executeTyped(arguments: [String: SendableValue]) async throws -> Output
 }
 
 // MARK: - TypedTool Default Implementation
@@ -49,9 +49,9 @@ public protocol TypedTool<Output>: Tool {
 public extension TypedTool {
     /// Default implementation that bridges `executeTyped` to `execute`.
     ///
-    /// This allows `TypedTool` to be used anywhere a `Tool` is expected,
+    /// This allows `TypedTool` to be used anywhere an `AnyJSONTool` is expected,
     /// automatically converting the typed output to `SendableValue`.
-    mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         let result = try await executeTyped(arguments: arguments)
         return try SendableValue(encoding: result)
     }

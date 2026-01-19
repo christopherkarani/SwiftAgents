@@ -22,60 +22,24 @@ extension PlanAndExecuteAgent {
         _ step: PlanStep,
         plan: ExecutionPlan,
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)? = nil
+        hooks: (any RunHooks)? = nil,
+        tracing: TracingHelper? = nil
     ) async throws -> String {
         // If the step has a tool, execute it
         if let toolName = step.toolName {
-            let toolCall = ToolCall(
+            let engine = ToolExecutionEngine()
+            let outcome = try await engine.execute(
                 toolName: toolName,
-                arguments: step.toolArguments
+                arguments: step.toolArguments,
+                registry: toolRegistry,
+                agent: self,
+                context: nil,
+                resultBuilder: resultBuilder,
+                hooks: hooks,
+                tracing: tracing,
+                stopOnToolError: true
             )
-            _ = resultBuilder.addToolCall(toolCall)
-
-            let startTime = ContinuousClock.now
-            do {
-                // Notify hooks before tool execution
-                if let tool = await toolRegistry.tool(named: toolName) {
-                    await hooks?.onToolStart(context: nil, agent: self, tool: tool, arguments: step.toolArguments)
-                }
-
-                let toolResult = try await toolRegistry.execute(
-                    toolNamed: toolName,
-                    arguments: step.toolArguments,
-                    agent: self,
-                    context: nil
-                )
-                let duration = ContinuousClock.now - startTime
-
-                let result = ToolResult.success(
-                    callId: toolCall.id,
-                    output: toolResult,
-                    duration: duration
-                )
-                _ = resultBuilder.addToolResult(result)
-
-                // Notify hooks after successful tool execution
-                if let tool = await toolRegistry.tool(named: toolName) {
-                    await hooks?.onToolEnd(context: nil, agent: self, tool: tool, result: toolResult)
-                }
-
-                return toolResult.description
-            } catch {
-                let duration = ContinuousClock.now - startTime
-                let errorMessage = (error as? AgentError)?.localizedDescription ?? error.localizedDescription
-
-                let result = ToolResult.failure(
-                    callId: toolCall.id,
-                    error: errorMessage,
-                    duration: duration
-                )
-                _ = resultBuilder.addToolResult(result)
-
-                throw AgentError.toolExecutionFailed(
-                    toolName: toolName,
-                    underlyingError: errorMessage
-                )
-            }
+            return outcome.result.output.description
         }
 
         // For steps without tools, use the LLM to execute

@@ -14,7 +14,7 @@ actor MockSupervisorTestAgent: Agent {
     let agentName: String
     let responsePrefix: String
 
-    nonisolated let tools: [any Tool] = []
+    nonisolated let tools: [any AnyJSONTool] = []
     nonisolated let instructions: String
     nonisolated let configuration: AgentConfiguration = .default
     private(set) var runCallCount = 0
@@ -472,7 +472,7 @@ struct SupervisorAgentFallbackTests {
     func handlesAgentExecutionErrors() async throws {
         // Create an agent that throws an error
         actor ErrorAgent: Agent {
-            nonisolated let tools: [any Tool] = []
+            nonisolated let tools: [any AnyJSONTool] = []
             nonisolated let instructions: String = "Error agent"
             nonisolated let configuration: AgentConfiguration = .default
             nonisolated var memory: (any Memory)? { nil }
@@ -560,7 +560,7 @@ struct SupervisorAgentToolCallTests {
     func copiesToolCalls() async throws {
         // Create an agent that returns tool calls
         actor ToolAgent: Agent {
-            nonisolated let tools: [any Tool] = []
+            nonisolated let tools: [any AnyJSONTool] = []
             nonisolated let instructions: String = "Tool agent"
             nonisolated let configuration: AgentConfiguration = .default
             nonisolated var memory: (any Memory)? { nil }

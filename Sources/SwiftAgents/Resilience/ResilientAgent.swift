@@ -27,12 +27,16 @@ public actor ResilientAgent: Agent {
 
     // MARK: - Agent Protocol (nonisolated)
 
-    nonisolated public let tools: [any Tool]
+    nonisolated public let tools: [any AnyJSONTool]
     nonisolated public let instructions: String
     nonisolated public let configuration: AgentConfiguration
 
     nonisolated public var memory: (any Memory)? { baseMemory }
     nonisolated public var inferenceProvider: (any InferenceProvider)? { baseInferenceProvider }
+    nonisolated public var tracer: (any Tracer)? { baseTracer }
+    nonisolated public var inputGuardrails: [any InputGuardrail] { baseInputGuardrails }
+    nonisolated public var outputGuardrails: [any OutputGuardrail] { baseOutputGuardrails }
+    nonisolated public var handoffs: [AnyHandoffConfiguration] { baseHandoffs }
 
     // MARK: - Initialization
 
@@ -57,6 +61,10 @@ public actor ResilientAgent: Agent {
         configuration = base.configuration
         baseMemory = base.memory
         baseInferenceProvider = base.inferenceProvider
+        baseTracer = base.tracer
+        baseInputGuardrails = base.inputGuardrails
+        baseOutputGuardrails = base.outputGuardrails
+        baseHandoffs = base.handoffs
         self.retryPolicy = retryPolicy
         self.circuitBreaker = circuitBreaker
         self.fallbackAgent = fallbackAgent
@@ -171,19 +179,109 @@ public actor ResilientAgent: Agent {
     }
 
     nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
-        StreamHelper.makeTrackedStream(for: self) { agent, continuation in
-            continuation.yield(.started(input: input))
-            do {
-                let result = try await agent.run(input, session: session, hooks: hooks)
-                continuation.yield(.completed(result: result))
-                continuation.finish()
-            } catch let error as AgentError {
-                continuation.yield(.failed(error: error))
-                continuation.finish(throwing: error)
-            } catch {
-                let agentError = AgentError.internalError(reason: error.localizedDescription)
-                continuation.yield(.failed(error: agentError))
-                continuation.finish(throwing: error)
+        // Forward streaming events from the base agent for richer observability
+        let baseAgent = self.base
+        let fallback = self.fallbackAgent
+        let hasTimeout = self.timeoutDuration != nil
+        let hasRetry = self.retryPolicy != nil
+        let hasCircuitBreaker = self.circuitBreaker != nil
+
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                continuation.yield(.started(input: input))
+
+                do {
+                    // Stream from the base agent, forwarding all intermediate events
+                    var lastResult: AgentResult?
+
+                    for try await event in baseAgent.stream(input, session: session, hooks: hooks) {
+                        // Forward intermediate events
+                        switch event {
+                        case .completed(let result):
+                            // Capture the result but don't yield yet - we'll add metadata
+                            lastResult = result
+                        case .failed:
+                            // Don't forward failure yet - we may have fallback
+                            break
+                        default:
+                            // Forward all other events (thinking, tool calls, iterations, etc.)
+                            continuation.yield(event)
+                        }
+                    }
+
+                    // If we got a result, add resilience metadata and complete
+                    if let result = lastResult {
+                        var metadata = result.metadata
+                        metadata["resilience.used_fallback"] = .bool(false)
+                        metadata["resilience.has_retry"] = .bool(hasRetry)
+                        metadata["resilience.has_circuit_breaker"] = .bool(hasCircuitBreaker)
+                        metadata["resilience.has_timeout"] = .bool(hasTimeout)
+
+                        let enrichedResult = AgentResult(
+                            output: result.output,
+                            toolCalls: result.toolCalls,
+                            toolResults: result.toolResults,
+                            iterationCount: result.iterationCount,
+                            duration: result.duration,
+                            tokenUsage: result.tokenUsage,
+                            metadata: metadata
+                        )
+                        continuation.yield(.completed(result: enrichedResult))
+                        continuation.finish()
+                    }
+
+                } catch {
+                    // Try fallback if available
+                    if let fallbackAgent = fallback {
+                        continuation.yield(.handoffStarted(from: "ResilientAgent", to: fallbackAgent.configuration.name, input: input))
+
+                        do {
+                            var fallbackResult: AgentResult?
+
+                            for try await event in fallbackAgent.stream(input, session: session, hooks: hooks) {
+                                switch event {
+                                case .completed(let result):
+                                    fallbackResult = result
+                                default:
+                                    continuation.yield(event)
+                                }
+                            }
+
+                            if let result = fallbackResult {
+                                var metadata = result.metadata
+                                metadata["resilience.used_fallback"] = .bool(true)
+                                metadata["resilience.primary_error"] = .string(error.localizedDescription)
+                                metadata["resilience.has_retry"] = .bool(hasRetry)
+                                metadata["resilience.has_circuit_breaker"] = .bool(hasCircuitBreaker)
+                                metadata["resilience.has_timeout"] = .bool(hasTimeout)
+
+                                let enrichedResult = AgentResult(
+                                    output: result.output,
+                                    toolCalls: result.toolCalls,
+                                    toolResults: result.toolResults,
+                                    iterationCount: result.iterationCount,
+                                    duration: result.duration,
+                                    tokenUsage: result.tokenUsage,
+                                    metadata: metadata
+                                )
+                                continuation.yield(.completed(result: enrichedResult))
+                                continuation.finish()
+                            }
+                        } catch let fallbackError {
+                            let agentError = (fallbackError as? AgentError) ?? AgentError.internalError(reason: fallbackError.localizedDescription)
+                            continuation.yield(.failed(error: agentError))
+                            continuation.finish(throwing: fallbackError)
+                        }
+                    } else {
+                        let agentError = (error as? AgentError) ?? AgentError.internalError(reason: error.localizedDescription)
+                        continuation.yield(.failed(error: agentError))
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+
+            continuation.onTermination = { _ in
+                task.cancel()
             }
         }
     }
@@ -216,6 +314,10 @@ public actor ResilientAgent: Agent {
         configuration = resilient.configuration
         baseMemory = resilient.baseMemory
         baseInferenceProvider = resilient.baseInferenceProvider
+        baseTracer = resilient.baseTracer
+        baseInputGuardrails = resilient.baseInputGuardrails
+        baseOutputGuardrails = resilient.baseOutputGuardrails
+        baseHandoffs = resilient.baseHandoffs
 
         // Merge resilience configurations
         self.retryPolicy = retryPolicy ?? resilient.retryPolicy
@@ -230,6 +332,10 @@ public actor ResilientAgent: Agent {
 
     nonisolated private let baseMemory: (any Memory)?
     nonisolated private let baseInferenceProvider: (any InferenceProvider)?
+    nonisolated private let baseTracer: (any Tracer)?
+    nonisolated private let baseInputGuardrails: [any InputGuardrail]
+    nonisolated private let baseOutputGuardrails: [any OutputGuardrail]
+    nonisolated private let baseHandoffs: [AnyHandoffConfiguration]
 
     // MARK: - Resilience Configuration
 

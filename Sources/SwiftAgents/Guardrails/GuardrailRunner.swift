@@ -166,13 +166,37 @@ public actor GuardrailRunner {
     /// The configuration controlling execution behavior.
     public let configuration: GuardrailRunnerConfiguration
 
+    /// Optional hooks for emitting guardrail events.
+    public let hooks: (any RunHooks)?
+
     // MARK: - Initialization
 
     /// Creates a guardrail runner with the specified configuration.
     ///
-    /// - Parameter configuration: The execution configuration. Default: .default
-    public init(configuration: GuardrailRunnerConfiguration = .default) {
+    /// - Parameters:
+    ///   - configuration: The execution configuration. Default: .default
+    ///   - hooks: Optional hooks for emitting guardrail events. Default: nil
+    public init(configuration: GuardrailRunnerConfiguration = .default, hooks: (any RunHooks)? = nil) {
         self.configuration = configuration
+        self.hooks = hooks
+    }
+
+    // MARK: - Private Helpers
+
+    /// Emits a guardrail triggered event via hooks if available.
+    private func emitGuardrailEvent(
+        guardrailName: String,
+        guardrailType: GuardrailType,
+        result: GuardrailResult,
+        context: AgentContext?
+    ) async {
+        guard result.tripwireTriggered else { return }
+        await hooks?.onGuardrailTriggered(
+            context: context,
+            guardrailName: guardrailName,
+            guardrailType: guardrailType,
+            result: result
+        )
     }
 
     // MARK: - Input Guardrails
@@ -309,6 +333,16 @@ extension GuardrailRunner {
                 )
                 results.append(executionResult)
 
+                // Emit guardrail event if tripwire triggered
+                if result.tripwireTriggered {
+                    await emitGuardrailEvent(
+                        guardrailName: guardrail.name,
+                        guardrailType: .input,
+                        result: result,
+                        context: context
+                    )
+                }
+
                 if result.tripwireTriggered, configuration.stopOnFirstTripwire {
                     throw GuardrailError.inputTripwireTriggered(
                         guardrailName: guardrail.name,
@@ -356,6 +390,16 @@ extension GuardrailRunner {
                     result: result
                 )
                 results.append(executionResult)
+
+                // Emit guardrail event if tripwire triggered
+                if result.tripwireTriggered {
+                    await emitGuardrailEvent(
+                        guardrailName: guardrail.name,
+                        guardrailType: .output,
+                        result: result,
+                        context: context
+                    )
+                }
 
                 if result.tripwireTriggered, configuration.stopOnFirstTripwire {
                     throw GuardrailError.outputTripwireTriggered(
@@ -405,6 +449,16 @@ extension GuardrailRunner {
                 )
                 results.append(executionResult)
 
+                // Emit guardrail event if tripwire triggered
+                if result.tripwireTriggered {
+                    await emitGuardrailEvent(
+                        guardrailName: guardrail.name,
+                        guardrailType: .toolInput,
+                        result: result,
+                        context: data.context
+                    )
+                }
+
                 if result.tripwireTriggered, configuration.stopOnFirstTripwire {
                     throw GuardrailError.toolInputTripwireTriggered(
                         guardrailName: guardrail.name,
@@ -453,6 +507,16 @@ extension GuardrailRunner {
                     result: result
                 )
                 results.append(executionResult)
+
+                // Emit guardrail event if tripwire triggered
+                if result.tripwireTriggered {
+                    await emitGuardrailEvent(
+                        guardrailName: guardrail.name,
+                        guardrailType: .toolOutput,
+                        result: result,
+                        context: data.context
+                    )
+                }
 
                 if result.tripwireTriggered, configuration.stopOnFirstTripwire {
                     throw GuardrailError.toolOutputTripwireTriggered(

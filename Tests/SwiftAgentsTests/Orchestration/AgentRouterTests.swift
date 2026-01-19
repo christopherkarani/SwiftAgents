@@ -13,7 +13,7 @@ import Testing
 final class TestAgent: Agent, @unchecked Sendable {
     let name: String
     let responsePrefix: String
-    let tools: [any Tool] = []
+    let tools: [any AnyJSONTool] = []
     let instructions: String
     let configuration: AgentConfiguration
 

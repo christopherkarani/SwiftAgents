@@ -61,18 +61,19 @@ final class ToolMacroTests: XCTestCase {
                     public init() {
                     }
 
-                    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+                    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
                         guard let expression = arguments["expression"]?.stringValue else {
                                     throw AgentError.invalidToolArguments(toolName: name, reason: "Missing required parameter 'expression'")
                                 }
 
-                        self.expression = expression
-                        let result = try await execute()
+                        var toolCopy = self
+                        toolCopy.expression = expression
+                        let result = try await toolCopy.execute()
                         return .double(result)
                     }
                 }
 
-                extension CalculatorTool: Tool, Sendable {
+                extension CalculatorTool: AnyJSONTool, Sendable {
                 }
                 """,
                 macros: toolMacros
@@ -130,20 +131,21 @@ final class ToolMacroTests: XCTestCase {
                     public init() {
                     }
 
-                    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+                    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
                         guard let location = arguments["location"]?.stringValue else {
                                     throw AgentError.invalidToolArguments(toolName: name, reason: "Missing required parameter 'location'")
                                 }
                             let units = arguments["units"]?.stringValue ?? "celsius"
 
-                        self.location = location
-                                        self.units = units
-                        let result = try await execute()
+                        var toolCopy = self
+                        toolCopy.location = location
+                            toolCopy.units = units
+                        let result = try await toolCopy.execute()
                         return .string(result)
                     }
                 }
 
-                extension WeatherTool: Tool, Sendable {
+                extension WeatherTool: AnyJSONTool, Sendable {
                 }
                 """,
                 macros: toolMacros
@@ -191,18 +193,19 @@ final class ToolMacroTests: XCTestCase {
                     public init() {
                     }
 
-                    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+                    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
                         guard let format = arguments["format"]?.stringValue else {
                                     throw AgentError.invalidToolArguments(toolName: name, reason: "Missing required parameter 'format'")
                                 }
 
-                        self.format = format
-                        let result = try await execute()
+                        var toolCopy = self
+                        toolCopy.format = format
+                        let result = try await toolCopy.execute()
                         return .string(result)
                     }
                 }
 
-                extension FormatTool: Tool, Sendable {
+                extension FormatTool: AnyJSONTool, Sendable {
                 }
                 """,
                 macros: toolMacros
@@ -250,18 +253,19 @@ final class ToolMacroTests: XCTestCase {
                     public init() {
                     }
 
-                    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+                    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
                         guard let count = arguments["count"]?.intValue else {
                                     throw AgentError.invalidToolArguments(toolName: name, reason: "Missing required parameter 'count'")
                                 }
 
-                        self.count = count
-                        let result = try await execute()
+                        var toolCopy = self
+                        toolCopy.count = count
+                        let result = try await toolCopy.execute()
                         return .int(result)
                     }
                 }
 
-                extension CountTool: Tool, Sendable {
+                extension CountTool: AnyJSONTool, Sendable {
                 }
                 """,
                 macros: toolMacros
@@ -309,16 +313,17 @@ final class ToolMacroTests: XCTestCase {
                     public init() {
                     }
 
-                    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+                    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
                         let enabled = arguments["enabled"]?.boolValue ?? false
 
-                        self.enabled = enabled
-                        let result = try await execute()
+                        var toolCopy = self
+                        toolCopy.enabled = enabled
+                        let result = try await toolCopy.execute()
                         return .bool(result)
                     }
                 }
 
-                extension ToggleTool: Tool, Sendable {
+                extension ToggleTool: AnyJSONTool, Sendable {
                 }
                 """,
                 macros: toolMacros
@@ -417,15 +422,16 @@ final class ToolMacroTests: XCTestCase {
                     public init() {
                     }
 
-                    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+                    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
 
+                        var toolCopy = self
 
-                        let result = try await execute()
+                        let result = try await toolCopy.execute()
                         return .string(result)
                     }
                 }
 
-                extension MyAwesomeTool: Tool, Sendable {
+                extension MyAwesomeTool: AnyJSONTool, Sendable {
                 }
                 """,
                 macros: toolMacros

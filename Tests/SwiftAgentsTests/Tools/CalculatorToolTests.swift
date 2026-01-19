@@ -18,14 +18,14 @@ import Testing
 
         @Test("Tool has correct name")
         func toolNameIsCalculator() {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
 
             #expect(calculator.name == "calculator")
         }
 
         @Test("Tool has description")
         func toolHasDescription() {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
 
             #expect(!calculator.description.isEmpty)
             #expect(calculator.description.contains("mathematical"))
@@ -33,7 +33,7 @@ import Testing
 
         @Test("Tool has single required expression parameter")
         func toolHasExpressionParameter() {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
 
             #expect(calculator.parameters.count == 1)
 
@@ -48,7 +48,7 @@ import Testing
 
         @Test("Addition: 2 + 3 equals 5.0")
         func additionCalculation() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("2 + 3")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -58,7 +58,7 @@ import Testing
 
         @Test("Subtraction: 10 - 4 equals 6.0")
         func subtractionCalculation() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("10 - 4")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -68,7 +68,7 @@ import Testing
 
         @Test("Multiplication: 6 * 7 equals 42.0")
         func multiplicationCalculation() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("6 * 7")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -78,7 +78,7 @@ import Testing
 
         @Test("Division: 20 / 4 equals 5.0")
         func divisionCalculation() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("20 / 4")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -90,7 +90,7 @@ import Testing
 
         @Test("Complex expression with parentheses: (10 + 5) / 3 equals 5.0")
         func complexExpressionWithParentheses() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("(10 + 5) / 3")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -100,7 +100,7 @@ import Testing
 
         @Test("Operator precedence: 2 + 3 * 4 equals 14.0")
         func operatorPrecedence() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("2 + 3 * 4")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -110,7 +110,7 @@ import Testing
 
         @Test("Nested parentheses: ((10 + 5) * 2) - 6 equals 24.0")
         func nestedParentheses() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("((10 + 5) * 2) - 6")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -120,7 +120,7 @@ import Testing
 
         @Test("Multiple operations: 100 / 5 + 3 * 2 equals 26.0")
         func multipleOperations() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("100 / 5 + 3 * 2")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -132,7 +132,7 @@ import Testing
 
         @Test("Decimal addition: 2.5 + 3.5 equals 6.0")
         func decimalAddition() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("2.5 + 3.5")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -142,7 +142,7 @@ import Testing
 
         @Test("Decimal division: 7.5 / 2.5 equals 3.0")
         func decimalDivision() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("7.5 / 2.5")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -152,7 +152,7 @@ import Testing
 
         @Test("Mixed decimal and integer: 10.5 + 5 equals 15.5")
         func mixedDecimalAndInteger() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("10.5 + 5")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -164,7 +164,7 @@ import Testing
 
         @Test("Expression with spaces: '  5 + 3  ' equals 8.0")
         func expressionWithSpaces() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("  5 + 3  ")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -174,7 +174,7 @@ import Testing
 
         @Test("Expression with no spaces: '10+5' equals 15.0")
         func expressionWithoutSpaces() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("10+5")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -186,7 +186,7 @@ import Testing
 
         @Test("Missing expression parameter throws invalidToolArguments")
         func missingExpressionParameter() async {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = [:]
 
             var thrownError: AgentError?
@@ -206,7 +206,7 @@ import Testing
 
         @Test("Wrong parameter type throws invalidToolArguments")
         func wrongParameterType() async {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .int(42)]
 
             var thrownError: AgentError?
@@ -226,7 +226,7 @@ import Testing
 
         @Test("Empty expression string throws invalidToolArguments")
         func emptyExpressionString() async {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("")]
 
             var thrownError: AgentError?
@@ -246,7 +246,7 @@ import Testing
 
         @Test("Whitespace-only expression throws invalidToolArguments")
         func whitespaceOnlyExpression() async {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("   ")]
 
             var thrownError: AgentError?
@@ -266,7 +266,7 @@ import Testing
 
         @Test("Invalid characters in expression throws invalidToolArguments")
         func invalidCharactersInExpression() async {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("2 + abc")]
 
             var caughtError = false
@@ -290,7 +290,7 @@ import Testing
 
         @Test("Special characters like '@' throw invalidToolArguments")
         func specialCharactersThrowError() async {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("5 @ 3")]
 
             var caughtError = false
@@ -311,7 +311,7 @@ import Testing
 
         @Test("Alphabetic characters throw invalidToolArguments")
         func alphabeticCharactersThrowError() async {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("x + y")]
 
             var caughtError = false
@@ -333,7 +333,7 @@ import Testing
 
         @Test("Single number: '42' equals 42.0")
         func singleNumber() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("42")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -343,7 +343,7 @@ import Testing
 
         @Test("Single decimal number: '3.14' equals 3.14")
         func singleDecimalNumber() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("3.14")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -353,7 +353,7 @@ import Testing
 
         @Test("Negative result: 5 - 10 equals -5.0")
         func negativeResult() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("5 - 10")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -363,7 +363,7 @@ import Testing
 
         @Test("Division resulting in decimal: 5 / 2 equals 2.5")
         func divisionResultingInDecimal() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("5 / 2")]
 
             let result = try await calculator.execute(arguments: arguments)
@@ -375,7 +375,7 @@ import Testing
 
         @Test("Tool definition contains correct information")
         func toolDefinition() {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let definition = calculator.definition
 
             #expect(definition.name == "calculator")
@@ -388,7 +388,7 @@ import Testing
 
         @Test("validateArguments succeeds with valid expression")
         func validateArgumentsSuccess() throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = ["expression": .string("2 + 2")]
 
             // Should not throw
@@ -397,7 +397,7 @@ import Testing
 
         @Test("validateArguments fails with missing expression")
         func validateArgumentsFailure() {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let arguments: [String: SendableValue] = [:]
 
             var thrownError: AgentError?
@@ -419,7 +419,7 @@ import Testing
 
         @Test("Multiple concurrent executions produce correct results")
         func concurrentExecutions() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
 
             // Execute multiple calculations concurrently
             async let result1 = calculator.execute(arguments: ["expression": .string("10 + 5")])
@@ -439,7 +439,7 @@ import Testing
 
         @Test("Calculator tool works in ToolRegistry")
         func calculatorInToolRegistry() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let registry = ToolRegistry(tools: [calculator])
 
             let result = try await registry.execute(
@@ -452,7 +452,7 @@ import Testing
 
         @Test("Calculator tool can be found in registry")
         func calculatorFoundInRegistry() async {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
             let registry = ToolRegistry(tools: [calculator])
 
             let hasCalculator = await registry.contains(named: "calculator")

@@ -1,11 +1,40 @@
 // Orchestrator.swift
 // SwiftAgents Framework
 //
-// Multi-agent orchestration and coordination.
-// Features:
-// - OrchestratorProtocol for agent coordination
-// - Supervisor-worker patterns
-// - Agent communication channels
-// - Task distribution and result aggregation
-//
-// To be implemented in Phase 4: Orchestration
+// Core protocol and helpers for multi-agent orchestration.
+
+import Foundation
+
+// MARK: - OrchestratorProtocol
+
+/// Marker protocol for orchestrators coordinating multiple agents.
+public protocol OrchestratorProtocol: Agent {
+    /// Human-friendly name for this orchestrator, used in handoff metadata.
+    nonisolated var orchestratorName: String { get }
+}
+
+public extension OrchestratorProtocol {
+    nonisolated var orchestratorName: String {
+        let configured = configuration.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !configured.isEmpty {
+            return configured
+        }
+        return String(describing: type(of: self))
+    }
+
+    /// Finds a handoff configuration for the given target agent.
+    func findHandoffConfiguration(for targetAgent: any Agent) -> AnyHandoffConfiguration? {
+        handoffs.first { config in
+            let configTargetType = type(of: config.targetAgent)
+            let currentType = type(of: targetAgent)
+            return configTargetType == currentType
+        }
+    }
+}
+
+// MARK: - Orchestrator Conformances
+
+extension AgentRouter: OrchestratorProtocol {}
+extension ParallelGroup: OrchestratorProtocol {}
+extension SequentialChain: OrchestratorProtocol {}
+extension SupervisorAgent: OrchestratorProtocol {}

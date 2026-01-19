@@ -5,14 +5,15 @@ import CompilerPluginSupport
 let package = Package(
     name: "SwiftAgents",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v15),
         .iOS(.v17),
         .watchOS(.v10),
         .tvOS(.v17),
         .visionOS(.v1)
     ],
     products: [
-        .library(name: "SwiftAgents", targets: ["SwiftAgents"])
+        .library(name: "SwiftAgents", targets: ["SwiftAgents"]),
+        .executable(name: "SwiftAgentsDemo", targets: ["SwiftAgentsDemo"])
     ],
     dependencies: [
         // Swift Syntax for macro implementations
@@ -41,7 +42,7 @@ let package = Package(
             name: "SwiftAgents",
             dependencies: [
                 "SwiftAgentsMacros",
-                .product(name: "Logging", package: "swift-log")
+                .product(name: "Logging", package: "swift-log"),
             ],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
@@ -65,6 +66,17 @@ let package = Package(
             dependencies: [
                 "SwiftAgentsMacros",
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax")
+            ],
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        ),
+        
+        // MARK: - Demo Executable
+        .executableTarget(
+            name: "SwiftAgentsDemo",
+            dependencies: [
+                "SwiftAgents"
             ],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")

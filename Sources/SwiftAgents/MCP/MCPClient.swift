@@ -171,7 +171,7 @@ public actor MCPClient {
     /// ## Caching Behavior
     /// Tools are cached after the first call. Use `refreshTools()` or
     /// `invalidateCache()` to force a refresh.
-    public func getAllTools() async throws -> [any Tool] {
+    public func getAllTools() async throws -> [any AnyJSONTool] {
         // Return cached tools if valid
         if cacheValid {
             return Array(toolCache.values)
@@ -184,7 +184,7 @@ public actor MCPClient {
         }
 
         // Start a new refresh task
-        let task = Task<[any Tool], Error> {
+        let task = Task<[any AnyJSONTool], Error> {
             // Clear the cache
             toolCache.removeAll()
 
@@ -239,7 +239,7 @@ public actor MCPClient {
     /// let tools = try await client.refreshTools()
     /// print("Found \(tools.count) tools after refresh")
     /// ```
-    public func refreshTools() async throws -> [any Tool] {
+    public func refreshTools() async throws -> [any AnyJSONTool] {
         cacheValid = false
         return try await getAllTools()
     }
@@ -524,7 +524,7 @@ public actor MCPClient {
     private var servers: [String: any MCPServer] = [:]
 
     /// Cache of tools from all connected servers, keyed by tool name.
-    private var toolCache: [String: any Tool] = [:]
+    private var toolCache: [String: any AnyJSONTool] = [:]
 
     /// Whether the tool cache is currently valid.
     private var cacheValid: Bool = false
@@ -532,7 +532,7 @@ public actor MCPClient {
     /// Ongoing tool refresh task to prevent concurrent cache rebuilds.
     /// Used for request deduplication - if a refresh is in progress,
     /// subsequent calls wait for the same task instead of starting new ones.
-    private var refreshTask: Task<[any Tool], Error>?
+    private var refreshTask: Task<[any AnyJSONTool], Error>?
 
     /// Cache of resources from all connected servers, keyed by resource URI.
     /// URIs are used as keys since they uniquely identify resources across servers.

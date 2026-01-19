@@ -30,7 +30,7 @@ import Foundation
 /// ```
 public protocol Agent: Sendable {
     /// The tools available to this agent.
-    nonisolated var tools: [any Tool] { get }
+    nonisolated var tools: [any AnyJSONTool] { get }
 
     /// Instructions that define the agent's behavior and role.
     nonisolated var instructions: String { get }
@@ -215,9 +215,8 @@ public extension Agent {
 ///
 /// Inference providers abstract the underlying language model, allowing
 /// agents to work with different model backends (Foundation Models,
-/// SwiftAI SDK, etc.).
+/// AnyLanguageModel, Conduit SDK, etc.).
 ///
-/// > Note: Full implementations are provided in Phase 6 (Integration).
 public protocol InferenceProvider: Sendable {
     /// Generates a response for the given prompt.
     /// - Parameters:
@@ -320,6 +319,11 @@ public struct InferenceOptions: Sendable, Equatable {
     /// Frequency penalty for reducing repetition.
     public var frequencyPenalty: Double?
 
+    /// Controls how the model should choose tool usage when tools are provided.
+    ///
+    /// Providers that do not support tool choice may ignore this value.
+    public var toolChoice: ToolChoice?
+
     /// Creates inference options.
     /// - Parameters:
     ///   - temperature: Generation temperature. Default: 1.0
@@ -329,6 +333,7 @@ public struct InferenceOptions: Sendable, Equatable {
     ///   - topK: Top-k sampling. Default: nil
     ///   - presencePenalty: Presence penalty. Default: nil
     ///   - frequencyPenalty: Frequency penalty. Default: nil
+    ///   - toolChoice: Tool choice control. Default: nil
     public init(
         temperature: Double = 1.0,
         maxTokens: Int? = nil,
@@ -336,7 +341,8 @@ public struct InferenceOptions: Sendable, Equatable {
         topP: Double? = nil,
         topK: Int? = nil,
         presencePenalty: Double? = nil,
-        frequencyPenalty: Double? = nil
+        frequencyPenalty: Double? = nil,
+        toolChoice: ToolChoice? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -345,6 +351,7 @@ public struct InferenceOptions: Sendable, Equatable {
         self.topK = topK
         self.presencePenalty = presencePenalty
         self.frequencyPenalty = frequencyPenalty
+        self.toolChoice = toolChoice
     }
 
     // MARK: - Special Builder Methods

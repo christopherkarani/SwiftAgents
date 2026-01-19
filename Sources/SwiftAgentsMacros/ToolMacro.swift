@@ -138,8 +138,8 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
               extractDescription(from: node) != nil else {
             return []
         }
-        // Add Tool and Sendable conformance
-        let toolExtension = try ExtensionDeclSyntax("extension \(type): Tool, Sendable {}")
+        // Add AnyJSONTool and Sendable conformance
+        let toolExtension = try ExtensionDeclSyntax("extension \(type): AnyJSONTool, Sendable {}")
         return [toolExtension]
     }
 
@@ -394,14 +394,15 @@ public struct ToolMacro: MemberMacro, ExtensionMacro {
         let conversionCode = generateReturnConversion(userExecuteReturnType)
 
         if hasUserExecute {
-            // Generate property assignments
-            let propertyAssignments = parameters.map { "self.\($0.name) = \($0.name)" }.joined(separator: "\n                    ")
+            // Generate property assignments using a local copy for thread safety
+            let propertyAssignments = parameters.map { "toolCopy.\($0.name) = \($0.name)" }.joined(separator: "\n        ")
 
             return """
-                public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+                public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
                     \(raw: extractionCode)
+                    var toolCopy = self
                     \(raw: propertyAssignments)
-                    let result = try await execute()
+                    let result = try await toolCopy.execute()
                     \(raw: conversionCode)
                 }
                 """

@@ -250,7 +250,7 @@ public actor PlanAndExecuteAgent: Agent {
 
     // MARK: - Agent Protocol Properties
 
-    nonisolated public let tools: [any Tool]
+    nonisolated public let tools: [any AnyJSONTool]
     nonisolated public let instructions: String
     nonisolated public let configuration: AgentConfiguration
     nonisolated public let memory: (any Memory)?
@@ -284,7 +284,7 @@ public actor PlanAndExecuteAgent: Agent {
     ///   - maxReplanAttempts: Maximum replan attempts. Default: 3
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
     public init(
-        tools: [any Tool] = [],
+        tools: [any AnyJSONTool] = [],
         instructions: String = "",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
@@ -324,12 +324,18 @@ public actor PlanAndExecuteAgent: Agent {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
 
+        let tracing = TracingHelper(
+            tracer: tracer,
+            agentName: configuration.name.isEmpty ? "PlanAndExecuteAgent" : configuration.name
+        )
+        await tracing.traceStart(input: input)
+
         // Notify hooks of agent start
         await hooks?.onAgentStart(context: nil, agent: self, input: input)
 
         do {
-            // Run input guardrails at the start before any processing
-            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration)
+            // Run input guardrails at the start before any processing (with hooks for event emission)
+            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
             _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
             cancellationState = .active
@@ -359,7 +365,8 @@ public actor PlanAndExecuteAgent: Agent {
                 input: input,
                 sessionHistory: sessionHistory,
                 resultBuilder: resultBuilder,
-                hooks: hooks
+                hooks: hooks,
+                tracing: tracing
             )
 
             _ = resultBuilder.setOutput(output)
@@ -379,10 +386,12 @@ public actor PlanAndExecuteAgent: Agent {
             }
 
             let result = resultBuilder.build()
+            await tracing.traceComplete(result: result)
             await hooks?.onAgentEnd(context: nil, agent: self, result: result)
             return result
         } catch {
             await hooks?.onError(context: nil, agent: self, error: error)
+            await tracing.traceError(error)
             throw error
         }
     }
@@ -395,17 +404,22 @@ public actor PlanAndExecuteAgent: Agent {
     /// - Returns: An async stream of agent events.
     nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { agent, continuation in
-            continuation.yield(.started(input: input))
+            // Create event bridge hooks to forward intermediate events to the stream
+            let streamHooks = EventStreamHooks(continuation: continuation)
+
+            // Combine with user-provided hooks
+            let combinedHooks: any RunHooks
+            if let userHooks = hooks {
+                combinedHooks = CompositeRunHooks(hooks: [userHooks, streamHooks])
+            } else {
+                combinedHooks = streamHooks
+            }
+
             do {
-                let result = try await agent.run(input, session: session, hooks: hooks)
-                continuation.yield(.completed(result: result))
+                _ = try await agent.run(input, session: session, hooks: combinedHooks)
                 continuation.finish()
-            } catch let error as AgentError {
-                continuation.yield(.failed(error: error))
-                continuation.finish(throwing: error)
             } catch {
-                let agentError = AgentError.internalError(reason: error.localizedDescription)
-                continuation.yield(.failed(error: agentError))
+                // Error is handled by EventStreamHooks.onError
                 continuation.finish(throwing: error)
             }
         }
@@ -447,7 +461,7 @@ public actor PlanAndExecuteAgent: Agent {
         return descriptions.joined(separator: "\n\n")
     }
 
-    func formatToolDescription(_ tool: any Tool) -> String {
+    func formatToolDescription(_ tool: any AnyJSONTool) -> String {
         let params = formatParameterDescriptions(tool.parameters)
         if params.isEmpty {
             return "- \(tool.name): \(tool.description)"
@@ -503,11 +517,7 @@ public actor PlanAndExecuteAgent: Agent {
 
     func generateResponse(prompt: String) async throws -> String {
         if let provider = inferenceProvider {
-            let options = InferenceOptions(
-                temperature: configuration.temperature,
-                maxTokens: configuration.maxTokens
-            )
-            return try await provider.generate(prompt: prompt, options: options)
+            return try await provider.generate(prompt: prompt, options: configuration.inferenceOptions)
         }
 
         throw AgentError.inferenceProviderUnavailable(
@@ -536,7 +546,8 @@ public actor PlanAndExecuteAgent: Agent {
         input: String,
         sessionHistory: [MemoryMessage] = [],
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)? = nil
+        hooks: (any RunHooks)? = nil,
+        tracing: TracingHelper? = nil
     ) async throws -> String {
         var replanAttempts = 0
         let startTime = ContinuousClock.now
@@ -592,7 +603,13 @@ public actor PlanAndExecuteAgent: Agent {
 
             // Execute the step
             do {
-                let stepResult = try await executeStep(step, plan: plan, resultBuilder: resultBuilder, hooks: hooks)
+                let stepResult = try await executeStep(
+                    step,
+                    plan: plan,
+                    resultBuilder: resultBuilder,
+                    hooks: hooks,
+                    tracing: tracing
+                )
                 plan.updateStep(id: step.id, status: .completed, result: stepResult)
             } catch {
                 let errorMessage = (error as? AgentError)?.localizedDescription ?? error.localizedDescription
@@ -639,7 +656,7 @@ public extension PlanAndExecuteAgent {
         /// - Parameter tools: The tools to use.
         /// - Returns: Self for chaining.
         @discardableResult
-        public func tools(_ tools: [any Tool]) -> Builder {
+        public func tools(_ tools: [any AnyJSONTool]) -> Builder {
             var copy = self
             copy._tools = tools
             return copy
@@ -649,7 +666,7 @@ public extension PlanAndExecuteAgent {
         /// - Parameter tool: The tool to add.
         /// - Returns: Self for chaining.
         @discardableResult
-        public func addTool(_ tool: any Tool) -> Builder {
+        public func addTool(_ tool: any AnyJSONTool) -> Builder {
             var copy = self
             copy._tools.append(tool)
             return copy
@@ -814,7 +831,7 @@ public extension PlanAndExecuteAgent {
 
         // MARK: Private
 
-        private var _tools: [any Tool] = []
+        private var _tools: [any AnyJSONTool] = []
         private var _instructions: String = ""
         private var _configuration: AgentConfiguration = .default
         private var _memory: (any Memory)?

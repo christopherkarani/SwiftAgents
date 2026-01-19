@@ -18,7 +18,7 @@ import Foundation
 /// )
 /// let result = try await tool.execute(arguments: ["location": "NYC"])
 /// ```
-public struct MockTool: Tool, Sendable {
+public struct MockTool: AnyJSONTool, Sendable {
     // MARK: Public
 
     public let name: String
@@ -75,7 +75,7 @@ public struct MockTool: Tool, Sendable {
         resultHandler = handler
     }
 
-    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         try await resultHandler(arguments)
     }
 
@@ -87,7 +87,7 @@ public struct MockTool: Tool, Sendable {
 // MARK: - FailingTool
 
 /// A tool that throws an error when executed.
-public struct FailingTool: Tool, Sendable {
+public struct FailingTool: AnyJSONTool, Sendable {
     public let name: String
     public let description: String
     public let parameters: [ToolParameter]
@@ -123,7 +123,7 @@ public struct FailingTool: Tool, Sendable {
 // MARK: - SpyTool
 
 /// A spy tool that records all invocations.
-public actor SpyTool: Tool {
+public actor SpyTool: AnyJSONTool {
     // MARK: Public
 
     nonisolated public let name: String
@@ -170,7 +170,7 @@ public actor SpyTool: Tool {
         self.delay = delay
     }
 
-    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         calls.append((arguments, Date()))
 
         if delay > .zero {
@@ -202,7 +202,7 @@ public actor SpyTool: Tool {
 // MARK: - EchoTool
 
 /// A tool that returns the arguments it received (echo).
-public struct EchoTool: Tool, Sendable {
+public struct EchoTool: AnyJSONTool, Sendable {
     public let name = "echo"
     public let description = "Returns the arguments it received"
     public let parameters: [ToolParameter] = [
@@ -219,7 +219,7 @@ public struct EchoTool: Tool, Sendable {
         self.outputGuardrails = outputGuardrails
     }
 
-    public mutating func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         .dictionary(arguments)
     }
 }

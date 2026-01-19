@@ -29,6 +29,12 @@ public actor MockInferenceProvider: InferenceProvider {
     /// Responses to return in sequence. Each call to `generate` consumes one response.
     public var responses: [String] = []
 
+    /// Structured responses to return for `generateWithToolCalls`.
+    ///
+    /// When set, calls to `generateWithToolCalls` will return these responses in order.
+    /// If exhausted, the mock falls back to using `responses` (text-only).
+    public var toolCallResponses: [InferenceResponse] = []
+
     /// Error to throw on the next call. Set to nil to proceed normally.
     public var errorToThrow: Error?
 
@@ -76,6 +82,12 @@ public actor MockInferenceProvider: InferenceProvider {
     public func setResponses(_ responses: [String]) {
         self.responses = responses
         responseIndex = 0
+    }
+
+    /// Sets structured responses to return from `generateWithToolCalls`.
+    public func setToolCallResponses(_ responses: [InferenceResponse]) {
+        toolCallResponses = responses
+        toolCallResponseIndex = 0
     }
 
     /// Sets an error to throw on the next call.
@@ -141,6 +153,22 @@ public actor MockInferenceProvider: InferenceProvider {
         options: InferenceOptions
     ) async throws -> InferenceResponse {
         toolCallCalls.append((prompt, tools, options))
+
+        if let error = errorToThrow {
+            throw error
+        }
+
+        if responseDelay > .zero {
+            try await Task.sleep(for: responseDelay)
+        }
+
+        if toolCallResponseIndex < toolCallResponses.count {
+            let response = toolCallResponses[toolCallResponseIndex]
+            toolCallResponseIndex += 1
+            return response
+        }
+
+        // Fall back to text generation when no structured responses are configured.
         let content = try await generate(prompt: prompt, options: options)
         return InferenceResponse(content: content, finishReason: .completed)
     }
@@ -150,9 +178,11 @@ public actor MockInferenceProvider: InferenceProvider {
     /// Resets all recorded calls and response index.
     public func reset() {
         responseIndex = 0
+        toolCallResponseIndex = 0
         generateCalls = []
         streamCalls = []
         toolCallCalls = []
+        toolCallResponses = []
         errorToThrow = nil
     }
 
@@ -186,6 +216,9 @@ public actor MockInferenceProvider: InferenceProvider {
 
     /// Current index in the responses array.
     private var responseIndex = 0
+
+    /// Current index in the tool call responses array.
+    private var toolCallResponseIndex = 0
 
     private func recordStreamCall(prompt: String, options: InferenceOptions) {
         streamCalls.append((prompt, options))

@@ -68,6 +68,60 @@ struct ReActAgentTests {
         #expect(result.toolCalls[0].toolName == "test_tool")
     }
 
+    @Test("Native tool calling executes provider tool calls")
+    func nativeToolCallingExecutesToolCalls() async throws {
+        let spyTool = await SpyTool(
+            name: "test_tool",
+            result: .string("Tool result")
+        )
+
+        let mockProvider = MockInferenceProvider()
+        await mockProvider.setToolCallResponses([
+            InferenceResponse(
+                content: nil,
+                toolCalls: [
+                    InferenceResponse.ParsedToolCall(
+                        id: "call_123",
+                        name: "test_tool",
+                        arguments: ["location": .string("NYC")]
+                    )
+                ],
+                finishReason: .toolCall,
+                usage: nil
+            ),
+            InferenceResponse(
+                content: "Final Answer: Done",
+                toolCalls: [],
+                finishReason: .completed,
+                usage: nil
+            )
+        ])
+
+        let config = AgentConfiguration.default
+            .modelSettings(ModelSettings.default.toolChoice(.required))
+
+        let agent = ReActAgent(
+            tools: [spyTool],
+            instructions: "You are a helpful assistant.",
+            configuration: config,
+            inferenceProvider: mockProvider
+        )
+
+        let result = try await agent.run("Use the tool")
+
+        #expect(result.output == "Done")
+        #expect(result.toolCalls.count == 1)
+        #expect(result.toolCalls[0].providerCallId == "call_123")
+
+        #expect(await spyTool.callCount == 1)
+        #expect(await spyTool.wasCalledWith(argument: "location", value: .string("NYC")))
+
+        let recordedToolCalls = await mockProvider.toolCallCalls
+        #expect(recordedToolCalls.count == 2)
+        #expect(recordedToolCalls.first?.options.toolChoice == .required)
+        #expect(recordedToolCalls.first?.tools.contains { $0.name == "test_tool" } == true)
+    }
+
     @Test("Max iterations exceeded")
     func maxIterationsExceeded() async {
         // Create mock provider that never provides a final answer
@@ -107,7 +161,7 @@ struct BuiltInToolsTests {
     #if canImport(Darwin)
         @Test("Calculator tool")
         func calculatorTool() async throws {
-            let calculator = CalculatorTool()
+            var calculator = CalculatorTool()
 
             // Test basic arithmetic with operator precedence
             let result = try await calculator.execute(arguments: [
@@ -121,7 +175,7 @@ struct BuiltInToolsTests {
 
     @Test("DateTime tool")
     func dateTimeTool() async throws {
-        let dateTime = DateTimeTool()
+        var dateTime = DateTimeTool()
 
         // Test unix timestamp format
         let result = try await dateTime.execute(arguments: [
@@ -141,7 +195,7 @@ struct BuiltInToolsTests {
 
     @Test("String tool")
     func stringTool() async throws {
-        let stringTool = StringTool()
+        var stringTool = StringTool()
 
         // Test uppercase operation
         let result = try await stringTool.execute(arguments: [

@@ -347,7 +347,7 @@ public actor ParallelGroup: Agent {
 
     // MARK: - Agent Protocol Properties (nonisolated)
 
-    nonisolated public var tools: [any Tool] { [] }
+    nonisolated public var tools: [any AnyJSONTool] { [] }
 
     nonisolated public var instructions: String {
         "Parallel group of \(agents.count) agents"
@@ -367,13 +367,13 @@ public actor ParallelGroup: Agent {
     /// - Parameters:
     ///   - agents: Array of (name, agent) tuples.
     ///   - mergeStrategy: Strategy for merging results. Default: Concatenate()
-    ///   - shouldContinueOnError: Whether to continue if some agents fail. Default: false
+    ///   - shouldContinueOnError: Whether to continue if some agents fail. Default: true
     ///   - maxConcurrency: Maximum concurrent agents. Default: nil (unlimited)
     ///   - configuration: Agent configuration. Default: .default
     public init(
         agents: [(name: String, agent: any Agent)],
         mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
-        shouldContinueOnError: Bool = false,
+        shouldContinueOnError: Bool = true,
         maxConcurrency: Int? = nil,
         configuration: AgentConfiguration = .default
     ) {
@@ -391,13 +391,13 @@ public actor ParallelGroup: Agent {
     /// - Parameters:
     ///   - agents: Array of agents.
     ///   - mergeStrategy: Strategy for merging results. Default: Concatenate()
-    ///   - shouldContinueOnError: Whether to continue if some agents fail. Default: false
+    ///   - shouldContinueOnError: Whether to continue if some agents fail. Default: true
     ///   - maxConcurrency: Maximum concurrent agents. Default: nil (unlimited)
     ///   - configuration: Agent configuration. Default: .default
     public init(
         agents: [any Agent],
         mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
-        shouldContinueOnError: Bool = false,
+        shouldContinueOnError: Bool = true,
         maxConcurrency: Int? = nil,
         configuration: AgentConfiguration = .default
     ) {
@@ -496,10 +496,9 @@ public actor ParallelGroup: Agent {
         var results: [String: AgentResult] = [:]
         var errors: [String: Error] = [:]
 
-        // Record start in context if available
-        if let context {
-            await context.recordExecution(agentName: "ParallelGroup")
-        }
+        let sharedContext = context ?? AgentContext(input: input)
+        context = sharedContext
+        await sharedContext.recordExecution(agentName: "ParallelGroup")
 
         // Execute agents with structured concurrency
         try await withThrowingTaskGroup(of: (String, Result<AgentResult, Error>).self) { group in
@@ -595,8 +594,18 @@ public actor ParallelGroup: Agent {
     nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
+
+            let groupName = actor.configuration.name.isEmpty ? "ParallelGroup" : actor.configuration.name
+            let relay = ParallelStreamRelay(continuation: continuation)
+
             do {
-                let result = try await actor.run(input, session: session, hooks: hooks)
+                let result = try await actor.streamExecution(
+                    input: input,
+                    session: session,
+                    hooks: hooks,
+                    relay: relay,
+                    groupName: groupName
+                )
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {
@@ -605,7 +614,7 @@ public actor ParallelGroup: Agent {
             } catch {
                 let agentError = AgentError.internalError(reason: error.localizedDescription)
                 continuation.yield(.failed(error: agentError))
-                continuation.finish(throwing: error)
+                continuation.finish(throwing: agentError)
             }
         }
     }
@@ -637,6 +646,140 @@ public actor ParallelGroup: Agent {
 
     /// Optional shared context for orchestration.
     private var context: AgentContext?
+
+    // MARK: - Streaming Helpers
+
+    private func streamExecution(
+        input: String,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        relay: ParallelStreamRelay,
+        groupName: String
+    ) async throws -> AgentResult {
+        guard !agents.isEmpty else {
+            throw OrchestrationError.noAgentsConfigured
+        }
+
+        isCancelled = false
+
+        var results: [String: AgentResult] = [:]
+        var errors: [String: Error] = [:]
+
+        let sharedContext = context ?? AgentContext(input: input)
+        context = sharedContext
+        await sharedContext.recordExecution(agentName: groupName)
+
+        try await withThrowingTaskGroup(of: (String, Result<AgentResult, Error>).self) { group in
+            var runningCount = 0
+
+            for (name, agent) in agents {
+                if isCancelled {
+                    break
+                }
+
+                if let limit = maxConcurrency {
+                    while runningCount >= limit {
+                        if let (completedName, result) = try await group.next() {
+                            runningCount -= 1
+                            switch result {
+                            case let .success(agentResult):
+                                results[completedName] = agentResult
+                            case let .failure(error):
+                                errors[completedName] = error
+                                if !shouldContinueOnError {
+                                    throw error
+                                }
+                            }
+                        }
+                    }
+                }
+
+                group.addTask { [groupName] in
+                    do {
+                        let result = try await self.streamAgent(
+                            name: name,
+                            agent: agent,
+                            input: input,
+                            session: session,
+                            hooks: hooks,
+                            relay: relay,
+                            groupName: groupName
+                        )
+                        return (name, .success(result))
+                    } catch {
+                        return (name, .failure(error))
+                    }
+                }
+                runningCount += 1
+            }
+
+            for try await (name, result) in group {
+                switch result {
+                case let .success(agentResult):
+                    results[name] = agentResult
+                case let .failure(error):
+                    errors[name] = error
+                    if !shouldContinueOnError {
+                        throw error
+                    }
+                }
+            }
+        }
+
+        if isCancelled {
+            throw AgentError.cancelled
+        }
+
+        if results.isEmpty, !errors.isEmpty {
+            let errorMessages = errors.map { "\($0.key): \($0.value.localizedDescription)" }
+            throw OrchestrationError.allAgentsFailed(errors: errorMessages)
+        }
+
+        guard !results.isEmpty else {
+            throw OrchestrationError.mergeStrategyFailed(reason: "No successful results to merge")
+        }
+
+        let mergedResult = try await mergeStrategy.merge(results)
+
+        if let context {
+            await context.setPreviousOutput(mergedResult)
+        }
+
+        return mergedResult
+    }
+
+    private func streamAgent(
+        name: String,
+        agent: any Agent,
+        input: String,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        relay: ParallelStreamRelay,
+        groupName: String
+    ) async throws -> AgentResult {
+        await relay.yield(.handoffStarted(from: groupName, to: name, input: input))
+        var result: AgentResult?
+
+        for try await event in agent.stream(input, session: session, hooks: hooks) {
+            switch event {
+            case .started:
+                continue
+            case let .completed(subResult):
+                result = subResult
+            case let .failed(error):
+                throw error
+            default:
+                await relay.yield(event)
+            }
+        }
+
+        guard let finalResult = result else {
+            throw AgentError.internalError(reason: "ParallelGroup stream ended without completion")
+        }
+
+        await relay.yield(.handoffCompletedWithResult(from: groupName, to: name, result: finalResult))
+        return finalResult
+    }
 }
 
 // MARK: CustomStringConvertible
@@ -645,5 +788,19 @@ extension ParallelGroup: CustomStringConvertible {
     nonisolated public var description: String {
         let agentNames = agents.map(\.name).joined(separator: ", ")
         return "ParallelGroup(\(agents.count) agents: [\(agentNames)])"
+    }
+}
+
+// MARK: - ParallelStreamRelay
+
+private actor ParallelStreamRelay {
+    private let continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
+
+    init(continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation) {
+        self.continuation = continuation
+    }
+
+    func yield(_ event: AgentEvent) {
+        continuation.yield(event)
     }
 }

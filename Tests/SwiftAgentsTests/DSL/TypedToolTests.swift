@@ -30,8 +30,8 @@ struct TypedToolTests {
     func typedToolConformsToBaseTool() async throws {
         let tool = WeatherTypedTool()
 
-        // Should work with the base Tool protocol
-        let baseTool: any Tool = tool
+        // Should work with the base AnyJSONTool protocol
+        let baseTool: any AnyJSONTool = tool
         let result = try await baseTool.execute(arguments: [
             "location": .string("New York")
         ])

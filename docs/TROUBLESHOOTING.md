@@ -32,7 +32,7 @@ let registry = ToolRegistry(tools: [CalculatorTool()])
 let agent = MyAgent(tools: registry.allTools)
 
 // 2. Check name matches exactly
-struct CalculatorTool: Tool {
+struct CalculatorTool: AnyJSONTool {
     let name = "calculator"  // Must match exactly
 }
 
@@ -66,7 +66,7 @@ print("Calculator tool registered: \(exists)")
 
 ```swift
 // 1. Check parameter definitions
-struct MyTool: Tool {
+struct MyTool: AnyJSONTool {
     let parameters: [ToolParameter] = [
         ToolParameter(name: "input", description: "Input data", type: .string), // Required by default
         ToolParameter(name: "count", description: "Count", type: .int, isRequired: false, defaultValue: .int(1))

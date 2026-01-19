@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:SwiftAgents}",
+            "name": "Debug SwiftAgentsDemo",
+            "target": "SwiftAgentsDemo",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug SwiftAgentsDemo"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:SwiftAgents}",
+            "name": "Release SwiftAgentsDemo",
+            "target": "SwiftAgentsDemo",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release SwiftAgentsDemo"
+        }
+    ]
+}

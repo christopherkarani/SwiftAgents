@@ -19,7 +19,7 @@ import FoundationNetworking
 /// let result = try await searchTool.execute(arguments: ["query": "latest Swift news"])
 /// ```
 @Tool("Performs a web search to find information on a topic.")
-public struct WebSearchTool: Sendable {
+public struct WebSearchTool {
     // MARK: - Parameters
     
     @Parameter("The search query or topic to find information about")
@@ -87,7 +87,7 @@ public struct WebSearchTool: Sendable {
             "query": query,
             "max_results": maxResults,
             "include_raw_content": includeRawContent,
-            "search_depth": "basic"
+            "search_depth": "ultra-fast"
         ]
         
         var request = URLRequest(url: url)

@@ -24,7 +24,10 @@ struct ResponseTrackerCleanupTests {
         let oneDayAgo = now.addingTimeInterval(-1 * 24 * 3600)
 
         // Record responses for old session (simulate old timestamps)
-        await tracker.recordResponse(makeTestResponse(id: "old_1"), sessionId: "old_session")
+        await tracker.recordResponse(
+            makeTestResponse(id: "old_1", timestamp: oneDayAgo.addingTimeInterval(-1)),
+            sessionId: "old_session"
+        )
 
         // Record responses for recent session
         await tracker.recordResponse(makeTestResponse(id: "recent_1"), sessionId: "recent_session")

@@ -15,7 +15,7 @@ import Foundation
 /// On supported Apple devices (iOS 18+ / macOS 15+), it runs entirely on-device,
 /// ensuring privacy and low latency.
 @Tool("Compacts or summarizes a piece of text to its essential information.")
-public struct SemanticCompactorTool: Sendable {
+public struct SemanticCompactorTool {
     // MARK: - Parameters
     
     @Parameter("The long text or content to compact")

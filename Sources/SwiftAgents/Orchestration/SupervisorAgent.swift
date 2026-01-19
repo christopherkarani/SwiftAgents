@@ -479,7 +479,7 @@ public actor SupervisorAgent: Agent {
 
     // MARK: - Agent Protocol Properties
 
-    nonisolated public let tools: [any Tool] = []
+    nonisolated public let tools: [any AnyJSONTool] = []
     nonisolated public let instructions: String
     nonisolated public let configuration: AgentConfiguration
 
@@ -619,17 +619,158 @@ public actor SupervisorAgent: Agent {
     nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
+
+            let supervisorName = actor.configuration.name.isEmpty ? "SupervisorAgent" : actor.configuration.name
+
+            func forwardStream(
+                toAgentName: String,
+                agent: any Agent,
+                input: String
+            ) async throws -> AgentResult {
+                continuation.yield(.handoffStarted(from: supervisorName, to: toAgentName, input: input))
+                var result: AgentResult?
+
+                for try await event in agent.stream(input, session: session, hooks: hooks) {
+                    switch event {
+                    case .started:
+                        continue
+                    case let .completed(subResult):
+                        result = subResult
+                    case let .failed(error):
+                        throw error
+                    default:
+                        continuation.yield(event)
+                    }
+                }
+
+                guard let finalResult = result else {
+                    throw AgentError.internalError(reason: "Supervisor sub-agent stream ended without completion")
+                }
+
+                continuation.yield(.handoffCompletedWithResult(
+                    from: supervisorName,
+                    to: toAgentName,
+                    result: finalResult
+                ))
+
+                return finalResult
+            }
+
             do {
-                let result = try await actor.run(input, session: session, hooks: hooks)
+                let builder = AgentResult.Builder()
+                builder.start()
+
+                let registry = actor.agentRegistry
+                let routingStrategy = actor.routingStrategy
+                let fallbackAgent = actor.fallbackAgent
+                let enableContextTracking = actor.enableContextTracking
+
+                let descriptions = registry.map(\.description)
+                let context: AgentContext? = enableContextTracking ? AgentContext(input: input) : nil
+
+                let decision = try await routingStrategy.selectAgent(
+                    for: input,
+                    from: descriptions,
+                    context: context
+                )
+
+                guard let selectedEntry = registry.first(where: { $0.name == decision.selectedAgentName }) else {
+                    if let fallback = fallbackAgent {
+                        if let context {
+                            await hooks?.onHandoff(context: context, fromAgent: actor, toAgent: fallback)
+                        }
+
+                        let fallbackName = fallback.configuration.name.isEmpty ? String(describing: type(of: fallback)) : fallback.configuration.name
+                        let fallbackResult = try await forwardStream(
+                            toAgentName: fallbackName,
+                            agent: fallback,
+                            input: input
+                        )
+
+                        builder.setOutput(fallbackResult.output)
+                        builder.setMetadata("routing_decision", .string("fallback"))
+                        builder.setMetadata("fallback_reason", .string("agent_not_found"))
+                        builder.setMetadata("routing_confidence", .double(0.0))
+                        let result = builder.build()
+                        continuation.yield(.completed(result: result))
+                        continuation.finish()
+                        return
+                    }
+
+                    throw AgentError.internalError(
+                        reason: "No suitable agent found and no fallback configured"
+                    )
+                }
+
+                if let context {
+                    await context.recordExecution(agentName: decision.selectedAgentName)
+                }
+
+                let effectiveInput = try await actor.applyHandoffConfiguration(
+                    for: selectedEntry.agent,
+                    name: selectedEntry.name,
+                    input: input,
+                    context: context
+                )
+
+                if let context {
+                    await hooks?.onHandoff(context: context, fromAgent: actor, toAgent: selectedEntry.agent)
+                }
+
+                let subResult = try await forwardStream(
+                    toAgentName: selectedEntry.name,
+                    agent: selectedEntry.agent,
+                    input: effectiveInput
+                )
+
+                if let context {
+                    await context.setPreviousOutput(subResult)
+                }
+
+                let result = await actor.buildResultFromExecution(
+                    decision: decision,
+                    subAgentResult: subResult,
+                    builder: builder
+                )
                 continuation.yield(.completed(result: result))
                 continuation.finish()
-            } catch let error as AgentError {
-                continuation.yield(.failed(error: error))
-                continuation.finish(throwing: error)
             } catch {
-                let agentError = AgentError.internalError(reason: error.localizedDescription)
-                continuation.yield(.failed(error: agentError))
-                continuation.finish(throwing: error)
+                do {
+                    if let fallback = actor.fallbackAgent {
+                        let fallbackName = fallback.configuration.name.isEmpty ? String(describing: type(of: fallback)) : fallback.configuration.name
+                        let fallbackResult = try await forwardStream(
+                            toAgentName: fallbackName,
+                            agent: fallback,
+                            input: input
+                        )
+
+                        let builder = AgentResult.Builder()
+                        builder.start()
+                        builder.setOutput(fallbackResult.output)
+                        builder.setMetadata("routing_decision", .string("fallback_after_error"))
+                        builder.setMetadata("routing_error", .string(error.localizedDescription))
+                        for toolCall in fallbackResult.toolCalls {
+                            builder.addToolCall(toolCall)
+                        }
+                        for toolResult in fallbackResult.toolResults {
+                            builder.addToolResult(toolResult)
+                        }
+                        continuation.yield(.completed(result: builder.build()))
+                        continuation.finish()
+                        return
+                    }
+                } catch {
+                    // Fall through to error handling below.
+                }
+
+                if let agentError = error as? AgentError {
+                    continuation.yield(.failed(error: agentError))
+                    continuation.finish(throwing: agentError)
+                } else {
+                    let agentError = AgentError.internalError(reason: error.localizedDescription)
+                    continuation.yield(.failed(error: agentError))
+                    continuation.finish(throwing: agentError)
+                }
             }
         }
     }

@@ -522,7 +522,7 @@ Agents can implement `HandoffReceiver` for specialized handoff handling:
 
 ```swift
 struct ExecutorAgent: Agent, HandoffReceiver {
-    let tools: [any Tool] = []
+    let tools: [any AnyJSONTool] = []
     let instructions = "Execute planned tasks"
     let configuration = AgentConfiguration.default
 

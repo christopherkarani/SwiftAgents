@@ -12,7 +12,7 @@ import Testing
 
 /// A minimal mock agent for testing guardrails.
 struct MockAgent: Agent {
-    nonisolated let tools: [any Tool]
+    nonisolated let tools: [any AnyJSONTool]
     nonisolated let instructions: String
     nonisolated let configuration: AgentConfiguration
     nonisolated let memory: (any Memory)?
@@ -22,7 +22,7 @@ struct MockAgent: Agent {
     let mockResult: AgentResult
 
     init(
-        tools: [any Tool] = [],
+        tools: [any AnyJSONTool] = [],
         instructions: String = "Mock agent instructions",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,

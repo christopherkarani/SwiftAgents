@@ -12,7 +12,7 @@ import Testing
 /// A simple mock agent for testing Route initialization and properties
 final class MockRouteAgent: Agent, @unchecked Sendable {
     let name: String
-    let tools: [any Tool] = []
+    let tools: [any AnyJSONTool] = []
     let instructions: String
     let configuration: AgentConfiguration = .default
 

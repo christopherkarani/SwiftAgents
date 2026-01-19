@@ -162,6 +162,11 @@ public struct ToolCall: Sendable, Equatable, Identifiable, Codable {
     /// Unique identifier for this tool call.
     public let id: UUID
 
+    /// Provider-assigned tool call identifier, if available (e.g. OpenAI/Anthropic tool call IDs).
+    ///
+    /// This enables correlation across provider-native tool calling flows and multi-turn tool interactions.
+    public let providerCallId: String?
+
     /// Name of the tool being called.
     public let toolName: String
 
@@ -174,19 +179,48 @@ public struct ToolCall: Sendable, Equatable, Identifiable, Codable {
     /// Creates a new tool call.
     /// - Parameters:
     ///   - id: Unique identifier. Default: new UUID
+    ///   - providerCallId: Provider-assigned tool call identifier. Default: nil
     ///   - toolName: The name of the tool.
     ///   - arguments: Arguments for the tool.
     ///   - timestamp: When the call was made. Default: now
     public init(
         id: UUID = UUID(),
+        providerCallId: String? = nil,
         toolName: String,
         arguments: [String: SendableValue] = [:],
         timestamp: Date = Date()
     ) {
         self.id = id
+        self.providerCallId = providerCallId
         self.toolName = toolName
         self.arguments = arguments
         self.timestamp = timestamp
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case providerCallId
+        case toolName
+        case arguments
+        case timestamp
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        providerCallId = try container.decodeIfPresent(String.self, forKey: .providerCallId)
+        toolName = try container.decode(String.self, forKey: .toolName)
+        arguments = try container.decode([String: SendableValue].self, forKey: .arguments)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(providerCallId, forKey: .providerCallId)
+        try container.encode(toolName, forKey: .toolName)
+        try container.encode(arguments, forKey: .arguments)
+        try container.encode(timestamp, forKey: .timestamp)
     }
 }
 
