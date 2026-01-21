@@ -136,14 +136,13 @@ public struct RoutesBuilder {
 public func When(
     _ condition: RouteCondition,
     name: String? = nil,
-    @AgentLoopBuilder _ content: () -> AgentLoop
+    @AgentLoopBuilder _ content: () -> AgentLoopSequence
 ) -> RouteEntry {
     .when(RouteBranch(condition: condition, step: AgentLoopStep(content()), name: name))
 }
 
 public func Otherwise(
-    @AgentLoopBuilder _ content: () -> AgentLoop
+    @AgentLoopBuilder _ content: () -> AgentLoopSequence
 ) -> RouteEntry {
     .otherwise(AgentLoopStep(content()))
 }
-

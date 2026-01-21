@@ -188,7 +188,7 @@ Define agents as value types with explicit execution flow:
 struct CustomerService: Agent {
     var instructions: String { "You are a helpful customer service agent." }
 
-    var loop: AgentLoop {
+    var loop: some AgentLoop {
         Guard(.input) {
             InputGuard("no_secrets") { input in
                 input.contains("password") ? .tripwire(message: "Sensitive data") : .passed()
@@ -214,11 +214,11 @@ struct CustomerService: Agent {
 
 struct Billing: Agent {
     var instructions: String { "You are billing support. Be concise." }
-    var loop: AgentLoop { Respond() }
+    var loop: some AgentLoop { Respond() }
 }
 
 struct GeneralSupport: Agent {
-    var loop: AgentLoop { Respond() }
+    var loop: some AgentLoop { Respond() }
 }
 
 let result = try await CustomerService()

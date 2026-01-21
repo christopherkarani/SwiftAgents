@@ -11,6 +11,8 @@ import Foundation
 /// Configuration (instructions, tools, guardrails, etc.) lives on the agent type,
 /// while the `loop` describes *how* the agent runs.
 public protocol Agent: Sendable {
+    associatedtype Loop: AgentLoop
+
     /// Human-friendly agent name used for tracing, handoffs, and observability.
     var name: String { get }
 
@@ -39,7 +41,7 @@ public protocol Agent: Sendable {
     var handoffs: [AnyHandoffConfiguration] { get }
 
     /// Declarative execution flow for this agent.
-    @AgentLoopBuilder var loop: AgentLoop { get }
+    @AgentLoopBuilder var loop: Loop { get }
 }
 
 public extension Agent {

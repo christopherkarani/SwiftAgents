@@ -10,33 +10,36 @@ import Foundation
 /// Within an `AgentLoopBuilder` block, each statement is executed in order.
 @resultBuilder
 public struct AgentLoopBuilder {
-    public static func buildBlock(_ components: AgentLoop...) -> AgentLoop {
-        AgentLoop(steps: components.flatMap(\.steps))
+    public static func buildBlock(_ components: AgentLoopSequence...) -> AgentLoopSequence {
+        AgentLoopSequence(steps: components.flatMap(\.steps))
     }
 
-    public static func buildOptional(_ component: AgentLoop?) -> AgentLoop {
-        component ?? AgentLoop(steps: [])
+    public static func buildOptional(_ component: AgentLoopSequence?) -> AgentLoopSequence {
+        component ?? AgentLoopSequence(steps: [])
     }
 
-    public static func buildEither(first component: AgentLoop) -> AgentLoop { component }
-    public static func buildEither(second component: AgentLoop) -> AgentLoop { component }
+    public static func buildEither(first component: AgentLoopSequence) -> AgentLoopSequence { component }
+    public static func buildEither(second component: AgentLoopSequence) -> AgentLoopSequence { component }
 
-    public static func buildArray(_ components: [AgentLoop]) -> AgentLoop {
-        AgentLoop(steps: components.flatMap(\.steps))
+    public static func buildArray(_ components: [AgentLoopSequence]) -> AgentLoopSequence {
+        AgentLoopSequence(steps: components.flatMap(\.steps))
     }
 
-    public static func buildExpression(_ loop: AgentLoop) -> AgentLoop { loop }
+    public static func buildExpression(_ loop: AgentLoopSequence) -> AgentLoopSequence { loop }
 
-    public static func buildExpression(_ step: OrchestrationStep) -> AgentLoop {
-        AgentLoop(steps: [step])
+    public static func buildExpression<L: AgentLoop>(_ loop: L) -> AgentLoopSequence {
+        AgentLoopSequence(steps: loop.steps)
     }
 
-    public static func buildExpression(_ agent: any AgentRuntime) -> AgentLoop {
-        AgentLoop(steps: [AgentStep(agent)])
+    public static func buildExpression(_ step: OrchestrationStep) -> AgentLoopSequence {
+        AgentLoopSequence(steps: [step])
     }
 
-    public static func buildExpression<A: Agent>(_ agent: A) -> AgentLoop {
-        AgentLoop(steps: [LoopAgentStep(agent)])
+    public static func buildExpression(_ agent: any AgentRuntime) -> AgentLoopSequence {
+        AgentLoopSequence(steps: [AgentStep(agent)])
+    }
+
+    public static func buildExpression<A: Agent>(_ agent: A) -> AgentLoopSequence {
+        AgentLoopSequence(steps: [LoopAgentStep(agent)])
     }
 }
-

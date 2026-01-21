@@ -80,6 +80,5 @@ public struct ConfiguredAgent<Base: Agent>: Agent {
     public var outputGuardrails: [any OutputGuardrail] { base.outputGuardrails }
     public var handoffs: [AnyHandoffConfiguration] { base.handoffs }
 
-    @AgentLoopBuilder public var loop: AgentLoop { base.loop }
+    public var loop: AgentLoopSequence { base.loop }
 }
-

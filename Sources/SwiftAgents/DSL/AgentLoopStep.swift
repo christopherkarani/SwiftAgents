@@ -7,13 +7,13 @@ import Foundation
 
 /// Executes an `AgentLoop` inline within an orchestration.
 public struct AgentLoopStep: OrchestrationStep {
-    public let loop: AgentLoop
+    public let loop: AgentLoopSequence
 
-    public init(_ loop: AgentLoop) {
-        self.loop = loop
+    public init<L: AgentLoop>(_ loop: L) {
+        self.loop = AgentLoopSequence(steps: loop.steps)
     }
 
-    public init(@AgentLoopBuilder _ content: () -> AgentLoop) {
+    public init(@AgentLoopBuilder _ content: () -> AgentLoopSequence) {
         loop = content()
     }
 
@@ -21,4 +21,3 @@ public struct AgentLoopStep: OrchestrationStep {
         try await loop.execute(input, context: context)
     }
 }
-

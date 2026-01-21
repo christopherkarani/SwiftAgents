@@ -1,7 +1,7 @@
 // AgentLoop.swift
 // SwiftAgents Framework
 //
-// SwiftUI-style sequential loop container for declarative agent definitions.
+// SwiftUI-style sequential loop protocol for declarative agent definitions.
 
 import Foundation
 
@@ -9,19 +9,21 @@ import Foundation
 ///
 /// `AgentLoop` is the core building block of the declarative DSL. Code order
 /// matches execution order: each step receives the previous step's output as input.
-public struct AgentLoop: Sendable {
-    // MARK: Internal
+public protocol AgentLoop: Sendable {
+    /// The concrete orchestration steps represented by this loop.
+    var steps: [OrchestrationStep] { get }
+}
 
-    let steps: [OrchestrationStep]
-
-    // MARK: Public
+/// The default concrete loop implementation produced by `@AgentLoopBuilder`.
+public struct AgentLoopSequence: AgentLoop, Sendable {
+    public let steps: [OrchestrationStep]
 
     public init(steps: [OrchestrationStep]) {
         self.steps = steps
     }
+}
 
-    // MARK: Internal Execution
-
+public extension AgentLoop {
     func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
         guard !steps.isEmpty else {
             return AgentResult(output: input)
@@ -75,4 +77,3 @@ public struct AgentLoop: Sendable {
         )
     }
 }
-

@@ -11,13 +11,13 @@ import Testing
 private struct PrefixAgent: Agent {
     let prefix: String
 
-    var loop: AgentLoop {
+    var loop: some AgentLoop {
         Transform { input in "\(prefix)\(input)" }
     }
 }
 
 private struct SampleSequentialAgent: Agent {
-    var loop: AgentLoop {
+    var loop: some AgentLoop {
         PrefixAgent(prefix: "A")
         PrefixAgent(prefix: "B")
     }
@@ -26,19 +26,19 @@ private struct SampleSequentialAgent: Agent {
 private struct BillingAgent: Agent {
     var instructions: String { "You are billing support." }
 
-    var loop: AgentLoop {
+    var loop: some AgentLoop {
         Respond()
     }
 }
 
 private struct GeneralSupportAgent: Agent {
-    var loop: AgentLoop {
+    var loop: some AgentLoop {
         Transform { input in "general:\(input)" }
     }
 }
 
 private struct CustomerServiceAgent: Agent {
-    var loop: AgentLoop {
+    var loop: some AgentLoop {
         Guard(.input) {
             InputGuard("block_input") { input in
                 input.contains("BLOCK") ? .tripwire(message: "blocked") : .passed()
