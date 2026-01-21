@@ -53,14 +53,14 @@ struct StreamingEventTests {
         #expect(events.contains { if case .completed = $0 { return true }; return false })
     }
     
-    @Test("ToolCallingAgent stream emits iteration events")
-    func toolCallingAgentStreamEvents() async throws {
-        // 1. Setup mock provider (ToolCallingAgent uses generateWithToolCalls)
+    @Test("Agent stream emits iteration events")
+    func agentStreamEvents() async throws {
+        // 1. Setup mock provider (Agent uses generateWithToolCalls)
         let mockProvider = MockInferenceProvider()
         await mockProvider.setResponses(["Final answer directly"])
         
         // 2. Setup agent
-        let agent = ToolCallingAgent(
+        let agent = Agent(
             tools: [],
             instructions: "You are a test assistant.",
             inferenceProvider: mockProvider

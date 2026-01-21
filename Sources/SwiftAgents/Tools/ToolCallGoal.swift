@@ -40,7 +40,7 @@ public extension ToolExecutionEngine {
     func execute(
         _ goal: some ToolCallGoal,
         registry: ToolRegistry,
-        agent: any Agent,
+        agent: any AgentRuntime,
         context: AgentContext?,
         resultBuilder: AgentResult.Builder,
         hooks: (any RunHooks)?,
@@ -61,4 +61,3 @@ public extension ToolExecutionEngine {
         )
     }
 }
-

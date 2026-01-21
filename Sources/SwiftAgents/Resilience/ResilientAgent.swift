@@ -22,7 +22,7 @@ import Foundation
 ///
 /// let result = try await resilientAgent.run("process request")
 /// ```
-public actor ResilientAgent: Agent {
+public actor ResilientAgent: AgentRuntime {
     // MARK: Public
 
     // MARK: - Agent Protocol (nonisolated)
@@ -49,10 +49,10 @@ public actor ResilientAgent: Agent {
     ///   - fallbackAgent: Optional fallback agent when all else fails.
     ///   - timeout: Optional timeout duration for execution.
     public init(
-        base: any Agent,
+        base: any AgentRuntime,
         retryPolicy: RetryPolicy? = nil,
         circuitBreaker: CircuitBreaker? = nil,
-        fallbackAgent: (any Agent)? = nil,
+        fallbackAgent: (any AgentRuntime)? = nil,
         timeout: Duration? = nil
     ) {
         self.base = base
@@ -112,7 +112,7 @@ public actor ResilientAgent: Agent {
     ///
     /// - Parameter fallback: The agent to use when the primary fails.
     /// - Returns: A new resilient agent with fallback enabled.
-    nonisolated public func withFallback(_ fallback: any Agent) -> ResilientAgent {
+    nonisolated public func withFallback(_ fallback: any AgentRuntime) -> ResilientAgent {
         ResilientAgent(
             base: base,
             retryPolicy: retryPolicy,
@@ -303,7 +303,7 @@ public actor ResilientAgent: Agent {
         wrapping resilient: ResilientAgent,
         retryPolicy: RetryPolicy? = nil,
         circuitBreaker: CircuitBreaker? = nil,
-        fallbackAgent: (any Agent)? = nil,
+        fallbackAgent: (any AgentRuntime)? = nil,
         timeout: Duration? = nil
     ) {
         // Get base values synchronously from nonisolated properties
@@ -339,10 +339,10 @@ public actor ResilientAgent: Agent {
 
     // MARK: - Resilience Configuration
 
-    nonisolated private let base: any Agent
+    nonisolated private let base: any AgentRuntime
     nonisolated private let retryPolicy: RetryPolicy?
     nonisolated private let circuitBreaker: CircuitBreaker?
-    nonisolated private let fallbackAgent: (any Agent)?
+    nonisolated private let fallbackAgent: (any AgentRuntime)?
     nonisolated private let timeoutDuration: Duration?
 
     // MARK: - Private State
@@ -450,7 +450,7 @@ public actor ResilientAgent: Agent {
 
 // MARK: - Agent Resilience Extensions
 
-public extension Agent {
+public extension AgentRuntime {
     /// Wraps this agent with retry behavior.
     ///
     /// - Parameter policy: The retry policy to apply.
@@ -499,7 +499,7 @@ public extension Agent {
     /// ```swift
     /// let resilient = primaryAgent.withFallback(backupAgent)
     /// ```
-    func withFallback(_ fallback: any Agent) -> ResilientAgent {
+    func withFallback(_ fallback: any AgentRuntime) -> ResilientAgent {
         if let resilient = self as? ResilientAgent {
             return resilient.withFallback(fallback)
         }

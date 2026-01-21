@@ -1,15 +1,15 @@
-// ToolCallingAgent.swift
+// Agent.swift
 // SwiftAgents Framework
 //
 // Tool-calling agent that uses structured LLM tool calling APIs.
 
 import Foundation
 
-// MARK: - ToolCallingAgent
+// MARK: - Agent
 
 /// An agent that uses structured LLM tool calling APIs for reliable tool invocation.
 ///
-/// Unlike ReActAgent which parses tool calls from text output, ToolCallingAgent
+/// Unlike ReActAgent which parses tool calls from text output, Agent
 /// leverages the LLM's native tool calling capabilities via `generateWithToolCalls()`
 /// for more reliable and type-safe tool invocation.
 ///
@@ -22,7 +22,7 @@ import Foundation
 ///
 /// Example:
 /// ```swift
-/// let agent = ToolCallingAgent(
+/// let agent = Agent(
 ///     tools: [WeatherTool(), CalculatorTool()],
 ///     instructions: "You are a helpful assistant with access to tools."
 /// )
@@ -30,7 +30,7 @@ import Foundation
 /// let result = try await agent.run("What's the weather in Tokyo?")
 /// print(result.output)
 /// ```
-public actor ToolCallingAgent: Agent {
+public actor Agent: AgentRuntime {
     // MARK: Public
 
     // MARK: - Agent Protocol Properties
@@ -50,7 +50,7 @@ public actor ToolCallingAgent: Agent {
 
     // MARK: - Initialization
 
-    /// Creates a new ToolCallingAgent.
+    /// Creates a new Agent.
     /// - Parameters:
     ///   - tools: Tools available to the agent. Default: []
     ///   - instructions: System instructions defining agent behavior. Default: ""
@@ -103,7 +103,7 @@ public actor ToolCallingAgent: Agent {
 
         let tracing = TracingHelper(
             tracer: tracer,
-            agentName: configuration.name.isEmpty ? "ToolCallingAgent" : configuration.name
+            agentName: configuration.name.isEmpty ? "Agent" : configuration.name
         )
         await tracing.traceStart(input: input)
 
@@ -473,16 +473,16 @@ public actor ToolCallingAgent: Agent {
     }
 }
 
-// MARK: ToolCallingAgent.Builder
+// MARK: Agent.Builder
 
-public extension ToolCallingAgent {
-    /// Builder for creating ToolCallingAgent instances with a fluent API.
+public extension Agent {
+    /// Builder for creating Agent instances with a fluent API.
     ///
     /// Uses value semantics (struct) for Swift 6 concurrency safety.
     ///
     /// Example:
     /// ```swift
-    /// let agent = ToolCallingAgent.Builder()
+    /// let agent = Agent.Builder()
     ///     .tools([WeatherTool(), CalculatorTool()])
     ///     .instructions("You are a helpful assistant.")
     ///     .configuration(.default.maxIterations(5))
@@ -648,9 +648,9 @@ public extension ToolCallingAgent {
         }
 
         /// Builds the agent.
-        /// - Returns: A new ToolCallingAgent instance.
-        public func build() -> ToolCallingAgent {
-            ToolCallingAgent(
+        /// - Returns: A new Agent instance.
+        public func build() -> Agent {
+            Agent(
                 tools: _tools,
                 instructions: _instructions,
                 configuration: _configuration,
@@ -679,14 +679,14 @@ public extension ToolCallingAgent {
     }
 }
 
-// MARK: - ToolCallingAgent DSL Extension
+// MARK: - Agent DSL Extension
 
-public extension ToolCallingAgent {
-    /// Creates a ToolCallingAgent using the declarative builder DSL.
+public extension Agent {
+    /// Creates an Agent using the declarative builder DSL.
     ///
     /// Example:
     /// ```swift
-    /// let agent = ToolCallingAgent {
+    /// let agent = Agent {
     ///     Instructions("You are a helpful assistant.")
     ///
     ///     Tools {
@@ -699,7 +699,7 @@ public extension ToolCallingAgent {
     /// ```
     ///
     /// - Parameter content: A closure that builds the agent components.
-    init(@AgentBuilder _ content: () -> AgentBuilder.Components) {
+    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) {
         let components = content()
         self.init(
             tools: components.tools,
@@ -715,3 +715,6 @@ public extension ToolCallingAgent {
         )
     }
 }
+
+@available(*, deprecated, renamed: "Agent")
+public typealias ToolCallingAgent = Agent

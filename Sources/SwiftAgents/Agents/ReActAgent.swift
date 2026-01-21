@@ -28,7 +28,7 @@ import Foundation
 /// let result = try await agent.run("What's 15% of 200?")
 /// print(result.output)  // "30"
 /// ```
-public actor ReActAgent: Agent {
+public actor ReActAgent: AgentRuntime {
     // MARK: Public
 
     // MARK: - Agent Protocol Properties

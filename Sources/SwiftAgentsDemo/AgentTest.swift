@@ -1,7 +1,9 @@
 import Foundation
 import SwiftAgents
 
+#if canImport(AnyLanguageModel) && SWIFTAGENTS_DEMO_ANYLANGUAGEMODEL
 import AnyLanguageModel
+#endif
 
 
 
@@ -40,26 +42,27 @@ struct MyApp {
         )
         let provider = OpenRouterProvider(configuration: config)
 
-        guard let anthropicKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"], !anthropicKey.isEmpty else {
-            fatalError("Missing ANTHROPIC_API_KEY in environment variables.")
-        }
-        let model = AnthropicLanguageModel(
-            apiKey: anthropicKey,
-            model: "claude-haiku-4-5"
-        )
+        let inferenceProvider: any InferenceProvider
+        #if canImport(AnyLanguageModel) && SWIFTAGENTS_DEMO_ANYLANGUAGEMODEL
+            guard let anthropicKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"], !anthropicKey.isEmpty else {
+                fatalError("Missing ANTHROPIC_API_KEY in environment variables.")
+            }
+            let model = AnthropicLanguageModel(
+                apiKey: anthropicKey,
+                model: "claude-haiku-4-5"
+            )
 
-        let trascript: [String] = []
-        
-        let session = LanguageModelSession(model: model, tools: []) {
-        """
-
-        Your a Helpful Research Assistant. 
-            You have access to a websearch tool
-        You Never give up
-        when searching for people you look deeper than Sherlock Holmes
-        Your able to find deep dark secrets on any individual
-        """
-        }
+            let session = LanguageModelSession(model: model, tools: []) {
+                """
+                You are a helpful research assistant.
+                You have access to a websearch tool.
+                You never give up.
+                """
+            }
+            inferenceProvider = session
+        #else
+            inferenceProvider = provider
+        #endif
 
        
 
@@ -76,7 +79,7 @@ struct MyApp {
 
         let agent = ReActAgent.Builder()
             .instructions("Your a deep research Agent, when you dont find something you keep looking ")
-            .inferenceProvider(session)
+            .inferenceProvider(inferenceProvider)
             .addTool(searchTool)
             .addTool(StringTool())
             .addTool(DateTimeTool())
@@ -128,19 +131,18 @@ struct MyApp {
 }
 
 // Proper InferenceProvider conformance for LanguageModelSession
+#if canImport(AnyLanguageModel) && SWIFTAGENTS_DEMO_ANYLANGUAGEMODEL
 extension LanguageModelSession: InferenceProvider {
-    public func generate(prompt: String, options: InferenceOptions) async throws -> String {
-        // Create a request with the prompt
-        let response = try await self.respond(to: prompt)
+    public func generate(prompt: String, options _: InferenceOptions) async throws -> String {
+        let response = try await respond(to: prompt)
         return response.content
     }
-    
-    public func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
+
+    public func stream(prompt: String, options _: InferenceOptions) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    // For streaming, we'll generate the full response and yield it
-                    let response = try await self.respond(to: prompt)
+                    let response = try await respond(to: prompt)
                     continuation.yield(response.content)
                     continuation.finish()
                 } catch {
@@ -149,21 +151,18 @@ extension LanguageModelSession: InferenceProvider {
             }
         }
     }
-    
+
     public func generateWithToolCalls(
         prompt: String,
         tools: [ToolDefinition],
-        options: InferenceOptions
+        options _: InferenceOptions
     ) async throws -> InferenceResponse {
-        // This is a simplified implementation
-        // In a full implementation, you would handle tool calls properly
-        print("The Tools", tools)
-        let response = try await self.respond(to: prompt)
-        
+        let response = try await respond(to: prompt)
         return InferenceResponse(
             content: response.content,
-            toolCalls: [], // No tool calls in this simple implementation
+            toolCalls: [],
             finishReason: .completed
         )
     }
 }
+#endif

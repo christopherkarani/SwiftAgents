@@ -24,11 +24,11 @@ import Foundation
 /// Example:
 /// ```swift
 /// struct MyHooks: RunHooks {
-///     func onAgentStart(context: AgentContext?, agent: any Agent, input: String) async {
+///     func onAgentStart(context: AgentContext?, agent: any AgentRuntime, input: String) async {
 ///         print("Agent started with: \(input)")
 ///     }
 ///
-///     func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue])
+///     func onToolStart(context: AgentContext?, agent: any AgentRuntime, tool: any Tool, arguments: [String: SendableValue])
 /// async {
 ///         print("Calling tool: \(tool.name)")
 ///     }
@@ -48,7 +48,7 @@ public protocol RunHooks: Sendable {
     ///     (directly via `agent.run()` rather than through an orchestrator like `SupervisorAgent`).
     ///   - agent: The agent that is starting.
     ///   - input: The input string passed to the agent.
-    func onAgentStart(context: AgentContext?, agent: any Agent, input: String) async
+    func onAgentStart(context: AgentContext?, agent: any AgentRuntime, input: String) async
 
     /// Called when an agent completes execution successfully.
     ///
@@ -56,7 +56,7 @@ public protocol RunHooks: Sendable {
     ///   - context: Optional agent context for orchestration scenarios.
     ///   - agent: The agent that completed.
     ///   - result: The result produced by the agent.
-    func onAgentEnd(context: AgentContext?, agent: any Agent, result: AgentResult) async
+    func onAgentEnd(context: AgentContext?, agent: any AgentRuntime, result: AgentResult) async
 
     /// Called when an agent encounters an error during execution.
     ///
@@ -64,7 +64,7 @@ public protocol RunHooks: Sendable {
     ///   - context: Optional agent context for orchestration scenarios.
     ///   - agent: The agent that encountered the error.
     ///   - error: The error that occurred.
-    func onError(context: AgentContext?, agent: any Agent, error: Error) async
+    func onError(context: AgentContext?, agent: any AgentRuntime, error: Error) async
 
     /// Called when an agent hands off execution to another agent.
     ///
@@ -72,7 +72,7 @@ public protocol RunHooks: Sendable {
     ///   - context: Optional agent context for orchestration scenarios.
     ///   - fromAgent: The agent initiating the handoff.
     ///   - toAgent: The agent receiving control.
-    func onHandoff(context: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async
+    func onHandoff(context: AgentContext?, fromAgent: any AgentRuntime, toAgent: any AgentRuntime) async
 
     /// Called when a tool execution begins.
     ///
@@ -81,7 +81,7 @@ public protocol RunHooks: Sendable {
     ///   - agent: The agent calling the tool.
     ///   - tool: The tool being executed.
     ///   - arguments: The arguments passed to the tool.
-    func onToolStart(context: AgentContext?, agent: any Agent, call: ToolCall) async
+    func onToolStart(context: AgentContext?, agent: any AgentRuntime, call: ToolCall) async
 
     /// Called when a tool execution completes successfully.
     ///
@@ -90,7 +90,7 @@ public protocol RunHooks: Sendable {
     ///   - agent: The agent that called the tool.
     ///   - tool: The tool that was executed.
     ///   - result: The result returned by the tool.
-    func onToolEnd(context: AgentContext?, agent: any Agent, result: ToolResult) async
+    func onToolEnd(context: AgentContext?, agent: any AgentRuntime, result: ToolResult) async
 
     /// Called when an LLM inference begins.
     ///
@@ -99,7 +99,7 @@ public protocol RunHooks: Sendable {
     ///   - agent: The agent making the LLM call.
     ///   - systemPrompt: The system prompt, if any.
     ///   - inputMessages: The input messages sent to the LLM.
-    func onLLMStart(context: AgentContext?, agent: any Agent, systemPrompt: String?, inputMessages: [MemoryMessage]) async
+    func onLLMStart(context: AgentContext?, agent: any AgentRuntime, systemPrompt: String?, inputMessages: [MemoryMessage]) async
 
     /// Called when an LLM inference completes.
     ///
@@ -108,7 +108,7 @@ public protocol RunHooks: Sendable {
     ///   - agent: The agent that made the LLM call.
     ///   - response: The text response from the LLM.
     ///   - usage: Token usage statistics, if available.
-    func onLLMEnd(context: AgentContext?, agent: any Agent, response: String, usage: InferenceResponse.TokenUsage?) async
+    func onLLMEnd(context: AgentContext?, agent: any AgentRuntime, response: String, usage: InferenceResponse.TokenUsage?) async
 
     /// Called when a guardrail is triggered during execution.
     ///
@@ -125,7 +125,7 @@ public protocol RunHooks: Sendable {
     ///   - context: Optional agent context.
     ///   - agent: The agent that is thinking.
     ///   - thought: The reasoning or thought content.
-    func onThinking(context: AgentContext?, agent: any Agent, thought: String) async
+    func onThinking(context: AgentContext?, agent: any AgentRuntime, thought: String) async
 
     /// Called during streaming of a thinking/reasoning step.
     ///
@@ -133,7 +133,7 @@ public protocol RunHooks: Sendable {
     ///   - context: Optional agent context.
     ///   - agent: The agent that is thinking.
     ///   - partialThought: The partial reasoning or thought content.
-    func onThinkingPartial(context: AgentContext?, agent: any Agent, partialThought: String) async
+    func onThinkingPartial(context: AgentContext?, agent: any AgentRuntime, partialThought: String) async
 
     /// Called when a new iteration begins in an agent loop.
     ///
@@ -141,7 +141,7 @@ public protocol RunHooks: Sendable {
     ///   - context: Optional agent context.
     ///   - agent: The agent starting an iteration.
     ///   - number: The iteration number (1-indexed).
-    func onIterationStart(context: AgentContext?, agent: any Agent, number: Int) async
+    func onIterationStart(context: AgentContext?, agent: any AgentRuntime, number: Int) async
 
     /// Called when an iteration completes in an agent loop.
     ///
@@ -149,50 +149,50 @@ public protocol RunHooks: Sendable {
     ///   - context: Optional agent context.
     ///   - agent: The agent completing an iteration.
     ///   - number: The iteration number.
-    func onIterationEnd(context: AgentContext?, agent: any Agent, number: Int) async
+    func onIterationEnd(context: AgentContext?, agent: any AgentRuntime, number: Int) async
 }
 
 // MARK: - RunHooks Default Implementations
 
 public extension RunHooks {
     /// Default no-op implementation for agent start.
-    func onAgentStart(context _: AgentContext?, agent _: any Agent, input _: String) async {}
+    func onAgentStart(context _: AgentContext?, agent _: any AgentRuntime, input _: String) async {}
 
     /// Default no-op implementation for agent end.
-    func onAgentEnd(context _: AgentContext?, agent _: any Agent, result _: AgentResult) async {}
+    func onAgentEnd(context _: AgentContext?, agent _: any AgentRuntime, result _: AgentResult) async {}
 
     /// Default no-op implementation for errors.
-    func onError(context _: AgentContext?, agent _: any Agent, error _: Error) async {}
+    func onError(context _: AgentContext?, agent _: any AgentRuntime, error _: Error) async {}
 
     /// Default no-op implementation for handoffs.
-    func onHandoff(context _: AgentContext?, fromAgent _: any Agent, toAgent _: any Agent) async {}
+    func onHandoff(context _: AgentContext?, fromAgent _: any AgentRuntime, toAgent _: any AgentRuntime) async {}
 
     /// Default no-op implementation for tool start.
-    func onToolStart(context: AgentContext?, agent: any Agent, call: ToolCall) async {}
+    func onToolStart(context: AgentContext?, agent: any AgentRuntime, call: ToolCall) async {}
 
     /// Default no-op implementation for tool end.
-    func onToolEnd(context: AgentContext?, agent: any Agent, result: ToolResult) async {}
+    func onToolEnd(context: AgentContext?, agent: any AgentRuntime, result: ToolResult) async {}
 
     /// Default no-op implementation for LLM start.
-    func onLLMStart(context _: AgentContext?, agent _: any Agent, systemPrompt _: String?, inputMessages _: [MemoryMessage]) async {}
+    func onLLMStart(context _: AgentContext?, agent _: any AgentRuntime, systemPrompt _: String?, inputMessages _: [MemoryMessage]) async {}
 
     /// Default no-op implementation for LLM end.
-    func onLLMEnd(context _: AgentContext?, agent _: any Agent, response _: String, usage _: InferenceResponse.TokenUsage?) async {}
+    func onLLMEnd(context _: AgentContext?, agent _: any AgentRuntime, response _: String, usage _: InferenceResponse.TokenUsage?) async {}
 
     /// Default no-op implementation for guardrail triggered.
     func onGuardrailTriggered(context _: AgentContext?, guardrailName _: String, guardrailType _: GuardrailType, result _: GuardrailResult) async {}
 
     /// Default no-op implementation for thinking.
-    func onThinking(context _: AgentContext?, agent _: any Agent, thought _: String) async {}
+    func onThinking(context _: AgentContext?, agent _: any AgentRuntime, thought _: String) async {}
 
     /// Default no-op implementation for partial thinking.
-    func onThinkingPartial(context _: AgentContext?, agent _: any Agent, partialThought _: String) async {}
+    func onThinkingPartial(context _: AgentContext?, agent _: any AgentRuntime, partialThought _: String) async {}
 
     /// Default no-op implementation for iteration start.
-    func onIterationStart(context _: AgentContext?, agent _: any Agent, number _: Int) async {}
+    func onIterationStart(context _: AgentContext?, agent _: any AgentRuntime, number _: Int) async {}
 
     /// Default no-op implementation for iteration end.
-    func onIterationEnd(context _: AgentContext?, agent _: any Agent, number _: Int) async {}
+    func onIterationEnd(context _: AgentContext?, agent _: any AgentRuntime, number _: Int) async {}
 }
 
 // MARK: - CompositeRunHooks
@@ -238,7 +238,7 @@ public struct CompositeRunHooks: RunHooks {
 
     // MARK: - RunHooks Implementation
 
-    public func onAgentStart(context: AgentContext?, agent: any Agent, input: String) async {
+    public func onAgentStart(context: AgentContext?, agent: any AgentRuntime, input: String) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
@@ -248,7 +248,7 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
-    public func onAgentEnd(context: AgentContext?, agent: any Agent, result: AgentResult) async {
+    public func onAgentEnd(context: AgentContext?, agent: any AgentRuntime, result: AgentResult) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
@@ -258,7 +258,7 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
-    public func onError(context: AgentContext?, agent: any Agent, error: Error) async {
+    public func onError(context: AgentContext?, agent: any AgentRuntime, error: Error) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
@@ -268,7 +268,7 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
-    public func onHandoff(context: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async {
+    public func onHandoff(context: AgentContext?, fromAgent: any AgentRuntime, toAgent: any AgentRuntime) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
@@ -278,7 +278,7 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
-    public func onToolStart(context: AgentContext?, agent: any Agent, call: ToolCall) async {
+    public func onToolStart(context: AgentContext?, agent: any AgentRuntime, call: ToolCall) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
@@ -288,7 +288,7 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
-    public func onToolEnd(context: AgentContext?, agent: any Agent, result: ToolResult) async {
+    public func onToolEnd(context: AgentContext?, agent: any AgentRuntime, result: ToolResult) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
@@ -298,7 +298,7 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
-    public func onLLMStart(context: AgentContext?, agent: any Agent, systemPrompt: String?, inputMessages: [MemoryMessage]) async {
+    public func onLLMStart(context: AgentContext?, agent: any AgentRuntime, systemPrompt: String?, inputMessages: [MemoryMessage]) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
@@ -308,7 +308,7 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
-    public func onLLMEnd(context: AgentContext?, agent: any Agent, response: String, usage: InferenceResponse.TokenUsage?) async {
+    public func onLLMEnd(context: AgentContext?, agent: any AgentRuntime, response: String, usage: InferenceResponse.TokenUsage?) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
@@ -328,7 +328,7 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
-    public func onThinking(context: AgentContext?, agent: any Agent, thought: String) async {
+    public func onThinking(context: AgentContext?, agent: any AgentRuntime, thought: String) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
@@ -338,7 +338,7 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
-    public func onThinkingPartial(context: AgentContext?, agent: any Agent, partialThought: String) async {
+    public func onThinkingPartial(context: AgentContext?, agent: any AgentRuntime, partialThought: String) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
@@ -348,7 +348,7 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
-    public func onIterationStart(context: AgentContext?, agent: any Agent, number: Int) async {
+    public func onIterationStart(context: AgentContext?, agent: any AgentRuntime, number: Int) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
@@ -358,7 +358,7 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
-    public func onIterationEnd(context: AgentContext?, agent: any Agent, number: Int) async {
+    public func onIterationEnd(context: AgentContext?, agent: any AgentRuntime, number: Int) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
                 group.addTask {
@@ -405,7 +405,7 @@ public struct LoggingRunHooks: RunHooks {
 
     // MARK: - RunHooks Implementation
 
-    public func onAgentStart(context: AgentContext?, agent _: any Agent, input: String) async {
+    public func onAgentStart(context: AgentContext?, agent _: any AgentRuntime, input: String) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
@@ -415,7 +415,7 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("Agent started\(contextId) - input: \"\(truncatedInput)\"")
     }
 
-    public func onAgentEnd(context: AgentContext?, agent _: any Agent, result: AgentResult) async {
+    public func onAgentEnd(context: AgentContext?, agent _: any AgentRuntime, result: AgentResult) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
@@ -424,7 +424,7 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("Agent completed\(contextId) - iterations: \(result.iterationCount), duration: \(result.duration), tools: \(result.toolCalls.count)")
     }
 
-    public func onError(context: AgentContext?, agent _: any Agent, error: Error) async {
+    public func onError(context: AgentContext?, agent _: any AgentRuntime, error: Error) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
@@ -433,7 +433,7 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.error("Agent error\(contextId) - \(error.localizedDescription)")
     }
 
-    public func onHandoff(context: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async {
+    public func onHandoff(context: AgentContext?, fromAgent: any AgentRuntime, toAgent: any AgentRuntime) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
@@ -444,7 +444,7 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("Agent handoff\(contextId) - from: \(fromName) to: \(toName)")
     }
 
-    public func onToolStart(context: AgentContext?, agent _: any Agent, call: ToolCall) async {
+    public func onToolStart(context: AgentContext?, agent _: any AgentRuntime, call: ToolCall) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
@@ -453,7 +453,7 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("Tool started\(contextId) - name: \(call.toolName), args: \(call.arguments.count) parameter(s)")
     }
 
-    public func onToolEnd(context: AgentContext?, agent _: any Agent, result: ToolResult) async {
+    public func onToolEnd(context: AgentContext?, agent _: any AgentRuntime, result: ToolResult) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
@@ -465,7 +465,7 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("Tool execution \(status)\(contextId) - duration: \(result.duration)")
     }
 
-    public func onLLMStart(context: AgentContext?, agent _: any Agent, systemPrompt _: String?, inputMessages: [MemoryMessage]) async {
+    public func onLLMStart(context: AgentContext?, agent _: any AgentRuntime, systemPrompt _: String?, inputMessages: [MemoryMessage]) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
@@ -474,7 +474,7 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("LLM call started\(contextId) - messages: \(inputMessages.count)")
     }
 
-    public func onLLMEnd(context: AgentContext?, agent _: any Agent, response _: String, usage: InferenceResponse.TokenUsage?) async {
+    public func onLLMEnd(context: AgentContext?, agent _: any AgentRuntime, response _: String, usage: InferenceResponse.TokenUsage?) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
@@ -498,7 +498,7 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.warning("Guardrail triggered\(contextId) - name: \(guardrailName), type: \(guardrailType.rawValue), message: \(message)")
     }
 
-    public func onThinking(context: AgentContext?, agent _: any Agent, thought: String) async {
+    public func onThinking(context: AgentContext?, agent _: any AgentRuntime, thought: String) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
@@ -508,7 +508,7 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("Agent thinking\(contextId): \"\(truncatedThought)\"")
     }
 
-    public func onIterationStart(context: AgentContext?, agent _: any Agent, number: Int) async {
+    public func onIterationStart(context: AgentContext?, agent _: any AgentRuntime, number: Int) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
@@ -522,7 +522,7 @@ public struct LoggingRunHooks: RunHooks {
     // MARK: - Private Helpers
 
     /// Returns a display name for an agent, falling back to type name if configuration name is empty.
-    private func agentDisplayName(_ agent: any Agent) -> String {
+    private func agentDisplayName(_ agent: any AgentRuntime) -> String {
         let name = agent.configuration.name
         return name.isEmpty ? String(describing: type(of: agent)) : name
     }

@@ -1,11 +1,11 @@
-// Agent.swift
+// AgentRuntime.swift
 // SwiftAgents Framework
 //
-// Core Agent protocol defining the fundamental agent behavior contract.
+// Core AgentRuntime protocol defining the fundamental agent behavior contract.
 
 import Foundation
 
-// MARK: - Agent
+// MARK: - AgentRuntime
 
 /// A protocol defining the core behavior of an AI agent.
 ///
@@ -28,7 +28,7 @@ import Foundation
 /// let result = try await agent.run("What's 2+2?")
 /// print(result.output)
 /// ```
-public protocol Agent: Sendable {
+public protocol AgentRuntime: Sendable {
     /// The tools available to this agent.
     nonisolated var tools: [any AnyJSONTool] { get }
 
@@ -108,7 +108,7 @@ public protocol Agent: Sendable {
 
 // MARK: - Agent Protocol Extensions
 
-public extension Agent {
+public extension AgentRuntime {
     /// Default memory implementation (none).
     nonisolated var memory: (any Memory)? { nil }
 
@@ -130,7 +130,7 @@ public extension Agent {
 
 // MARK: - Agent Backward Compatibility
 
-public extension Agent {
+public extension AgentRuntime {
     /// Convenience method for run with hooks but no session.
     func run(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
         try await run(input, session: nil, hooks: hooks)
@@ -154,7 +154,7 @@ public extension Agent {
 
 // MARK: - Agent runWithResponse Extensions
 
-public extension Agent {
+public extension AgentRuntime {
     /// Default implementation of `runWithResponse` using the existing `run()` method.
     ///
     /// This creates an `AgentResponse` from the `AgentResult`, generating a unique

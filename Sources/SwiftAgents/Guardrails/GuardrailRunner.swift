@@ -247,7 +247,7 @@ public actor GuardrailRunner {
     public func runOutputGuardrails(
         _ guardrails: [any OutputGuardrail],
         output: String,
-        agent: any Agent,
+        agent: any AgentRuntime,
         context: AgentContext?
     ) async throws -> [GuardrailExecutionResult] {
         if configuration.runInParallel {
@@ -375,7 +375,7 @@ extension GuardrailRunner {
     func runOutputGuardrailsSequential(
         _ guardrails: [any OutputGuardrail],
         output: String,
-        agent: any Agent,
+        agent: any AgentRuntime,
         context: AgentContext?
     ) async throws -> [GuardrailExecutionResult] {
         var results: [GuardrailExecutionResult] = []
@@ -614,7 +614,7 @@ extension GuardrailRunner {
     func runOutputGuardrailsParallel(
         _ guardrails: [any OutputGuardrail],
         output: String,
-        agent: any Agent,
+        agent: any AgentRuntime,
         context: AgentContext?
     ) async throws -> [GuardrailExecutionResult] {
         try Task.checkCancellation()

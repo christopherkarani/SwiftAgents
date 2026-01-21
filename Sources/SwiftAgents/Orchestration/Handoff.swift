@@ -156,7 +156,7 @@ public struct HandoffResult: Sendable, Equatable {
 ///     // HandoffReceiver can use the default implementation
 /// }
 /// ```
-public protocol HandoffReceiver: Agent {
+public protocol HandoffReceiver: AgentRuntime {
     /// Handles a handoff from another agent.
     ///
     /// This method is called when another agent transfers control
@@ -273,7 +273,7 @@ public actor HandoffCoordinator {
     /// - Parameters:
     ///   - agent: The agent to register.
     ///   - name: The name to register the agent under.
-    public func register(_ agent: any Agent, as name: String) {
+    public func register(_ agent: any AgentRuntime, as name: String) {
         agents[name] = agent
     }
 
@@ -288,7 +288,7 @@ public actor HandoffCoordinator {
     ///
     /// - Parameter name: The name of the agent to retrieve.
     /// - Returns: The agent, or nil if not found.
-    public func agent(named name: String) -> (any Agent)? {
+    public func agent(named name: String) -> (any AgentRuntime)? {
         agents[name]
     }
 
@@ -514,7 +514,7 @@ public actor HandoffCoordinator {
     // MARK: - Private Storage
 
     /// Registry of agents by name.
-    private var agents: [String: any Agent] = [:]
+    private var agents: [String: any AgentRuntime] = [:]
 }
 
 // MARK: - HandoffRequest + CustomStringConvertible

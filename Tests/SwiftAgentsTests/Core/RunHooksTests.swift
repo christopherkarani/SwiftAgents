@@ -10,7 +10,7 @@ import Testing
 // MARK: - MockAgentForRunHooks
 
 /// Mock agent for testing hooks.
-private struct MockAgentForRunHooks: Agent {
+private struct MockAgentForRunHooks: AgentRuntime {
     let tools: [any AnyJSONTool] = []
     let instructions: String = "Mock agent"
     let configuration: AgentConfiguration
@@ -40,37 +40,37 @@ private struct MockAgentForRunHooks: Agent {
 private actor RecordingHooks: RunHooks {
     var events: [String] = []
 
-    func onAgentStart(context _: AgentContext?, agent _: any Agent, input: String) async {
+    func onAgentStart(context _: AgentContext?, agent _: any AgentRuntime, input: String) async {
         events.append("agentStart:\(input)")
     }
 
-    func onAgentEnd(context _: AgentContext?, agent _: any Agent, result: AgentResult) async {
+    func onAgentEnd(context _: AgentContext?, agent _: any AgentRuntime, result: AgentResult) async {
         events.append("agentEnd:\(result.output)")
     }
 
-    func onError(context _: AgentContext?, agent _: any Agent, error: Error) async {
+    func onError(context _: AgentContext?, agent _: any AgentRuntime, error: Error) async {
         events.append("error:\(error.localizedDescription)")
     }
 
-    func onHandoff(context _: AgentContext?, fromAgent _: any Agent, toAgent _: any Agent) async {
+    func onHandoff(context _: AgentContext?, fromAgent _: any AgentRuntime, toAgent _: any AgentRuntime) async {
         events.append("handoff")
     }
 
-    func onToolStart(context _: AgentContext?, agent _: any Agent, call: ToolCall) async {
+    func onToolStart(context _: AgentContext?, agent _: any AgentRuntime, call: ToolCall) async {
         events.append("toolStart:\(call.toolName)")
     }
 
-    func onToolEnd(context _: AgentContext?, agent _: any Agent, result: ToolResult) async {
+    func onToolEnd(context _: AgentContext?, agent _: any AgentRuntime, result: ToolResult) async {
         // Find a way to get tool name from result if possible, or use ID
         // For tests we might blindly trust it's the right one
         events.append("toolEnd:unknown") // Updating to match lack of tool name in hook
     }
 
-    func onLLMStart(context _: AgentContext?, agent _: any Agent, systemPrompt _: String?, inputMessages: [MemoryMessage]) async {
+    func onLLMStart(context _: AgentContext?, agent _: any AgentRuntime, systemPrompt _: String?, inputMessages: [MemoryMessage]) async {
         events.append("llmStart:\(inputMessages.count)")
     }
 
-    func onLLMEnd(context _: AgentContext?, agent _: any Agent, response _: String, usage: InferenceResponse.TokenUsage?) async {
+    func onLLMEnd(context _: AgentContext?, agent _: any AgentRuntime, response _: String, usage: InferenceResponse.TokenUsage?) async {
         let tokens = usage.map { "\($0.inputTokens)/\($0.outputTokens)" } ?? "none"
         events.append("llmEnd:\(tokens)")
     }
@@ -176,21 +176,21 @@ struct CompositeRunHooksTests {
 
         struct FirstHook: RunHooks {
             let recorder: RecordingHooks
-            func onAgentStart(context: AgentContext?, agent: any Agent, input _: String) async {
+            func onAgentStart(context: AgentContext?, agent: any AgentRuntime, input _: String) async {
                 await recorder.onAgentStart(context: context, agent: agent, input: "first")
             }
         }
 
         struct SecondHook: RunHooks {
             let recorder: RecordingHooks
-            func onAgentStart(context: AgentContext?, agent: any Agent, input _: String) async {
+            func onAgentStart(context: AgentContext?, agent: any AgentRuntime, input _: String) async {
                 await recorder.onAgentStart(context: context, agent: agent, input: "second")
             }
         }
 
         struct ThirdHook: RunHooks {
             let recorder: RecordingHooks
-            func onAgentStart(context: AgentContext?, agent: any Agent, input _: String) async {
+            func onAgentStart(context: AgentContext?, agent: any AgentRuntime, input _: String) async {
                 await recorder.onAgentStart(context: context, agent: agent, input: "third")
             }
         }
@@ -435,7 +435,7 @@ struct RunHooksIntegrationTests {
 
             func onToolStart(
                 context _: AgentContext?,
-                agent _: any Agent,
+                agent _: any AgentRuntime,
                 call: ToolCall
             ) async {
                 // Verify all parameters are correct
@@ -513,19 +513,19 @@ struct RunHooksConcurrentExecutionTests {
         actor DelayedHook: RunHooks {
             var events: [(String, Date)] = []
 
-            func onAgentStart(context _: AgentContext?, agent _: any Agent, input _: String) async {
+            func onAgentStart(context _: AgentContext?, agent _: any AgentRuntime, input _: String) async {
                 let start = Date()
                 try? await Task.sleep(nanoseconds: 10_000_000) // 10ms delay
                 events.append(("start", start))
             }
 
-            func onAgentEnd(context _: AgentContext?, agent _: any Agent, result _: AgentResult) async {}
-            func onError(context _: AgentContext?, agent _: any Agent, error _: Error) async {}
-            func onHandoff(context _: AgentContext?, fromAgent _: any Agent, toAgent _: any Agent) async {}
-            func onToolStart(context _: AgentContext?, agent _: any Agent, call _: ToolCall) async {}
-            func onToolEnd(context _: AgentContext?, agent _: any Agent, result _: ToolResult) async {}
-            func onLLMStart(context _: AgentContext?, agent _: any Agent, systemPrompt _: String?, inputMessages _: [MemoryMessage]) async {}
-            func onLLMEnd(context _: AgentContext?, agent _: any Agent, response _: String, usage _: InferenceResponse.TokenUsage?) async {}
+            func onAgentEnd(context _: AgentContext?, agent _: any AgentRuntime, result _: AgentResult) async {}
+            func onError(context _: AgentContext?, agent _: any AgentRuntime, error _: Error) async {}
+            func onHandoff(context _: AgentContext?, fromAgent _: any AgentRuntime, toAgent _: any AgentRuntime) async {}
+            func onToolStart(context _: AgentContext?, agent _: any AgentRuntime, call _: ToolCall) async {}
+            func onToolEnd(context _: AgentContext?, agent _: any AgentRuntime, result _: ToolResult) async {}
+            func onLLMStart(context _: AgentContext?, agent _: any AgentRuntime, systemPrompt _: String?, inputMessages _: [MemoryMessage]) async {}
+            func onLLMEnd(context _: AgentContext?, agent _: any AgentRuntime, response _: String, usage _: InferenceResponse.TokenUsage?) async {}
             func onGuardrailTriggered(context _: AgentContext?, guardrailName _: String, guardrailType _: GuardrailType, result _: GuardrailResult) async {}
 
             func getEvents() -> [(String, Date)] { events }

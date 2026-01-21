@@ -10,7 +10,7 @@ import Testing
 // MARK: - TestAgent
 
 /// Simple test agent that returns a predefined response.
-final class TestAgent: Agent, @unchecked Sendable {
+final class TestAgent: AgentRuntime, @unchecked Sendable {
     let name: String
     let responsePrefix: String
     let tools: [any AnyJSONTool] = []
@@ -523,12 +523,21 @@ struct AgentRouterStreamingTests {
         ])
 
         var hasFailed = false
-        for try await event in router.stream("sports news") {
-            if case let .failed(error) = event {
-                if case let .internalError(reason) = error {
+        do {
+            for try await event in router.stream("sports news") {
+                if case let .failed(error) = event,
+                   case let .internalError(reason) = error
+                {
                     #expect(reason.contains("no fallback") || reason.contains("No route matched"))
                     hasFailed = true
                 }
+            }
+        } catch let error as AgentError {
+            if case let .internalError(reason) = error {
+                #expect(reason.contains("no fallback") || reason.contains("No route matched"))
+                hasFailed = true
+            } else {
+                throw error
             }
         }
 
@@ -545,9 +554,17 @@ struct AgentRouterStreamingTests {
         await router.cancel()
 
         var hasCancelled = false
-        for try await event in router.stream("test") {
-            if case .cancelled = event {
+        do {
+            for try await event in router.stream("test") {
+                if case let .failed(error) = event, error == .cancelled {
+                    hasCancelled = true
+                }
+            }
+        } catch let error as AgentError {
+            if error == .cancelled {
                 hasCancelled = true
+            } else {
+                throw error
             }
         }
 

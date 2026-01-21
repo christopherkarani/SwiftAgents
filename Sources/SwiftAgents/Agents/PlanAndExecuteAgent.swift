@@ -245,7 +245,7 @@ extension ExecutionPlan: CustomStringConvertible {
 /// let result = try await agent.run("Find the population of Tokyo and calculate 10% of it")
 /// print(result.output)
 /// ```
-public actor PlanAndExecuteAgent: Agent {
+public actor PlanAndExecuteAgent: AgentRuntime {
     // MARK: Public
 
     // MARK: - Agent Protocol Properties
@@ -865,7 +865,7 @@ public extension PlanAndExecuteAgent {
     /// ```
     ///
     /// - Parameter content: A closure that builds the agent components.
-    init(@AgentBuilder _ content: () -> AgentBuilder.Components) {
+    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) {
         let components = content()
         self.init(
             tools: components.tools,

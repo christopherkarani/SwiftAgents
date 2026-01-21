@@ -260,7 +260,7 @@ public struct HandoffsComponent: AgentComponent, Sendable {
     /// `HandoffConfiguration` instances and type-erase them automatically.
     ///
     /// - Parameter configs: The typed handoff configurations.
-    public init<each T: Agent>(_ configs: repeat HandoffConfiguration<each T>) {
+    public init<each T: AgentRuntime>(_ configs: repeat HandoffConfiguration<each T>) {
         var result: [AnyHandoffConfiguration] = []
         repeat result.append(AnyHandoffConfiguration(each configs))
         handoffs = result
@@ -403,11 +403,11 @@ public struct MCPClientComponent: AgentComponent {
     }
 }
 
-// MARK: - AgentBuilder
+// MARK: - LegacyAgentBuilder
 
-/// A result builder for creating agents declaratively.
+/// A legacy result builder for creating agents declaratively.
 ///
-/// `AgentBuilder` enables a SwiftUI-like syntax for constructing agents
+/// `LegacyAgentBuilder` enables a SwiftUI-like syntax for constructing agents
 /// with their components (instructions, tools, memory, configuration).
 ///
 /// Example:
@@ -429,7 +429,7 @@ public struct MCPClientComponent: AgentComponent {
 /// }
 /// ```
 @resultBuilder
-public struct AgentBuilder {
+public struct LegacyAgentBuilder {
     // MARK: Public
 
     /// The aggregated components from the builder.
@@ -603,7 +603,7 @@ public extension ReActAgent {
     /// ```
     ///
     /// - Parameter content: A closure that builds the agent components.
-    init(@AgentBuilder _ content: () -> AgentBuilder.Components) {
+    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) {
         let components = content()
 
         // Build configuration with Phase 5 overrides

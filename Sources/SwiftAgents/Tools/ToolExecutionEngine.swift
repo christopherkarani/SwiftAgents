@@ -25,7 +25,7 @@ public struct ToolExecutionEngine: Sendable {
         arguments: [String: SendableValue],
         providerCallId: String? = nil,
         registry: ToolRegistry,
-        agent: any Agent,
+        agent: any AgentRuntime,
         context: AgentContext?,
         resultBuilder: AgentResult.Builder,
         hooks: (any RunHooks)?,

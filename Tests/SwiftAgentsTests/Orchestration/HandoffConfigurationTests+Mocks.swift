@@ -9,7 +9,7 @@ import Foundation
 // MARK: - MockHandoffAgent
 
 /// Simple mock agent for testing handoff configurations.
-actor MockHandoffAgent: Agent {
+actor MockHandoffAgent: AgentRuntime {
     nonisolated let tools: [any AnyJSONTool] = []
     nonisolated let instructions: String
     nonisolated let configuration: AgentConfiguration

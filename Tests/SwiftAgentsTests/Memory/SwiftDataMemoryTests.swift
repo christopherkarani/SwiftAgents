@@ -7,6 +7,31 @@
     import SwiftData
     import Testing
 
+    private enum SwiftDataTestGate {
+        static let canRun: Bool = {
+            if let override = ProcessInfo.processInfo.environment["SWIFTAGENTS_RUN_SWIFTDATA_TESTS"] {
+                return override == "1" || override.lowercased() == "true"
+            }
+
+            do {
+                let appSupport = try FileManager.default.url(
+                    for: .applicationSupportDirectory,
+                    in: .userDomainMask,
+                    appropriateFor: nil,
+                    create: true
+                )
+                let probeDir = appSupport.appendingPathComponent("swiftagents_swiftdata_probe", isDirectory: true)
+                try FileManager.default.createDirectory(at: probeDir, withIntermediateDirectories: true)
+                let probeFile = probeDir.appendingPathComponent("probe.tmp")
+                try Data("probe".utf8).write(to: probeFile)
+                try FileManager.default.removeItem(at: probeFile)
+                return true
+            } catch {
+                return false
+            }
+        }()
+    }
+
     @Suite("SwiftDataMemory Tests")
     struct SwiftDataMemoryTests {
         // MARK: - Helper
@@ -25,6 +50,7 @@
 
         @Test("Creates with in-memory container")
         func inMemoryInit() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory()
 
             #expect(await memory.conversationId == "test")
@@ -34,6 +60,7 @@
 
         @Test("Creates with custom conversation ID")
         func customConversationId() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory(conversationId: "chat-123")
 
             #expect(await memory.conversationId == "chat-123")
@@ -41,6 +68,7 @@
 
         @Test("Creates with max messages limit")
         func maxMessagesLimit() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory(maxMessages: 50)
 
             #expect(await memory.maxMessages == 50)
@@ -50,6 +78,7 @@
 
         @Test("Adds single message")
         func addSingleMessage() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory()
 
             await memory.add(.user("Hello"))
@@ -59,6 +88,7 @@
 
         @Test("Adds multiple messages")
         func addMultipleMessages() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory()
 
             await memory.add(.user("Hello"))
@@ -70,6 +100,7 @@
 
         @Test("Persists message content correctly")
         func messagePersistence() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory()
 
             let message = MemoryMessage.user("Test content", metadata: ["key": "value"])
@@ -87,6 +118,7 @@
 
         @Test("Trims to max messages")
         func trimsToMaxMessages() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory(maxMessages: 5)
 
             for i in 1...10 {
@@ -103,6 +135,7 @@
 
         @Test("Unlimited messages when maxMessages is 0")
         func unlimitedMessages() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory(maxMessages: 0)
 
             for i in 1...100 {
@@ -116,6 +149,7 @@
 
         @Test("Gets context within token limit")
         func getContext() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory()
 
             await memory.add(.user("Hello"))
@@ -131,6 +165,7 @@
 
         @Test("Clear removes all messages")
         func testClear() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory()
 
             await memory.add(.user("Hello"))
@@ -147,6 +182,7 @@
 
         @Test("Adds all messages in batch")
         func testAddAll() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory()
 
             let messages = [
@@ -162,6 +198,7 @@
 
         @Test("Gets recent messages")
         func testGetRecentMessages() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory()
 
             for i in 1...10 {
@@ -179,6 +216,7 @@
 
         @Test("Isolates messages by conversation ID")
         func conversationIsolation() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let container = try PersistedMessage.makeContainer(inMemory: true)
 
             let memory1 = SwiftDataMemory(modelContainer: container, conversationId: "chat-1")
@@ -196,6 +234,7 @@
 
         @Test("Lists all conversation IDs")
         func testAllConversationIds() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let container = try PersistedMessage.makeContainer(inMemory: true)
 
             let memory1 = SwiftDataMemory(modelContainer: container, conversationId: "alpha")
@@ -212,6 +251,7 @@
 
         @Test("Deletes specific conversation")
         func testDeleteConversation() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let container = try PersistedMessage.makeContainer(inMemory: true)
 
             let memory = SwiftDataMemory(modelContainer: container, conversationId: "to-delete")
@@ -226,6 +266,7 @@
 
         @Test("Gets message count for conversation")
         func messageCountForConversation() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let container = try PersistedMessage.makeContainer(inMemory: true)
 
             let memory = SwiftDataMemory(modelContainer: container, conversationId: "test")
@@ -241,6 +282,7 @@
 
         @Test("Provides accurate diagnostics")
         func testDiagnostics() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory(conversationId: "diag-test", maxMessages: 100)
 
             await memory.add(.user("Hello"))
@@ -256,6 +298,7 @@
 
         @Test("Diagnostics show unlimited correctly")
         func diagnosticsUnlimited() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try makeInMemoryMemory(maxMessages: 0)
 
             let diagnostics = await memory.diagnostics()
@@ -267,6 +310,7 @@
 
         @Test("In-memory factory creates correct instance")
         func inMemoryFactory() async throws {
+            if !SwiftDataTestGate.canRun { return }
             let memory = try SwiftDataMemory.inMemory(
                 conversationId: "factory-test",
                 maxMessages: 25

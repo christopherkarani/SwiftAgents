@@ -257,7 +257,7 @@ public struct Route: Sendable {
     public let condition: RouteCondition
 
     /// The agent to execute if this route matches.
-    public let agent: any Agent
+    public let agent: any AgentRuntime
 
     /// Optional name for debugging and logging.
     public let name: String?
@@ -268,7 +268,7 @@ public struct Route: Sendable {
     ///   - condition: The condition for this route.
     ///   - agent: The agent to execute if matched.
     ///   - name: Optional name for the route. Default: nil
-    public init(condition: RouteCondition, agent: any Agent, name: String? = nil) {
+    public init(condition: RouteCondition, agent: any AgentRuntime, name: String? = nil) {
         self.condition = condition
         self.agent = agent
         self.name = name
@@ -345,7 +345,7 @@ public struct RouteBuilder {
 ///
 /// let result = try await router.run("What's the weather?")
 /// ```
-public actor AgentRouter: Agent {
+public actor AgentRouter: AgentRuntime {
     // MARK: Public
 
     // MARK: - Agent Protocol Properties
@@ -377,7 +377,7 @@ public actor AgentRouter: Agent {
     ///   - handoffs: Handoff configurations for routed agents. Default: []
     public init(
         routes: [Route],
-        fallbackAgent: (any Agent)? = nil,
+        fallbackAgent: (any AgentRuntime)? = nil,
         configuration: AgentConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
     ) {
@@ -406,7 +406,7 @@ public actor AgentRouter: Agent {
     /// }
     /// ```
     public init(
-        fallbackAgent: (any Agent)? = nil,
+        fallbackAgent: (any AgentRuntime)? = nil,
         configuration: AgentConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = [],
         @RouteBuilder routes: () -> [Route]
@@ -538,7 +538,7 @@ public actor AgentRouter: Agent {
 
             func forwardStream(
                 toAgentName: String,
-                agent: any Agent,
+                agent: any AgentRuntime,
                 input: String
             ) async throws -> AgentResult {
                 continuation.yield(.handoffStarted(from: routerName, to: toAgentName, input: input))
@@ -683,7 +683,7 @@ public actor AgentRouter: Agent {
     // MARK: - Private Properties
 
     private let routes: [Route]
-    private let fallbackAgent: (any Agent)?
+    private let fallbackAgent: (any AgentRuntime)?
     private var isCancelled: Bool = false
 
     /// Handoff configurations for routed agents.
@@ -708,7 +708,7 @@ public actor AgentRouter: Agent {
     ///
     /// - Parameter targetAgent: The agent to find configuration for.
     /// - Returns: The matching handoff configuration, or nil if none found.
-    private func findHandoffConfiguration(for targetAgent: any Agent) -> AnyHandoffConfiguration? {
+    private func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
         _handoffs.first { config in
             // Match by type - compare the target agent's type
             let configTargetType = type(of: config.targetAgent)

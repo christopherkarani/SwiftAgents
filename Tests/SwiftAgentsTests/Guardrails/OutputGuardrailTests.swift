@@ -11,7 +11,7 @@ import Testing
 // MARK: - MockAgent
 
 /// A minimal mock agent for testing guardrails.
-struct MockAgent: Agent {
+struct MockAgent: AgentRuntime {
     nonisolated let tools: [any AnyJSONTool]
     nonisolated let instructions: String
     nonisolated let configuration: AgentConfiguration

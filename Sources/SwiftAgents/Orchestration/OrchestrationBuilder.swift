@@ -19,7 +19,7 @@ public struct OrchestrationStepContext: Sendable {
     public let hooks: (any RunHooks)?
 
     /// The orchestrator running this workflow.
-    public let orchestrator: (any Agent)?
+    public let orchestrator: (any AgentRuntime)?
 
     /// The orchestrator name used for handoff metadata.
     public let orchestratorName: String
@@ -32,7 +32,7 @@ public struct OrchestrationStepContext: Sendable {
         agentContext: AgentContext,
         session: (any Session)?,
         hooks: (any RunHooks)?,
-        orchestrator: (any Agent)?,
+        orchestrator: (any AgentRuntime)?,
         orchestratorName: String,
         handoffs: [AnyHandoffConfiguration]
     ) {
@@ -47,7 +47,7 @@ public struct OrchestrationStepContext: Sendable {
 
 public extension OrchestrationStepContext {
     /// Returns a stable display name for an agent.
-    func agentName(for agent: any Agent) -> String {
+    func agentName(for agent: any AgentRuntime) -> String {
         let configured = agent.configuration.name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !configured.isEmpty {
             return configured
@@ -56,7 +56,7 @@ public extension OrchestrationStepContext {
     }
 
     /// Finds a handoff configuration for the given target agent.
-    func findHandoffConfiguration(for targetAgent: any Agent) -> AnyHandoffConfiguration? {
+    func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
         handoffs.first { config in
             let configTargetType = type(of: config.targetAgent)
             let currentType = type(of: targetAgent)
@@ -66,7 +66,7 @@ public extension OrchestrationStepContext {
 
     /// Applies handoff configuration for the target agent if present.
     func applyHandoffConfiguration(
-        for targetAgent: any Agent,
+        for targetAgent: any AgentRuntime,
         input: String,
         targetName: String? = nil
     ) async throws -> String {
@@ -206,8 +206,13 @@ public struct OrchestrationBuilder {
     }
 
     /// Converts an agent into an orchestration step.
-    public static func buildExpression(_ agent: any Agent) -> OrchestrationStep {
+    public static func buildExpression(_ agent: any AgentRuntime) -> OrchestrationStep {
         AgentStep(agent)
+    }
+
+    /// Converts an `AgentBlueprint` into an orchestration step.
+    public static func buildExpression<B: AgentBlueprint>(_ blueprint: B) -> OrchestrationStep {
+        AgentStep(BlueprintAgent(blueprint))
     }
 
     /// Passes through an existing orchestration step.
@@ -233,7 +238,7 @@ public struct OrchestrationBuilder {
 /// ```
 public struct AgentStep: OrchestrationStep {
     /// The agent to execute.
-    public let agent: any Agent
+    public let agent: any AgentRuntime
 
     /// Optional name for debugging and logging.
     public let name: String?
@@ -242,7 +247,7 @@ public struct AgentStep: OrchestrationStep {
     /// - Parameters:
     ///   - agent: The agent to execute.
     ///   - name: Optional name for the step. Default: nil
-    public init(_ agent: any Agent, name: String? = nil) {
+    public init(_ agent: any AgentRuntime, name: String? = nil) {
         self.agent = agent
         self.name = name
     }
@@ -434,7 +439,7 @@ public struct Parallel: OrchestrationStep {
     }
 
     /// The named agents to execute in parallel.
-    public let agents: [(String, any Agent)]
+    public let agents: [(String, any AgentRuntime)]
 
     /// The strategy for merging results.
     public let mergeStrategy: MergeStrategy
@@ -455,7 +460,7 @@ public struct Parallel: OrchestrationStep {
         merge: MergeStrategy = .concatenate,
         maxConcurrency: Int? = nil,
         errorHandling: ParallelErrorHandling = .continueOnPartialFailure,
-        @ParallelBuilder _ content: () -> [(String, any Agent)]
+        @ParallelBuilder _ content: () -> [(String, any AgentRuntime)]
     ) {
         agents = content()
         mergeStrategy = merge
@@ -477,7 +482,7 @@ public struct Parallel: OrchestrationStep {
         var pendingAgents = agents
 
         await withTaskGroup(of: (String, Result<AgentResult, Error>).self) { group in
-            func addTask(name: String, agent: any Agent) {
+            func addTask(name: String, agent: any AgentRuntime) {
                 group.addTask {
                     do {
                         await context.agentContext.recordExecution(agentName: name)
@@ -621,12 +626,12 @@ public struct Parallel: OrchestrationStep {
 @resultBuilder
 public struct ParallelBuilder {
     /// Builds an array of named agents from multiple components.
-    public static func buildBlock(_ components: (String, any Agent)...) -> [(String, any Agent)] {
+    public static func buildBlock(_ components: (String, any AgentRuntime)...) -> [(String, any AgentRuntime)] {
         components
     }
 
     /// Passes through a tuple of name and agent.
-    public static func buildExpression(_ tuple: (String, any Agent)) -> (String, any Agent) {
+    public static func buildExpression(_ tuple: (String, any AgentRuntime)) -> (String, any AgentRuntime) {
         tuple
     }
 }
@@ -652,14 +657,14 @@ public struct Router: OrchestrationStep {
     public let routes: [RouteDefinition]
 
     /// Optional fallback agent when no route matches.
-    public let fallbackAgent: (any Agent)?
+    public let fallbackAgent: (any AgentRuntime)?
 
     /// Creates a new router.
     /// - Parameters:
     ///   - fallback: Optional agent to use when no route matches. Default: nil
     ///   - content: A builder closure that produces route definitions.
     public init(
-        fallback: (any Agent)? = nil,
+        fallback: (any AgentRuntime)? = nil,
         @RouterBuilder _ content: () -> [RouteDefinition]
     ) {
         routes = content()
@@ -767,7 +772,7 @@ public struct RouteDefinition: Sendable {
     public let condition: RouteCondition
 
     /// The agent to execute if this route matches.
-    public let agent: any Agent
+    public let agent: any AgentRuntime
 
     /// Optional name for debugging and logging.
     public let name: String?
@@ -777,7 +782,7 @@ public struct RouteDefinition: Sendable {
     ///   - condition: The condition for this route.
     ///   - agent: The agent to execute if matched.
     ///   - name: Optional name for the route. Default: nil
-    public init(condition: RouteCondition, agent: any Agent, name: String? = nil) {
+    public init(condition: RouteCondition, agent: any AgentRuntime, name: String? = nil) {
         self.condition = condition
         self.agent = agent
         self.name = name
@@ -795,14 +800,31 @@ public struct RouteDefinition: Sendable {
 /// ```swift
 /// orchestrationRoute(.contains("weather"), to: weatherAgent)
 /// ```
-public func orchestrationRoute(_ condition: RouteCondition, to agent: @escaping @autoclosure () -> any Agent) -> RouteDefinition {
+public func orchestrationRoute(_ condition: RouteCondition, to agent: @escaping @autoclosure () -> any AgentRuntime) -> RouteDefinition {
     RouteDefinition(condition: condition, agent: agent())
+}
+
+/// Creates a route definition for use in a `Router` builder using an `AgentBlueprint`.
+public func orchestrationRoute<B: AgentBlueprint>(
+    _ condition: RouteCondition,
+    to blueprint: @escaping @autoclosure () -> B
+) -> RouteDefinition {
+    RouteDefinition(condition: condition, agent: BlueprintAgent(blueprint()))
 }
 
 /// Convenience alias for creating a route definition.
 /// - Note: Use this within an OrchestrationBuilder Router context.
-public func routeWhen(_ condition: RouteCondition, to agent: @escaping @autoclosure () -> any Agent) -> RouteDefinition {
+public func routeWhen(_ condition: RouteCondition, to agent: @escaping @autoclosure () -> any AgentRuntime) -> RouteDefinition {
     RouteDefinition(condition: condition, agent: agent())
+}
+
+/// Convenience alias for creating a route definition that routes to an `AgentBlueprint`.
+/// - Note: Use this within an OrchestrationBuilder Router context.
+public func routeWhen<B: AgentBlueprint>(
+    _ condition: RouteCondition,
+    to blueprint: @escaping @autoclosure () -> B
+) -> RouteDefinition {
+    RouteDefinition(condition: condition, agent: BlueprintAgent(blueprint()))
 }
 
 // MARK: - RouterBuilder
@@ -953,6 +975,21 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
         self.handoffs = handoffs
     }
 
+    /// Creates a new orchestration from an existing step array.
+    ///
+    /// This is primarily useful for higher-level DSLs (like `AgentBlueprint`)
+    /// that already have a `[OrchestrationStep]` and want to avoid re-running
+    /// a result builder closure just to wrap those steps.
+    public init(
+        steps: [OrchestrationStep],
+        configuration: AgentConfiguration = .default,
+        handoffs: [AnyHandoffConfiguration] = []
+    ) {
+        self.steps = steps
+        self.configuration = configuration
+        self.handoffs = handoffs
+    }
+
     // MARK: - Agent Protocol Methods
 
     public func run(
@@ -1079,7 +1116,7 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
         )
     }
 
-    private func collectAgents(from steps: [OrchestrationStep]) -> [any Agent] {
+    private func collectAgents(from steps: [OrchestrationStep]) -> [any AgentRuntime] {
         steps.flatMap { step in
             if let agentStep = step as? AgentStep {
                 return [agentStep.agent]
@@ -1104,7 +1141,7 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
 
 // MARK: - Agent Extension
 
-public extension Agent {
+public extension AgentRuntime {
     /// Returns a tuple of the agent name and the agent itself for use in parallel execution.
     ///
     /// - Parameter name: The name to associate with this agent.
@@ -1117,7 +1154,7 @@ public extension Agent {
     ///     otherAgent.named("summarizer")
     /// }
     /// ```
-    func named(_ name: String) -> (String, any Agent) {
+    func named(_ name: String) -> (String, any AgentRuntime) {
         (name, self)
     }
 }

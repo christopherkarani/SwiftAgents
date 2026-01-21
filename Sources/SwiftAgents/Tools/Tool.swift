@@ -607,7 +607,7 @@ public actor ToolRegistry {
     public func execute(
         toolNamed name: String,
         arguments: [String: SendableValue],
-        agent: (any Agent)? = nil,
+        agent: (any AgentRuntime)? = nil,
         context: AgentContext? = nil,
         hooks: (any RunHooks)? = nil
     ) async throws -> SendableValue {

@@ -335,7 +335,7 @@ public enum MergeStrategies {
 ///
 /// let result = try await group.run("Analyze this text")
 /// ```
-public actor ParallelGroup: Agent {
+public actor ParallelGroup: AgentRuntime {
     // MARK: Public
 
     nonisolated public let configuration: AgentConfiguration
@@ -343,7 +343,7 @@ public actor ParallelGroup: Agent {
     // MARK: - Group Properties (nonisolated)
 
     /// The agents in this parallel group with their names.
-    nonisolated public let agents: [(name: String, agent: any Agent)]
+    nonisolated public let agents: [(name: String, agent: any AgentRuntime)]
 
     // MARK: - Agent Protocol Properties (nonisolated)
 
@@ -371,7 +371,7 @@ public actor ParallelGroup: Agent {
     ///   - maxConcurrency: Maximum concurrent agents. Default: nil (unlimited)
     ///   - configuration: Agent configuration. Default: .default
     public init(
-        agents: [(name: String, agent: any Agent)],
+        agents: [(name: String, agent: any AgentRuntime)],
         mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
         shouldContinueOnError: Bool = true,
         maxConcurrency: Int? = nil,
@@ -395,7 +395,7 @@ public actor ParallelGroup: Agent {
     ///   - maxConcurrency: Maximum concurrent agents. Default: nil (unlimited)
     ///   - configuration: Agent configuration. Default: .default
     public init(
-        agents: [any Agent],
+        agents: [any AgentRuntime],
         mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
         shouldContinueOnError: Bool = true,
         maxConcurrency: Int? = nil,
@@ -422,7 +422,7 @@ public actor ParallelGroup: Agent {
     ///   - configuration: Agent configuration. Default: .default
     @available(*, deprecated, message: "Use shouldContinueOnError instead of continueOnError")
     public init(
-        agents: [(name: String, agent: any Agent)],
+        agents: [(name: String, agent: any AgentRuntime)],
         mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
         continueOnError: Bool,
         maxConcurrency: Int? = nil,
@@ -447,7 +447,7 @@ public actor ParallelGroup: Agent {
     ///   - configuration: Agent configuration. Default: .default
     @available(*, deprecated, message: "Use shouldContinueOnError instead of continueOnError")
     public init(
-        agents: [any Agent],
+        agents: [any AgentRuntime],
         mergeStrategy: any ResultMergeStrategy = MergeStrategies.Concatenate(),
         continueOnError: Bool,
         maxConcurrency: Int? = nil,
@@ -750,7 +750,7 @@ public actor ParallelGroup: Agent {
 
     private func streamAgent(
         name: String,
-        agent: any Agent,
+        agent: any AgentRuntime,
         input: String,
         session: (any Session)?,
         hooks: (any RunHooks)?,

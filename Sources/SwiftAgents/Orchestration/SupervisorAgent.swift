@@ -474,7 +474,7 @@ public struct KeywordRoutingStrategy: RoutingStrategy {
 ///
 /// let result = try await supervisor.run("What's 2+2?")
 /// ```
-public actor SupervisorAgent: Agent {
+public actor SupervisorAgent: AgentRuntime {
     // MARK: Public
 
     // MARK: - Agent Protocol Properties
@@ -512,9 +512,9 @@ public actor SupervisorAgent: Agent {
     ///   - enableContextTracking: Track execution in AgentContext. Default: true
     ///   - handoffs: Handoff configurations for sub-agents. Default: []
     public init(
-        agents: [(name: String, agent: any Agent, description: AgentDescription)],
+        agents: [(name: String, agent: any AgentRuntime, description: AgentDescription)],
         routingStrategy: any RoutingStrategy,
-        fallbackAgent: (any Agent)? = nil,
+        fallbackAgent: (any AgentRuntime)? = nil,
         configuration: AgentConfiguration = .default,
         instructions: String? = nil,
         enableContextTracking: Bool = true,
@@ -624,7 +624,7 @@ public actor SupervisorAgent: Agent {
 
             func forwardStream(
                 toAgentName: String,
-                agent: any Agent,
+                agent: any AgentRuntime,
                 input: String
             ) async throws -> AgentResult {
                 continuation.yield(.handoffStarted(from: supervisorName, to: toAgentName, input: input))
@@ -814,13 +814,13 @@ public actor SupervisorAgent: Agent {
     // MARK: - Supervisor Properties
 
     /// Registry of sub-agents with their descriptions.
-    private let agentRegistry: [(name: String, agent: any Agent, description: AgentDescription)]
+    private let agentRegistry: [(name: String, agent: any AgentRuntime, description: AgentDescription)]
 
     /// Strategy for routing requests to agents.
     private let routingStrategy: any RoutingStrategy
 
     /// Optional fallback agent when routing fails.
-    private let fallbackAgent: (any Agent)?
+    private let fallbackAgent: (any AgentRuntime)?
 
     /// Whether to track execution in a shared context.
     private let enableContextTracking: Bool
@@ -839,7 +839,7 @@ public actor SupervisorAgent: Agent {
     /// - Returns: The effective input after applying handoff configuration.
     /// - Throws: `OrchestrationError` if handoff is disabled.
     private func applyHandoffConfiguration(
-        for targetAgent: any Agent,
+        for targetAgent: any AgentRuntime,
         name: String,
         input: String,
         context: AgentContext?
@@ -1002,7 +1002,7 @@ public actor SupervisorAgent: Agent {
     ///
     /// - Parameter targetAgent: The agent to find configuration for.
     /// - Returns: The matching handoff configuration, or nil if none found.
-    private func findHandoffConfiguration(for targetAgent: any Agent) -> AnyHandoffConfiguration? {
+    private func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
         _handoffs.first { config in
             // Match by type - compare the target agent's type
             let configTargetType = type(of: config.targetAgent)

@@ -301,7 +301,7 @@ public func >>> <A: Sendable, B: Sendable, C: Sendable>(
 
 // MARK: - Agent Pipeline Extension
 
-public extension Agent {
+public extension AgentRuntime {
     /// Converts this agent into a pipeline.
     ///
     /// - Returns: A pipeline that runs this agent.

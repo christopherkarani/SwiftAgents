@@ -27,7 +27,7 @@ import Foundation
 ///
 /// AnyAgent uses the box-protocol pattern to achieve type erasure while
 /// maintaining protocol conformance and Sendable safety.
-public struct AnyAgent: Agent, @unchecked Sendable {
+public struct AnyAgent: AgentRuntime, @unchecked Sendable {
     // MARK: Public
 
     // MARK: - Agent Protocol Properties
@@ -79,7 +79,7 @@ public struct AnyAgent: Agent, @unchecked Sendable {
 
     /// Creates a type-erased wrapper around the given agent.
     /// - Parameter agent: The agent to wrap.
-    public init(_ agent: some Agent) {
+    public init(_ agent: some AgentRuntime) {
         box = AgentBox(agent)
     }
 
@@ -140,7 +140,7 @@ private protocol AnyAgentBox: Sendable {
 // MARK: - AgentBox
 
 /// Private class that wraps a concrete Agent implementation.
-private final class AgentBox<A: Agent>: AnyAgentBox, @unchecked Sendable {
+private final class AgentBox<A: AgentRuntime>: AnyAgentBox, @unchecked Sendable {
     // MARK: Internal
 
     var tools: [any AnyJSONTool] {

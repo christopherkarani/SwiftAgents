@@ -205,7 +205,7 @@ final class AgentMacroTests: XCTestCase {
                     }
                 }
 
-                extension AssistantAgent: Agent {
+                extension AssistantAgent: AgentRuntime {
                 }
                 """,
                 macros: agentMacros
@@ -400,7 +400,7 @@ final class AgentMacroTests: XCTestCase {
                     }
                 }
 
-                extension MathAgent: Agent {
+                extension MathAgent: AgentRuntime {
                 }
                 """,
                 macros: agentMacros
@@ -589,7 +589,7 @@ extension AgentMacroTests {
                     }
                 }
 
-                extension IncompleteAgent: Agent {
+                extension IncompleteAgent: AgentRuntime {
                 }
                 """,
                 macros: agentMacros

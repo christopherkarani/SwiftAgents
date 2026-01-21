@@ -36,12 +36,12 @@ infix operator &+: AgentCompositionPrecedence
 /// let parallel = weatherAgent &+ newsAgent &+ stockAgent
 /// let result = try await parallel.run("Get today's info")
 /// ```
-public func &+ (lhs: any Agent, rhs: any Agent) -> ParallelComposition {
+public func &+ (lhs: any AgentRuntime, rhs: any AgentRuntime) -> ParallelComposition {
     ParallelComposition(agents: [lhs, rhs])
 }
 
 /// Adds another agent to a parallel composition.
-public func &+ (lhs: ParallelComposition, rhs: any Agent) -> ParallelComposition {
+public func &+ (lhs: ParallelComposition, rhs: any AgentRuntime) -> ParallelComposition {
     var agents = lhs.parallelAgents
     agents.append(rhs)
     return ParallelComposition(
@@ -64,12 +64,12 @@ infix operator ~>: AgentSequentialPrecedence
 /// let sequential = fetchAgent ~> analyzeAgent ~> summarizeAgent
 /// let result = try await sequential.run("Analyze Q4 sales")
 /// ```
-public func ~> (lhs: any Agent, rhs: any Agent) -> AgentSequence {
+public func ~> (lhs: any AgentRuntime, rhs: any AgentRuntime) -> AgentSequence {
     AgentSequence(agents: [lhs, rhs])
 }
 
 /// Adds another agent to a sequential chain.
-public func ~> (lhs: AgentSequence, rhs: any Agent) -> AgentSequence {
+public func ~> (lhs: AgentSequence, rhs: any AgentRuntime) -> AgentSequence {
     var agents = lhs.sequentialAgents
     agents.append(rhs)
     return AgentSequence(agents: agents, transformers: lhs.currentTransformers)
@@ -88,7 +88,7 @@ infix operator |?: AgentConditionalPrecedence
 /// let resilient = primaryAgent |? fallbackAgent
 /// let result = try await resilient.run("Handle request")
 /// ```
-public func |? (lhs: any Agent, rhs: any Agent) -> ConditionalFallback {
+public func |? (lhs: any AgentRuntime, rhs: any AgentRuntime) -> ConditionalFallback {
     ConditionalFallback(primary: lhs, fallback: rhs)
 }
 
@@ -109,7 +109,7 @@ public func |? (lhs: any Agent, rhs: any Agent) -> ConditionalFallback {
 /// let result = try await configured.run("What's happening today?")
 /// ```
 @available(*, deprecated, message: "Use ParallelGroup for parallel orchestration.")
-public actor ParallelComposition: Agent {
+public actor ParallelComposition: AgentRuntime {
     // MARK: Public
 
     // MARK: - Agent Protocol (nonisolated)
@@ -120,7 +120,7 @@ public actor ParallelComposition: Agent {
 
     // MARK: - Properties (nonisolated)
 
-    nonisolated public let parallelAgents: [any Agent]
+    nonisolated public let parallelAgents: [any AgentRuntime]
     nonisolated public let currentMergeStrategy: ParallelMergeStrategy
     nonisolated public let currentErrorHandling: ParallelErrorHandling
 
@@ -131,7 +131,7 @@ public actor ParallelComposition: Agent {
 
     /// Creates a parallel composition of agents.
     public init(
-        agents: [any Agent],
+        agents: [any AgentRuntime],
         mergeStrategy: ParallelMergeStrategy = .concatenate(separator: "\n"),
         errorHandling: ParallelErrorHandling = .continueOnPartialFailure,
         configuration: AgentConfiguration = .default
@@ -327,7 +327,7 @@ public actor ParallelComposition: Agent {
 /// let result = try await sequence.run("Process data")
 /// ```
 @available(*, deprecated, message: "Use SequentialChain for sequential orchestration.")
-public actor AgentSequence: Agent {
+public actor AgentSequence: AgentRuntime {
     // MARK: Public
 
     // MARK: - Agent Protocol (nonisolated)
@@ -338,7 +338,7 @@ public actor AgentSequence: Agent {
 
     // MARK: - Properties (nonisolated)
 
-    nonisolated public let sequentialAgents: [any Agent]
+    nonisolated public let sequentialAgents: [any AgentRuntime]
     nonisolated public let currentTransformers: [Int: OutputTransformer]
 
     nonisolated public var memory: (any Memory)? { nil }
@@ -347,7 +347,7 @@ public actor AgentSequence: Agent {
     // MARK: - Initialization
 
     public init(
-        agents: [any Agent],
+        agents: [any AgentRuntime],
         transformers: [Int: OutputTransformer] = [:],
         configuration: AgentConfiguration = .default
     ) {
@@ -461,7 +461,7 @@ public actor AgentSequence: Agent {
 /// let resilient = primaryAgent |? fallbackAgent
 /// let result = try await resilient.run("Handle request")
 /// ```
-public actor ConditionalFallback: Agent {
+public actor ConditionalFallback: AgentRuntime {
     // MARK: Public
 
     // MARK: - Agent Protocol (nonisolated)
@@ -476,8 +476,8 @@ public actor ConditionalFallback: Agent {
     // MARK: - Initialization
 
     public init(
-        primary: any Agent,
-        fallback: any Agent,
+        primary: any AgentRuntime,
+        fallback: any AgentRuntime,
         configuration: AgentConfiguration = .default
     ) {
         self.primary = primary
@@ -548,8 +548,8 @@ public actor ConditionalFallback: Agent {
 
     // MARK: Private
 
-    private let primary: any Agent
-    private let fallback: any Agent
+    private let primary: any AgentRuntime
+    private let fallback: any AgentRuntime
     private var isCancelled = false
 }
 

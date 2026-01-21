@@ -8,7 +8,7 @@ import Foundation
 // MARK: - OrchestratorProtocol
 
 /// Marker protocol for orchestrators coordinating multiple agents.
-public protocol OrchestratorProtocol: Agent {
+public protocol OrchestratorProtocol: AgentRuntime {
     /// Human-friendly name for this orchestrator, used in handoff metadata.
     nonisolated var orchestratorName: String { get }
 }
@@ -23,7 +23,7 @@ public extension OrchestratorProtocol {
     }
 
     /// Finds a handoff configuration for the given target agent.
-    func findHandoffConfiguration(for targetAgent: any Agent) -> AnyHandoffConfiguration? {
+    func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
         handoffs.first { config in
             let configTargetType = type(of: config.targetAgent)
             let currentType = type(of: targetAgent)

@@ -32,7 +32,7 @@ import Foundation
 ///     .nestHistory(true)
 ///     .build()
 /// ```
-public struct HandoffBuilder<Target: Agent>: Sendable {
+public struct HandoffBuilder<Target: AgentRuntime>: Sendable {
     // MARK: Public
 
     // MARK: - Initialization
@@ -252,7 +252,7 @@ public struct HandoffBuilder<Target: Agent>: Sendable {
 ///   - isEnabled: Enablement check. Default: nil
 ///   - nestHistory: Whether to nest history. Default: false
 /// - Returns: The configured handoff configuration.
-public func handoff<T: Agent>(
+public func handoff<T: AgentRuntime>(
     to target: T,
     toolName: String? = nil,
     toolDescription: String? = nil,
@@ -289,7 +289,7 @@ public func handoff<T: Agent>(
 /// ```
 public struct AnyHandoffConfiguration: Sendable {
     /// The target agent (type-erased).
-    public let targetAgent: any Agent
+    public let targetAgent: any AgentRuntime
 
     /// Custom tool name for this handoff.
     public let toolNameOverride: String?
@@ -314,7 +314,7 @@ public struct AnyHandoffConfiguration: Sendable {
     /// Creates a type-erased handoff configuration from a typed configuration.
     ///
     /// - Parameter configuration: The typed configuration to wrap.
-    public init(_ configuration: HandoffConfiguration<some Agent>) {
+    public init(_ configuration: HandoffConfiguration<some AgentRuntime>) {
         targetAgent = configuration.targetAgent
         toolNameOverride = configuration.toolNameOverride
         toolDescription = configuration.toolDescription
@@ -335,7 +335,7 @@ public struct AnyHandoffConfiguration: Sendable {
     ///   - isEnabled: Enablement check. Default: nil
     ///   - nestHandoffHistory: Whether to nest history. Default: false
     public init(
-        targetAgent: any Agent,
+        targetAgent: any AgentRuntime,
         toolNameOverride: String? = nil,
         toolDescription: String? = nil,
         onHandoff: OnHandoffCallback? = nil,

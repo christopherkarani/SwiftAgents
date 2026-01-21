@@ -38,7 +38,7 @@ public struct ToolGuardrailData: Sendable {
     public let arguments: [String: SendableValue]
 
     /// The agent executing the tool, if available.
-    public let agent: (any Agent)?
+    public let agent: (any AgentRuntime)?
 
     /// The orchestration context, if available.
     public let context: AgentContext?
@@ -55,7 +55,7 @@ public struct ToolGuardrailData: Sendable {
     public init(
         tool: any AnyJSONTool,
         arguments: [String: SendableValue],
-        agent: (any Agent)?,
+        agent: (any AgentRuntime)?,
         context: AgentContext?
     ) {
         self.tool = tool

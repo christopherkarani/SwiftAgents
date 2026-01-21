@@ -175,7 +175,7 @@ public macro Parameter(
     named(_memory), named(_inferenceProvider), named(isCancelled), named(init), named(run), named(stream),
     named(cancel), named(Builder)
 )
-@attached(extension, conformances: Agent)
+@attached(extension, conformances: AgentRuntime)
 public macro Agent(
     instructions: String,
     generateBuilder: Bool = true
@@ -239,7 +239,7 @@ public macro Agent(
     named(_memory), named(_inferenceProvider), named(isCancelled), named(init), named(run), named(stream),
     named(cancel), named(Builder)
 )
-@attached(extension, conformances: Agent)
+@attached(extension, conformances: AgentRuntime)
 public macro Agent(_ instructions: String) = #externalMacro(module: "SwiftAgentsMacros", type: "AgentMacro")
 
 // MARK: - @Traceable Macro

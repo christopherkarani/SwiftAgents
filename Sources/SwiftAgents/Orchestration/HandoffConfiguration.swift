@@ -147,7 +147,7 @@ public typealias InputFilterCallback = @Sendable (HandoffInputData) -> HandoffIn
 ///     return true
 /// }
 /// ```
-public typealias IsEnabledCallback = @Sendable (AgentContext, any Agent) async -> Bool
+public typealias IsEnabledCallback = @Sendable (AgentContext, any AgentRuntime) async -> Bool
 
 // MARK: - HandoffConfiguration
 
@@ -184,7 +184,7 @@ public typealias IsEnabledCallback = @Sendable (AgentContext, any Agent) async -
 ///     nestHandoffHistory: true
 /// )
 /// ```
-public struct HandoffConfiguration<Target: Agent>: Sendable {
+public struct HandoffConfiguration<Target: AgentRuntime>: Sendable {
     /// The target agent to hand off to.
     public let targetAgent: Target
 

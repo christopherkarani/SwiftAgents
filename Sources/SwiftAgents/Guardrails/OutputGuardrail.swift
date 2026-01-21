@@ -6,7 +6,7 @@
 import Foundation
 
 /// Type alias for output validation handler closures.
-public typealias OutputValidationHandler = @Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult
+public typealias OutputValidationHandler = @Sendable (String, any AgentRuntime, AgentContext?) async throws -> GuardrailResult
 
 // MARK: - OutputGuardrail
 
@@ -56,7 +56,7 @@ public protocol OutputGuardrail: Sendable {
     ///   - context: Optional orchestration context with shared state.
     /// - Returns: A result indicating whether the output passed validation.
     /// - Throws: An error if validation fails unexpectedly.
-    func validate(_ output: String, agent: any Agent, context: AgentContext?) async throws -> GuardrailResult
+    func validate(_ output: String, agent: any AgentRuntime, context: AgentContext?) async throws -> GuardrailResult
 }
 
 // MARK: - ClosureOutputGuardrail
@@ -133,7 +133,7 @@ public struct ClosureOutputGuardrail: OutputGuardrail, Sendable {
     /// ```
     public init(
         name: String,
-        handler: @escaping @Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult
+        handler: @escaping @Sendable (String, any AgentRuntime, AgentContext?) async throws -> GuardrailResult
     ) {
         self.name = name
         self.handler = handler
@@ -149,14 +149,14 @@ public struct ClosureOutputGuardrail: OutputGuardrail, Sendable {
     ///   - context: Optional orchestration context with shared state.
     /// - Returns: The result from the handler closure.
     /// - Throws: Any error thrown by the handler closure.
-    public func validate(_ output: String, agent: any Agent, context: AgentContext?) async throws -> GuardrailResult {
+    public func validate(_ output: String, agent: any AgentRuntime, context: AgentContext?) async throws -> GuardrailResult {
         try await handler(output, agent, context)
     }
 
     // MARK: Private
 
     /// The validation handler closure.
-    private let handler: @Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult
+    private let handler: @Sendable (String, any AgentRuntime, AgentContext?) async throws -> GuardrailResult
 }
 
 // MARK: - OutputGuardrailBuilder
@@ -234,7 +234,7 @@ public struct OutputGuardrailBuilder: Sendable {
     /// ```
     @discardableResult
     public func validate(
-        _ handler: @escaping @Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult
+        _ handler: @escaping @Sendable (String, any AgentRuntime, AgentContext?) async throws -> GuardrailResult
     ) -> OutputGuardrailBuilder {
         OutputGuardrailBuilder(name: currentName, handler: handler)
     }
@@ -272,12 +272,12 @@ public struct OutputGuardrailBuilder: Sendable {
     private let currentName: String?
 
     /// The current validation handler being built.
-    private let currentHandler: (@Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult)?
+    private let currentHandler: (@Sendable (String, any AgentRuntime, AgentContext?) async throws -> GuardrailResult)?
 
     /// Private initializer for builder chaining.
     private init(
         name: String?,
-        handler: (@Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult)?
+        handler: (@Sendable (String, any AgentRuntime, AgentContext?) async throws -> GuardrailResult)?
     ) {
         currentName = name
         currentHandler = handler

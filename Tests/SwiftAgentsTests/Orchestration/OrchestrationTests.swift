@@ -8,7 +8,7 @@ import Testing
 
 // MARK: - Test Agents
 
-struct EchoAgent: Agent {
+struct EchoAgent: AgentRuntime {
     let tools: [any AnyJSONTool] = []
     let instructions = "Echo agent"
     let configuration: AgentConfiguration = .default
@@ -36,7 +36,7 @@ struct EchoAgent: Agent {
     func cancel() async {}
 }
 
-struct FailingAgent: Agent {
+struct FailingAgent: AgentRuntime {
     let tools: [any AnyJSONTool] = []
     let instructions = "Failing agent"
     let configuration: AgentConfiguration = .default

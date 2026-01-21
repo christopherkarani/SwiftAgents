@@ -72,7 +72,7 @@ actor HooksTestState {
 // MARK: - MockIntegrationTestAgent
 
 /// Mock agent for integration testing handoff scenarios.
-actor MockIntegrationTestAgent: Agent {
+actor MockIntegrationTestAgent: AgentRuntime {
     nonisolated let tools: [any AnyJSONTool] = []
     nonisolated let instructions: String
     nonisolated let configuration: AgentConfiguration
@@ -136,7 +136,7 @@ actor MockIntegrationTestAgent: Agent {
 struct MockRunHooks: RunHooks {
     let state: HooksTestState
 
-    func onHandoff(context _: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async {
+    func onHandoff(context _: AgentContext?, fromAgent: any AgentRuntime, toAgent: any AgentRuntime) async {
         await state.setOnHandoffHookCalled()
         await state.setCapturedAgentNames(
             from: fromAgent.configuration.name,

@@ -11,7 +11,7 @@ import Testing
 // MARK: - MockGuardrailAgent
 
 /// Mock agent for guardrail testing
-private actor MockGuardrailAgent: Agent {
+private actor MockGuardrailAgent: AgentRuntime {
     // MARK: Internal
 
     nonisolated let tools: [any AnyJSONTool]
@@ -120,13 +120,25 @@ struct GuardrailIntegrationTests {
         let context = AgentContext(input: "Please process SSN: 123-45-6789")
         let runner = GuardrailRunner()
 
-        // Then: Guardrail throws error
-        await #expect(throws: GuardrailError.self) {
-            try await runner.runInputGuardrails(
+        do {
+            _ = try await runner.runInputGuardrails(
                 [inputGuardrail],
                 input: "Please process SSN: 123-45-6789",
                 context: context
             )
+            Issue.record("Expected GuardrailError to be thrown")
+        } catch let error as GuardrailError {
+            guard case let .inputTripwireTriggered(guardrailName, message, outputInfo) = error else {
+                Issue.record("Unexpected GuardrailError: \(error)")
+                return
+            }
+
+            #expect(guardrailName == "sensitive_data_blocker")
+            #expect(message == "Sensitive data detected in input")
+            #expect(outputInfo == .dictionary([
+                "violationType": .string("PII_DETECTED"),
+                "patterns": .array([.string("SSN")])
+            ]))
         }
     }
 
@@ -241,14 +253,27 @@ struct GuardrailIntegrationTests {
         let context = AgentContext(input: "test input")
         let runner = GuardrailRunner()
 
-        // Then: Guardrail throws error
-        await #expect(throws: GuardrailError.self) {
-            try await runner.runOutputGuardrails(
+        do {
+            _ = try await runner.runOutputGuardrails(
                 [outputGuardrail],
                 output: result.output,
                 agent: agent,
                 context: context
             )
+            Issue.record("Expected GuardrailError to be thrown")
+        } catch let error as GuardrailError {
+            guard case let .outputTripwireTriggered(guardrailName, agentName, message, outputInfo) = error else {
+                Issue.record("Unexpected GuardrailError: \(error)")
+                return
+            }
+
+            #expect(guardrailName == "profanity_filter")
+            #expect(agentName == "OutputAgent")
+            #expect(message == "Profanity detected in output")
+            #expect(outputInfo == .dictionary([
+                "category": .string("profanity"),
+                "severity": .string("low")
+            ]))
         }
     }
 

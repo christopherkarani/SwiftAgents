@@ -236,7 +236,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
         guard declaration.is(ActorDeclSyntax.self) else {
             return []
         }
-        let agentExtension = try ExtensionDeclSyntax("extension \(type): Agent {}")
+        let agentExtension = try ExtensionDeclSyntax("extension \(type): AgentRuntime {}")
         return [agentExtension]
     }
 

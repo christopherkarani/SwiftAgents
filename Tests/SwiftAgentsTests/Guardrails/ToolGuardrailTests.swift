@@ -93,7 +93,7 @@ struct ToolGuardrailDataTests {
 
     // MARK: - Helpers
 
-    private func createMockAgent() -> any Agent {
+    private func createMockAgent() -> any AgentRuntime {
         MockAgentForGuardrails(name: "mock_agent")
     }
 }
@@ -437,7 +437,7 @@ struct MockToolOutputGuardrail: ToolOutputGuardrail {
 // MARK: - MockAgentForGuardrails
 
 /// Mock Agent for guardrail testing
-struct MockAgentForGuardrails: Agent {
+struct MockAgentForGuardrails: AgentRuntime {
     let tools: [any AnyJSONTool] = []
     let instructions: String = "Mock agent for guardrail tests"
     let configuration: AgentConfiguration

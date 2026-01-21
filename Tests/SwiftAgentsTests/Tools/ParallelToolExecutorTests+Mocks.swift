@@ -52,7 +52,7 @@ struct MockErrorTool: AnyJSONTool, Sendable {
 // MARK: - ParallelTestMockAgent
 
 /// A minimal mock agent for testing parallel tool execution.
-struct ParallelTestMockAgent: Agent {
+struct ParallelTestMockAgent: AgentRuntime {
     let tools: [any AnyJSONTool]
     let instructions: String
     let configuration: AgentConfiguration

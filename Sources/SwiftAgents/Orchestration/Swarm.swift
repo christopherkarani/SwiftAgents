@@ -33,7 +33,7 @@ public struct SwarmAgentProfile: Sendable {
     }
 
     public init?(
-        from agent: some Agent,
+        from agent: some AgentRuntime,
         fallbackProvider: (any InferenceProvider)? = nil
     ) {
         let agentName = SwarmAgentProfile.displayName(for: agent)
@@ -51,7 +51,7 @@ public struct SwarmAgentProfile: Sendable {
         )
     }
 
-    static func displayName(for agent: any Agent) -> String {
+    static func displayName(for agent: any AgentRuntime) -> String {
         let configured = agent.configuration.name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !configured.isEmpty {
             return configured
@@ -136,7 +136,7 @@ public actor Swarm {
     // MARK: Public
 
     public init(
-        agents: [any Agent],
+        agents: [any AgentRuntime],
         fallbackProvider: (any InferenceProvider)? = nil
     ) throws {
         var profiles: [String: SwarmAgentProfile] = [:]
@@ -558,7 +558,7 @@ public actor Swarm {
         return result
     }
 
-    private struct DummyAgent: Agent {
+    private struct DummyAgent: AgentRuntime {
         let profile: SwarmAgentProfile
         nonisolated var tools: [any AnyJSONTool] { profile.tools }
         nonisolated var instructions: String { profile.instructions }

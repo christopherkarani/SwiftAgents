@@ -262,24 +262,24 @@ struct AgentCompositionTests {
 // MARK: - Operators (to be implemented)
 
 /// Parallel composition operator
-func + (lhs: any Agent, rhs: any Agent) -> ParallelComposition {
+func + (lhs: any AgentRuntime, rhs: any AgentRuntime) -> ParallelComposition {
     ParallelComposition(agents: [lhs, rhs])
 }
 
 /// Sequential composition operator
-func >>> (lhs: any Agent, rhs: any Agent) -> SequentialComposition {
+func >>> (lhs: any AgentRuntime, rhs: any AgentRuntime) -> SequentialComposition {
     SequentialComposition(agents: [lhs, rhs])
 }
 
 /// Conditional routing operator (fallback)
-func | (lhs: any Agent, rhs: any Agent) -> ConditionalRouter {
+func | (lhs: any AgentRuntime, rhs: any AgentRuntime) -> ConditionalRouter {
     ConditionalRouter(primary: lhs, fallback: rhs)
 }
 
 // MARK: - ParallelComposition
 
 /// Parallel composition of agents
-actor ParallelComposition: Agent {
+actor ParallelComposition: AgentRuntime {
     // MARK: Internal
 
         nonisolated let tools: [any AnyJSONTool] = []
@@ -289,7 +289,7 @@ actor ParallelComposition: Agent {
     nonisolated var memory: (any Memory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
-    init(agents: [any Agent], mergeStrategy: ParallelMergeStrategy = .firstSuccess, errorHandling: ErrorHandlingStrategy = .failFast) {
+    init(agents: [any AgentRuntime], mergeStrategy: ParallelMergeStrategy = .firstSuccess, errorHandling: ErrorHandlingStrategy = .failFast) {
         self.agents = agents
         self.mergeStrategy = mergeStrategy
         self.errorHandling = errorHandling
@@ -372,7 +372,7 @@ actor ParallelComposition: Agent {
 
     // MARK: Private
 
-    private let agents: [any Agent]
+    private let agents: [any AgentRuntime]
     private let mergeStrategy: ParallelMergeStrategy
     private let errorHandling: ErrorHandlingStrategy
 
@@ -423,7 +423,7 @@ actor ParallelComposition: Agent {
 // MARK: - SequentialComposition
 
 /// Sequential composition of agents
-actor SequentialComposition: Agent {
+actor SequentialComposition: AgentRuntime {
     // MARK: Internal
 
         nonisolated let tools: [any AnyJSONTool] = []
@@ -433,7 +433,7 @@ actor SequentialComposition: Agent {
     nonisolated var memory: (any Memory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
-    init(agents: [any Agent]) {
+    init(agents: [any AgentRuntime]) {
         self.agents = agents
     }
 
@@ -476,13 +476,13 @@ actor SequentialComposition: Agent {
 
     // MARK: Private
 
-    private let agents: [any Agent]
+    private let agents: [any AgentRuntime]
 }
 
 // MARK: - ConditionalRouter
 
 /// Conditional router with fallback
-actor ConditionalRouter: Agent {
+actor ConditionalRouter: AgentRuntime {
     // MARK: Internal
 
         nonisolated let tools: [any AnyJSONTool] = []
@@ -492,7 +492,7 @@ actor ConditionalRouter: Agent {
     nonisolated var memory: (any Memory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
-    init(primary: any Agent, fallback: any Agent) {
+    init(primary: any AgentRuntime, fallback: any AgentRuntime) {
         self.primary = primary
         self.fallback = fallback
     }
@@ -530,8 +530,8 @@ actor ConditionalRouter: Agent {
 
     // MARK: Private
 
-    private let primary: any Agent
-    private let fallback: any Agent
+    private let primary: any AgentRuntime
+    private let fallback: any AgentRuntime
 }
 
 // MARK: - ParallelMergeStrategy
@@ -554,7 +554,7 @@ enum ErrorHandlingStrategy: Sendable {
 // MARK: - EmptyAgent
 
 /// Empty agent (identity for parallel composition)
-struct EmptyAgent: Agent {
+struct EmptyAgent: AgentRuntime {
     let tools: [any AnyJSONTool] = []
     let instructions: String = ""
     let configuration: AgentConfiguration = .default

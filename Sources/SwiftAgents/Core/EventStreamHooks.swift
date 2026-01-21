@@ -22,15 +22,15 @@ internal struct EventStreamHooks: RunHooks {
 
     // MARK: - RunHooks Implementation
 
-    func onAgentStart(context _: AgentContext?, agent _: any Agent, input: String) async {
+    func onAgentStart(context _: AgentContext?, agent _: any AgentRuntime, input: String) async {
         continuation.yield(.started(input: input))
     }
 
-    func onAgentEnd(context _: AgentContext?, agent _: any Agent, result: AgentResult) async {
+    func onAgentEnd(context _: AgentContext?, agent _: any AgentRuntime, result: AgentResult) async {
         continuation.yield(.completed(result: result))
     }
 
-    func onError(context _: AgentContext?, agent _: any Agent, error: Error) async {
+    func onError(context _: AgentContext?, agent _: any AgentRuntime, error: Error) async {
         if let agentError = error as? AgentError {
             continuation.yield(.failed(error: agentError))
         } else {
@@ -38,12 +38,12 @@ internal struct EventStreamHooks: RunHooks {
         }
     }
 
-    func onToolStart(context _: AgentContext?, agent _: any Agent, call: ToolCall) async {
+    func onToolStart(context _: AgentContext?, agent _: any AgentRuntime, call: ToolCall) async {
         await toolCallStore.record(call)
         continuation.yield(.toolCallStarted(call: call))
     }
 
-    func onToolEnd(context _: AgentContext?, agent _: any Agent, result: ToolResult) async {
+    func onToolEnd(context _: AgentContext?, agent _: any AgentRuntime, result: ToolResult) async {
         let call = await toolCallStore.take(id: result.callId)
             ?? ToolCall(id: result.callId, toolName: "unknown", arguments: [:])
         continuation.yield(.toolCallCompleted(call: call, result: result))
@@ -57,19 +57,19 @@ internal struct EventStreamHooks: RunHooks {
         }
     }
 
-    func onThinking(context _: AgentContext?, agent _: any Agent, thought: String) async {
+    func onThinking(context _: AgentContext?, agent _: any AgentRuntime, thought: String) async {
         continuation.yield(.thinking(thought: thought))
     }
 
-    func onThinkingPartial(context _: AgentContext?, agent _: any Agent, partialThought: String) async {
+    func onThinkingPartial(context _: AgentContext?, agent _: any AgentRuntime, partialThought: String) async {
         continuation.yield(.thinkingPartial(partialThought: partialThought))
     }
 
-    func onIterationStart(context _: AgentContext?, agent _: any Agent, number: Int) async {
+    func onIterationStart(context _: AgentContext?, agent _: any AgentRuntime, number: Int) async {
         continuation.yield(.iterationStarted(number: number))
     }
 
-    func onIterationEnd(context _: AgentContext?, agent _: any Agent, number: Int) async {
+    func onIterationEnd(context _: AgentContext?, agent _: any AgentRuntime, number: Int) async {
         continuation.yield(.iterationCompleted(number: number))
     }
     
@@ -77,19 +77,19 @@ internal struct EventStreamHooks: RunHooks {
         continuation.yield(.guardrailTriggered(name: guardrailName, type: guardrailType, message: result.message))
     }
 
-    func onHandoff(context: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async {
+    func onHandoff(context: AgentContext?, fromAgent: any AgentRuntime, toAgent: any AgentRuntime) async {
         let fromName = fromAgent.configuration.name.isEmpty ? String(describing: type(of: fromAgent)) : fromAgent.configuration.name
         let toName = toAgent.configuration.name.isEmpty ? String(describing: type(of: toAgent)) : toAgent.configuration.name
         
         continuation.yield(.handoffRequested(fromAgent: fromName, toAgent: toName, reason: nil))
     }
 
-    func onLLMStart(context: AgentContext?, agent: any Agent, systemPrompt: String?, inputMessages: [MemoryMessage]) async {
+    func onLLMStart(context: AgentContext?, agent: any AgentRuntime, systemPrompt: String?, inputMessages: [MemoryMessage]) async {
         // Calculate prompt tokens if possible, otherwise nil
         continuation.yield(.llmStarted(model: nil, promptTokens: nil))
     }
 
-    func onLLMEnd(context: AgentContext?, agent: any Agent, response: String, usage: InferenceResponse.TokenUsage?) async {
+    func onLLMEnd(context: AgentContext?, agent: any AgentRuntime, response: String, usage: InferenceResponse.TokenUsage?) async {
         continuation.yield(.llmCompleted(
             model: nil, 
             promptTokens: usage?.inputTokens, 

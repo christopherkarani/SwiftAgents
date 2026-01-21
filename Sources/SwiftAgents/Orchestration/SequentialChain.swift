@@ -21,7 +21,7 @@ infix operator -->: AdditionPrecedence
 ///   - lhs: The first agent.
 ///   - rhs: The second agent.
 /// - Returns: A sequential chain of the two agents.
-public func --> (lhs: any Agent, rhs: any Agent) -> SequentialChain {
+public func --> (lhs: any AgentRuntime, rhs: any AgentRuntime) -> SequentialChain {
     SequentialChain(agents: [lhs, rhs])
 }
 
@@ -37,7 +37,7 @@ public func --> (lhs: any Agent, rhs: any Agent) -> SequentialChain {
 ///   - lhs: The existing sequential chain.
 ///   - rhs: The agent to append.
 /// - Returns: A new sequential chain with the agent appended.
-public func --> (lhs: SequentialChain, rhs: any Agent) -> SequentialChain {
+public func --> (lhs: SequentialChain, rhs: any AgentRuntime) -> SequentialChain {
     var agents = lhs.chainedAgents
     agents.append(rhs)
     return SequentialChain(
@@ -125,7 +125,7 @@ public struct OutputTransformer: Sendable {
 /// let chain = agentA --> agentB
 /// let configured = chain.withTransformer(after: 0, .withMetadata)
 /// ```
-public actor SequentialChain: Agent {
+public actor SequentialChain: AgentRuntime {
     // MARK: Public
 
     /// Configuration for the chain execution.
@@ -134,7 +134,7 @@ public actor SequentialChain: Agent {
     // MARK: - Chain Properties (nonisolated)
 
     /// The agents in execution order.
-    nonisolated public let chainedAgents: [any Agent]
+    nonisolated public let chainedAgents: [any AgentRuntime]
 
     // MARK: - Agent Protocol Properties (nonisolated)
 
@@ -168,7 +168,7 @@ public actor SequentialChain: Agent {
     ///   - transformers: Output transformers indexed by agent position. Default: [:]
     ///   - handoffs: Handoff configurations for chained agents. Default: []
     public init(
-        agents: [any Agent],
+        agents: [any AgentRuntime],
         configuration: AgentConfiguration = .default,
         transformers: [Int: OutputTransformer] = [:],
         handoffs: [AnyHandoffConfiguration] = []
@@ -348,7 +348,7 @@ public actor SequentialChain: Agent {
 
             func forwardStream(
                 toAgentName: String,
-                agent: any Agent,
+                agent: any AgentRuntime,
                 input: String
             ) async throws -> AgentResult {
                 continuation.yield(.handoffStarted(from: chainName, to: toAgentName, input: input))
@@ -530,7 +530,7 @@ public actor SequentialChain: Agent {
     ///
     /// - Parameter targetAgent: The agent to find configuration for.
     /// - Returns: The matching handoff configuration, or nil if none found.
-    private func findHandoffConfiguration(for targetAgent: any Agent) -> AnyHandoffConfiguration? {
+    private func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
         _handoffs.first { config in
             // Match by type - compare the target agent's type
             let configTargetType = type(of: config.targetAgent)

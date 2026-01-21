@@ -122,7 +122,7 @@ public actor ParallelToolExecutor {
     public func executeInParallel(
         _ calls: [ToolCall],
         using registry: ToolRegistry,
-        agent: any Agent,
+        agent: any AgentRuntime,
         context: AgentContext?
     ) async throws -> [ToolExecutionResult] {
         // Handle empty calls array
@@ -237,7 +237,7 @@ public actor ParallelToolExecutor {
     public func executeInParallel(
         _ calls: [ToolCall],
         using registry: ToolRegistry,
-        agent: any Agent,
+        agent: any AgentRuntime,
         context: AgentContext?,
         errorStrategy: ParallelExecutionErrorStrategy
     ) async throws -> [ToolExecutionResult] {
@@ -295,7 +295,7 @@ public actor ParallelToolExecutor {
     private func executeWithFailFast(
         _ calls: [ToolCall],
         using registry: ToolRegistry,
-        agent: any Agent,
+        agent: any AgentRuntime,
         context: AgentContext?
     ) async throws -> [ToolExecutionResult] {
         guard !calls.isEmpty else { return [] }
@@ -364,7 +364,7 @@ public extension ParallelToolExecutor {
     func executeAllCapturingErrors(
         _ calls: [ToolCall],
         using registry: ToolRegistry,
-        agent: any Agent,
+        agent: any AgentRuntime,
         context: AgentContext? = nil
     ) async throws -> [ToolExecutionResult] {
         try await executeInParallel(
@@ -392,7 +392,7 @@ public extension ParallelToolExecutor {
     func executeAllOrFail(
         _ calls: [ToolCall],
         using registry: ToolRegistry,
-        agent: any Agent,
+        agent: any AgentRuntime,
         context: AgentContext? = nil
     ) async throws -> [ToolExecutionResult] {
         try await executeInParallel(
