@@ -25,6 +25,9 @@ public enum AgentError: Error, Sendable, Equatable {
     /// The agent execution timed out.
     case timeout(duration: Duration)
 
+    /// The agent's declarative loop is invalid.
+    case invalidLoop(reason: String)
+
     // MARK: - Tool Errors
 
     /// A tool with the given name was not found.
@@ -88,6 +91,8 @@ extension AgentError: LocalizedError {
             "Agent exceeded maximum iterations (\(iterations))"
         case let .timeout(duration):
             "Agent execution timed out after \(duration)"
+        case let .invalidLoop(reason):
+            "Invalid agent loop: \(reason)"
         case let .toolNotFound(name):
             "Tool not found: \(name)"
         case let .toolExecutionFailed(toolName, error):

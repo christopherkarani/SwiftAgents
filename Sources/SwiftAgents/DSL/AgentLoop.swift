@@ -26,7 +26,17 @@ public struct AgentLoopSequence: AgentLoop, Sendable {
 public extension AgentLoop {
     func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
         guard !steps.isEmpty else {
-            return AgentResult(output: input)
+            throw AgentError.invalidLoop(
+                reason: "AgentLoop for '\(context.orchestratorName)' has no steps. Add at least one Generate() call."
+            )
+        }
+
+        var visitedAgents: Set<ObjectIdentifier> = []
+        let hasGenerate = try _agentLoopContainsGenerate(steps: steps, visitedAgents: &visitedAgents)
+        guard hasGenerate else {
+            throw AgentError.invalidLoop(
+                reason: "AgentLoop for '\(context.orchestratorName)' must include at least one Generate() call."
+            )
         }
 
         let startTime = ContinuousClock.now
@@ -76,4 +86,46 @@ public extension AgentLoop {
             metadata: allMetadata
         )
     }
+}
+
+// MARK: - Validation
+
+protocol _AgentLoopNestedSteps {
+    var _nestedSteps: [OrchestrationStep] { get }
+}
+
+protocol _AgentLoopNestedAgentSteps: _AgentLoopNestedSteps {
+    var _agentType: ObjectIdentifier { get }
+}
+
+private func _agentLoopContainsGenerate(
+    steps: [OrchestrationStep],
+    visitedAgents: inout Set<ObjectIdentifier>
+) throws -> Bool {
+    for step in steps {
+        if step is Generate { return true }
+
+        if let nestedAgent = step as? any _AgentLoopNestedAgentSteps {
+            let id = nestedAgent._agentType
+            if visitedAgents.contains(id) {
+                throw AgentError.invalidLoop(
+                    reason: "Cyclic agent reference detected while validating Generate() calls."
+                )
+            }
+            visitedAgents.insert(id)
+            defer { visitedAgents.remove(id) }
+
+            if try _agentLoopContainsGenerate(steps: nestedAgent._nestedSteps, visitedAgents: &visitedAgents) {
+                return true
+            }
+            continue
+        }
+
+        if let nested = step as? any _AgentLoopNestedSteps {
+            if try _agentLoopContainsGenerate(steps: nested._nestedSteps, visitedAgents: &visitedAgents) {
+                return true
+            }
+        }
+    }
+    return false
 }

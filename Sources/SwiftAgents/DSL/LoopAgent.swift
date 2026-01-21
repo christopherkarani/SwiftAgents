@@ -6,7 +6,7 @@
 import Foundation
 
 protocol _LoopOrchestrator: OrchestratorProtocol {
-    func _respond(
+    func _generate(
         _ input: String,
         session: (any Session)?,
         hooks: (any RunHooks)?
@@ -117,12 +117,20 @@ public actor LoopAgent<Definition: Agent>: AgentRuntime, OrchestratorProtocol, _
 
     // MARK: _LoopOrchestrator
 
-    func _respond(
+    func _generate(
         _ input: String,
         session: (any Session)?,
         hooks: (any RunHooks)?
     ) async throws -> AgentResult {
         let env = mergedEnvironment(defaults: definition.environment)
+        guard env.inferenceProvider != nil else {
+            throw AgentError.inferenceProviderUnavailable(
+                reason: """
+                Missing inference provider while executing Generate() for '\(orchestratorName)'.
+                Set `.environment(\\.inferenceProvider, ...)` at the call site or provide a default via the agent's `environment`.
+                """
+            )
+        }
         return try await AgentEnvironmentValues.$current.withValue(env) {
             let agent = ToolCallingAgent(
                 tools: definition.tools,
@@ -194,4 +202,9 @@ public struct LoopAgentStep<A: Agent>: OrchestrationStep {
         await context.agentContext.setPreviousOutput(result)
         return result
     }
+}
+
+extension LoopAgentStep: _AgentLoopNestedAgentSteps {
+    var _nestedSteps: [OrchestrationStep] { agent.loop.steps }
+    var _agentType: ObjectIdentifier { ObjectIdentifier(A.self) }
 }

@@ -214,17 +214,21 @@ struct CustomerService: Agent {
 
 struct Billing: Agent {
     var instructions: String { "You are billing support. Be concise." }
-    var loop: some AgentLoop { Respond() }
+    var loop: some AgentLoop { Generate() }
 }
 
 struct GeneralSupport: Agent {
-    var loop: some AgentLoop { Respond() }
+    var loop: some AgentLoop { Generate() }
 }
 
 let result = try await CustomerService()
     .environment(\.inferenceProvider, provider)
     .run("billing help")
 ```
+
+Notes:
+- `Generate()` resolves its inference provider from the current environment and throws if none is set.
+- Every `AgentLoop` must include at least one `Generate()` call (directly, or via a sub-agent that generates).
 
 ### Session Management
 

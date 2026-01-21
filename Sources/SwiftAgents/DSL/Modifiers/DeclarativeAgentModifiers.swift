@@ -24,7 +24,7 @@ public extension Agent {
         }
     }
 
-    /// Sets model temperature for `Respond()`.
+    /// Sets model temperature for `Generate()`.
     func temperature(_ value: Double) -> some Agent {
         configuration { config in
             var copy = config
@@ -33,7 +33,7 @@ public extension Agent {
         }
     }
 
-    /// Sets max iterations for `Respond()`.
+    /// Sets max iterations for `Generate()`.
     func maxIterations(_ value: Int) -> some Agent {
         configuration { config in
             var copy = config
@@ -42,7 +42,7 @@ public extension Agent {
         }
     }
 
-    /// Sets timeout for `Respond()`.
+    /// Sets timeout for `Generate()`.
     func timeout(_ duration: Duration) -> some Agent {
         configuration { config in
             var copy = config

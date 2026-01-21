@@ -8,18 +8,11 @@ import Testing
 
 // MARK: - Test Agents
 
-private struct PrefixAgent: Agent {
-    let prefix: String
-
-    var loop: some AgentLoop {
-        Transform { input in "\(prefix)\(input)" }
-    }
-}
-
 private struct SampleSequentialAgent: Agent {
     var loop: some AgentLoop {
-        PrefixAgent(prefix: "A")
-        PrefixAgent(prefix: "B")
+        Generate()
+        Transform { input in "A\(input)" }
+        Transform { input in "B\(input)" }
     }
 }
 
@@ -27,13 +20,13 @@ private struct BillingAgent: Agent {
     var instructions: String { "You are billing support." }
 
     var loop: some AgentLoop {
-        Respond()
+        Generate()
     }
 }
 
 private struct GeneralSupportAgent: Agent {
     var loop: some AgentLoop {
-        Transform { input in "general:\(input)" }
+        Generate()
     }
 }
 
@@ -69,12 +62,17 @@ private struct CustomerServiceAgent: Agent {
 struct DeclarativeAgentDSLTests {
     @Test("AgentLoop runs steps sequentially")
     func agentLoopIsSequential() async throws {
-        let result = try await SampleSequentialAgent().run("x")
+        let provider = MockInferenceProvider(responses: ["x"])
+
+        let result = try await SampleSequentialAgent()
+            .environment(\.inferenceProvider, provider)
+            .run("ignored")
+
         #expect(result.output == "BAx")
     }
 
-    @Test("Respond uses environment inference provider and configuration")
-    func respondUsesEnvironmentAndConfig() async throws {
+    @Test("Generate uses environment inference provider and configuration")
+    func generateUsesEnvironmentAndConfig() async throws {
         let provider = MockInferenceProvider(responses: ["OK"])
 
         let result = try await BillingAgent()
@@ -87,6 +85,42 @@ struct DeclarativeAgentDSLTests {
         let calls = await provider.generateCalls
         #expect(calls.count == 1)
         #expect(calls[0].options.temperature == 0.2)
+    }
+
+    @Test("Generate fails if no inference provider is set")
+    func generateFailsWithoutProvider() async throws {
+        do {
+            _ = try await BillingAgent().run("Hi")
+            Issue.record("Expected inference provider missing error")
+        } catch let error as AgentError {
+            switch error {
+            case .inferenceProviderUnavailable(let reason):
+                #expect(reason.contains("Generate()"))
+            default:
+                Issue.record("Unexpected AgentError: \(error)")
+            }
+        }
+    }
+
+    @Test("AgentLoop must contain at least one Generate call")
+    func agentLoopRequiresGenerate() async throws {
+        struct NoGenerateAgent: Agent {
+            var loop: some AgentLoop {
+                Transform { _ in "ok" }
+            }
+        }
+
+        do {
+            _ = try await NoGenerateAgent().run("Hi")
+            Issue.record("Expected invalid loop error")
+        } catch let error as AgentError {
+            switch error {
+            case .invalidLoop(let reason):
+                #expect(reason.contains("Generate()"))
+            default:
+                Issue.record("Unexpected AgentError: \(error)")
+            }
+        }
     }
 
     @Test("Routes selects the first matching branch")

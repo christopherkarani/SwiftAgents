@@ -86,6 +86,12 @@ public struct Routes: OrchestrationStep {
     }
 }
 
+extension Routes: _AgentLoopNestedSteps {
+    var _nestedSteps: [OrchestrationStep] {
+        routes.map(\.step) + (fallback.map { [$0] } ?? [])
+    }
+}
+
 // MARK: - RouteBranch
 
 public struct RouteBranch: Sendable {

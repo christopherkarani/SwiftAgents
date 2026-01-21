@@ -21,3 +21,7 @@ public struct AgentLoopStep: OrchestrationStep {
         try await loop.execute(input, context: context)
     }
 }
+
+extension AgentLoopStep: _AgentLoopNestedSteps {
+    var _nestedSteps: [OrchestrationStep] { loop.steps }
+}

@@ -12,7 +12,7 @@ import Foundation
 /// ```swift
 /// struct MyAgent: Agent {
 ///     @Environment(\.inferenceProvider) var provider
-///     var loop: some AgentLoop { Respond() }
+///     var loop: some AgentLoop { Generate() }
 /// }
 /// ```
 @propertyWrapper

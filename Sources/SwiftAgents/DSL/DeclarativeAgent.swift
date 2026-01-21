@@ -19,10 +19,10 @@ public protocol Agent: Sendable {
     /// System instructions defining the agent's behavior.
     var instructions: String { get }
 
-    /// Tools available to this agent when running `Respond()`.
+    /// Tools available to this agent when running `Generate()`.
     var tools: [any AnyJSONTool] { get }
 
-    /// Runtime configuration for this agent when running `Respond()`.
+    /// Runtime configuration for this agent when running `Generate()`.
     var configuration: AgentConfiguration { get }
 
     /// Default environment values for this agent's execution.
@@ -31,10 +31,10 @@ public protocol Agent: Sendable {
     /// task-local environment set at the call site (see `.environment(...)`).
     var environment: AgentEnvironment { get }
 
-    /// Input guardrails applied when running `Respond()`.
+    /// Input guardrails applied when running `Generate()`.
     var inputGuardrails: [any InputGuardrail] { get }
 
-    /// Output guardrails applied when running `Respond()`.
+    /// Output guardrails applied when running `Generate()`.
     var outputGuardrails: [any OutputGuardrail] { get }
 
     /// Handoff configurations applied to sub-agents in this agent's loop.

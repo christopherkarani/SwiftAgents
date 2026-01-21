@@ -7,7 +7,7 @@ struct ResearchAgent: Agent {
     var instructions: String { "You are a careful research agent." }
 
     var loop: some AgentLoop {
-        Respond()
+        Generate()
     }
 }
 
