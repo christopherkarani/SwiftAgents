@@ -1,15 +1,15 @@
-// Agent.swift
+// ToolCallingAgent.swift
 // SwiftAgents Framework
 //
 // Tool-calling agent that uses structured LLM tool calling APIs.
 
 import Foundation
 
-// MARK: - Agent
+// MARK: - ToolCallingAgent
 
 /// An agent that uses structured LLM tool calling APIs for reliable tool invocation.
 ///
-/// Unlike ReActAgent which parses tool calls from text output, Agent
+/// Unlike ReActAgent which parses tool calls from text output, ToolCallingAgent
 /// leverages the LLM's native tool calling capabilities via `generateWithToolCalls()`
 /// for more reliable and type-safe tool invocation.
 ///
@@ -22,7 +22,7 @@ import Foundation
 ///
 /// Example:
 /// ```swift
-/// let agent = Agent(
+/// let agent = ToolCallingAgent(
 ///     tools: [WeatherTool(), CalculatorTool()],
 ///     instructions: "You are a helpful assistant with access to tools."
 /// )
@@ -30,7 +30,7 @@ import Foundation
 /// let result = try await agent.run("What's the weather in Tokyo?")
 /// print(result.output)
 /// ```
-public actor Agent: AgentRuntime {
+public actor ToolCallingAgent: AgentRuntime {
     // MARK: Public
 
     // MARK: - Agent Protocol Properties
@@ -50,7 +50,7 @@ public actor Agent: AgentRuntime {
 
     // MARK: - Initialization
 
-    /// Creates a new Agent.
+    /// Creates a new ToolCallingAgent.
     /// - Parameters:
     ///   - tools: Tools available to the agent. Default: []
     ///   - instructions: System instructions defining agent behavior. Default: ""
@@ -106,7 +106,7 @@ public actor Agent: AgentRuntime {
 
         let tracing = TracingHelper(
             tracer: activeTracer,
-            agentName: configuration.name.isEmpty ? "Agent" : configuration.name
+            agentName: configuration.name.isEmpty ? "ToolCallingAgent" : configuration.name
         )
         await tracing.traceStart(input: input)
 
@@ -478,16 +478,16 @@ public actor Agent: AgentRuntime {
     }
 }
 
-// MARK: Agent.Builder
+// MARK: ToolCallingAgent.Builder
 
-public extension Agent {
-    /// Builder for creating Agent instances with a fluent API.
+public extension ToolCallingAgent {
+    /// Builder for creating ToolCallingAgent instances with a fluent API.
     ///
     /// Uses value semantics (struct) for Swift 6 concurrency safety.
     ///
     /// Example:
     /// ```swift
-    /// let agent = Agent.Builder()
+    /// let agent = ToolCallingAgent.Builder()
     ///     .tools([WeatherTool(), CalculatorTool()])
     ///     .instructions("You are a helpful assistant.")
     ///     .configuration(.default.maxIterations(5))
@@ -653,9 +653,9 @@ public extension Agent {
         }
 
         /// Builds the agent.
-        /// - Returns: A new Agent instance.
-        public func build() -> Agent {
-            Agent(
+        /// - Returns: A new ToolCallingAgent instance.
+        public func build() -> ToolCallingAgent {
+            ToolCallingAgent(
                 tools: _tools,
                 instructions: _instructions,
                 configuration: _configuration,
@@ -684,14 +684,14 @@ public extension Agent {
     }
 }
 
-// MARK: - Agent DSL Extension
+// MARK: - ToolCallingAgent DSL Extension
 
-public extension Agent {
-    /// Creates an Agent using the declarative builder DSL.
+public extension ToolCallingAgent {
+    /// Creates a ToolCallingAgent using the declarative builder DSL.
     ///
     /// Example:
     /// ```swift
-    /// let agent = Agent {
+    /// let agent = ToolCallingAgent {
     ///     Instructions("You are a helpful assistant.")
     ///
     ///     Tools {
@@ -720,6 +720,3 @@ public extension Agent {
         )
     }
 }
-
-@available(*, deprecated, renamed: "Agent")
-public typealias ToolCallingAgent = Agent

@@ -1,4 +1,4 @@
-// Chat.swift
+// ChatAgent.swift
 // SwiftAgents Framework
 //
 // Simple chat-only agent (no tools) backed by an InferenceProvider.
@@ -7,9 +7,9 @@ import Foundation
 
 /// A simple chat-only agent that calls an inference provider once per request.
 ///
-/// Unlike `ReActAgent` or `Agent` (tool-calling), `Chat` does not invoke tools.
+/// Unlike `ReActAgent` or `ToolCallingAgent`, `ChatAgent` does not invoke tools.
 /// It is useful for the common "instructions + user input" chat pattern.
-public actor Chat: AgentRuntime {
+public actor ChatAgent: AgentRuntime {
     // MARK: Public
 
     nonisolated public var tools: [any AnyJSONTool] { [] }
@@ -62,7 +62,7 @@ public actor Chat: AgentRuntime {
 
         let tracing = TracingHelper(
             tracer: activeTracer,
-            agentName: configuration.name.isEmpty ? "Chat" : configuration.name
+                agentName: configuration.name.isEmpty ? "ChatAgent" : configuration.name
         )
         await tracing.traceStart(input: input)
 
