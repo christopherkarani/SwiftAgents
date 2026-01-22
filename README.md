@@ -1,4 +1,5 @@
-# SwiftAgents
+
+<img width="3168" height="1344" alt="Gemini_Generated_Image_kmy7tpkmy7tpkmy7" src="https://github.com/user-attachments/assets/d1cf1e83-f501-43ca-b3bb-bde862e1a6fd" />
 
 [![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange.svg)](https://swift.org)
 [![Platforms](https://img.shields.io/badge/Platforms-iOS%2017%2B%20|%20macOS%2014%2B%20|%20Linux-blue.svg)](https://swift.org)
