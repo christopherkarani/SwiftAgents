@@ -2,14 +2,16 @@
 
 ## Overview
 
-Add MCP server capability to SwiftAgents, enabling existing `Tool` implementations to be exposed as MCP tools consumable by external clients (Claude Desktop, etc.) via stdio transport.
+Add MCP server capability to SwiftAgents, enabling existing `Tool` implementations to be exposed as standard MCP tools consumable by any MCP-compliant client via stdio transport.
+
+The implementation follows the Model Context Protocol (MCP) specification and uses JSON-RPC 2.0 over stdio, making it compatible with any MCP client including Claude Desktop, custom clients, and future MCP implementations.
 
 ## Architecture
 
 ### Component Hierarchy
 ```
-External MCP Client (Claude Desktop)
-          ↓ stdio (newline-delimited JSON-RPC)
+External MCP Client (any MCP-compliant client)
+          ↓ stdio (newline-delimited JSON-RPC 2.0)
     StdioMCPServerTransport (actor)
           ↓ MCPRequest stream
     MCPServerRequestHandler (actor)
@@ -69,7 +71,11 @@ try await server.start()
 await server.waitForCompletion()
 ```
 
-### Claude Desktop Integration
+### MCP Client Integration
+
+The server is compatible with any MCP client that supports stdio transport. Below are examples:
+
+#### Example 1: Claude Desktop
 **Config:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 ```json
 {
@@ -82,13 +88,33 @@ await server.waitForCompletion()
 }
 ```
 
-**Executable:**
+#### Example 2: Custom MCP Client
+```swift
+// Any MCP client using stdio transport
+let process = Process()
+process.executableURL = URL(fileURLWithPath: "/path/to/mcp-server-executable")
+process.standardInput = Pipe()
+process.standardOutput = Pipe()
+
+try process.run()
+
+// Send JSON-RPC requests to stdin
+// Read JSON-RPC responses from stdout
+```
+
+#### Example 3: Command-Line Testing
+```bash
+# Direct stdio interaction for testing
+echo '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":null}' | ./mcp-server-executable
+```
+
+### Server Executable Template
 ```swift
 @main
 struct MCPServerApp {
     static func main() async throws {
-        // Configure logging (use StreamLogHandler for file output)
-        // Note: stdout/stderr reserved for JSON-RPC
+        // Configure logging (use StreamLogHandler for stderr)
+        // CRITICAL: stdout reserved for JSON-RPC protocol
         Log.bootstrap { label in
             var handler = StreamLogHandler.standardError(label: label)
             handler.logLevel = .info
@@ -113,7 +139,7 @@ struct MCPServerApp {
 ## Data Flow
 
 ### Initialize Request
-1. Client sends: `{"jsonrpc":"2.0","id":"0","method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"Claude Desktop","version":"1.0"}}}\n`
+1. Client sends: `{"jsonrpc":"2.0","id":"0","method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"MCP Client","version":"1.0"}}}\n`
 2. Transport reads line, trims whitespace, parses → `MCPRequest`
 3. Handler routes to `handleInitialize()`
 4. Handler builds response with **full structure**:
@@ -374,7 +400,7 @@ func testStdioTransport() async throws {
 
 ### Phase 4: Integration & Examples
 1. Create `Examples/MCPServer/` executable package
-2. Manual test with Claude Desktop
+2. Manual test with MCP clients (Claude Desktop, command-line, custom client)
 3. Write end-to-end integration tests
 4. Add documentation and usage examples
 
@@ -493,7 +519,7 @@ Create standalone example package in repository root:
   - Timeout: 5 seconds to complete in-flight requests
   - After timeout, server closes immediately
 
-- **EOF handling**: When stdin closes (Claude Desktop exit):
+- **EOF handling**: When stdin closes (client disconnect):
   - Stop reading from stdin immediately
   - Cancel all in-flight tool executions via `Task.cancel()`
   - **Check if stdout is still writable** before attempting flush
@@ -530,7 +556,7 @@ Create standalone example package in repository root:
    - **Solution**: Use `null` as request ID per JSON-RPC 2.0 spec for parse errors
 
 5. **EOF (End of File)**
-   - Claude Desktop exits → stdin closes → EOF on read
+   - MCP client exits → stdin closes → EOF on read
    - **Strategy**: Treat EOF as graceful shutdown signal
    - Stop reading immediately (input closed)
    - Cancel in-flight requests via `Task.cancel()`
@@ -637,7 +663,7 @@ struct OversizeLineError: Error {
 - ✅ Tool discovery (`tools/list`)
 - ✅ Tool execution (`tools/call`)
 - ✅ Capability negotiation (`initialize`)
-- ✅ Stdio transport (Claude Desktop compatible)
+- ✅ Stdio transport (MCP protocol compliant, works with any MCP client)
 - ✅ JSON-RPC 2.0 error handling
 
 ## Future Enhancements
@@ -676,12 +702,26 @@ swift test --filter MCPServerRequestHandlerTests
 swift test --filter MCPServerHostTests
 ```
 
-**Manual Testing:**
+**Manual Testing with MCP Clients:**
+
+*Option 1: Claude Desktop*
 1. Build example server executable
-2. Add to Claude Desktop config
+2. Add to Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`)
 3. Restart Claude Desktop
-4. Verify tools appear in Claude's tool list
+4. Verify tools appear in tool list
 5. Test tool execution and error handling
+
+*Option 2: Command-Line Testing*
+1. Build example server executable
+2. Test initialize: `echo '{"jsonrpc":"2.0","id":"1","method":"initialize","params":{}}' | ./mcp-server`
+3. Test tools/list: `echo '{"jsonrpc":"2.0","id":"2","method":"tools/list"}' | ./mcp-server`
+4. Test tools/call: `echo '{"jsonrpc":"2.0","id":"3","method":"tools/call","params":{"name":"datetime","arguments":{}}}' | ./mcp-server`
+
+*Option 3: Custom MCP Client*
+1. Implement custom client using stdio Process interaction
+2. Send JSON-RPC requests via stdin
+3. Read JSON-RPC responses from stdout
+4. Verify protocol compliance
 
 **Integration Tests:**
 - End-to-end request/response flow with real tools
