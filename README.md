@@ -287,7 +287,7 @@ let resilientAgent = agent
 │  └─────────────┘ └─────────────┘ └─────────────┘       │
 ├─────────────────────────────────────────────────────────┤
 │              InferenceProvider Protocol                  │
-│    (Foundation Models / OpenRouter / Custom LLMs)        │
+│    (Foundation Models / SOTA Models / Local )        │
 └─────────────────────────────────────────────────────────┘
 ```
 
