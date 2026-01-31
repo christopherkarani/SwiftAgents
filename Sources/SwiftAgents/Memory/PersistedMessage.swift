@@ -182,7 +182,13 @@
                 schema: schema,
                 isStoredInMemoryOnly: inMemory
             )
-            return try ModelContainer(for: schema, configurations: [configuration])
+
+            do {
+                return try ModelContainer(for: schema, configurations: [configuration])
+            } catch {
+                Log.memory.error("ModelContainer init failed with error: \(error)")
+                throw error
+            }
         }
     }
 #endif
