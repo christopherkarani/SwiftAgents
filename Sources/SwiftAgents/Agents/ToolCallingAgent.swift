@@ -328,6 +328,8 @@ public actor ToolCallingAgent: AgentRuntime {
         )
         let systemMessage = buildSystemMessage(memory: activeMemory, memoryContext: memoryContext)
 
+        let enableStreaming = configuration.enableStreaming && hooks != nil
+
         while iteration < configuration.maxIterations {
             iteration += 1
             _ = resultBuilder.incrementIteration()
@@ -340,11 +342,16 @@ public actor ToolCallingAgent: AgentRuntime {
 
             // If no tools defined, generate without tool calling
             if toolSchemas.isEmpty {
-                return try await generateWithoutTools(prompt: prompt, systemPrompt: systemMessage, hooks: hooks)
+                return try await generateWithoutTools(
+                    prompt: prompt,
+                    systemPrompt: systemMessage,
+                    enableStreaming: enableStreaming,
+                    hooks: hooks
+                )
             }
 
             // Generate response with tool calls
-            let response = if hooks != nil,
+            let response = if enableStreaming,
                 let provider = (inferenceProvider ?? AgentEnvironmentValues.current.inferenceProvider) as? any ToolCallStreamingInferenceProvider
             {
                 try await generateWithToolsStreaming(
@@ -414,7 +421,12 @@ public actor ToolCallingAgent: AgentRuntime {
     }
 
     /// Generates a response without tool calling.
-    private func generateWithoutTools(prompt: String, systemPrompt: String, hooks: (any RunHooks)?) async throws -> String {
+    private func generateWithoutTools(
+        prompt: String,
+        systemPrompt: String,
+        enableStreaming: Bool = false,
+        hooks: (any RunHooks)?
+    ) async throws -> String {
         let provider = inferenceProvider ?? AgentEnvironmentValues.current.inferenceProvider
         guard let provider else {
             throw AgentError.inferenceProviderUnavailable(reason: "No inference provider configured.")
@@ -422,10 +434,24 @@ public actor ToolCallingAgent: AgentRuntime {
 
         await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
 
-        let content = try await provider.generate(
-            prompt: prompt,
-            options: configuration.inferenceOptions
-        )
+        let content: String
+        if enableStreaming {
+            var streamedContent = ""
+            streamedContent.reserveCapacity(1024)
+            let stream = provider.stream(prompt: prompt, options: configuration.inferenceOptions)
+            for try await token in stream {
+                if !token.isEmpty {
+                    streamedContent += token
+                }
+                await hooks?.onOutputToken(context: nil, agent: self, token: token)
+            }
+            content = streamedContent
+        } else {
+            content = try await provider.generate(
+                prompt: prompt,
+                options: configuration.inferenceOptions
+            )
+        }
 
         await hooks?.onLLMEnd(context: nil, agent: self, response: content, usage: nil)
         return content
@@ -598,6 +624,7 @@ public actor ToolCallingAgent: AgentRuntime {
             switch update {
             case let .outputChunk(chunk):
                 if !chunk.isEmpty { content += chunk }
+                await hooks?.onOutputToken(context: nil, agent: self, token: chunk)
 
             case let .toolCallPartial(partial):
                 await hooks?.onToolCallPartial(context: nil, agent: self, update: partial)

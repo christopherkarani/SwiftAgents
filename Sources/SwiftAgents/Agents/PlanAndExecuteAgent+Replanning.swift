@@ -138,8 +138,33 @@ extension PlanAndExecuteAgent {
         """
 
         await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
-        let response = try await generateResponse(prompt: prompt)
+        let response: String
+        if configuration.enableStreaming, hooks != nil {
+            response = try await generateResponseStreamed(prompt: prompt, hooks: hooks)
+        } else {
+            response = try await generateResponse(prompt: prompt)
+        }
         await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
         return response
+    }
+
+    func generateResponseStreamed(prompt: String, hooks: (any RunHooks)?) async throws -> String {
+        let provider = inferenceProvider ?? AgentEnvironmentValues.current.inferenceProvider
+        guard let provider else {
+            throw AgentError.inferenceProviderUnavailable(
+                reason: "No inference provider configured. Please provide an InferenceProvider."
+            )
+        }
+
+        var content = ""
+        content.reserveCapacity(1024)
+        let stream = provider.stream(prompt: prompt, options: configuration.inferenceOptions)
+        for try await token in stream {
+            if !token.isEmpty {
+                content += token
+            }
+            await hooks?.onOutputToken(context: nil, agent: self, token: token)
+        }
+        return content
     }
 }

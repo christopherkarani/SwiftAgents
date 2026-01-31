@@ -69,6 +69,10 @@ internal struct EventStreamHooks: RunHooks {
         continuation.yield(.thinkingPartial(partialThought: partialThought))
     }
 
+    func onOutputToken(context _: AgentContext?, agent _: any AgentRuntime, token: String) async {
+        continuation.yield(.outputToken(token: token))
+    }
+
     func onIterationStart(context _: AgentContext?, agent _: any AgentRuntime, number: Int) async {
         continuation.yield(.iterationStarted(number: number))
     }
