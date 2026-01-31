@@ -65,6 +65,17 @@ public enum GuardrailError: Error, Sendable, LocalizedError, Equatable {
 
 extension GuardrailError: CustomDebugStringConvertible {
     public var debugDescription: String {
-        "GuardrailError.\(self)"
+        switch self {
+        case let .inputTripwireTriggered(name, message, outputInfo):
+            return "GuardrailError.inputTripwireTriggered(guardrailName: \"\(name)\", message: \(String(describing: message)), outputInfo: \(outputInfo.debugDescription))"
+        case let .outputTripwireTriggered(name, agentName, message, outputInfo):
+            return "GuardrailError.outputTripwireTriggered(guardrailName: \"\(name)\", agentName: \"\(agentName)\", message: \(String(describing: message)), outputInfo: \(outputInfo.debugDescription))"
+        case let .toolInputTripwireTriggered(name, toolName, message, outputInfo):
+            return "GuardrailError.toolInputTripwireTriggered(guardrailName: \"\(name)\", toolName: \"\(toolName)\", message: \(String(describing: message)), outputInfo: \(outputInfo.debugDescription))"
+        case let .toolOutputTripwireTriggered(name, toolName, message, outputInfo):
+            return "GuardrailError.toolOutputTripwireTriggered(guardrailName: \"\(name)\", toolName: \"\(toolName)\", message: \(String(describing: message)), outputInfo: \(outputInfo.debugDescription))"
+        case let .executionFailed(name, error):
+            return "GuardrailError.executionFailed(guardrailName: \"\(name)\", underlyingError: \"\(error)\")"
+        }
     }
 }

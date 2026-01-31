@@ -369,10 +369,52 @@ private extension OpenRouterProviderError {
     }
 }
 
+// MARK: CustomStringConvertible
+
+extension OpenRouterProviderError: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .invalidResponse:
+            return "invalidResponse"
+        case let .apiError(code, message, statusCode):
+            return "apiError(code: \"\(code)\", message: \"\(message)\", statusCode: \(statusCode))"
+        case let .rateLimitExceeded(retryAfter):
+            return "rateLimitExceeded(retryAfter: \(String(describing: retryAfter)))"
+        case .authenticationFailed:
+            return "authenticationFailed"
+        case let .networkError(wrapper):
+            return "networkError(\(wrapper.errorDescription))"
+        case let .decodingError(wrapper):
+            return "decodingError(\(wrapper.errorDescription))"
+        case let .unknownError(statusCode):
+            return "unknownError(statusCode: \(statusCode))"
+        case let .modelNotAvailable(model):
+            return "modelNotAvailable(model: \"\(model)\")"
+        case .insufficientCredits:
+            return "insufficientCredits"
+        case .contentFiltered:
+            return "contentFiltered"
+        case let .providerUnavailable(providers):
+            return "providerUnavailable(providers: \(providers))"
+        case let .fallbackExhausted(reason):
+            return "fallbackExhausted(reason: \"\(reason)\")"
+        case let .streamingError(message):
+            return "streamingError(message: \"\(message)\")"
+        case .cancelled:
+            return "cancelled"
+        case let .timeout(duration):
+            return "timeout(duration: \(duration))"
+        case .emptyPrompt:
+            return "emptyPrompt"
+        }
+    }
+}
+
 // MARK: CustomDebugStringConvertible
 
 extension OpenRouterProviderError: CustomDebugStringConvertible {
     public var debugDescription: String {
-        "OpenRouterProviderError.\(self)"
+        "OpenRouterProviderError.\(description)"
     }
 }
+

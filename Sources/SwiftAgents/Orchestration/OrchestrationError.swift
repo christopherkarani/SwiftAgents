@@ -68,10 +68,25 @@ extension OrchestrationError: LocalizedError {
     }
 }
 
+// MARK: CustomStringConvertible
+
+extension OrchestrationError: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .agentNotFound(let name): return "agentNotFound(name: \(name))"
+        case .noAgentsConfigured: return "noAgentsConfigured"
+        case .handoffFailed(let s, let t, let r): return "handoffFailed(source: \(s), target: \(t), reason: \(r))"
+        case .handoffSkipped(let f, let to, let r): return "handoffSkipped(from: \(f), to: \(to), reason: \(r))"
+        case .routingFailed(let reason): return "routingFailed(reason: \(reason))"
+        case .invalidRouteCondition(let reason): return "invalidRouteCondition(reason: \(reason))"
+        case .mergeStrategyFailed(let reason): return "mergeStrategyFailed(reason: \(reason))"
+        case .allAgentsFailed(let errors): return "allAgentsFailed(errors: \(errors))"
+        }
+    }
+}
+
 // MARK: CustomDebugStringConvertible
 
 extension OrchestrationError: CustomDebugStringConvertible {
-    public var debugDescription: String {
-        "OrchestrationError.\(self)"
-    }
+    public var debugDescription: String { "OrchestrationError.\(description)" }
 }

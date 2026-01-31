@@ -34,12 +34,25 @@ extension ResilienceError: LocalizedError {
     }
 }
 
+// MARK: CustomStringConvertible
+
+extension ResilienceError: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .retriesExhausted(let attempts, let lastError):
+            return "retriesExhausted(attempts: \(attempts), lastError: \(lastError))"
+        case .circuitBreakerOpen(let serviceName):
+            return "circuitBreakerOpen(serviceName: \(serviceName))"
+        case .allFallbacksFailed(let errors):
+            return "allFallbacksFailed(errors: \(errors))"
+        }
+    }
+}
+
 // MARK: CustomDebugStringConvertible
 
 extension ResilienceError: CustomDebugStringConvertible {
-    public var debugDescription: String {
-        "ResilienceError.\(self)"
-    }
+    public var debugDescription: String { "ResilienceError.\(description)" }
 }
 
 // MARK: - BackoffStrategy
