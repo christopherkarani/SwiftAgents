@@ -95,3 +95,23 @@ public enum ConduitProviderSelection: Sendable, InferenceProvider {
         try await makeProvider().generateWithToolCalls(prompt: prompt, tools: tools, options: options)
     }
 }
+
+// MARK: - Tool-call streaming forwarding
+
+extension ConduitProviderSelection: ToolCallStreamingInferenceProvider {
+    public func streamWithToolCalls(
+        prompt: String,
+        tools: [ToolSchema],
+        options: InferenceOptions
+    ) -> AsyncThrowingStream<InferenceStreamUpdate, Error> {
+        guard let streamingProvider = makeProvider() as? any ToolCallStreamingInferenceProvider else {
+            return StreamHelper.makeTrackedStream { continuation in
+                continuation.finish(throwing: AgentError.generationFailed(
+                    reason: "Underlying provider does not support tool-call streaming"
+                ))
+            }
+        }
+
+        return streamingProvider.streamWithToolCalls(prompt: prompt, tools: tools, options: options)
+    }
+}

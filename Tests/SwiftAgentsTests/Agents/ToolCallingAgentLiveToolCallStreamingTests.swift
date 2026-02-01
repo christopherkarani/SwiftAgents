@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import SwiftAgents
 
@@ -17,7 +18,11 @@ struct ToolCallingAgentLiveToolCallStreamingTests {
             }
         }
 
-        actor ScriptedStreamingProvider: @preconcurrency ToolCallStreamingInferenceProvider {
+        // NOTE: Do not implement this as an actor. `ToolCallStreamingInferenceProvider.streamWithToolCalls`
+        // is a synchronous protocol requirement, and calling it through an existential can bypass actor
+        // isolation hops, triggering "Incorrect actor executor assumption" crashes at runtime.
+        final class ScriptedStreamingProvider: @preconcurrency ToolCallStreamingInferenceProvider, @unchecked Sendable {
+            private let lock = NSLock()
             private var scripts: [[InferenceStreamUpdate]]
             private var index: Int = 0
 
@@ -25,7 +30,9 @@ struct ToolCallingAgentLiveToolCallStreamingTests {
                 self.scripts = scripts
             }
 
-            func nextScript() -> [InferenceStreamUpdate] {
+            private func nextScript() -> [InferenceStreamUpdate] {
+                lock.lock()
+                defer { lock.unlock() }
                 defer { index += 1 }
                 return scripts[min(index, scripts.count - 1)]
             }
@@ -54,7 +61,7 @@ struct ToolCallingAgentLiveToolCallStreamingTests {
                 options _: InferenceOptions
             ) -> AsyncThrowingStream<InferenceStreamUpdate, Error> {
                 StreamHelper.makeTrackedStream { continuation in
-                    let updates = await self.nextScript()
+                    let updates = self.nextScript()
                     for update in updates {
                         continuation.yield(update)
                     }
@@ -62,7 +69,11 @@ struct ToolCallingAgentLiveToolCallStreamingTests {
                 }
             }
 
-            func callCount() -> Int { index }
+            func callCount() -> Int {
+                lock.lock()
+                defer { lock.unlock() }
+                return index
+            }
         }
 
         let partial1 = PartialToolCallUpdate(
@@ -138,7 +149,109 @@ struct ToolCallingAgentLiveToolCallStreamingTests {
             Issue.record("Missing expected completed event")
         }
 
-        let count = await provider.callCount()
+        let count = provider.callCount()
         #expect(count == 2)
+    }
+
+    @Test("Uses tool-call streaming when inferenceProvider is wrapped in ConduitProviderSelection")
+    func usesToolCallStreamingThroughConduitProviderSelectionWrapper() async throws {
+        struct EchoTool: AnyJSONTool, Sendable {
+            let name = "echo"
+            let description = "Echoes the input text"
+            let parameters: [ToolParameter] = [
+                ToolParameter(name: "text", description: "Text to echo", type: .string)
+            ]
+
+            func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+                .string(try requiredString("text", from: arguments))
+            }
+        }
+
+        // See note in the test above: this must not be an actor.
+        final class ScriptedStreamingProvider: @preconcurrency ToolCallStreamingInferenceProvider, @unchecked Sendable {
+            private let lock = NSLock()
+            private var scripts: [[InferenceStreamUpdate]]
+            private var index: Int = 0
+
+            init(scripts: [[InferenceStreamUpdate]]) {
+                self.scripts = scripts
+            }
+
+            private func nextScript() -> [InferenceStreamUpdate] {
+                lock.lock()
+                defer { lock.unlock() }
+                defer { index += 1 }
+                return scripts[min(index, scripts.count - 1)]
+            }
+
+            func generate(prompt _: String, options _: InferenceOptions) async throws -> String {
+                throw AgentError.generationFailed(reason: "Unexpected call to generate() in streaming test")
+            }
+
+            func stream(prompt _: String, options _: InferenceOptions) -> AsyncThrowingStream<String, Error> {
+                StreamHelper.makeTrackedStream { continuation in
+                    continuation.finish(throwing: AgentError.generationFailed(reason: "Unexpected call to stream() in streaming test"))
+                }
+            }
+
+            func generateWithToolCalls(
+                prompt _: String,
+                tools _: [ToolSchema],
+                options _: InferenceOptions
+            ) async throws -> InferenceResponse {
+                // If ToolCallingAgent falls back to the non-streaming path, this is called (and the test should fail).
+                throw AgentError.generationFailed(reason: "Expected ToolCallingAgent to use streamWithToolCalls(), but it called generateWithToolCalls()")
+            }
+
+            func streamWithToolCalls(
+                prompt _: String,
+                tools _: [ToolSchema],
+                options _: InferenceOptions
+            ) -> AsyncThrowingStream<InferenceStreamUpdate, Error> {
+                StreamHelper.makeTrackedStream { continuation in
+                    let updates = self.nextScript()
+                    for update in updates {
+                        continuation.yield(update)
+                    }
+                    continuation.finish()
+                }
+            }
+        }
+
+        let partial = PartialToolCallUpdate(
+            providerCallId: "call_1",
+            toolName: "echo",
+            index: 0,
+            argumentsFragment: #"{"text":"hi"}"#
+        )
+        let completed = [
+            InferenceResponse.ParsedToolCall(id: "call_1", name: "echo", arguments: ["text": .string("hi")])
+        ]
+
+        let provider = ScriptedStreamingProvider(scripts: [
+            [
+                .toolCallPartial(partial),
+                .toolCallsCompleted(completed),
+            ],
+            [
+                .outputChunk("All done"),
+            ],
+        ])
+
+        let agent = ToolCallingAgent(
+            tools: [EchoTool()],
+            configuration: .default.maxIterations(3),
+            inferenceProvider: ConduitProviderSelection.provider(provider)
+        )
+
+        var events: [AgentEvent] = []
+        for try await event in agent.stream("Hi") {
+            events.append(event)
+        }
+
+        #expect(events.contains { event in
+            if case .toolCallPartial = event { return true }
+            return false
+        })
     }
 }
