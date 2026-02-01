@@ -350,10 +350,11 @@ public actor ToolCallingAgent: AgentRuntime {
                 )
             }
 
+            let toolStreamingProvider = (inferenceProvider ?? AgentEnvironmentValues.current.inferenceProvider) as? any ToolCallStreamingInferenceProvider
+            let useToolStreaming = enableStreaming && toolStreamingProvider != nil
+
             // Generate response with tool calls
-            let response = if enableStreaming,
-                let provider = (inferenceProvider ?? AgentEnvironmentValues.current.inferenceProvider) as? any ToolCallStreamingInferenceProvider
-            {
+            let response = if useToolStreaming, let provider = toolStreamingProvider {
                 try await generateWithToolsStreaming(
                     provider: provider,
                     prompt: prompt,
@@ -374,6 +375,15 @@ public actor ToolCallingAgent: AgentRuntime {
                     tracing: tracing
                 )
             } else {
+                if enableStreaming, !useToolStreaming {
+                    return try await generateWithoutTools(
+                        prompt: prompt,
+                        systemPrompt: systemMessage,
+                        enableStreaming: true,
+                        hooks: hooks
+                    )
+                }
+
                 guard let content = response.content else {
                     throw AgentError.generationFailed(reason: "Model returned no content or tool calls")
                 }

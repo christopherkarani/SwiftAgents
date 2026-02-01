@@ -659,22 +659,22 @@ public actor ReActAgent: AgentRuntime {
             )
         }
 
+        if enableStreaming {
+            var content = ""
+            content.reserveCapacity(1024)
+            let stream = provider.stream(prompt: prompt, options: configuration.inferenceOptions)
+            for try await token in stream {
+                if !token.isEmpty {
+                    content += token
+                }
+                await hooks?.onOutputToken(context: nil, agent: self, token: token)
+            }
+            return InferenceResponse(content: content, toolCalls: [], finishReason: .completed, usage: nil)
+        }
+
         // Avoid tool-calling APIs when no tools are available.
         // Some providers reject requests with an empty tools array.
         if tools.isEmpty {
-            if enableStreaming {
-                var content = ""
-                content.reserveCapacity(1024)
-                let stream = provider.stream(prompt: prompt, options: configuration.inferenceOptions)
-                for try await token in stream {
-                    if !token.isEmpty {
-                        content += token
-                    }
-                    await hooks?.onOutputToken(context: nil, agent: self, token: token)
-                }
-                return InferenceResponse(content: content, toolCalls: [], finishReason: .completed, usage: nil)
-            }
-
             let content = try await provider.generate(prompt: prompt, options: configuration.inferenceOptions)
             return InferenceResponse(content: content, toolCalls: [], finishReason: .completed, usage: nil)
         }
