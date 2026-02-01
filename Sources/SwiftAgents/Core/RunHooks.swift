@@ -140,6 +140,14 @@ public protocol RunHooks: Sendable {
     ///   - partialThought: The partial reasoning or thought content.
     func onThinkingPartial(context: AgentContext?, agent: any AgentRuntime, partialThought: String) async
 
+    /// Called when a response token is streamed from LLM.
+    ///
+    /// - Parameters:
+    ///   - context: Optional agent context.
+    ///   - agent: The agent receiving the token.
+    ///   - token: The token string.
+    func onOutputToken(context: AgentContext?, agent: any AgentRuntime, token: String) async
+
     /// Called when a new iteration begins in an agent loop.
     ///
     /// - Parameters:
@@ -195,6 +203,9 @@ public extension RunHooks {
 
     /// Default no-op implementation for partial thinking.
     func onThinkingPartial(context _: AgentContext?, agent _: any AgentRuntime, partialThought _: String) async {}
+
+    /// Default no-op implementation for output tokens.
+    func onOutputToken(context _: AgentContext?, agent _: any AgentRuntime, token _: String) async {}
 
     /// Default no-op implementation for iteration start.
     func onIterationStart(context _: AgentContext?, agent _: any AgentRuntime, number _: Int) async {}
@@ -366,6 +377,16 @@ public struct CompositeRunHooks: RunHooks {
         }
     }
 
+    public func onOutputToken(context: AgentContext?, agent: any AgentRuntime, token: String) async {
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks {
+                group.addTask {
+                    await hook.onOutputToken(context: context, agent: agent, token: token)
+                }
+            }
+        }
+    }
+
     public func onIterationStart(context: AgentContext?, agent: any AgentRuntime, number: Int) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in hooks {
@@ -524,6 +545,15 @@ public struct LoggingRunHooks: RunHooks {
         }
         let truncatedThought = thought.count > 100 ? String(thought.prefix(100)) + "..." : thought
         Log.agents.info("Agent thinking\(contextId): \"\(truncatedThought)\"")
+    }
+
+    public func onOutputToken(context: AgentContext?, agent _: any AgentRuntime, token: String) async {
+        let contextId = if let context {
+            " [context: \(context.executionId)]"
+        } else {
+            ""
+        }
+        Log.agents.debug("Agent output token\(contextId): \"\(token)\"")
     }
 
     public func onIterationStart(context: AgentContext?, agent _: any AgentRuntime, number: Int) async {
