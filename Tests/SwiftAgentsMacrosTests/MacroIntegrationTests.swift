@@ -72,10 +72,10 @@ final class MacroIntegrationTests: XCTestCase {
 
     // MARK: - Agent Macro Integration
 
-    /// Tests that an agent created with @Agent macro works correctly.
+    /// Tests that an agent created with @AgentActor macro works correctly.
     func testAgentMacroIntegration() async throws {
         // Expected usage:
-        // @Agent("You are a helpful coding assistant")
+        // @AgentActor("You are a helpful coding assistant")
         // actor CodingAgent {
         //     let tools: [any Tool] = [CalculatorTool()]
         //
@@ -91,12 +91,12 @@ final class MacroIntegrationTests: XCTestCase {
         // 4. Implement stream() that wraps run()
         // 5. Implement cancel()
 
-        XCTAssertTrue(true, "Agent macro integration test placeholder")
+        XCTAssertTrue(true, "AgentActor macro integration test placeholder")
     }
 
     // MARK: - Combined Macro Usage
 
-    /// Tests using @Tool and @Agent macros together.
+    /// Tests using @Tool and @AgentActor macros together.
     func testCombinedMacroUsage() async throws {
         // Expected usage:
         // @Tool("Performs calculation")
@@ -109,7 +109,7 @@ final class MacroIntegrationTests: XCTestCase {
         //     }
         // }
         //
-        // @Agent("Math assistant")
+        // @AgentActor("Math assistant")
         // actor MathAgent {
         //     let tools: [any Tool] = [CalcTool()]
         //

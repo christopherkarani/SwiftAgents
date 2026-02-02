@@ -1,5 +1,27 @@
 # Migration Guide
 
+## SwiftAgents 2.x → 2.x (Agent Macro Rename)
+
+The public macro used to generate agent boilerplate has been renamed.
+
+### Breaking Change
+
+- `@Agent` → `@AgentActor`
+
+### Migration
+
+```swift
+// Before
+@Agent("You are a helpful assistant")
+actor AssistantAgent { ... }
+
+// After
+@AgentActor("You are a helpful assistant")
+actor AssistantAgent { ... }
+```
+
+---
+
 ## SwiftAgents 1.x → 2.0 (Tooling Overhaul)
 
 This release introduces a breaking redesign of tools to improve reliability, schema support, and developer experience.

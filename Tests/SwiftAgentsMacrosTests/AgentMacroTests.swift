@@ -1,7 +1,7 @@
 // AgentMacroTests.swift
 // SwiftAgentsMacrosTests
 //
-// Tests for the @Agent macro expansion.
+// Tests for the @AgentActor macro expansion.
 
 import SwiftSyntax
 import SwiftSyntaxBuilder
@@ -13,7 +13,7 @@ import XCTest
     import SwiftAgentsMacros
 
     let agentMacros: [String: Macro.Type] = [
-        "Agent": AgentMacro.self
+        "AgentActor": AgentMacro.self
     ]
 #endif
 
@@ -27,7 +27,7 @@ final class AgentMacroTests: XCTestCase {
         #if canImport(SwiftAgentsMacros)
             assertMacroExpansion(
                 """
-                @Agent("You are a helpful assistant")
+                @AgentActor("You are a helpful assistant")
                 actor AssistantAgent {
                     func process(_ input: String) async throws -> String {
                         return "Hello!"
@@ -220,7 +220,7 @@ final class AgentMacroTests: XCTestCase {
         #if canImport(SwiftAgentsMacros)
             assertMacroExpansion(
                 """
-                @Agent("Math assistant")
+                @AgentActor("Math assistant")
                 actor MathAgent {
                     let tools: [any Tool] = [CalculatorTool()]
 
@@ -420,7 +420,7 @@ extension AgentMacroTests {
         #if canImport(SwiftAgentsMacros)
             assertMacroExpansion(
                 """
-                @Agent("Invalid")
+                @AgentActor("Invalid")
                 struct InvalidAgent {
                     func process(_ input: String) async throws -> String {
                         return ""
@@ -435,7 +435,7 @@ extension AgentMacroTests {
                 }
                 """,
                 diagnostics: [
-                    DiagnosticSpec(message: "@Agent can only be applied to actors", line: 1, column: 1)
+                    DiagnosticSpec(message: "@AgentActor can only be applied to actors", line: 1, column: 1)
                 ],
                 macros: agentMacros
             )
@@ -450,7 +450,7 @@ extension AgentMacroTests {
             // Agent without process method should still compile but run() throws
             assertMacroExpansion(
                 """
-                @Agent("No process method")
+                @AgentActor("No process method")
                 actor IncompleteAgent {
                 }
                 """,

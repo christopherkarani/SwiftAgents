@@ -390,7 +390,7 @@ print(final.output)
 
 | Topic | Description |
 |-------|-------------|
-| [Agents](docs/agents.md) | Agent types, configuration, @Agent macro |
+| [Agents](docs/agents.md) | Agent types, configuration, @AgentActor macro |
 | [Tools](docs/tools.md) | Tool creation, @Tool macro, ToolRegistry |
 | [Memory](docs/memory.md) | Memory systems and persistence backends |
 | [Sessions](docs/sessions.md) | Session management and history |

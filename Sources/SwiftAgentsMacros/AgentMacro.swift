@@ -1,7 +1,7 @@
 // AgentMacro.swift
 // SwiftAgentsMacros
 //
-// Implementation of the @Agent macro for generating Agent protocol conformance.
+// Implementation of the @AgentActor macro for generating Agent protocol conformance.
 
 import SwiftSyntax
 import SwiftSyntaxBuilder
@@ -9,11 +9,11 @@ import SwiftSyntaxMacros
 
 // MARK: - AgentMacro
 
-/// The `@Agent` macro generates Agent protocol conformance for an actor.
+/// The `@AgentActor` macro generates Agent protocol conformance for an actor.
 ///
 /// Usage:
 /// ```swift
-/// @Agent("You are a helpful assistant")
+/// @AgentActor("You are a helpful assistant")
 /// actor MyAgent {
 ///     @Tools var tools = [CalculatorTool(), DateTimeTool()]
 ///
@@ -209,7 +209,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
         }
 
         // 11. Generate Builder class (enabled by default)
-        // Disable with @Agent(instructions: "...", generateBuilder: false)
+        // Disable with @AgentActor(instructions: "...", generateBuilder: false)
         if shouldGenerateBuilder(from: node) {
             let typeName: String
             if let actorDecl = declaration.as(ActorDeclSyntax.self) {
@@ -398,7 +398,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
 
 // MARK: - AgentMacroError
 
-/// Errors that can occur during @Agent macro expansion.
+/// Errors that can occur during @AgentActor macro expansion.
 enum AgentMacroError: Error, CustomStringConvertible {
     case onlyApplicableToActor
     case missingProcessMethod
@@ -406,9 +406,9 @@ enum AgentMacroError: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .onlyApplicableToActor:
-            return "@Agent can only be applied to actors"
+            return "@AgentActor can only be applied to actors"
         case .missingProcessMethod:
-            return "@Agent requires a process(_ input: String) method"
+            return "@AgentActor requires a process(_ input: String) method"
         }
     }
 }
