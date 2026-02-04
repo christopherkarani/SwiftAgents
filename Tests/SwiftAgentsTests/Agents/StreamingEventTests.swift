@@ -77,4 +77,29 @@ struct StreamingEventTests {
         #expect(events.contains { if case .iterationStarted(let n) = $0 { return n == 1 }; return false })
         #expect(events.contains { if case .completed = $0 { return true }; return false })
     }
+
+    @Test("ToolCallingAgent streaming avoids second request without tool-call streaming")
+    func toolCallingAgentStreamingAvoidsSecondRequest() async throws {
+        let mockProvider = MockInferenceProvider()
+        await mockProvider.setToolCallResponses([
+            InferenceResponse(content: "Final answer directly", toolCalls: [], finishReason: .completed)
+        ])
+
+        let tool = MockTool(name: "test_tool", description: "Test tool")
+        let agent = ToolCallingAgent(
+            tools: [tool],
+            instructions: "You are a test assistant.",
+            inferenceProvider: mockProvider
+        )
+
+        for try await _ in agent.stream("Start") {}
+
+        let toolCallCount = await mockProvider.toolCallCalls.count
+        let streamCount = await mockProvider.streamCalls.count
+        let generateCount = await mockProvider.generateCallCount
+
+        #expect(toolCallCount == 1)
+        #expect(streamCount == 0)
+        #expect(generateCount == 0)
+    }
 }

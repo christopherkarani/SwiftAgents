@@ -363,7 +363,13 @@ public actor ToolCallingAgent: AgentRuntime {
                     hooks: hooks
                 )
             } else {
-                try await generateWithTools(prompt: prompt, tools: toolSchemas, systemPrompt: systemMessage, hooks: hooks)
+                try await generateWithTools(
+                    prompt: prompt,
+                    tools: toolSchemas,
+                    systemPrompt: systemMessage,
+                    hooks: hooks,
+                    emitOutputTokens: enableStreaming
+                )
             }
 
             if response.hasToolCalls {
@@ -375,15 +381,6 @@ public actor ToolCallingAgent: AgentRuntime {
                     tracing: tracing
                 )
             } else {
-                if enableStreaming, !useToolStreaming {
-                    return try await generateWithoutTools(
-                        prompt: prompt,
-                        systemPrompt: systemMessage,
-                        enableStreaming: true,
-                        hooks: hooks
-                    )
-                }
-
                 guard let content = response.content else {
                     throw AgentError.generationFailed(reason: "Model returned no content or tool calls")
                 }
@@ -584,7 +581,8 @@ public actor ToolCallingAgent: AgentRuntime {
         prompt: String,
         tools: [ToolSchema],
         systemPrompt: String,
-        hooks: (any RunHooks)? = nil
+        hooks: (any RunHooks)? = nil,
+        emitOutputTokens: Bool = false
     ) async throws -> InferenceResponse {
         let provider = inferenceProvider ?? AgentEnvironmentValues.current.inferenceProvider
         guard let provider else {
@@ -603,6 +601,10 @@ public actor ToolCallingAgent: AgentRuntime {
             tools: tools,
             options: options
         )
+
+        if emitOutputTokens, response.toolCalls.isEmpty, let content = response.content, !content.isEmpty {
+            await hooks?.onOutputToken(context: nil, agent: self, token: content)
+        }
 
         // Notify hooks of LLM end
         let responseContent = response.content ?? ""
