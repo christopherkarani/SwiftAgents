@@ -102,4 +102,29 @@ struct StreamingEventTests {
         #expect(streamCount == 0)
         #expect(generateCount == 0)
     }
+
+    @Test("ReActAgent streaming uses tool-call generation when tools are available")
+    func reactAgentStreamingUsesToolCallGeneration() async throws {
+        let mockProvider = MockInferenceProvider()
+        await mockProvider.setToolCallResponses([
+            InferenceResponse(content: "Final Answer: Done", toolCalls: [], finishReason: .completed)
+        ])
+
+        let tool = MockTool(name: "test_tool", description: "Test tool")
+        let agent = ReActAgent(
+            tools: [tool],
+            instructions: "You are a test assistant.",
+            inferenceProvider: mockProvider
+        )
+
+        for try await _ in agent.stream("Start") {}
+
+        let toolCallCount = await mockProvider.toolCallCalls.count
+        let streamCount = await mockProvider.streamCalls.count
+        let generateCount = await mockProvider.generateCallCount
+
+        #expect(toolCallCount == 1)
+        #expect(streamCount == 0)
+        #expect(generateCount == 0)
+    }
 }
