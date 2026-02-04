@@ -511,12 +511,13 @@ struct RunHooksIntegrationTests {
 	    func concurrentHookExecution() async throws {
 	        // Create a hook that tracks execution order with delays
 	        actor DelayedHook: RunHooks {
-	            var events: [(String, Date)] = []
+	            var start: ContinuousClock.Instant?
+	            var end: ContinuousClock.Instant?
 
 	            func onAgentStart(context _: AgentContext?, agent _: any AgentRuntime, input _: String) async {
-	                let start = Date()
-	                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms delay
-	                events.append(("start", start))
+	                start = ContinuousClock.now
+	                try? await Task.sleep(for: .milliseconds(200))
+	                end = ContinuousClock.now
 	            }
 
             func onAgentEnd(context _: AgentContext?, agent _: any AgentRuntime, result _: AgentResult) async {}
@@ -528,7 +529,10 @@ struct RunHooksIntegrationTests {
             func onLLMEnd(context _: AgentContext?, agent _: any AgentRuntime, response _: String, usage _: InferenceResponse.TokenUsage?) async {}
             func onGuardrailTriggered(context _: AgentContext?, guardrailName _: String, guardrailType _: GuardrailType, result _: GuardrailResult) async {}
 
-            func getEvents() -> [(String, Date)] { events }
+            func getInterval() -> (start: ContinuousClock.Instant, end: ContinuousClock.Instant)? {
+                guard let start, let end else { return nil }
+                return (start, end)
+            }
         }
 
         let hook1 = DelayedHook()
@@ -538,15 +542,28 @@ struct RunHooksIntegrationTests {
         let composite = CompositeRunHooks(hooks: [hook1, hook2, hook3])
         let mockAgent = MockAgentForRunHooks()
 
-        // Execute and measure time
-	        let startTime = Date()
-	        await composite.onAgentStart(context: nil, agent: mockAgent, input: "test")
-	        let elapsed = Date().timeIntervalSince(startTime)
+        await composite.onAgentStart(context: nil, agent: mockAgent, input: "test")
 
-	        // With concurrent execution, all 3 hooks should run in ~50ms (parallel)
-	        // With sequential execution, it would take ~150ms
-	        // Allow some margin for timing variations
-	        #expect(elapsed < 0.12, "Concurrent execution should complete in ~50ms, not \(elapsed * 1000)ms")
+        var intervals: [(start: ContinuousClock.Instant, end: ContinuousClock.Instant)] = []
+        for hook in [hook1, hook2, hook3] {
+            if let interval = await hook.getInterval() {
+                intervals.append(interval)
+            }
+        }
+
+        #expect(intervals.count == 3)
+
+        guard let latestStart = intervals.map(\.start).max(),
+              let earliestEnd = intervals.map(\.end).min()
+        else {
+            Issue.record("Missing hook interval data")
+            return
+        }
+
+        #expect(
+            latestStart < earliestEnd,
+            "Expected concurrent hook execution; intervals did not overlap."
+        )
 	    }
 
     @Test("Composite hooks all receive callbacks")

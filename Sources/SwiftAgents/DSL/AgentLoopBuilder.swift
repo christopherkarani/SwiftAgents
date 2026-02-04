@@ -39,7 +39,7 @@ public struct AgentLoopBuilder {
         AgentLoopSequence(steps: [AgentStep(agent)])
     }
 
-    public static func buildExpression<A: Agent>(_ agent: A) -> AgentLoopSequence {
+    public static func buildExpression<A: AgentLoopDefinition>(_ agent: A) -> AgentLoopSequence {
         AgentLoopSequence(steps: [LoopAgentStep(agent)])
     }
 }

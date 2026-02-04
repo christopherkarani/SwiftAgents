@@ -10,9 +10,9 @@ import Foundation
 /// This is modeled after SwiftUI's `@Environment`:
 ///
 /// ```swift
-/// struct MyAgent: Agent {
+/// struct MyAgent: AgentLoopDefinition {
 ///     @Environment(\.inferenceProvider) var provider
-///     var loop: some AgentLoop { Generate() }
+///     @AgentLoopBuilder var loop: some AgentLoop { Generate() }
 /// }
 /// ```
 @propertyWrapper

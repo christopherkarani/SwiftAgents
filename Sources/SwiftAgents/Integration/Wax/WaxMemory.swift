@@ -134,6 +134,7 @@ public actor WaxMemory: Memory, MemoryPromptDescriptor, MemorySessionLifecycle {
                 case .text: return "text"
                 case .vector: return "vector"
                 case .timeline: return "timeline"
+                case .structuredMemory: return "structuredMemory"
                 }
             }.joined(separator: ",")
 

@@ -13,7 +13,8 @@ SwiftAgents provides everything you need to build AI agents: autonomous reasonin
 
 ## Highlights
 
-- **Agents** — ReAct, PlanAndExecute, and ToolCalling patterns
+- **Agents** — `AgentRuntime` implementations (ToolCalling, ReAct, PlanAndExecute) and `@AgentActor` macro
+- **Workflows** — SwiftUI-style `AgentBlueprint` orchestration (preferred) + legacy loop DSL (deprecated)
 - **Tools** — Typed `Tool` API, `@Tool` macro, and `AnyJSONTool` ABI
 - **Memory** — Conversation, summary, and vector memory systems
 - **Multi-Agent** — Supervisor routing, chains, and parallel execution
@@ -23,6 +24,72 @@ SwiftAgents provides everything you need to build AI agents: autonomous reasonin
 - **Cross-Platform** — iOS, macOS, watchOS, tvOS, visionOS, and Linux
 
 ---
+
+## For Coding Agents
+
+### Retrieving Context (Sessions + Memory)
+
+SwiftAgents intentionally keeps **context retrieval** explicit and inspectable. In practice, you’ll pull context from either:
+
+- **Session** (conversation history): `getItems(limit:)`
+- **Memory** (RAG / summaries / recent-window): `context(for:tokenLimit:)` and `allMessages()`
+
+```swift
+// Session history (for UIs, debugging, or custom prompt building)
+let history = try await session.getItems(limit: 20)
+
+// Memory context string (what you want the model to “see” as context)
+let context = await memory.context(for: "billing policy", tokenLimit: 1_200)
+
+// Raw memory messages (for inspection / tests)
+let messages = await memory.allMessages()
+```
+
+If your memory conforms to `MemoryPromptDescriptor` (e.g. `WaxMemory`), you can also expose UI labels/guidance:
+
+```swift
+if let descriptor = memory as? any MemoryPromptDescriptor {
+    print(descriptor.memoryPromptTitle)
+    print(descriptor.memoryPromptGuidance ?? "")
+}
+```
+
+### Copy/Paste Prompts
+
+Use these prompts verbatim in Claude Code / Codex / ChatGPT when working with this repo or integrating SwiftAgents.
+
+#### 1) Repo Orientation
+
+```text
+You are a coding agent integrating SwiftAgents.
+Please:
+1) Read AGENTS.md and README.md.
+2) Summarize the preferred API surface (AgentBlueprint + @Tool + @AgentActor).
+3) Point me to the 5 most relevant docs pages for orchestration + tools + memory.
+4) Give me a minimal “hello world agent” that compiles (no external services).
+```
+
+#### 2) “How do I retrieve context?”
+
+```text
+In SwiftAgents, show me how to retrieve:
+- session history (Session.getItems)
+- model context from memory (Memory.context(for:tokenLimit:))
+- raw messages (Memory.allMessages)
+Include one example using WaxMemory and one using ConversationMemory.
+```
+
+#### 3) Compose a Complex Workflow
+
+```text
+Design an AgentBlueprint for: plan -> implement -> review -> summarize.
+Constraints:
+- Use ToolCallingAgent runtime steps.
+- Use Parallel for implement+tests where appropriate.
+- Use Router to pick specialist agents.
+- Keep it hard to misuse (types, names, minimal magic).
+Return a single Swift file with the blueprint + setup code.
+```
 
 ## Installation
 
@@ -100,37 +167,39 @@ let result = try await CustomerService()
     .run("Summarize our billing policy.")
 ```
 
-`Relay()` (the unified loop node) will prioritize Wax memory context when present.
+When using the legacy loop DSL, `Relay()` will prioritize Wax memory context when present.
 
 ---
 
 ## Quick Start
 
-Design, configure, and execute agents solely through the SwiftUI-style DSL. Define your domain logic on value types and expose configuration via properties, then run or stream the agent when ready.
+Start with runtime agents for model calls, then compose them with the SwiftUI-style `AgentBlueprint` workflow DSL when you need orchestration. The legacy loop DSL (`AgentLoopDefinition` + `@AgentLoopBuilder`) remains for compatibility but is deprecated.
 
 ```swift
 import SwiftAgents
 
 let provider = MyInferenceProvider()
 
-struct CustomerService: Agent {
-    var instructions: String { "You are a helpful customer service agent." }
+struct CustomerService: AgentBlueprint {
+    let billing = ToolCallingAgent(
+        tools: [CalculatorTool()],
+        instructions: "You are billing support. Be concise."
+    )
 
-    var loop: some AgentLoop {
+    let general = ToolCallingAgent(
+        instructions: "You are general customer support."
+    )
+
+    @OrchestrationBuilder var body: some OrchestrationStep {
         Guard(.input) {
             InputGuard("no_secrets") { input in
                 input.contains("password") ? .tripwire(message: "Sensitive data") : .passed()
             }
         }
 
-        Routes {
-            When(.contains("billing"), name: "billing") {
-                Billing()
-                    .temperature(0.2)
-            }
-            Otherwise {
-                GeneralSupport()
-            }
+        Router {
+            When(.contains("billing"), name: "billing") { billing }
+            Otherwise { general }
         }
 
         Guard(.output) {
@@ -141,16 +210,6 @@ struct CustomerService: Agent {
     }
 }
 
-struct Billing: Agent {
-    var instructions: String { "You are billing support. Be concise." }
-    var loop: some AgentLoop { Relay() }
-}
-
-struct GeneralSupport: Agent {
-    var instructions: String { "You are general customer support." }
-    var loop: some AgentLoop { Relay() }
-}
-
 let result = try await CustomerService()
     .environment(\.inferenceProvider, provider)
     .run("billing help")
@@ -159,9 +218,9 @@ print(result.output)
 ```
 
 Notes:
-- `Relay()` (aka `Generate()`) resolves its inference provider from the current environment and throws if none is set.
-- Every `AgentLoop` must include a `Generate()` or `Relay()` call, either directly or through a sub-agent like `Billing`/`GeneralSupport`.
-- The sample matches `Tests/SwiftAgentsTests/DSL/DeclarativeAgentDSLTests.swift`, so the guards and routes are exercised in automated tests.
+- `AgentBlueprint` is the preferred SwiftUI-style workflow DSL; embed `AgentRuntime` steps (ToolCallingAgent/ReActAgent/PlanAndExecuteAgent).
+- The legacy loop DSL (`AgentLoopDefinition` + `Relay()`/`Generate()`) is deprecated for new code.
+- The actor macro for boilerplate-free runtime agents is `@AgentActor` (renamed from `@Agent`).
 
 ---
 
@@ -169,7 +228,7 @@ Notes:
 
 ### Streaming Responses
 
-Stream the DSL agent you just defined and inspect `AgentEvent` cases:
+Stream the blueprint you just defined and inspect `AgentEvent` cases:
 
 ```swift
 let streamingAgent = CustomerService()
@@ -197,18 +256,18 @@ for try await event in streamingAgent.stream("Explain quantum computing") {
 
 ### Multi-Agent Orchestration
 
-Define focused agents as value types and let a supervisor route requests based on the DSL logic:
+Define focused runtime agents and let a supervisor route requests based on routing strategy:
 
 ```swift
-struct MathSpecialist: Agent {
-    var instructions: String { "Solve billing math crisply." }
-    var loop: some AgentLoop { Relay() }
-}
+let mathAgent = ToolCallingAgent(
+    tools: [CalculatorTool()],
+    instructions: "Solve billing math crisply."
+)
 
-struct WeatherSpecialist: Agent {
-    var instructions: String { "Report weather succinctly." }
-    var loop: some AgentLoop { Relay() }
-}
+let weatherAgent = ToolCallingAgent(
+    tools: [WeatherTool()],
+    instructions: "Report weather succinctly."
+)
 
 let mathDesc = AgentDescription(
     name: "math",
@@ -225,11 +284,11 @@ let weatherDesc = AgentDescription(
 let strategy = KeywordRoutingStrategy()
 let supervisor = SupervisorAgent(
     agents: [
-        (name: mathDesc.name, agent: MathSpecialist(), description: mathDesc),
-        (name: weatherDesc.name, agent: WeatherSpecialist(), description: weatherDesc)
+        (name: mathDesc.name, agent: mathAgent, description: mathDesc),
+        (name: weatherDesc.name, agent: weatherAgent, description: weatherDesc)
     ],
     routingStrategy: strategy,
-    fallbackAgent: GeneralSupport()
+    fallbackAgent: ToolCallingAgent(instructions: "You are general customer support.")
 )
 
 let result = try await supervisor.run("What is 15 × 23?")
@@ -238,11 +297,11 @@ print(result.output)
 
 > Swap in `LLMRoutingStrategy(inferenceProvider: provider)` when you want the supervisor to reason about intent in addition to keywords.
 
-> See [docs/orchestration.md](docs/orchestration.md) for chains, parallel execution, and handoffs built on top of DSL agents.
+> See [docs/orchestration.md](docs/orchestration.md) for chains, parallel execution, and handoffs built on top of runtime agents and blueprints.
 
 ### Session Management
 
-Store conversation history for longer-lived interactions while keeping DSL agents stateless:
+Store conversation history for longer-lived interactions while keeping blueprints stateless:
 
 ```swift
 let session = InMemorySession(sessionId: "user_123")
@@ -258,20 +317,20 @@ try await customerService.run("What's my favorite color?", session: session)
 
 ### Guardrails
 
-Guard the inputs and outputs of DSL loops before or after calling `Relay()`:
+Guard inputs and outputs in a blueprint by surrounding a runtime agent step:
 
 ```swift
-struct GuardedAgent: Agent {
-    var instructions: String { "Only pass safe content through." }
+struct GuardedAgent: AgentBlueprint {
+    let core = ToolCallingAgent(instructions: "Only pass safe content through.")
 
-    var loop: some AgentLoop {
+    @OrchestrationBuilder var body: some OrchestrationStep {
         Guard(.input) {
             InputGuard("no_shouting") { input in
                 input.contains("SHOUT") ? .tripwire(message: "Calm please") : .passed()
             }
         }
 
-        Relay()
+        core
 
         Guard(.output) {
             OutputGuard("no_pii") { output in
@@ -286,7 +345,7 @@ struct GuardedAgent: Agent {
 
 ### MCP Integration
 
-Offer Model Context Protocol tools directly on DSL agents:
+Offer Model Context Protocol tools directly on runtime agents:
 
 ```swift
 let client = MCPClient()
@@ -295,13 +354,10 @@ try await client.addServer(server)
 
 let mcpTools = try await client.getAllTools()
 
-struct ResearchAgent: Agent {
-    var instructions: String { "Research the topic with MCP tools." }
-    var tools: [any AnyJSONTool]
-    var loop: some AgentLoop { Relay() }
-}
-
-let researchAgent = ResearchAgent(tools: mcpTools)
+let researchAgent = ToolCallingAgent(
+    tools: mcpTools,
+    instructions: "Research the topic with MCP tools."
+)
 let researchResult = try await researchAgent
     .environment(\.inferenceProvider, provider)
     .run("Summarize the latest updates.")
@@ -310,9 +366,9 @@ print(researchResult.output)
 
 > See [docs/mcp.md](docs/mcp.md) for server implementations, tool discovery, and caching strategies.
 
-### Tools in the DSL
+### Tools on Runtime Agents
 
-Every DSL agent can provide a `tools` array, and `Relay()` automatically makes those tools available to the inference provider (along with the agent’s instructions, guardrails, and environment). The `@Tool` macro reduces boilerplate by generating the necessary `Tool` conformance and typed parameters that `Relay()` exposes to the model.
+Runtime agents accept typed tools. The `@Tool` macro reduces boilerplate by generating `Tool` conformance and the JSON schema the model uses for calls.
 
 ```swift
 @Tool("Calculates totals")
@@ -325,30 +381,29 @@ struct CalculatorTool {
     }
 }
 
-struct BillingAgent: Agent {
-    var instructions: String { "Use calculator for numeric requests." }
-    var tools: [any AnyJSONTool] { [CalculatorTool()] }
-    var loop: some AgentLoop { Relay() }
-}
+let billingAgent = ToolCallingAgent(
+    tools: [CalculatorTool()],
+    instructions: "Use calculator for numeric requests."
+)
 
-let billingResult = try await BillingAgent()
+let billingResult = try await billingAgent
     .environment(\.inferenceProvider, provider)
     .run("What is 25% of 200?")
 ```
 
-When `Relay()` runs, it introspects the agent’s `tools` list (including any tool macros, wrappers, or imported MCP `ToolSchema`s) so the model can plan tool calls, pass in structured parameters, and receive typed results without extra plumbing. Guardrails and modifiers still wrap `Relay()`, keeping the DSL-focused flow consistent.
+ToolCallingAgent (and ReActAgent / PlanAndExecuteAgent) bridge typed tools to the `AnyJSONTool` ABI so the model can plan tool calls, pass structured parameters, and receive typed results without extra plumbing.
 
 ### Resilience
 
-Wrap DSL agents with retry, timeout, fallback, and circuit-breaker behaviors:
+Wrap runtime agents (or blueprint executions) with retry, timeout, fallback, and circuit-breaker behaviors:
 
 ```swift
 let resilientAgent = CustomerService()
     .environment(\.inferenceProvider, provider)
-    .retry(.exponentialBackoff(maxAttempts: 3, baseDelay: .seconds(1)))
+    .withRetry(.exponentialBackoff(maxAttempts: 3, baseDelay: .seconds(1)))
     .withCircuitBreaker(threshold: 5, resetTimeout: .seconds(60))
-    .withFallback(GeneralSupport())
-    .timeout(.seconds(30))
+    .withFallback(ToolCallingAgent(instructions: "You are general customer support."))
+    .withTimeout(.seconds(30))
 
 let final = try await resilientAgent.run("Handle billing help urgently.")
 print(final.output)
@@ -390,7 +445,7 @@ print(final.output)
 
 | Topic | Description |
 |-------|-------------|
-| [Agents](docs/agents.md) | Agent types, configuration, @Agent macro |
+| [Agents](docs/agents.md) | Agent types, configuration, @AgentActor macro |
 | [Tools](docs/tools.md) | Tool creation, @Tool macro, ToolRegistry |
 | [Memory](docs/memory.md) | Memory systems and persistence backends |
 | [Sessions](docs/sessions.md) | Session management and history |

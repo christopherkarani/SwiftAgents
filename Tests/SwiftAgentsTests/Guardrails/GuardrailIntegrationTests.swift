@@ -621,15 +621,43 @@ extension GuardrailIntegrationTests {
         let agent = await MockGuardrailAgent(name: "ParallelAgent")
         let context = AgentContext(input: "Test")
 
-        let startTime = ContinuousClock.now
+        final class IntervalTracker: @unchecked Sendable {
+            struct Interval: Sendable {
+                let start: ContinuousClock.Instant
+                let end: ContinuousClock.Instant
+            }
+
+            private let lock = NSLock()
+            private var intervals: [String: Interval] = [:]
+
+            func record(_ name: String, start: ContinuousClock.Instant, end: ContinuousClock.Instant) {
+                lock.lock()
+                defer { lock.unlock() }
+                intervals[name] = Interval(start: start, end: end)
+            }
+
+            func get(_ name: String) -> Interval? {
+                lock.lock()
+                defer { lock.unlock() }
+                return intervals[name]
+            }
+        }
+
+        let tracker = IntervalTracker()
 
         let slowGuardrail1 = ClosureInputGuardrail(name: "slow1") { _, _ in
-            try? await Task.sleep(for: .milliseconds(100))
+            let start = ContinuousClock.now
+            try? await Task.sleep(for: .milliseconds(200))
+            let end = ContinuousClock.now
+            tracker.record("slow1", start: start, end: end)
             return .passed(message: "Slow check 1 complete")
         }
 
         let slowGuardrail2 = ClosureInputGuardrail(name: "slow2") { _, _ in
-            try? await Task.sleep(for: .milliseconds(100))
+            let start = ContinuousClock.now
+            try? await Task.sleep(for: .milliseconds(200))
+            let end = ContinuousClock.now
+            tracker.record("slow2", start: start, end: end)
             return .passed(message: "Slow check 2 complete")
         }
 
@@ -641,11 +669,15 @@ extension GuardrailIntegrationTests {
             context: context
         )
 
-        let duration = ContinuousClock.now - startTime
-
         // Then: Guardrails ran in parallel (total time < sum of individual times)
         #expect(results.count == 2)
-        // Should take ~100ms, not ~200ms if sequential
-        #expect(duration < .milliseconds(150))
+        guard let interval1 = tracker.get("slow1"), let interval2 = tracker.get("slow2") else {
+            Issue.record("Missing guardrail interval data")
+            return
+        }
+
+        let latestStart = max(interval1.start, interval2.start)
+        let earliestEnd = min(interval1.end, interval2.end)
+        #expect(latestStart < earliestEnd, "Expected parallel guardrail execution; intervals did not overlap.")
     }
 }

@@ -76,7 +76,7 @@ swift package plugin --allow-writing-to-package-directory swiftformat  # Format 
 - Apply `nonisolated` explicitly when needed for cross-isolation calls
 
 ### Macros
-- Use `@Agent` macro for agent boilerplate
+- Use `@AgentActor` macro for agent boilerplate
 - Use `@Tool` macro for tool registration
 - Use `@Observable` for state management
 - See `Sources/SwiftAgentsMacros/` for implementation patterns

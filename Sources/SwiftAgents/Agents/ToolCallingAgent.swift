@@ -350,10 +350,11 @@ public actor ToolCallingAgent: AgentRuntime {
                 )
             }
 
+            let toolStreamingProvider = (inferenceProvider ?? AgentEnvironmentValues.current.inferenceProvider) as? any ToolCallStreamingInferenceProvider
+            let useToolStreaming = enableStreaming && toolStreamingProvider != nil
+
             // Generate response with tool calls
-            let response = if enableStreaming,
-                let provider = (inferenceProvider ?? AgentEnvironmentValues.current.inferenceProvider) as? any ToolCallStreamingInferenceProvider
-            {
+            let response = if useToolStreaming, let provider = toolStreamingProvider {
                 try await generateWithToolsStreaming(
                     provider: provider,
                     prompt: prompt,
@@ -362,7 +363,13 @@ public actor ToolCallingAgent: AgentRuntime {
                     hooks: hooks
                 )
             } else {
-                try await generateWithTools(prompt: prompt, tools: toolSchemas, systemPrompt: systemMessage, hooks: hooks)
+                try await generateWithTools(
+                    prompt: prompt,
+                    tools: toolSchemas,
+                    systemPrompt: systemMessage,
+                    hooks: hooks,
+                    emitOutputTokens: enableStreaming
+                )
             }
 
             if response.hasToolCalls {
@@ -574,7 +581,8 @@ public actor ToolCallingAgent: AgentRuntime {
         prompt: String,
         tools: [ToolSchema],
         systemPrompt: String,
-        hooks: (any RunHooks)? = nil
+        hooks: (any RunHooks)? = nil,
+        emitOutputTokens: Bool = false
     ) async throws -> InferenceResponse {
         let provider = inferenceProvider ?? AgentEnvironmentValues.current.inferenceProvider
         guard let provider else {
@@ -593,6 +601,10 @@ public actor ToolCallingAgent: AgentRuntime {
             tools: tools,
             options: options
         )
+
+        if emitOutputTokens, response.toolCalls.isEmpty, let content = response.content, !content.isEmpty {
+            await hooks?.onOutputToken(context: nil, agent: self, token: content)
+        }
 
         // Notify hooks of LLM end
         let responseContent = response.content ?? ""

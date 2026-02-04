@@ -5,12 +5,22 @@
 
 import Foundation
 
-/// A SwiftUI-style declarative definition of an agent.
+/// A SwiftUI-style declarative definition of an agent loop.
 ///
-/// Conformers describe execution flow in `loop` using a sequential `AgentLoop`.
+/// This is the legacy SwiftUI loop DSL. Conformers describe execution flow in
+/// `loop` using a sequential `AgentLoop`.
+///
+/// Prefer `AgentBlueprint` for SwiftUI-style orchestration/workflows. When you
+/// need a model turn inside a blueprint, embed a runtime agent step (an
+/// `any AgentRuntime`) rather than using `Generate()` / `Relay()`.
 /// Configuration (instructions, tools, guardrails, etc.) lives on the agent type,
 /// while the `loop` describes *how* the agent runs.
-public protocol Agent: Sendable {
+@available(
+    *,
+    deprecated,
+    message: "Deprecated legacy loop DSL. Prefer AgentBlueprint for orchestration/workflows; embed runtime AgentRuntime steps for model turns instead of Generate()/Relay()."
+)
+public protocol AgentLoopDefinition: Sendable {
     associatedtype Loop: AgentLoop
 
     /// Human-friendly agent name used for tracing, handoffs, and observability.
@@ -41,10 +51,10 @@ public protocol Agent: Sendable {
     var handoffs: [AnyHandoffConfiguration] { get }
 
     /// Declarative execution flow for this agent.
-    @AgentLoopBuilder var loop: Loop { get }
+    var loop: Loop { get }
 }
 
-public extension Agent {
+public extension AgentLoopDefinition {
     var name: String { String(describing: Self.self) }
     var instructions: String { "" }
     var tools: [any AnyJSONTool] { [] }

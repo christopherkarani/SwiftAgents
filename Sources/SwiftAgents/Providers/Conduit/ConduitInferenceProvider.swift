@@ -35,7 +35,7 @@ public struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: Inferen
         let toolDefinitions = try ConduitToolSchemaConverter.toolDefinitions(from: tools)
         config = config.tools(toolDefinitions)
 
-        if let toolChoice = options.toolChoice {
+        if !tools.isEmpty, let toolChoice = options.toolChoice {
             config = config.toolChoice(toolChoice.toConduitToolChoice())
         }
 
@@ -72,7 +72,7 @@ public struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: Inferen
             let toolDefinitions = try ConduitToolSchemaConverter.toolDefinitions(from: tools)
             config = config.tools(toolDefinitions)
 
-            if let toolChoice = options.toolChoice {
+            if !tools.isEmpty, let toolChoice = options.toolChoice {
                 config = config.toolChoice(toolChoice.toConduitToolChoice())
             }
 
@@ -140,6 +140,10 @@ public struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: Inferen
 
         if let topP = options.topP {
             updated = updated.topP(Float(topP))
+        }
+
+        if let topK = options.topK {
+            updated = updated.topK(topK)
         }
 
         if let frequencyPenalty = options.frequencyPenalty {

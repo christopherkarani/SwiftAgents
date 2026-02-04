@@ -1,7 +1,7 @@
 // LoopAgent.swift
 // SwiftAgents Framework
 //
-// `AgentRuntime` adapter for executing a declarative `Agent` loop.
+// `AgentRuntime` adapter for executing a declarative legacy loop DSL definition.
 
 import Foundation
 
@@ -13,13 +13,13 @@ protocol _LoopOrchestrator: OrchestratorProtocol {
     ) async throws -> AgentResult
 }
 
-/// An `AgentRuntime` adapter for executing a declarative `Agent`.
+/// An `AgentRuntime` adapter for executing a declarative legacy loop DSL definition.
 ///
 /// This type exists to:
-/// - Lift `Agent` definitions into APIs that expect an `AgentRuntime`
+/// - Lift `AgentLoopDefinition` values into APIs that expect an `AgentRuntime`
 /// - Provide a stable orchestrator identity for handoffs and hooks
 /// - Execute `AgentLoop` steps sequentially
-public actor LoopAgent<Definition: Agent>: AgentRuntime, OrchestratorProtocol, _LoopOrchestrator {
+public actor LoopAgent<Definition: AgentLoopDefinition>: AgentRuntime, OrchestratorProtocol, _LoopOrchestrator {
     // MARK: Public
 
     nonisolated public let definition: Definition
@@ -169,7 +169,7 @@ public actor LoopAgent<Definition: Agent>: AgentRuntime, OrchestratorProtocol, _
 
 // MARK: - LoopAgentStep
 
-public struct LoopAgentStep<A: Agent>: OrchestrationStep {
+public struct LoopAgentStep<A: AgentLoopDefinition>: OrchestrationStep {
     public let agent: A
     public let name: String?
 

@@ -1,13 +1,13 @@
 {
-  "originHash" : "4bf8223b0b86aead734cfc36c6769136b8d6da3f090b102b93e61880b064ca3f",
+  "originHash" : "7a07e6e502fc0903cb09c1931f3a4cdde3de2ce6d9d1a9c979a49ae2c7d0fd54",
   "pins" : [
     {
       "identity" : "conduit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/Conduit",
       "state" : {
-        "revision" : "4ce036c8caa2b2ead98d6b544610e17ddbdb9da7",
-        "version" : "0.3.0"
+        "revision" : "bce7ce9e2f56e28a837a07ddaed9719d158ebab0",
+        "version" : "0.3.1"
       }
     },
     {
@@ -17,15 +17,6 @@
       "state" : {
         "revision" : "2cf6c756e1e5ef6901ebae16576a7e4e4b834622",
         "version" : "6.29.3"
-      }
-    },
-    {
-      "identity" : "similarity-search-kit",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/christopherkarani/similarity-search-kit.git",
-      "state" : {
-        "branch" : "main",
-        "revision" : "15f9cf1f7661d85720536c3dbbecdcc2cf7bfc8d"
       }
     },
     {
@@ -56,12 +47,12 @@
       }
     },
     {
-      "identity" : "tiktokenswift",
+      "identity" : "swift-tiktoken",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/narner/TiktokenSwift.git",
+      "location" : "https://github.com/DePasqualeOrg/swift-tiktoken.git",
       "state" : {
-        "revision" : "661c349ebdc5e90c29f855e8c19f8984d401863b",
-        "version" : "1.0.0"
+        "revision" : "e088d534d80dd1875ca3edfd69a16a6c25ab84c4",
+        "version" : "0.0.1"
       }
     },
     {
@@ -78,8 +69,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/Wax.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "f05055447f8a642e0de22c8d1ef285e7f1b39f17"
+        "revision" : "1a728f2047057e5e1508925a40bb41421f6a9435",
+        "version" : "0.1.3"
       }
     }
   ],

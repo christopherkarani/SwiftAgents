@@ -41,14 +41,14 @@ private struct PrefixAgent: AgentRuntime {
 // MARK: - Blueprints
 
 private struct SampleBlueprint: AgentBlueprint {
-    var body: [OrchestrationStep] {
+    @OrchestrationBuilder var body: some OrchestrationStep {
         PrefixAgent(prefix: "A")
         PrefixAgent(prefix: "B")
     }
 }
 
 private struct BillingBlueprint: AgentBlueprint {
-    var body: [OrchestrationStep] {
+    @OrchestrationBuilder var body: some OrchestrationStep {
         PrefixAgent(prefix: "bill:")
     }
 }
@@ -71,11 +71,12 @@ struct AgentBlueprintTests {
         #expect(result.output == "BAx")
     }
 
-    @Test("Router can route to a blueprint via routeWhen")
+    @Test("Router can route to a blueprint via When")
     func routerRoutesToBlueprint() async throws {
         let workflow = Orchestration {
-            Router(fallback: PrefixAgent(prefix: "fallback:")) {
-                routeWhen(.contains("bill"), to: BillingBlueprint())
+            Router {
+                When(.contains("bill")) { BillingBlueprint() }
+                Otherwise { PrefixAgent(prefix: "fallback:") }
             }
         }
 

@@ -1,96 +1,9 @@
 // Routes.swift
 // SwiftAgents Framework
 //
-// SwiftUI-style deterministic routing for declarative agent loops.
+// SwiftUI-style deterministic routing helpers for orchestration DSLs.
 
 import Foundation
-
-// MARK: - Routes
-
-/// Routes input to the first matching branch.
-///
-/// `Routes` is an `OrchestrationStep` so it can be placed inline in an `AgentLoop`
-/// to make routing visible in execution flow.
-///
-/// Example:
-/// ```swift
-/// Routes {
-///     When(.contains("billing")) { BillingAgent() }
-///     When(.contains("refund")) { RefundsAgent() }
-///     Otherwise { GeneralSupportAgent() }
-/// }
-/// ```
-public struct Routes: OrchestrationStep {
-    public let routes: [RouteBranch]
-    public let fallback: OrchestrationStep?
-
-    public init(@RoutesBuilder _ content: () -> [RouteEntry]) {
-        var builtRoutes: [RouteBranch] = []
-        var builtFallback: OrchestrationStep?
-
-        for entry in content() {
-            switch entry {
-            case .when(let branch):
-                builtRoutes.append(branch)
-            case .otherwise(let step):
-                builtFallback = step
-            }
-        }
-
-        routes = builtRoutes
-        fallback = builtFallback
-    }
-
-    public func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
-        let startTime = ContinuousClock.now
-
-        var selected: RouteBranch?
-        for route in routes where await route.condition.matches(input: input, context: context.agentContext) {
-            selected = route
-            break
-        }
-
-        let result: AgentResult
-        let matchedName: String
-
-        if let route = selected {
-            result = try await route.step.execute(input, context: context)
-            matchedName = route.name ?? "route"
-        } else if let fallback {
-            result = try await fallback.execute(input, context: context)
-            matchedName = "fallback"
-        } else {
-            throw OrchestrationError.routingFailed(
-                reason: "No route matched input and no fallback step configured"
-            )
-        }
-
-        let duration = ContinuousClock.now - startTime
-        var metadata = result.metadata
-        metadata["routes.matched_route"] = .string(matchedName)
-        metadata["routes.total_routes"] = .int(routes.count)
-        metadata["routes.duration"] = .double(
-            Double(duration.components.seconds) +
-                Double(duration.components.attoseconds) / 1e18
-        )
-
-        return AgentResult(
-            output: result.output,
-            toolCalls: result.toolCalls,
-            toolResults: result.toolResults,
-            iterationCount: result.iterationCount,
-            duration: result.duration,
-            tokenUsage: result.tokenUsage,
-            metadata: metadata
-        )
-    }
-}
-
-extension Routes: _AgentLoopNestedSteps {
-    var _nestedSteps: [OrchestrationStep] {
-        routes.map(\.step) + (fallback.map { [$0] } ?? [])
-    }
-}
 
 // MARK: - RouteBranch
 
@@ -116,7 +29,7 @@ public enum RouteEntry: Sendable {
 // MARK: - Builders
 
 @resultBuilder
-public struct RoutesBuilder {
+public struct RouterBuilder {
     public static func buildBlock(_ components: [RouteEntry]...) -> [RouteEntry] {
         components.flatMap(\.self)
     }
@@ -142,13 +55,55 @@ public struct RoutesBuilder {
 public func When(
     _ condition: RouteCondition,
     name: String? = nil,
-    @AgentLoopBuilder _ content: () -> AgentLoopSequence
+    @OrchestrationBuilder _ content: () -> OrchestrationStep
 ) -> RouteEntry {
-    .when(RouteBranch(condition: condition, step: AgentLoopStep(content()), name: name))
+    .when(RouteBranch(condition: condition, step: content(), name: name))
+}
+
+/// Creates a `When` route entry using a concrete step.
+public func When(
+    _ condition: RouteCondition,
+    name: String? = nil,
+    use step: OrchestrationStep
+) -> RouteEntry {
+    .when(RouteBranch(condition: condition, step: step, name: name))
+}
+
+/// Creates a `When` route entry using an agent.
+public func When(
+    _ condition: RouteCondition,
+    name: String? = nil,
+    use agent: any AgentRuntime
+) -> RouteEntry {
+    .when(RouteBranch(condition: condition, step: AgentStep(agent), name: name))
+}
+
+/// Creates a `When` route entry using a blueprint.
+public func When<B: AgentBlueprint>(
+    _ condition: RouteCondition,
+    name: String? = nil,
+    use blueprint: B
+) -> RouteEntry {
+    .when(RouteBranch(condition: condition, step: AgentStep(BlueprintAgent(blueprint)), name: name))
 }
 
 public func Otherwise(
-    @AgentLoopBuilder _ content: () -> AgentLoopSequence
+    @OrchestrationBuilder _ content: () -> OrchestrationStep
 ) -> RouteEntry {
-    .otherwise(AgentLoopStep(content()))
+    .otherwise(content())
+}
+
+/// Creates an `Otherwise` route entry using a concrete step.
+public func Otherwise(use step: OrchestrationStep) -> RouteEntry {
+    .otherwise(step)
+}
+
+/// Creates an `Otherwise` route entry using an agent.
+public func Otherwise(use agent: any AgentRuntime) -> RouteEntry {
+    .otherwise(AgentStep(agent))
+}
+
+/// Creates an `Otherwise` route entry using a blueprint.
+public func Otherwise<B: AgentBlueprint>(use blueprint: B) -> RouteEntry {
+    .otherwise(AgentStep(BlueprintAgent(blueprint)))
 }

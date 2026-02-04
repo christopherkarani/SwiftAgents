@@ -114,7 +114,7 @@ public extension AgentBlueprint {
     }
 }
 
-public extension Agent {
+public extension AgentLoopDefinition {
     /// Lifts this agent into an executable runtime and applies an environment value.
     func environment<V: Sendable>(
         _ keyPath: WritableKeyPath<AgentEnvironment, V>,

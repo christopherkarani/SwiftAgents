@@ -272,11 +272,16 @@ public func handoff<T: AgentRuntime>(
     )
 }
 
-/// Creates a handoff configuration targeting a declarative `Agent`.
+/// Creates a handoff configuration targeting a legacy loop DSL definition.
 ///
 /// This overload lifts the agent into a `LoopAgent` runtime adapter so it can be
 /// used anywhere `HandoffConfiguration` expects an `AgentRuntime`.
-public func handoff<A: Agent>(
+@available(
+    *,
+    deprecated,
+    message: "Deprecated legacy loop DSL. Prefer handoff(to: AgentRuntime) or handoff(to: AgentBlueprint) for orchestration; embed runtime AgentRuntime steps for model turns."
+)
+public func handoff<A: AgentLoopDefinition>(
     to target: A,
     toolName: String? = nil,
     toolDescription: String? = nil,

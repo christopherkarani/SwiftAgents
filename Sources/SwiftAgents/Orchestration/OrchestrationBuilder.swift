@@ -157,6 +157,75 @@ public extension OrchestrationStep {
     }
 }
 
+// MARK: - OrchestrationGroup
+
+/// A step that executes a group of orchestration steps sequentially.
+///
+/// `OrchestrationGroup` is produced by `OrchestrationBuilder` when multiple
+/// statements are present, preserving SwiftUI-style composition while
+/// keeping a single root step.
+public struct OrchestrationGroup: OrchestrationStep, Sendable {
+    public let steps: [OrchestrationStep]
+
+    public init(steps: [OrchestrationStep]) {
+        self.steps = steps
+    }
+
+    public init(@OrchestrationBuilder _ content: () -> OrchestrationStep) {
+        steps = OrchestrationBuilder.steps(from: content())
+    }
+
+    public func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
+        guard !steps.isEmpty else {
+            return AgentResult(output: input)
+        }
+
+        let startTime = ContinuousClock.now
+
+        var currentInput = input
+        var allToolCalls: [ToolCall] = []
+        var allToolResults: [ToolResult] = []
+        var totalIterations = 0
+        var allMetadata: [String: SendableValue] = [:]
+
+        for (index, step) in steps.enumerated() {
+            let result = try await step.execute(currentInput, context: context)
+
+            allToolCalls.append(contentsOf: result.toolCalls)
+            allToolResults.append(contentsOf: result.toolResults)
+            totalIterations += result.iterationCount
+
+            for (key, value) in result.metadata {
+                allMetadata[key] = value
+                allMetadata["group.step_\(index).\(key)"] = value
+            }
+
+            currentInput = result.output
+        }
+
+        let duration = ContinuousClock.now - startTime
+        allMetadata["group.total_steps"] = .int(steps.count)
+        allMetadata["group.total_duration"] = .double(
+            Double(duration.components.seconds) +
+                Double(duration.components.attoseconds) / 1e18
+        )
+
+        return AgentResult(
+            output: currentInput,
+            toolCalls: allToolCalls,
+            toolResults: allToolResults,
+            iterationCount: totalIterations,
+            duration: duration,
+            tokenUsage: nil,
+            metadata: allMetadata
+        )
+    }
+}
+
+extension OrchestrationGroup: _AgentLoopNestedSteps {
+    var _nestedSteps: [OrchestrationStep] { steps }
+}
+
 // MARK: - OrchestrationBuilder
 
 /// A result builder for constructing orchestrated workflows declaratively.
@@ -173,36 +242,46 @@ public extension OrchestrationStep {
 ///     }
 ///
 ///     Parallel(merge: .concatenate) {
-///         ("analysis", analysisAgent)
-///         ("summary", summaryAgent)
+///         analysisAgent.named("analysis")
+///         summaryAgent.named("summary")
+///     }
+///
+///     Router {
+///         When(.contains("weather")) { weatherAgent }
+///         Otherwise { defaultAgent }
 ///     }
 /// }
 /// ```
 @resultBuilder
 public struct OrchestrationBuilder {
-    /// Builds an array of orchestration steps from multiple components.
-    public static func buildBlock(_ components: OrchestrationStep...) -> [OrchestrationStep] {
-        components
+    /// Builds a group of orchestration steps from multiple components.
+    public static func buildBlock(_ components: OrchestrationStep...) -> OrchestrationGroup {
+        OrchestrationGroup(steps: components.flatMap(steps(from:)))
     }
 
-    /// Builds an array from an optional step.
-    public static func buildOptional(_ component: [OrchestrationStep]?) -> [OrchestrationStep] {
-        component ?? []
+    /// Builds an empty block.
+    public static func buildBlock() -> OrchestrationGroup {
+        OrchestrationGroup(steps: [])
     }
 
-    /// Builds an array from the first branch of a conditional.
-    public static func buildEither(first component: [OrchestrationStep]) -> [OrchestrationStep] {
-        component
+    /// Builds a group from an optional step.
+    public static func buildOptional(_ component: OrchestrationStep?) -> OrchestrationGroup {
+        OrchestrationGroup(steps: component.map { steps(from: $0) } ?? [])
     }
 
-    /// Builds an array from the second branch of a conditional.
-    public static func buildEither(second component: [OrchestrationStep]) -> [OrchestrationStep] {
-        component
+    /// Builds a group from the first branch of a conditional.
+    public static func buildEither(first component: OrchestrationStep) -> OrchestrationGroup {
+        OrchestrationGroup(steps: steps(from: component))
     }
 
-    /// Builds an array from nested arrays (for loops).
-    public static func buildArray(_ components: [[OrchestrationStep]]) -> [OrchestrationStep] {
-        components.flatMap(\.self)
+    /// Builds a group from the second branch of a conditional.
+    public static func buildEither(second component: OrchestrationStep) -> OrchestrationGroup {
+        OrchestrationGroup(steps: steps(from: component))
+    }
+
+    /// Builds a group from nested arrays (for loops).
+    public static func buildArray(_ components: [OrchestrationStep]) -> OrchestrationGroup {
+        OrchestrationGroup(steps: components.flatMap(steps(from:)))
     }
 
     /// Converts an agent into an orchestration step.
@@ -215,14 +294,31 @@ public struct OrchestrationBuilder {
         AgentStep(BlueprintAgent(blueprint))
     }
 
-    /// Converts a declarative `Agent` into an orchestration step.
-    public static func buildExpression<A: Agent>(_ agent: A) -> OrchestrationStep {
+    /// Converts a legacy loop DSL definition into an orchestration step.
+    @available(
+        *,
+        deprecated,
+        message: "Deprecated legacy loop DSL. Prefer AgentBlueprint for orchestration; embed runtime AgentRuntime steps for model turns instead of Generate()/Relay()."
+    )
+    public static func buildExpression<A: AgentLoopDefinition>(_ agent: A) -> OrchestrationStep {
         LoopAgentStep(agent)
     }
 
     /// Passes through an existing orchestration step.
     public static func buildExpression(_ step: OrchestrationStep) -> OrchestrationStep {
         step
+    }
+
+    /// Converts an array of steps into a group.
+    public static func buildExpression(_ steps: [OrchestrationStep]) -> OrchestrationStep {
+        OrchestrationGroup(steps: steps)
+    }
+
+    fileprivate static func steps(from step: OrchestrationStep) -> [OrchestrationStep] {
+        if let group = step as? OrchestrationGroup {
+            return group.steps
+        }
+        return [step]
     }
 }
 
@@ -334,9 +430,9 @@ public struct Sequential: OrchestrationStep {
     ///   - content: A builder closure that produces the steps to execute.
     public init(
         transformer: OutputTransformer = .passthrough,
-        @OrchestrationBuilder _ content: () -> [OrchestrationStep]
+        @OrchestrationBuilder _ content: () -> OrchestrationStep
     ) {
-        steps = content()
+        steps = OrchestrationBuilder.steps(from: content())
         self.transformer = transformer
     }
 
@@ -402,6 +498,31 @@ public struct Sequential: OrchestrationStep {
 
 // MARK: - Parallel
 
+/// An item representing an agent in a parallel execution group.
+public struct ParallelItem: Sendable {
+    public let name: String?
+    public let agent: any AgentRuntime
+
+    public init(name: String? = nil, agent: any AgentRuntime) {
+        self.name = name
+        self.agent = agent
+    }
+}
+
+public extension AgentRuntime {
+    /// Assigns a name to an agent for use in `Parallel`.
+    func named(_ name: String) -> ParallelItem {
+        ParallelItem(name: name, agent: self)
+    }
+}
+
+public extension AgentBlueprint {
+    /// Assigns a name to a blueprint when used in `Parallel`.
+    func named(_ name: String) -> ParallelItem {
+        ParallelItem(name: name, agent: BlueprintAgent(self))
+    }
+}
+
 /// A step that executes multiple agents concurrently and merges their results.
 ///
 /// `Parallel` runs agents simultaneously using structured concurrency,
@@ -410,18 +531,18 @@ public struct Sequential: OrchestrationStep {
 /// Example:
 /// ```swift
 /// Parallel(merge: .concatenate) {
-///     ("analysis", analysisAgent)
-///     ("summary", summaryAgent)
-///     ("critique", critiqueAgent)
+///     analysisAgent.named("analysis")
+///     summaryAgent.named("summary")
+///     critiqueAgent.named("critique")
 /// }
 /// ```
 ///
 /// With concurrency limit:
 /// ```swift
 /// Parallel(merge: .structured, maxConcurrency: 2) {
-///     ("task1", agent1)
-///     ("task2", agent2)
-///     ("task3", agent3)
+///     agent1.named("task1")
+///     agent2.named("task2")
+///     agent3.named("task3")
 /// }
 /// ```
 public struct Parallel: OrchestrationStep {
@@ -443,8 +564,8 @@ public struct Parallel: OrchestrationStep {
         case custom(@Sendable ([(String, AgentResult)]) -> String)
     }
 
-    /// The named agents to execute in parallel.
-    public let agents: [(String, any AgentRuntime)]
+    /// The items to execute in parallel.
+    public let items: [ParallelItem]
 
     /// The strategy for merging results.
     public let mergeStrategy: MergeStrategy
@@ -460,34 +581,38 @@ public struct Parallel: OrchestrationStep {
     ///   - merge: How to merge parallel results. Default: `.concatenate`
     ///   - maxConcurrency: Maximum number of concurrent executions. Default: nil (unlimited)
     ///   - errorHandling: Strategy for handling errors. Default: `.continueOnPartialFailure`
-    ///   - content: A builder closure that produces named agents to execute.
+    ///   - content: A builder closure that produces parallel items to execute.
     public init(
         merge: MergeStrategy = .concatenate,
         maxConcurrency: Int? = nil,
         errorHandling: ParallelErrorHandling = .continueOnPartialFailure,
-        @ParallelBuilder _ content: () -> [(String, any AgentRuntime)]
+        @ParallelBuilder _ content: () -> [ParallelItem]
     ) {
-        agents = content()
+        items = content()
         mergeStrategy = merge
         self.maxConcurrency = maxConcurrency
         self.errorHandling = errorHandling
     }
 
     public func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
-        guard !agents.isEmpty else {
+        guard !items.isEmpty else {
             return AgentResult(output: input)
         }
 
         let startTime = ContinuousClock.now
 
-        var results: [(String, AgentResult)] = []
+        var results: [(Int, String, AgentResult)] = []
         var errors: [String: Error] = [:]
 
-        let concurrencyLimit = maxConcurrency.map { min($0, agents.count) } ?? agents.count
-        var pendingAgents = agents
+        let namedItems = items.enumerated().map { index, item in
+            let resolvedName = item.name ?? context.agentName(for: item.agent)
+            return (index, resolvedName, item.agent)
+        }
+        let concurrencyLimit = maxConcurrency.map { min($0, namedItems.count) } ?? namedItems.count
+        var pendingAgents = namedItems
 
-        await withTaskGroup(of: (String, Result<AgentResult, Error>).self) { group in
-            func addTask(name: String, agent: any AgentRuntime) {
+        await withTaskGroup(of: (Int, String, Result<AgentResult, Error>).self) { group in
+            func addTask(index: Int, name: String, agent: any AgentRuntime) {
                 group.addTask {
                     do {
                         await context.agentContext.recordExecution(agentName: name)
@@ -511,9 +636,9 @@ public struct Parallel: OrchestrationStep {
                             session: context.session,
                             hooks: context.hooks
                         )
-                        return (name, .success(result))
+                        return (index, name, .success(result))
                     } catch {
-                        return (name, .failure(error))
+                        return (index, name, .failure(error))
                     }
                 }
             }
@@ -521,13 +646,13 @@ public struct Parallel: OrchestrationStep {
             let initialCount = min(concurrencyLimit, pendingAgents.count)
             for _ in 0..<initialCount {
                 let next = pendingAgents.removeFirst()
-                addTask(name: next.0, agent: next.1)
+                addTask(index: next.0, name: next.1, agent: next.2)
             }
 
-            while let (name, result) = await group.next() {
+            while let (index, name, result) = await group.next() {
                 switch result {
                 case let .success(agentResult):
-                    results.append((name, agentResult))
+                    results.append((index, name, agentResult))
                 case let .failure(error):
                     errors[name] = error
                     if case .failFast = errorHandling {
@@ -541,7 +666,7 @@ public struct Parallel: OrchestrationStep {
 
                 if !pendingAgents.isEmpty {
                     let next = pendingAgents.removeFirst()
-                    addTask(name: next.0, agent: next.1)
+                    addTask(index: next.0, name: next.1, agent: next.2)
                 }
             }
         }
@@ -564,24 +689,27 @@ public struct Parallel: OrchestrationStep {
         }
 
         let duration = ContinuousClock.now - startTime
+        let orderedResults = results.sorted { $0.0 < $1.0 }
+        let orderedPairs = orderedResults.map { ($0.1, $0.2) }
+        let completionPairs = results.map { ($0.1, $0.2) }
 
         // Merge results according to strategy
         let mergedOutput: String
         switch mergeStrategy {
         case .concatenate:
-            mergedOutput = results.map { "\($0.0): \($0.1.output)" }.joined(separator: "\n\n")
+            mergedOutput = orderedPairs.map { $0.1.output }.joined(separator: "\n\n")
         case .first:
-            mergedOutput = results.first?.1.output ?? ""
+            mergedOutput = completionPairs.first?.1.output ?? ""
         case .longest:
-            mergedOutput = results.max(by: { $0.1.output.count < $1.1.output.count })?.1.output ?? ""
+            mergedOutput = orderedPairs.max(by: { $0.1.output.count < $1.1.output.count })?.1.output ?? ""
         case .structured:
             var output = ""
-            for (name, result) in results {
+            for (name, result) in orderedPairs {
                 output += "## \(name)\n\n\(result.output)\n\n"
             }
             mergedOutput = output
         case let .custom(merger):
-            mergedOutput = merger(results)
+            mergedOutput = merger(orderedPairs)
         }
 
         // Accumulate all tool calls and results
@@ -590,7 +718,7 @@ public struct Parallel: OrchestrationStep {
         var totalIterations = 0
         var allMetadata: [String: SendableValue] = [:]
 
-        for (name, result) in results {
+        for (name, result) in orderedPairs {
             allToolCalls.append(contentsOf: result.toolCalls)
             allToolResults.append(contentsOf: result.toolResults)
             totalIterations += result.iterationCount
@@ -601,7 +729,7 @@ public struct Parallel: OrchestrationStep {
             }
         }
 
-        allMetadata["parallel.agent_count"] = .int(agents.count)
+        allMetadata["parallel.agent_count"] = .int(items.count)
         allMetadata["parallel.success_count"] = .int(results.count)
         allMetadata["parallel.error_count"] = .int(errors.count)
         allMetadata["parallel.total_duration"] = .double(
@@ -630,117 +758,120 @@ public struct Parallel: OrchestrationStep {
 /// A result builder for constructing parallel agent arrays.
 @resultBuilder
 public struct ParallelBuilder {
-    /// Builds an array of named agents from multiple components.
-    public static func buildBlock(_ components: (String, any AgentRuntime)...) -> [(String, any AgentRuntime)] {
-        components
+    /// Builds an array of parallel items from multiple components.
+    public static func buildBlock(_ components: [ParallelItem]...) -> [ParallelItem] {
+        components.flatMap(\.self)
     }
 
-    /// Passes through a tuple of name and agent.
-    public static func buildExpression(_ tuple: (String, any AgentRuntime)) -> (String, any AgentRuntime) {
-        tuple
+    /// Builds an array from an optional item.
+    public static func buildOptional(_ component: [ParallelItem]?) -> [ParallelItem] {
+        component ?? []
+    }
+
+    /// Builds an array from the first branch of a conditional.
+    public static func buildEither(first component: [ParallelItem]) -> [ParallelItem] {
+        component
+    }
+
+    /// Builds an array from the second branch of a conditional.
+    public static func buildEither(second component: [ParallelItem]) -> [ParallelItem] {
+        component
+    }
+
+    /// Builds an array from nested arrays.
+    public static func buildArray(_ components: [[ParallelItem]]) -> [ParallelItem] {
+        components.flatMap(\.self)
+    }
+
+    /// Passes through a parallel item.
+    public static func buildExpression(_ item: ParallelItem) -> [ParallelItem] {
+        [item]
+    }
+
+    /// Wraps an agent as an unnamed parallel item.
+    public static func buildExpression(_ agent: any AgentRuntime) -> [ParallelItem] {
+        [ParallelItem(agent: agent)]
+    }
+
+    /// Wraps a blueprint as an unnamed parallel item.
+    public static func buildExpression<B: AgentBlueprint>(_ blueprint: B) -> [ParallelItem] {
+        [ParallelItem(agent: BlueprintAgent(blueprint))]
     }
 }
 
 // MARK: - Router
 
-/// A step that routes input to different agents based on conditions.
+/// A step that routes input to different branches based on conditions.
 ///
 /// `Router` evaluates conditions in order and delegates to the first
-/// matching agent. If no condition matches and a fallback is provided,
-/// the fallback agent is executed.
+/// matching branch. If no condition matches and one or more fallbacks are
+/// provided, the fallback branches are executed in declaration order.
 ///
 /// Example:
 /// ```swift
-/// Router(fallback: defaultAgent) {
-///     Route(.contains("weather"), to: weatherAgent)
-///     Route(.contains("code"), to: codeAgent)
-///     Route(.startsWith("calculate"), to: calculatorAgent)
+/// Router {
+///     When(.contains("weather")) { weatherAgent }
+///     When(.contains("code")) { codeAgent }
+///     Otherwise { defaultAgent }
 /// }
 /// ```
 public struct Router: OrchestrationStep {
     /// The routes to evaluate in order.
-    public let routes: [RouteDefinition]
+    public let routes: [RouteBranch]
 
-    /// Optional fallback agent when no route matches.
-    public let fallbackAgent: (any AgentRuntime)?
+    /// Optional fallback step when no route matches.
+    public let fallback: OrchestrationStep?
 
     /// Creates a new router.
-    /// - Parameters:
-    ///   - fallback: Optional agent to use when no route matches. Default: nil
-    ///   - content: A builder closure that produces route definitions.
-    public init(
-        fallback: (any AgentRuntime)? = nil,
-        @RouterBuilder _ content: () -> [RouteDefinition]
-    ) {
-        routes = content()
-        fallbackAgent = fallback
+    /// - Parameter content: A builder closure that produces route entries.
+    public init(@RouterBuilder _ content: () -> [RouteEntry]) {
+        var builtRoutes: [RouteBranch] = []
+        var fallbackSteps: [OrchestrationStep] = []
+
+        for entry in content() {
+            switch entry {
+            case .when(let branch):
+                builtRoutes.append(branch)
+            case .otherwise(let step):
+                fallbackSteps.append(step)
+            }
+        }
+
+        routes = builtRoutes
+        switch fallbackSteps.count {
+        case 0:
+            fallback = nil
+        case 1:
+            fallback = fallbackSteps[0]
+        default:
+            fallback = OrchestrationGroup(steps: fallbackSteps)
+        }
     }
 
     public func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
         let startTime = ContinuousClock.now
 
-        // Find the first matching route
-        var selectedRoute: RouteDefinition?
-        for route in routes where await route.condition.matches(input: input, context: context.agentContext) {
-            selectedRoute = route
+        var selected: RouteBranch?
+        var selectedIndex: Int?
+        for (index, route) in routes.enumerated()
+            where await route.condition.matches(input: input, context: context.agentContext) {
+            selected = route
+            selectedIndex = index
             break
         }
 
-        // Execute matched agent or fallback
         let result: AgentResult
         let routeName: String
 
-        if let route = selectedRoute {
-            let agentName = context.agentName(for: route.agent)
-            await context.agentContext.recordExecution(agentName: agentName)
-
-            let effectiveInput = try await context.applyHandoffConfiguration(
-                for: route.agent,
-                input: input,
-                targetName: route.name ?? agentName
-            )
-
-            if let orchestrator = context.orchestrator {
-                await context.hooks?.onHandoff(
-                    context: context.agentContext,
-                    fromAgent: orchestrator,
-                    toAgent: route.agent
-                )
-            }
-
-            result = try await route.agent.run(
-                effectiveInput,
-                session: context.session,
-                hooks: context.hooks
-            )
-            routeName = route.name ?? agentName
-        } else if let fallback = fallbackAgent {
-            let fallbackName = context.agentName(for: fallback)
-            await context.agentContext.recordExecution(agentName: fallbackName)
-
-            let effectiveInput = try await context.applyHandoffConfiguration(
-                for: fallback,
-                input: input,
-                targetName: fallbackName
-            )
-
-            if let orchestrator = context.orchestrator {
-                await context.hooks?.onHandoff(
-                    context: context.agentContext,
-                    fromAgent: orchestrator,
-                    toAgent: fallback
-                )
-            }
-
-            result = try await fallback.run(
-                effectiveInput,
-                session: context.session,
-                hooks: context.hooks
-            )
-            routeName = "fallback"
+        if let route = selected, let index = selectedIndex {
+            result = try await route.step.execute(input, context: context)
+            routeName = resolvedRouteName(for: route, index: index, context: context)
+        } else if let fallback {
+            result = try await fallback.execute(input, context: context)
+            routeName = resolvedFallbackName(for: fallback, context: context)
         } else {
             throw OrchestrationError.routingFailed(
-                reason: "No route matched input and no fallback agent configured"
+                reason: "No route matched input and no fallback step configured"
             )
         }
 
@@ -764,121 +895,51 @@ public struct Router: OrchestrationStep {
             metadata: metadata
         )
     }
-}
 
-// MARK: - RouteDefinition
+    private func resolvedRouteName(
+        for route: RouteBranch,
+        index: Int,
+        context: OrchestrationStepContext
+    ) -> String {
+        if let name = route.name {
+            return name
+        }
+        if let agentStep = route.step as? AgentStep {
+            let agentName = agentStep.name ?? context.agentName(for: agentStep.agent)
+            return "route.\(index).\(agentName)"
+        }
+        return "route.\(index)"
+    }
 
-/// A route definition that associates a condition with an agent.
-///
-/// Use the `Route(_:to:)` function to create route definitions within
-/// a `Router` builder block.
-public struct RouteDefinition: Sendable {
-    /// The condition that determines if this route matches.
-    public let condition: RouteCondition
-
-    /// The agent to execute if this route matches.
-    public let agent: any AgentRuntime
-
-    /// Optional name for debugging and logging.
-    public let name: String?
-
-    /// Creates a new route definition.
-    /// - Parameters:
-    ///   - condition: The condition for this route.
-    ///   - agent: The agent to execute if matched.
-    ///   - name: Optional name for the route. Default: nil
-    public init(condition: RouteCondition, agent: any AgentRuntime, name: String? = nil) {
-        self.condition = condition
-        self.agent = agent
-        self.name = name
+    private func resolvedFallbackName(
+        for step: OrchestrationStep,
+        context: OrchestrationStepContext
+    ) -> String {
+        if let agentStep = step as? AgentStep {
+            let agentName = agentStep.name ?? context.agentName(for: agentStep.agent)
+            return "fallback.\(agentName)"
+        }
+        return "fallback"
     }
 }
 
-/// Creates a route definition for use in a `Router` builder.
-///
-/// - Parameters:
-///   - condition: The condition that must match for this route.
-///   - agent: The agent to execute if the condition matches.
-/// - Returns: A route definition.
-///
-/// Example:
-/// ```swift
-/// orchestrationRoute(.contains("weather"), to: weatherAgent)
-/// ```
-public func orchestrationRoute(_ condition: RouteCondition, to agent: @escaping @autoclosure () -> any AgentRuntime) -> RouteDefinition {
-    RouteDefinition(condition: condition, agent: agent())
-}
-
-/// Creates a route definition for use in a `Router` builder using an `AgentBlueprint`.
-public func orchestrationRoute<B: AgentBlueprint>(
-    _ condition: RouteCondition,
-    to blueprint: @escaping @autoclosure () -> B
-) -> RouteDefinition {
-    RouteDefinition(condition: condition, agent: BlueprintAgent(blueprint()))
-}
-
-/// Convenience alias for creating a route definition.
-/// - Note: Use this within an OrchestrationBuilder Router context.
-public func routeWhen(_ condition: RouteCondition, to agent: @escaping @autoclosure () -> any AgentRuntime) -> RouteDefinition {
-    RouteDefinition(condition: condition, agent: agent())
-}
-
-/// Convenience alias for creating a route definition that routes to an `AgentBlueprint`.
-/// - Note: Use this within an OrchestrationBuilder Router context.
-public func routeWhen<B: AgentBlueprint>(
-    _ condition: RouteCondition,
-    to blueprint: @escaping @autoclosure () -> B
-) -> RouteDefinition {
-    RouteDefinition(condition: condition, agent: BlueprintAgent(blueprint()))
-}
-
-// MARK: - RouterBuilder
-
-/// A result builder for constructing route arrays.
-@resultBuilder
-public struct RouterBuilder {
-    /// Builds an array of routes from multiple components.
-    public static func buildBlock(_ components: RouteDefinition...) -> [RouteDefinition] {
-        components
-    }
-
-    /// Builds an array from an optional route.
-    public static func buildOptional(_ component: RouteDefinition?) -> [RouteDefinition] {
-        component.map { [$0] } ?? []
-    }
-
-    /// Builds an array from the first branch of a conditional.
-    public static func buildEither(first component: RouteDefinition) -> [RouteDefinition] {
-        [component]
-    }
-
-    /// Builds an array from the second branch of a conditional.
-    public static func buildEither(second component: RouteDefinition) -> [RouteDefinition] {
-        [component]
-    }
-
-    /// Builds an array from nested arrays.
-    public static func buildArray(_ components: [[RouteDefinition]]) -> [RouteDefinition] {
-        components.flatMap(\.self)
-    }
-
-    /// Passes through a route definition.
-    public static func buildExpression(_ route: RouteDefinition) -> RouteDefinition {
-        route
+extension Router: _AgentLoopNestedSteps {
+    var _nestedSteps: [OrchestrationStep] {
+        routes.map(\.step) + (fallback.map { [$0] } ?? [])
     }
 }
 
 // MARK: - Transform
 
-/// A step that applies a custom transformation to the input or result.
+/// A step that transforms the current input into a new string.
 ///
-/// `Transform` allows you to inject custom processing logic into an
-/// orchestration workflow.
+/// `Transform` lets you inject custom processing logic into an orchestration
+/// workflow by mapping a string input to a string output.
 ///
 /// Example:
 /// ```swift
-/// Transform { result in
-///     "Processed: \(result.output.uppercased())"
+/// Transform { input in
+///     "Processed: \(input.uppercased())"
 /// }
 /// ```
 public struct Transform: OrchestrationStep {
@@ -886,7 +947,7 @@ public struct Transform: OrchestrationStep {
     public let transformer: @Sendable (String) async throws -> String
 
     /// Creates a new transform step.
-    /// - Parameter transformer: A closure that transforms the input string.
+    /// - Parameter transformer: A closure that maps input to the next input string.
     public init(_ transformer: @escaping @Sendable (String) async throws -> String) {
         self.transformer = transformer
     }
@@ -929,21 +990,22 @@ public struct Transform: OrchestrationStep {
 ///     }
 ///
 ///     Parallel(merge: .concatenate) {
-///         ("analysis", analysisAgent)
-///         ("summary", summaryAgent)
+///         analysisAgent.named("analysis")
+///         summaryAgent.named("summary")
 ///     }
 ///
-///     Router(fallback: defaultAgent) {
-///         Route(.contains("weather"), to: weatherAgent)
-///         Route(.contains("code"), to: codeAgent)
+///     Router {
+///         When(.contains("weather")) { weatherAgent }
+///         When(.contains("code")) { codeAgent }
+///         Otherwise { defaultAgent }
 ///     }
 /// }
 ///
 /// let result = try await workflow.run("Process this data")
 /// ```
 public struct Orchestration: Sendable, OrchestratorProtocol {
-    /// The steps in this orchestration.
-    public let steps: [OrchestrationStep]
+    /// The root step in this orchestration.
+    public let root: OrchestrationStep
 
     /// Configuration for this orchestration agent.
     public let configuration: AgentConfiguration
@@ -956,7 +1018,7 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
     public var tools: [any AnyJSONTool] { [] }
 
     public var instructions: String {
-        "Orchestration workflow with \(steps.count) steps"
+        "Orchestration workflow with \(rootStepCount) steps"
     }
 
     public var memory: (any Memory)? { nil }
@@ -973,24 +1035,20 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
     public init(
         configuration: AgentConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = [],
-        @OrchestrationBuilder _ content: () -> [OrchestrationStep]
+        @OrchestrationBuilder _ content: () -> OrchestrationStep
     ) {
-        steps = content()
+        root = content()
         self.configuration = configuration
         self.handoffs = handoffs
     }
 
-    /// Creates a new orchestration from an existing step array.
-    ///
-    /// This is primarily useful for higher-level DSLs (like `AgentBlueprint`)
-    /// that already have a `[OrchestrationStep]` and want to avoid re-running
-    /// a result builder closure just to wrap those steps.
+    /// Creates a new orchestration from an existing root step.
     public init(
-        steps: [OrchestrationStep],
+        root: OrchestrationStep,
         configuration: AgentConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
     ) {
-        self.steps = steps
+        self.root = root
         self.configuration = configuration
         self.handoffs = handoffs
     }
@@ -1002,13 +1060,15 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
         session: (any Session)? = nil,
         hooks: (any RunHooks)? = nil
     ) async throws -> AgentResult {
-        try await executeSteps(
+        let result = try await executeSteps(
+            steps: rootSteps,
             input: input,
             session: session,
             hooks: hooks,
             onIterationStart: nil,
             onIterationEnd: nil
         )
+        return applyGroupMetadataIfNeeded(to: result)
     }
 
     public func stream(
@@ -1020,6 +1080,7 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
             continuation.yield(.started(input: input))
             do {
                 let result = try await executeSteps(
+                    steps: rootSteps,
                     input: input,
                     session: session,
                     hooks: hooks,
@@ -1030,7 +1091,8 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
                         continuation.yield(.iterationCompleted(number: iteration))
                     }
                 )
-                continuation.yield(.completed(result: result))
+                let finalized = applyGroupMetadataIfNeeded(to: result)
+                continuation.yield(.completed(result: finalized))
                 continuation.finish()
             } catch let error as AgentError {
                 continuation.yield(.failed(error: error))
@@ -1044,7 +1106,7 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
     }
 
     public func cancel() async {
-        for agent in collectAgents(from: steps) {
+        for agent in collectAgents(from: root) {
             await agent.cancel()
         }
     }
@@ -1052,6 +1114,7 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
     // MARK: - Private Helpers
 
     private func executeSteps(
+        steps: [OrchestrationStep],
         input: String,
         session: (any Session)?,
         hooks: (any RunHooks)?,
@@ -1124,45 +1187,57 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
         )
     }
 
-    private func collectAgents(from steps: [OrchestrationStep]) -> [any AgentRuntime] {
-        steps.flatMap { step in
-            if let agentStep = step as? AgentStep {
-                return [agentStep.agent]
-            }
-            if let sequential = step as? Sequential {
-                return collectAgents(from: sequential.steps)
-            }
-            if let parallel = step as? Parallel {
-                return parallel.agents.map(\.1)
-            }
-            if let router = step as? Router {
-                let routeAgents = router.routes.map(\.agent)
-                if let fallback = router.fallbackAgent {
-                    return routeAgents + [fallback]
-                }
-                return routeAgents
-            }
-            return []
+    private func applyGroupMetadataIfNeeded(to result: AgentResult) -> AgentResult {
+        guard root is OrchestrationGroup else {
+            return result
         }
+
+        var metadata = result.metadata
+        let prefix = "orchestration."
+        for (key, value) in result.metadata where key.hasPrefix(prefix) {
+            let suffix = key.dropFirst(prefix.count)
+            metadata["group.\(suffix)"] = value
+        }
+
+        return AgentResult(
+            output: result.output,
+            toolCalls: result.toolCalls,
+            toolResults: result.toolResults,
+            iterationCount: result.iterationCount,
+            duration: result.duration,
+            tokenUsage: result.tokenUsage,
+            metadata: metadata
+        )
     }
-}
 
-// MARK: - Agent Extension
+    private func collectAgents(from step: OrchestrationStep) -> [any AgentRuntime] {
+        if let group = step as? OrchestrationGroup {
+            return group.steps.flatMap(collectAgents(from:))
+        }
+        if let agentStep = step as? AgentStep {
+            return [agentStep.agent]
+        }
+        if let sequential = step as? Sequential {
+            return sequential.steps.flatMap(collectAgents(from:))
+        }
+        if let parallel = step as? Parallel {
+            return parallel.items.map(\.agent)
+        }
+        if let router = step as? Router {
+            let routeAgents = router.routes.map(\.step).flatMap(collectAgents(from:))
+            if let fallback = router.fallback {
+                return routeAgents + collectAgents(from: fallback)
+            }
+            return routeAgents
+        }
+        return []
+    }
 
-public extension AgentRuntime {
-    /// Returns a tuple of the agent name and the agent itself for use in parallel execution.
-    ///
-    /// - Parameter name: The name to associate with this agent.
-    /// - Returns: A tuple of the name and agent.
-    ///
-    /// Example:
-    /// ```swift
-    /// Parallel {
-    ///     myAgent.named("analyzer")
-    ///     otherAgent.named("summarizer")
-    /// }
-    /// ```
-    func named(_ name: String) -> (String, any AgentRuntime) {
-        (name, self)
+    private var rootSteps: [OrchestrationStep] {
+        OrchestrationBuilder.steps(from: root)
+    }
+
+    private var rootStepCount: Int {
+        rootSteps.count
     }
 }

@@ -10,51 +10,119 @@ SwiftAgents provides three primary agent types, each implementing a different re
 - **ToolCallingAgent**: Direct tool invocation using structured LLM APIs
 - **PlanAndExecuteAgent**: Explicit planning before execution with replanning on failure
 
-All agents implement the `Agent` protocol and share common configuration options for tools, memory, guardrails, and observability.
+All *runtime* agents implement the `AgentRuntime` protocol and share common configuration options for tools, memory, guardrails, sessions, and observability.
 
-## Agent Protocol
+SwiftAgents also includes SwiftUI-style DSLs for defining workflows:
 
-The `Agent` protocol defines the fundamental contract that all agent implementations must satisfy:
+- `AgentBlueprint` (preferred, long-term) - orchestrations built with `@OrchestrationBuilder`.
+- `AgentLoopDefinition` (legacy, deprecated) - a loop DSL built with `@AgentLoopBuilder`, executed via `LoopAgent`.
+
+## Copy/Paste: Coding Agents Quick Start
+
+When you want **maximum leverage with minimum code**, use macros for tools + agent scaffolding, then compose with `AgentBlueprint`.
+
+### 1) Define a tool with `@Tool`
 
 ```swift
-public protocol Agent: Sendable {
-    /// Tools available to this agent
-    nonisolated var tools: [any Tool] { get }
+import SwiftAgents
 
-    /// Instructions defining agent behavior and role
+@Tool("Echoes a string back to the caller.")
+struct EchoTool {
+    @Parameter("Text to echo")
+    var text: String
+
+    func execute() async throws -> String {
+        text
+    }
+}
+```
+
+### 2) Define an agent with `@AgentActor`
+
+```swift
+import SwiftAgents
+
+@AgentActor(instructions: "You are a concise coding assistant.")
+actor CodingAgent {
+    func process(_ input: String) async throws -> String {
+        "Received: \(input)"
+    }
+}
+
+let agent = CodingAgent.Builder()
+    .addTool(EchoTool())
+    .configuration(.default)
+    .build()
+
+let result = try await agent.run("Hello")
+print(result.output)
+```
+
+### 3) Compose multiple agents with `AgentBlueprint`
+
+```swift
+import SwiftAgents
+
+struct Workflow: AgentBlueprint {
+    let coder: any AgentRuntime
+    let reviewer: any AgentRuntime
+
+    @OrchestrationBuilder var body: some OrchestrationStep {
+        Sequential {
+            coder
+            reviewer
+        }
+    }
+}
+
+let workflow = Workflow(coder: coder, reviewer: reviewer)
+let final = try await workflow.run("Implement feature X, then review it.")
+print(final.output)
+```
+
+## Runtime: AgentRuntime Protocol
+
+The `AgentRuntime` protocol defines the fundamental contract that all runtime agent implementations must satisfy:
+
+```swift
+public protocol AgentRuntime: Sendable {
+    /// The tools available to this agent.
+    nonisolated var tools: [any AnyJSONTool] { get }
+
+    /// Instructions that define the agent's behavior and role.
     nonisolated var instructions: String { get }
 
-    /// Configuration settings
+    /// Configuration settings for the agent.
     nonisolated var configuration: AgentConfiguration { get }
 
-    /// Optional memory system for context management
+    /// Optional memory system for context management.
     nonisolated var memory: (any Memory)? { get }
 
-    /// Optional custom inference provider
+    /// Optional custom inference provider.
     nonisolated var inferenceProvider: (any InferenceProvider)? { get }
 
-    /// Optional tracer for observability
+    /// Optional tracer for observability.
     nonisolated var tracer: (any Tracer)? { get }
 
-    /// Input guardrails for validation
+    /// Input guardrails that validate user input before processing.
     nonisolated var inputGuardrails: [any InputGuardrail] { get }
 
-    /// Output guardrails for validation
+    /// Output guardrails that validate agent responses before returning.
     nonisolated var outputGuardrails: [any OutputGuardrail] { get }
 
-    /// Handoff configurations for multi-agent orchestration
+    /// Configured handoffs for this agent.
     nonisolated var handoffs: [AnyHandoffConfiguration] { get }
 
-    /// Execute and return result
+    /// Executes the agent with the given input and returns a result.
     func run(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) async throws -> AgentResult
 
-    /// Stream execution events
+    /// Streams the agent's execution, yielding events as they occur.
     nonisolated func stream(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error>
 
-    /// Cancel ongoing execution
+    /// Cancels any ongoing execution.
     func cancel() async
 
-    /// Execute with detailed response tracking
+    /// Executes the agent and returns a detailed response with tracking ID.
     func runWithResponse(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) async throws -> AgentResponse
 }
 ```
@@ -64,7 +132,7 @@ public protocol Agent: Sendable {
 The protocol provides sensible defaults through extensions:
 
 ```swift
-public extension Agent {
+public extension AgentRuntime {
     nonisolated var memory: (any Memory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
     nonisolated var tracer: (any Tracer)? { nil }
@@ -82,6 +150,55 @@ let result = try await agent.run("Hello")
 let result = try await agent.run("Hello", hooks: myHooks)
 let result = try await agent.run("Hello", session: mySession, hooks: myHooks)
 ```
+
+## Declarative Workflow DSL (SwiftUI-Style)
+
+SwiftAgents also provides a SwiftUI-style API for defining orchestration flow. This is a *separate* concept from `AgentRuntime`: you describe a sequential workflow of steps, and SwiftAgents adapts it into an executable runtime at the call site.
+
+### AgentBlueprint (Preferred High-Level DSL)
+
+`AgentBlueprint` is a SwiftUI-style workflow protocol intended to be the primary high-level API long-term (`Sources/SwiftAgents/DSL/AgentBlueprint.swift:12`). A blueprint defines:
+
+- a declarative `body` built with `@OrchestrationBuilder`
+- orchestration-level configuration (`AgentConfiguration`, `handoffs`)
+
+Blueprints execute by compiling down to an `Orchestration` at runtime, and can be lifted into `AgentRuntime` via `BlueprintAgent<Blueprint>` when needed.
+
+### Legacy Loop DSL: AgentLoopDefinition (Deprecated)
+
+The legacy loop DSL is centered on `protocol AgentLoopDefinition` in `Sources/SwiftAgents/DSL/DeclarativeAgent.swift:23`. Conformers define:
+
+- configuration-like properties (`instructions`, `tools`, `configuration`, guardrails, etc.)
+- an execution flow in `loop`, built using `@AgentLoopBuilder`
+
+At runtime, the protocol extension provides:
+
+- `asRuntime() -> LoopAgent<Self>` (an adapter that conforms to `AgentRuntime`)
+- `run(...)` and `stream(...)` convenience methods that execute through `LoopAgent`
+
+### How Execution Works
+
+- The `@AgentLoopBuilder` block builds an `AgentLoopSequence` (ordered `OrchestrationStep`s).
+- Steps like `Generate()` / `Relay()` are the “model-turn” steps and pass the previous output into the next step.
+- `LoopAgent` runs the loop and, when it needs to do a model turn, it constructs a `RelayAgent` (currently `typealias RelayAgent = ToolCallingAgent`) using:
+  - the declarative agent's configuration (`instructions`, `tools`, `configuration`, guardrails, handoffs)
+  - *task-local* environment values (`AgentEnvironmentValues.current`) for `memory`, `inferenceProvider`, `tracer`
+
+This means declarative agents are primarily an orchestration layer; the model invocation for `Generate()/Relay()` is delegated to the relay runtime agent.
+
+### “Builder DSL” for Runtime Agent Configuration
+
+Separately from the declarative workflow DSL, SwiftAgents includes a builder-style configuration DSL for concrete runtime agents:
+
+```swift
+let agent = ToolCallingAgent {
+    Instructions("You are a helpful assistant.")
+    Tools { WeatherTool(); CalculatorTool() }
+    Configuration(.default.maxIterations(5))
+}
+```
+
+This is powered by `LegacyAgentBuilder` and friends in `Sources/SwiftAgents/Agents/AgentBuilder.swift`.
 
 ## Agent Types
 

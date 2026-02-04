@@ -5,6 +5,11 @@
 
 import Foundation
 
+@available(
+    *,
+    deprecated,
+    message: "Deprecated legacy loop DSL step. Prefer AgentBlueprint and embed a runtime AgentRuntime step for model turns (eventually the unified runtime Agent)."
+)
 /// Executes the current `Agent`'s unified model turn.
 ///
 /// Place `Relay()` in an agent's `loop` to make the "model turn" explicit.

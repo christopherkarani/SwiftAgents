@@ -1,48 +1,48 @@
 // DeclarativeAgentDSLTests.swift
 // SwiftAgentsTests
 //
-// Tests for the new SwiftUI-style `Agent` + `AgentLoop` DSL.
+// Tests for the legacy SwiftUI-style loop DSL (`AgentLoopDefinition` + `AgentLoop`).
 
 @testable import SwiftAgents
 import Testing
 
 // MARK: - Test Agents
 
-private struct SampleSequentialAgent: Agent {
-    var loop: some AgentLoop {
+private struct SampleSequentialAgent: AgentLoopDefinition {
+    @AgentLoopBuilder var loop: some AgentLoop {
         Generate()
         Transform { input in "A\(input)" }
         Transform { input in "B\(input)" }
     }
 }
 
-private struct BillingAgent: Agent {
+private struct BillingAgent: AgentLoopDefinition {
     var instructions: String { "You are billing support. Be concise." }
 
-    var loop: some AgentLoop {
+    @AgentLoopBuilder var loop: some AgentLoop {
         Generate()
     }
 }
 
-private struct GeneralSupportAgent: Agent {
+private struct GeneralSupportAgent: AgentLoopDefinition {
     var instructions: String { "You are general customer support." }
-    var loop: some AgentLoop { Generate() }
+    @AgentLoopBuilder var loop: some AgentLoop { Generate() }
 }
 
-private struct MathSpecialistAgent: Agent {
+private struct MathSpecialistAgent: AgentLoopDefinition {
     var instructions: String { "Solve billing math crisply." }
-    var loop: some AgentLoop { Generate() }
+    @AgentLoopBuilder var loop: some AgentLoop { Generate() }
 }
 
-private struct WeatherSpecialistAgent: Agent {
+private struct WeatherSpecialistAgent: AgentLoopDefinition {
     var instructions: String { "Report weather succinctly." }
-    var loop: some AgentLoop { Generate() }
+    @AgentLoopBuilder var loop: some AgentLoop { Generate() }
 }
 
-private struct GuardedAgent: Agent {
+private struct GuardedAgent: AgentLoopDefinition {
     var instructions: String { "Only pass safe content through." }
 
-    var loop: some AgentLoop {
+    @AgentLoopBuilder var loop: some AgentLoop {
         Guard(.input) {
             InputGuard("no_shouting") { input in
                 input.contains("SHOUT") ? .tripwire(message: "Calm please") : .passed()
@@ -59,30 +59,30 @@ private struct GuardedAgent: Agent {
     }
 }
 
-private struct ResearchAgent: Agent {
+private struct ResearchAgent: AgentLoopDefinition {
     let toolsList: [any AnyJSONTool]
 
     var instructions: String { "Research the topic with tools." }
     var tools: [any AnyJSONTool] { toolsList }
-    var loop: some AgentLoop { Generate() }
+    @AgentLoopBuilder var loop: some AgentLoop { Generate() }
 }
 
-private struct ToolUsingAgent: Agent {
+private struct ToolUsingAgent: AgentLoopDefinition {
     var tools: [any AnyJSONTool] { [MockTool(name: "dsl_tool")] }
-    var loop: some AgentLoop { Generate() }
+    @AgentLoopBuilder var loop: some AgentLoop { Generate() }
 }
 
-private struct CustomerServiceAgent: Agent {
+private struct CustomerServiceAgent: AgentLoopDefinition {
     var instructions: String { "You are a helpful customer service agent." }
 
-    var loop: some AgentLoop {
+    @AgentLoopBuilder var loop: some AgentLoop {
         Guard(.input) {
             InputGuard("no_secrets") { input in
                 input.contains("password") ? .tripwire(message: "Sensitive data") : .passed()
             }
         }
 
-        Routes {
+        Router {
             When(.contains("billing"), name: "billing") {
                 BillingAgent()
                     .temperature(0.2)
@@ -148,8 +148,8 @@ struct DeclarativeAgentDSLTests {
 
     @Test("AgentLoop must contain at least one Generate or Relay call")
     func agentLoopRequiresGenerateOrRelay() async throws {
-        struct NoGenerateAgent: Agent {
-            var loop: some AgentLoop {
+        struct NoGenerateAgent: AgentLoopDefinition {
+            @AgentLoopBuilder var loop: some AgentLoop {
                 Transform { _ in "ok" }
             }
         }
@@ -169,8 +169,8 @@ struct DeclarativeAgentDSLTests {
 
     @Test("Relay executes a single model turn")
     func relayExecutesModelTurn() async throws {
-        struct RelayAgent: Agent {
-            var loop: some AgentLoop { Relay() }
+        struct RelayAgent: AgentLoopDefinition {
+            @AgentLoopBuilder var loop: some AgentLoop { Relay() }
         }
 
         let provider = MockInferenceProvider(responses: ["relay:ok"])
@@ -200,8 +200,8 @@ struct DeclarativeAgentDSLTests {
             var isEmpty: Bool { messages.isEmpty }
         }
 
-        struct MemoryAgent: Agent {
-            var loop: some AgentLoop { Relay() }
+        struct MemoryAgent: AgentLoopDefinition {
+            @AgentLoopBuilder var loop: some AgentLoop { Relay() }
         }
 
         let provider = MockInferenceProvider(responses: ["ok"])
@@ -218,7 +218,7 @@ struct DeclarativeAgentDSLTests {
         #expect(prompt.contains("wax:context"))
     }
 
-    @Test("Routes selects the first matching branch")
+    @Test("Router selects the first matching branch")
     func routesSelectFirstMatch() async throws {
         let provider = MockInferenceProvider(responses: ["billing:ok"])
 
@@ -227,7 +227,7 @@ struct DeclarativeAgentDSLTests {
             .run("billing help")
 
         #expect(result.output == "billing:ok")
-        #expect(result.metadata["routes.matched_route"]?.stringValue == "billing")
+        #expect(result.metadata["router.matched_route"]?.stringValue == "billing")
     }
 
     @Test("Guard(.input) trips using InputGuard")

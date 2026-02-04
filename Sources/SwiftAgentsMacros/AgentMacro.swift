@@ -1,7 +1,7 @@
 // AgentMacro.swift
 // SwiftAgentsMacros
 //
-// Implementation of the @Agent macro for generating Agent protocol conformance.
+// Implementation of the @AgentActor macro for generating Agent protocol conformance.
 
 import SwiftSyntax
 import SwiftSyntaxBuilder
@@ -9,13 +9,13 @@ import SwiftSyntaxMacros
 
 // MARK: - AgentMacro
 
-/// The `@Agent` macro generates Agent protocol conformance for an actor.
+/// The `@AgentActor` macro generates Agent protocol conformance for an actor.
 ///
 /// Usage:
 /// ```swift
-/// @Agent("You are a helpful assistant")
+/// @AgentActor("You are a helpful assistant")
 /// actor MyAgent {
-///     @Tools var tools = [CalculatorTool(), DateTimeTool()]
+///     let tools: [any AnyJSONTool] = [CalculatorTool(), DateTimeTool()]
 ///
 ///     func process(_ input: String) async throws -> String {
 ///         // Custom processing logic
@@ -58,28 +58,28 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
         // 1. Generate tools property if not present
         if !existingMembers.contains("tools") {
             members.append("""
-                public let tools: [any Tool]
+                nonisolated public let tools: [any AnyJSONTool]
                 """)
         }
 
         // 2. Generate instructions property
         if !existingMembers.contains("instructions") {
             members.append("""
-                public let instructions: String
+                nonisolated public let instructions: String
                 """)
         }
 
         // 3. Generate configuration property
         if !existingMembers.contains("configuration") {
             members.append("""
-                public let configuration: AgentConfiguration
+                nonisolated public let configuration: AgentConfiguration
                 """)
         }
 
         // 4. Generate memory property
         if !existingMembers.contains("memory") {
             members.append("""
-                public nonisolated var memory: (any Memory)? { _memory }
+                nonisolated public var memory: (any Memory)? { _memory ?? AgentEnvironmentValues.current.memory }
                 private nonisolated let _memory: (any Memory)?
                 """)
         }
@@ -87,106 +87,179 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
         // 5. Generate inferenceProvider property
         if !existingMembers.contains("inferenceProvider") {
             members.append("""
-                public nonisolated var inferenceProvider: (any InferenceProvider)? { _inferenceProvider }
+                nonisolated public var inferenceProvider: (any InferenceProvider)? { _inferenceProvider ?? AgentEnvironmentValues.current.inferenceProvider }
                 private nonisolated let _inferenceProvider: (any InferenceProvider)?
                 """)
         }
 
-        // 6. Generate isCancelled state
+        // 6. Generate tracer property
+        if !existingMembers.contains("tracer") {
+            members.append("""
+                nonisolated public var tracer: (any Tracer)? { _tracer ?? AgentEnvironmentValues.current.tracer }
+                private nonisolated let _tracer: (any Tracer)?
+                """)
+        }
+
+        // 7. Generate isCancelled state
         if !existingMembers.contains("isCancelled") {
             members.append("""
                 private var isCancelled: Bool = false
                 """)
         }
 
-        // 7. Generate initializer
+        // 8. Generate initializer
         if !hasInit(in: declaration) {
-            let defaultInstructions = instructions.isEmpty ? "" : instructions
             members.append("""
                 public init(
-                    tools: [any Tool] = [],
-                    instructions: String = \(literal: defaultInstructions),
+                    tools: [any AnyJSONTool] = [],
+                    instructions: String = \(literal: instructions),
                     configuration: AgentConfiguration = .default,
                     memory: (any Memory)? = nil,
-                    inferenceProvider: (any InferenceProvider)? = nil
+                    inferenceProvider: (any InferenceProvider)? = nil,
+                    tracer: (any Tracer)? = nil
                 ) {
                     self.tools = tools
                     self.instructions = instructions
                     self.configuration = configuration
                     self._memory = memory
                     self._inferenceProvider = inferenceProvider
+                    self._tracer = tracer
                 }
                 """)
         }
 
-        // 8. Generate run() method
+        // 9. Generate run() method
         if !existingMembers.contains("run") {
             let hasProcess = hasProcessMethod(in: declaration)
             if hasProcess {
                 members.append("""
-                    public func run(_ input: String) async throws -> AgentResult {
+                    public func run(
+                        _ input: String,
+                        session: (any Session)? = nil,
+                        hooks: (any RunHooks)? = nil
+                    ) async throws -> AgentResult {
                         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                             throw AgentError.invalidInput(reason: "Input cannot be empty")
                         }
 
-                        if isCancelled {
-                            throw AgentError.cancelled
-                        }
+                        let activeTracer = tracer ?? AgentEnvironmentValues.current.tracer
+                        let activeMemory = memory ?? AgentEnvironmentValues.current.memory
+                        let lifecycleMemory = activeMemory as? any MemorySessionLifecycle
 
-                        let startTime = ContinuousClock.now
-
-                        // Store in memory if available
-                        if let mem = memory {
-                            await mem.add(.user(input))
-                        }
-
-                        // Call user's process method
-                        let output = try await process(input)
-
-                        // Store output in memory
-                        if let mem = memory {
-                            await mem.add(.assistant(output))
-                        }
-
-                        let duration = ContinuousClock.now - startTime
-
-                        return AgentResult(
-                            output: output,
-                            toolCalls: [],
-                            toolResults: [],
-                            iterationCount: 1,
-                            duration: duration,
-                            tokenUsage: nil,
-                            metadata: [:]
+                        let tracing = TracingHelper(
+                            tracer: activeTracer,
+                            agentName: configuration.name.isEmpty ? String(describing: Self.self) : configuration.name
                         )
+                        await tracing.traceStart(input: input)
+
+                        await hooks?.onAgentStart(context: nil, agent: self, input: input)
+
+                        if let lifecycleMemory {
+                            await lifecycleMemory.beginMemorySession()
+                        }
+
+                        do {
+                            isCancelled = false
+
+                            // Load conversation history from session (limit to recent messages)
+                            var sessionHistory: [MemoryMessage] = []
+                            if let session {
+                                sessionHistory = try await session.getItems(limit: configuration.sessionHistoryLimit)
+                            }
+
+                            let userMessage = MemoryMessage.user(input)
+
+                            // Store in memory (for AI context) if available
+                            if let mem = activeMemory {
+                                // Seed session history only once for a fresh memory instance.
+                                if session != nil, await mem.isEmpty, !sessionHistory.isEmpty {
+                                    for msg in sessionHistory {
+                                        await mem.add(msg)
+                                    }
+                                }
+                                await mem.add(userMessage)
+                            }
+
+                            let startTime = ContinuousClock.now
+
+                            let output = try await process(input)
+
+                            if isCancelled {
+                                throw AgentError.cancelled
+                            }
+
+                            let duration = ContinuousClock.now - startTime
+
+                            // Store turn in session (user + assistant messages)
+                            if let session {
+                                try await session.addItems([userMessage, .assistant(output)])
+                            }
+
+                            // Store output in memory
+                            if let mem = activeMemory {
+                                await mem.add(.assistant(output))
+                            }
+
+                            let result = AgentResult(
+                                output: output,
+                                toolCalls: [],
+                                toolResults: [],
+                                iterationCount: 1,
+                                duration: duration,
+                                tokenUsage: nil,
+                                metadata: [:]
+                            )
+
+                            await tracing.traceComplete(result: result)
+                            await hooks?.onAgentEnd(context: nil, agent: self, result: result)
+
+                            if let lifecycleMemory {
+                                await lifecycleMemory.endMemorySession()
+                            }
+
+                            return result
+                        } catch {
+                            await hooks?.onError(context: nil, agent: self, error: error)
+                            await tracing.traceError(error)
+                            if let lifecycleMemory {
+                                await lifecycleMemory.endMemorySession()
+                            }
+                            throw error
+                        }
                     }
                     """)
             } else {
                 members.append("""
-                    public func run(_ input: String) async throws -> AgentResult {
+                    public func run(
+                        _ input: String,
+                        session: (any Session)? = nil,
+                        hooks: (any RunHooks)? = nil
+                    ) async throws -> AgentResult {
                         throw AgentError.internalError(reason: "No process method implemented")
                     }
                     """)
             }
         }
 
-        // 9. Generate stream() method
+        // 10. Generate stream() method
         if !existingMembers.contains("stream") {
             members.append("""
-                public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-                    let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
-                    Task { @Sendable [weak self] in
-                        guard let self else {
-                            continuation.finish()
-                            return
-                        }
+                nonisolated public func stream(
+                    _ input: String,
+                    session: (any Session)? = nil,
+                    hooks: (any RunHooks)? = nil
+                ) -> AsyncThrowingStream<AgentEvent, Error> {
+                    StreamHelper.makeTrackedStream(for: self) { agent, continuation in
                         do {
                             continuation.yield(.started(input: input))
-                            let result = try await self.run(input)
+                            let result = try await agent.run(input, session: session, hooks: hooks)
                             continuation.yield(.completed(result: result))
                             continuation.finish()
                         } catch let error as AgentError {
                             continuation.yield(.failed(error: error))
+                            continuation.finish(throwing: error)
+                        } catch let error as GuardrailError {
+                            continuation.yield(.guardrailFailed(error: error))
                             continuation.finish(throwing: error)
                         } catch {
                             let agentError = AgentError.internalError(reason: error.localizedDescription)
@@ -194,12 +267,11 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
                             continuation.finish(throwing: agentError)
                         }
                     }
-                    return stream
                 }
                 """)
         }
 
-        // 10. Generate cancel() method
+        // 11. Generate cancel() method
         if !existingMembers.contains("cancel") {
             members.append("""
                 public func cancel() async {
@@ -209,7 +281,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
         }
 
         // 11. Generate Builder class (enabled by default)
-        // Disable with @Agent(instructions: "...", generateBuilder: false)
+        // Disable with @AgentActor(instructions: "...", generateBuilder: false)
         if shouldGenerateBuilder(from: node) {
             let typeName: String
             if let actorDecl = declaration.as(ActorDeclSyntax.self) {
@@ -217,7 +289,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
             } else {
                 typeName = "Agent"
             }
-            members.append(generateBuilderClass(typeName: typeName))
+            members.append(generateBuilderClass(typeName: typeName, defaultInstructions: instructions))
         }
 
         return members
@@ -325,31 +397,46 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
 
     /// Generates the Builder struct for the agent.
     /// Uses value semantics for Swift 6 concurrency safety.
-    static func generateBuilderClass(typeName: String) -> DeclSyntax {
+    static func generateBuilderClass(typeName: String, defaultInstructions: String) -> DeclSyntax {
         """
         /// A fluent builder for creating \(raw: typeName) instances.
         /// Uses value semantics (struct) for Swift 6 concurrency safety.
         public struct Builder: Sendable {
-            private var _tools: [any Tool] = []
-            private var _instructions: String = ""
+            private var _tools: [any AnyJSONTool] = []
+            private var _instructions: String = \(literal: defaultInstructions)
             private var _configuration: AgentConfiguration = .default
             private var _memory: (any Memory)?
             private var _inferenceProvider: (any InferenceProvider)?
+            private var _tracer: (any Tracer)?
 
             /// Creates a new builder with default values.
             public init() {}
 
             /// Sets the tools for the agent.
-            public func tools(_ tools: [any Tool]) -> Builder {
+            public func tools(_ tools: [any AnyJSONTool]) -> Builder {
                 var copy = self
                 copy._tools = tools
                 return copy
             }
 
             /// Adds a tool to the agent's tool set.
-            public func addTool(_ tool: any Tool) -> Builder {
+            public func addTool(_ tool: some AnyJSONTool) -> Builder {
                 var copy = self
                 copy._tools.append(tool)
+                return copy
+            }
+
+            /// Sets typed tools for the agent (bridged to AnyJSONTool).
+            public func tools<T: Tool>(_ tools: [T]) -> Builder {
+                var copy = self
+                copy._tools = tools.map { $0.asAnyJSONTool() }
+                return copy
+            }
+
+            /// Adds a typed tool to the agent's tool set (bridged to AnyJSONTool).
+            public func addTool<T: Tool>(_ tool: T) -> Builder {
+                var copy = self
+                copy._tools.append(tool.asAnyJSONTool())
                 return copy
             }
 
@@ -381,6 +468,13 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
                 return copy
             }
 
+            /// Sets the tracer for the agent.
+            public func tracer(_ tracer: any Tracer) -> Builder {
+                var copy = self
+                copy._tracer = tracer
+                return copy
+            }
+
             /// Builds the agent with the configured values.
             public func build() -> \(raw: typeName) {
                 \(raw: typeName)(
@@ -388,7 +482,8 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
                     instructions: _instructions,
                     configuration: _configuration,
                     memory: _memory,
-                    inferenceProvider: _inferenceProvider
+                    inferenceProvider: _inferenceProvider,
+                    tracer: _tracer
                 )
             }
         }
@@ -398,7 +493,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
 
 // MARK: - AgentMacroError
 
-/// Errors that can occur during @Agent macro expansion.
+/// Errors that can occur during @AgentActor macro expansion.
 enum AgentMacroError: Error, CustomStringConvertible {
     case onlyApplicableToActor
     case missingProcessMethod
@@ -406,9 +501,9 @@ enum AgentMacroError: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .onlyApplicableToActor:
-            return "@Agent can only be applied to actors"
+            return "@AgentActor can only be applied to actors"
         case .missingProcessMethod:
-            return "@Agent requires a process(_ input: String) method"
+            return "@AgentActor requires a process(_ input: String) method"
         }
     }
 }

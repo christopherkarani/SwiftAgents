@@ -169,6 +169,8 @@ public struct OutputTransformer: Sendable {
 }
 ```
 
+`OutputTransformer` maps an `AgentResult` into the next step’s input string. For orchestration-level input rewriting (string in, string out), use the `Transform` step.
+
 #### Configuration
 
 ```swift
@@ -638,6 +640,50 @@ let pipeline = agentA --> agentB --> agentC
 let configured = (agentA --> agentB --> agentC)
     .withTransformer(after: 0, .withMetadata)
     .withTransformer(after: 1, .passthrough)
+```
+
+#### Transform Step
+
+```swift
+let workflow = Orchestration {
+    preprocessAgent
+    Transform { input in
+        "Processed: \(input.uppercased())"
+    }
+    postprocessAgent
+}
+```
+
+Use `Transform` when you need a simple string-to-string mapping inside an orchestration.
+
+#### Router DSL (Orchestration)
+
+```swift
+let workflow = Orchestration {
+    Router {
+        When(.contains("weather")) { weatherAgent }
+        When(.contains("code")) { codeAgent }
+        Otherwise { defaultAgent }
+    }
+}
+```
+
+`Router` evaluates `When` branches in order. If nothing matches, any `Otherwise` branches run in declaration order:
+
+```swift
+Router {
+    When(.contains("weather"), use: weatherAgent)
+    Otherwise(use: defaultAgent)
+}
+```
+
+```swift
+Router {
+    When(.contains("go")) { Transform { "\($0)A" } }
+    Otherwise { Transform { "\($0)B" } }
+    Otherwise { Transform { "\($0)C" } }
+}
+// Input "stop" -> "stopBC"
 ```
 
 #### Router Result Builder

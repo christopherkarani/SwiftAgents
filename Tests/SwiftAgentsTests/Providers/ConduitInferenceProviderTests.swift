@@ -39,7 +39,16 @@ struct ConduitInferenceProviderBridgeTests {
         #expect(location?["type"] as? String == "string")
 
         let units = properties["units"] as? [String: Any]
-        #expect(units?["enum"] as? [String] == ["c", "f"])
+        if let enumValues = units?["enum"] as? [String] {
+            #expect(enumValues == ["c", "f"])
+        } else if let ref = units?["$ref"] as? String {
+            // Conduit may lift enums into `$defs` and reference them from the property.
+            let defName = ref.replacingOccurrences(of: "#/$defs/", with: "")
+            let def = defs[defName] as? [String: Any]
+            #expect(def?["enum"] as? [String] == ["c", "f"])
+        } else {
+            #expect(false, "Expected units schema to contain either `enum` or `$ref` to a definition with `enum`.")
+        }
 
         let required = root["required"] as? [String]
         #expect(required?.contains("location") == true)

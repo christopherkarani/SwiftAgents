@@ -545,7 +545,12 @@ public extension AgentBlueprint {
     }
 }
 
-public extension Agent {
+@available(
+    *,
+    deprecated,
+    message: "Deprecated legacy loop DSL. Prefer applying resilience to runtime AgentRuntime values or to AgentBlueprint (which lifts to a runtime agent)."
+)
+public extension AgentLoopDefinition {
     /// Lifts this agent into an executable runtime and adds retry behavior.
     func retry(_ policy: RetryPolicy) -> ResilientAgent {
         LoopAgent(self).withRetry(policy)

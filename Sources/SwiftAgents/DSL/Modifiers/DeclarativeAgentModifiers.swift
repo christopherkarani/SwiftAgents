@@ -1,22 +1,22 @@
 // DeclarativeAgentModifiers.swift
 // SwiftAgents Framework
 //
-// SwiftUI-style sugar modifiers for declarative `Agent` definitions.
+// SwiftUI-style sugar modifiers for declarative legacy loop DSL definitions.
 
 import Foundation
 
 // MARK: - Configuration Modifiers
 
-public extension Agent {
+public extension AgentLoopDefinition {
     /// Overrides the agent's configuration with a transform.
     func configuration(
         _ transform: @escaping @Sendable (AgentConfiguration) -> AgentConfiguration
-    ) -> some Agent {
+    ) -> some AgentLoopDefinition {
         ConfiguredAgent(base: self, transform: transform)
     }
 
     /// Sets the agent's name (also stored in `configuration.name`).
-    func named(_ name: String) -> some Agent {
+    func named(_ name: String) -> some AgentLoopDefinition {
         configuration { config in
             var copy = config
             copy.name = name
@@ -25,7 +25,7 @@ public extension Agent {
     }
 
     /// Sets model temperature for `Generate()`.
-    func temperature(_ value: Double) -> some Agent {
+    func temperature(_ value: Double) -> some AgentLoopDefinition {
         configuration { config in
             var copy = config
             copy.temperature = value
@@ -34,7 +34,7 @@ public extension Agent {
     }
 
     /// Sets max iterations for `Generate()`.
-    func maxIterations(_ value: Int) -> some Agent {
+    func maxIterations(_ value: Int) -> some AgentLoopDefinition {
         configuration { config in
             var copy = config
             copy.maxIterations = value
@@ -43,7 +43,7 @@ public extension Agent {
     }
 
     /// Sets timeout for `Generate()`.
-    func timeout(_ duration: Duration) -> some Agent {
+    func timeout(_ duration: Duration) -> some AgentLoopDefinition {
         configuration { config in
             var copy = config
             copy.timeout = duration
@@ -52,7 +52,9 @@ public extension Agent {
     }
 }
 
-public struct ConfiguredAgent<Base: Agent>: Agent {
+public struct ConfiguredAgent<Base: AgentLoopDefinition>: AgentLoopDefinition {
+    public typealias Loop = Base.Loop
+
     public let base: Base
     public let transform: @Sendable (AgentConfiguration) -> AgentConfiguration
 
@@ -80,5 +82,5 @@ public struct ConfiguredAgent<Base: Agent>: Agent {
     public var outputGuardrails: [any OutputGuardrail] { base.outputGuardrails }
     public var handoffs: [AnyHandoffConfiguration] { base.handoffs }
 
-    public var loop: AgentLoopSequence { base.loop }
+    public var loop: Base.Loop { base.loop }
 }

@@ -126,13 +126,13 @@ struct OrchestrationTests {
 
         let workflow = Orchestration {
             Parallel {
-                ("ok", success)
-                ("fail", failure)
+                success.named("ok")
+                failure.named("fail")
             }
         }
 
         let result = try await workflow.run("ping")
-        #expect(result.output.contains("ok: ping"))
+        #expect(result.output == "ping")
         #expect(result.metadata["parallel.error_count"]?.intValue == 1)
     }
 }

@@ -4,24 +4,48 @@ import CompilerPluginSupport
 import Foundation
 
 let includeDemo = ProcessInfo.processInfo.environment["SWIFTAGENTS_INCLUDE_DEMO"] == "1"
+let includeHive = ProcessInfo.processInfo.environment["SWIFTAGENTS_INCLUDE_HIVE"] == "1"
+let useLocalDependencies = ProcessInfo.processInfo.environment["SWIFTAGENTS_USE_LOCAL_DEPS"] == "1"
 
 var packageProducts: [Product] = [
     .library(name: "SwiftAgents", targets: ["SwiftAgents"])
 ]
 
+if includeHive {
+    packageProducts.append(.library(name: "HiveSwiftAgents", targets: ["HiveSwiftAgents"]))
+}
+
 if includeDemo {
     packageProducts.append(.executable(name: "SwiftAgentsDemo", targets: ["SwiftAgentsDemo"]))
 }
 
-let packageDependencies: [Package.Dependency] = [
+var packageDependencies: [Package.Dependency] = [
     .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
-    .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
-    .package(
-        url: "https://github.com/christopherkarani/Wax.git",
-        branch: "main"
-    ),
-    .package(url: "https://github.com/christopherkarani/Conduit", from: "0.3.0")
+    .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")
 ]
+
+if useLocalDependencies {
+    // NOTE: Local development override.
+    packageDependencies.append(.package(path: "../rag/Wax"))
+    packageDependencies.append(.package(path: "../Conduit"))
+} else {
+    packageDependencies.append(
+        .package(
+            url: "https://github.com/christopherkarani/Wax.git",
+            from: "0.1.3"
+        )
+    )
+    packageDependencies.append(.package(url: "https://github.com/christopherkarani/Conduit", from: "0.3.1"))
+}
+
+if includeHive {
+    if useLocalDependencies {
+        // NOTE: Opt-in; requires a local checkout of Hive.
+        packageDependencies.append(.package(path: "../Hive/libs/hive"))
+    } else {
+        packageDependencies.append(.package(url: "https://github.com/christopherkarani/Hive", from: "0.1.0"))
+    }
+}
 
 var packageTargets: [Target] = [
     // MARK: - Macro Implementation (Compiler Plugin)
@@ -76,6 +100,31 @@ var packageTargets: [Target] = [
     ),
 
 ]
+
+if includeHive {
+    packageTargets.append(
+        .target(
+            name: "HiveSwiftAgents",
+            dependencies: [
+                "SwiftAgents",
+                .product(name: "HiveCore", package: "Hive")
+            ],
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        )
+    )
+
+    packageTargets.append(
+        .testTarget(
+            name: "HiveSwiftAgentsTests",
+            dependencies: ["HiveSwiftAgents"],
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        )
+    )
+}
 
 if includeDemo {
     packageTargets.append(

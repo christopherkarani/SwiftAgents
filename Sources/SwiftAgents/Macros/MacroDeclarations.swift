@@ -145,7 +145,7 @@ public macro Parameter(
     oneOf options: [String]? = nil
 ) = #externalMacro(module: "SwiftAgentsMacros", type: "ParameterMacro")
 
-// MARK: - @Agent Macro
+// MARK: - @AgentActor Macro
 
 /// Generates a complete Agent implementation from an actor with a process() method.
 ///
@@ -156,8 +156,12 @@ public macro Parameter(
 /// ## Example
 ///
 /// ```swift
-/// @Agent(instructions: "You are a helpful assistant", generateBuilder: true)
+/// @AgentActor(instructions: "You are a helpful assistant", generateBuilder: true)
 /// actor MyAgent {
+///     // Provide tools as AnyJSONTool (dynamic ABI tools), e.g. tools made with `@Tool`.
+///     // For typed tools (`Tool`), use the generated Builder which bridges automatically.
+///     let tools: [any AnyJSONTool] = [CalculatorTool()]
+///
 ///     func process(_ input: String) async throws -> String {
 ///         return "Response to: \(input)"
 ///     }
@@ -165,25 +169,25 @@ public macro Parameter(
 ///
 /// // With builder:
 /// let agent = MyAgent.Builder()
-///     .tools([CalculatorTool()])
+///     .addTool(CalculatorTool())
 ///     .configuration(.default)
 ///     .build()
 /// ```
 @attached(
     member,
     names: named(tools), named(instructions), named(configuration), named(memory), named(inferenceProvider),
-    named(_memory), named(_inferenceProvider), named(isCancelled), named(init), named(run), named(stream),
-    named(cancel), named(Builder)
+    named(tracer), named(_memory), named(_inferenceProvider), named(_tracer), named(isCancelled), named(init),
+    named(run), named(stream), named(cancel), named(Builder)
 )
 @attached(extension, conformances: AgentRuntime)
-public macro Agent(
+public macro AgentActor(
     instructions: String,
     generateBuilder: Bool = true
 ) = #externalMacro(module: "SwiftAgentsMacros", type: "AgentMacro")
 
 /// A macro that generates Agent protocol conformance for an actor.
 ///
-/// The `@Agent` macro reduces boilerplate when creating agents by:
+/// The `@AgentActor` macro reduces boilerplate when creating agents by:
 /// - Generating all Agent protocol property requirements
 /// - Creating a standard initializer
 /// - Implementing `run()`, `stream()`, and `cancel()` methods
@@ -191,7 +195,7 @@ public macro Agent(
 /// ## Basic Usage
 ///
 /// ```swift
-/// @Agent("You are a helpful assistant that answers questions.")
+/// @AgentActor("You are a helpful assistant that answers questions.")
 /// actor AssistantAgent {
 ///     func process(_ input: String) async throws -> String {
 ///         // Your custom processing logic
@@ -203,29 +207,32 @@ public macro Agent(
 /// ## With Custom Tools
 ///
 /// ```swift
-/// @Agent("You are a math assistant.")
+/// @AgentActor("You are a math assistant.")
 /// actor MathAgent {
-///     // Override the default empty tools array
-///     let tools: [any Tool] = [CalculatorTool(), DateTimeTool()]
-///
 ///     func process(_ input: String) async throws -> String {
 ///         // Process with tools available
 ///         return "Calculated result"
 ///     }
 /// }
+///
+/// let agent = MathAgent.Builder()
+///     .addTool(CalculatorTool())
+///     .addTool(DateTimeTool())
+///     .build()
 /// ```
 ///
 /// ## Generated Code
 ///
 /// The macro generates:
-/// - `let tools: [any Tool]` - Default empty array (override if needed)
+/// - `let tools: [any AnyJSONTool]` - Default empty array (override if needed)
 /// - `let instructions: String` - From macro argument
 /// - `let configuration: AgentConfiguration` - Default configuration
 /// - `var memory: (any Memory)?` - Optional memory
 /// - `var inferenceProvider: (any InferenceProvider)?` - Optional provider
+/// - `var tracer: (any Tracer)?` - Optional tracer
 /// - `init(...)` - Standard initializer with all parameters
-/// - `run(_ input:)` - Calls your `process()` method
-/// - `stream(_ input:)` - Wraps run() in async stream
+/// - `run(_ input:session:hooks:)` - Calls your `process()` method
+/// - `stream(_ input:session:hooks:)` - Wraps run() in tracked async stream
 /// - `cancel()` - Cancellation support
 /// - `Agent` conformance
 ///
@@ -236,11 +243,11 @@ public macro Agent(
 @attached(
     member,
     names: named(tools), named(instructions), named(configuration), named(memory), named(inferenceProvider),
-    named(_memory), named(_inferenceProvider), named(isCancelled), named(init), named(run), named(stream),
-    named(cancel), named(Builder)
+    named(tracer), named(_memory), named(_inferenceProvider), named(_tracer), named(isCancelled), named(init),
+    named(run), named(stream), named(cancel), named(Builder)
 )
 @attached(extension, conformances: AgentRuntime)
-public macro Agent(_ instructions: String) = #externalMacro(module: "SwiftAgentsMacros", type: "AgentMacro")
+public macro AgentActor(_ instructions: String) = #externalMacro(module: "SwiftAgentsMacros", type: "AgentMacro")
 
 // MARK: - @Traceable Macro
 

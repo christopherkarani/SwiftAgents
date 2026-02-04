@@ -11,7 +11,13 @@ struct LLMPresetsTests {
         )
 
         let provider = agent.inferenceProvider
-        #expect(provider is ConduitInferenceProvider<OpenAIProvider>)
+        #expect(provider != nil)
+        if let provider {
+            #expect(provider is LLM)
+            if let preset = provider as? LLM {
+                #expect(preset._makeProviderForTesting() is ConduitInferenceProvider<OpenAIProvider>)
+            }
+        }
     }
 
     @Test("Anthropic preset builds Conduit Anthropic provider")
@@ -21,7 +27,13 @@ struct LLMPresetsTests {
         )
 
         let provider = agent.inferenceProvider
-        #expect(provider is ConduitInferenceProvider<AnthropicProvider>)
+        #expect(provider != nil)
+        if let provider {
+            #expect(provider is LLM)
+            if let preset = provider as? LLM {
+                #expect(preset._makeProviderForTesting() is ConduitInferenceProvider<AnthropicProvider>)
+            }
+        }
     }
 
     @Test("OpenRouter preset builds Conduit OpenAI-compatible provider")
@@ -31,7 +43,12 @@ struct LLMPresetsTests {
         )
 
         let provider = agent.inferenceProvider
-        #expect(provider is ConduitInferenceProvider<OpenAIProvider>)
+        #expect(provider != nil)
+        if let provider {
+            #expect(provider is LLM)
+            if let preset = provider as? LLM {
+                #expect(preset._makeProviderForTesting() is ConduitInferenceProvider<OpenAIProvider>)
+            }
+        }
     }
 }
-

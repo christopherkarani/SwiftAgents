@@ -679,12 +679,57 @@ public actor ReActAgent: AgentRuntime {
             return InferenceResponse(content: content, toolCalls: [], finishReason: .completed, usage: nil)
         }
 
-        return try await provider.generateWithToolCalls(
+        if enableStreaming, let streamingProvider = provider as? any ToolCallStreamingInferenceProvider {
+            var content = ""
+            content.reserveCapacity(1024)
+            var parsedToolCalls: [InferenceResponse.ParsedToolCall] = []
+            var usage: InferenceResponse.TokenUsage?
+            var stopStreaming = false
+
+            let stream = streamingProvider.streamWithToolCalls(
+                prompt: prompt,
+                tools: tools,
+                options: configuration.inferenceOptions
+            )
+
+            for try await update in stream {
+                switch update {
+                case let .outputChunk(chunk):
+                    if !chunk.isEmpty { content += chunk }
+                    await hooks?.onOutputToken(context: nil, agent: self, token: chunk)
+
+                case let .toolCallPartial(partial):
+                    await hooks?.onToolCallPartial(context: nil, agent: self, update: partial)
+
+                case let .toolCallsCompleted(calls):
+                    parsedToolCalls = calls
+                    stopStreaming = true
+
+                case let .usage(u):
+                    usage = u
+                }
+
+                if stopStreaming { break }
+            }
+
+            return InferenceResponse(
+                content: content.isEmpty ? nil : content,
+                toolCalls: parsedToolCalls,
+                finishReason: parsedToolCalls.isEmpty ? .completed : .toolCall,
+                usage: usage
+            )
+        }
+
+        let response = try await provider.generateWithToolCalls(
             prompt: prompt,
             tools: tools,
             options: configuration.inferenceOptions
         )
+        if enableStreaming, response.toolCalls.isEmpty, let content = response.content, !content.isEmpty {
+            await hooks?.onOutputToken(context: nil, agent: self, token: content)
+        }
 
+        return response
     }
 
     private func formatArguments(_ arguments: [String: SendableValue]) -> String {

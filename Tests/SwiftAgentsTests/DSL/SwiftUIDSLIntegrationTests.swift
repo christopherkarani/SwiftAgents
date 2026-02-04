@@ -24,7 +24,7 @@ struct SwiftUIDSLIntegrationTests {
     @Test("Environment works through AgentBlueprint lifting")
     func environmentWorksThroughBlueprint() async throws {
         struct Blueprint: AgentBlueprint {
-            var body: [OrchestrationStep] {
+            @OrchestrationBuilder var body: some OrchestrationStep {
                 ReActAgent(tools: [], instructions: "Blueprint agent")
             }
         }

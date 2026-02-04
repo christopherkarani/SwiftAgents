@@ -15,8 +15,10 @@ import Foundation
 /// The blueprint compiles down to existing orchestration primitives
 /// (`OrchestrationStep` and `Orchestration`) at execution time.
 public protocol AgentBlueprint: Sendable {
+    associatedtype Body: OrchestrationStep
+
     /// Declarative workflow content.
-    @OrchestrationBuilder var body: [OrchestrationStep] { get }
+    @OrchestrationBuilder var body: Body { get }
 
     /// Configuration used when wrapping the blueprint in an `Orchestration`.
     nonisolated var configuration: AgentConfiguration { get }
@@ -34,7 +36,7 @@ public extension AgentBlueprint {
 
     /// Builds an executable orchestration from this blueprint.
     func makeOrchestration() -> Orchestration {
-        Orchestration(steps: body, configuration: configuration, handoffs: handoffs)
+        Orchestration(root: body, configuration: configuration, handoffs: handoffs)
     }
 
     /// Executes the blueprint with the given input.
@@ -107,4 +109,3 @@ public actor BlueprintAgent<Blueprint: AgentBlueprint>: AgentRuntime {
 
     private var runningTask: Task<AgentResult, Error>?
 }
-

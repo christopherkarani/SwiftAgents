@@ -11,6 +11,13 @@ The DSL consists of three main components:
 
 ---
 
+## Breaking Changes (Single-Root Orchestration)
+
+- `AgentBlueprint` now declares `@OrchestrationBuilder var body: some OrchestrationStep`.
+- `Orchestration` now takes a single root step (use `Orchestration { ... }` or `Orchestration(root: ...)`).
+- Routing uses `Router { When/Otherwise }` (replaces `Routes` and `routeWhen` helpers).
+- `Parallel` uses `ParallelItem` via `.named("...")` (replaces tuple entries).
+
 ## Pipeline Operators
 
 SwiftAgents defines custom operators at different precedence levels for composing agents:
@@ -132,13 +139,14 @@ The primary result builder for constructing multi-agent workflows:
 ```swift
 @resultBuilder
 public struct OrchestrationBuilder {
-    public static func buildBlock(_ components: OrchestrationStep...) -> [OrchestrationStep]
-    public static func buildOptional(_ component: [OrchestrationStep]?) -> [OrchestrationStep]
-    public static func buildEither(first component: [OrchestrationStep]) -> [OrchestrationStep]
-    public static func buildEither(second component: [OrchestrationStep]) -> [OrchestrationStep]
-    public static func buildArray(_ components: [[OrchestrationStep]]) -> [OrchestrationStep]
-    public static func buildExpression(_ agent: any Agent) -> OrchestrationStep
+    public static func buildBlock(_ components: OrchestrationStep...) -> OrchestrationGroup
+    public static func buildOptional(_ component: OrchestrationStep?) -> OrchestrationGroup
+    public static func buildEither(first component: OrchestrationStep) -> OrchestrationGroup
+    public static func buildEither(second component: OrchestrationStep) -> OrchestrationGroup
+    public static func buildArray(_ components: [OrchestrationStep]) -> OrchestrationGroup
+    public static func buildExpression(_ agent: any AgentRuntime) -> OrchestrationStep
     public static func buildExpression(_ step: OrchestrationStep) -> OrchestrationStep
+    public static func buildExpression(_ steps: [OrchestrationStep]) -> OrchestrationStep
 }
 ```
 
@@ -152,13 +160,14 @@ let workflow = Orchestration {
     }
 
     Parallel(merge: .concatenate) {
-        ("analysis", analysisAgent)
-        ("summary", summaryAgent)
+        analysisAgent.named("analysis")
+        summaryAgent.named("summary")
     }
 
-    Router(fallback: defaultAgent) {
-        routeWhen(.contains("weather"), to: weatherAgent)
-        routeWhen(.contains("code"), to: codeAgent)
+    Router {
+        When(.contains("weather")) { weatherAgent }
+        When(.contains("code")) { codeAgent }
+        Otherwise { defaultAgent }
     }
 }
 
@@ -172,8 +181,14 @@ Constructs arrays of named agents for parallel execution:
 ```swift
 @resultBuilder
 public struct ParallelBuilder {
-    public static func buildBlock(_ components: (String, any Agent)...) -> [(String, any Agent)]
-    public static func buildExpression(_ tuple: (String, any Agent)) -> (String, any Agent)
+    public static func buildBlock(_ components: [ParallelItem]...) -> [ParallelItem]
+    public static func buildOptional(_ component: [ParallelItem]?) -> [ParallelItem]
+    public static func buildEither(first component: [ParallelItem]) -> [ParallelItem]
+    public static func buildEither(second component: [ParallelItem]) -> [ParallelItem]
+    public static func buildArray(_ components: [[ParallelItem]]) -> [ParallelItem]
+    public static func buildExpression(_ item: ParallelItem) -> [ParallelItem]
+    public static func buildExpression(_ agent: any AgentRuntime) -> [ParallelItem]
+    public static func buildExpression<B: AgentBlueprint>(_ blueprint: B) -> [ParallelItem]
 }
 ```
 
@@ -181,9 +196,9 @@ Usage:
 
 ```swift
 Parallel(merge: .structured, maxConcurrency: 2) {
-    ("analysis", analysisAgent)
-    ("summary", summaryAgent)
-    ("critique", critiqueAgent)
+    analysisAgent.named("analysis")
+    summaryAgent.named("summary")
+    critiqueAgent.named("critique")
 }
 ```
 
@@ -194,22 +209,23 @@ Constructs route arrays for conditional agent routing:
 ```swift
 @resultBuilder
 public struct RouterBuilder {
-    public static func buildBlock(_ routes: RouteDefinition...) -> [RouteDefinition]
-    public static func buildOptional(_ route: RouteDefinition?) -> [RouteDefinition]
-    public static func buildEither(first route: RouteDefinition) -> [RouteDefinition]
-    public static func buildEither(second route: RouteDefinition) -> [RouteDefinition]
-    public static func buildArray(_ routes: [[RouteDefinition]]) -> [RouteDefinition]
-    public static func buildExpression(_ route: RouteDefinition) -> RouteDefinition
+    public static func buildBlock(_ routes: [RouteEntry]...) -> [RouteEntry]
+    public static func buildOptional(_ route: [RouteEntry]?) -> [RouteEntry]
+    public static func buildEither(first route: [RouteEntry]) -> [RouteEntry]
+    public static func buildEither(second route: [RouteEntry]) -> [RouteEntry]
+    public static func buildArray(_ routes: [[RouteEntry]]) -> [RouteEntry]
+    public static func buildExpression(_ route: RouteEntry) -> [RouteEntry]
 }
 ```
 
 Usage:
 
 ```swift
-Router(fallback: defaultAgent) {
-    routeWhen(.contains("weather"), to: weatherAgent)
-    routeWhen(.contains("code"), to: codeAgent)
-    routeWhen(.startsWith("calculate"), to: calculatorAgent)
+Router {
+    When(.contains("weather")) { weatherAgent }
+    When(.contains("code")) { codeAgent }
+    When(.startsWith("calculate")) { calculatorAgent }
+    Otherwise { defaultAgent }
 }
 ```
 
@@ -284,35 +300,58 @@ Run agents concurrently and merge results:
 
 ```swift
 Parallel(merge: .concatenate) {
-    ("analysis", analysisAgent)
-    ("summary", summaryAgent)
+    analysisAgent.named("analysis")
+    summaryAgent.named("summary")
 }
 
 // With concurrency limit
 Parallel(merge: .structured, maxConcurrency: 2) {
-    ("task1", agent1)
-    ("task2", agent2)
-    ("task3", agent3)
+    agent1.named("task1")
+    agent2.named("task2")
+    agent3.named("task3")
 }
 ```
 
 Merge strategies:
-- `.concatenate` - Join outputs with newlines
+- `.concatenate` - Join outputs with newlines (declaration order, unlabeled)
 - `.first` - Return first completed result
 - `.longest` - Return longest output
 - `.structured` - Create labeled sections
 - `.custom { results in ... }` - Custom merge function
+
+Note: `.concatenate`, `.structured`, and `.custom` preserve declaration order; `.first` uses completion order.
 
 ### Router
 
 Route input to different agents based on conditions:
 
 ```swift
-Router(fallback: defaultAgent) {
-    routeWhen(.contains("weather"), to: weatherAgent)
-    routeWhen(.contains("code"), to: codeAgent)
-    routeWhen(.startsWith("calculate"), to: calculatorAgent)
+Router {
+    When(.contains("weather")) { weatherAgent }
+    When(.contains("code")) { codeAgent }
+    When(.startsWith("calculate")) { calculatorAgent }
+    Otherwise { defaultAgent }
 }
+```
+
+`Router` evaluates `When` branches in order. If no condition matches, any `Otherwise` branches are executed in declaration order (as a fallback chain).
+
+Shorthand overloads are available for simple branches:
+
+```swift
+Router {
+    When(.contains("weather"), use: weatherAgent)
+    Otherwise(use: defaultAgent)
+}
+```
+
+```swift
+Router {
+    When(.contains("go")) { Transform { "\($0)A" } }
+    Otherwise { Transform { "\($0)B" } }
+    Otherwise { Transform { "\($0)C" } }
+}
+// Input "stop" -> "stopBC"
 ```
 
 ### Transform
@@ -324,6 +363,8 @@ Transform { input in
     "Processed: \(input.uppercased())"
 }
 ```
+
+`Transform` maps the current input `String` to the next input `String`. Use it inside `Orchestration`/`Sequential` flows. For `SequentialChain` or `AgentSequence`, use `OutputTransformer` to map an `AgentResult` into the next step’s input string.
 
 ---
 
@@ -371,9 +412,9 @@ let workflow = Orchestration {
 
     // Fan-out to multiple analyzers
     Parallel(merge: .structured) {
-        ("sentiment", sentimentAgent)
-        ("entities", entityAgent)
-        ("topics", topicAgent)
+        sentimentAgent.named("sentiment")
+        entityAgent.named("entities")
+        topicAgent.named("topics")
     }
 
     // Merge and summarize
@@ -385,10 +426,11 @@ let workflow = Orchestration {
 
 ```swift
 let workflow = Orchestration {
-    Router(fallback: generalAgent) {
-        routeWhen(.contains("urgent").and(.lengthInRange(0...50)), to: quickResponseAgent)
-        routeWhen(.contains("technical"), to: technicalAgent)
-        routeWhen(.contains("billing"), to: billingAgent)
+    Router {
+        When(.contains("urgent").and(.lengthInRange(0...50))) { quickResponseAgent }
+        When(.contains("technical")) { technicalAgent }
+        When(.contains("billing")) { billingAgent }
+        Otherwise { generalAgent }
     }
 
     // Post-process all results
@@ -583,12 +625,16 @@ let pipeline = parseJSON >>> extractField("data") >>> validateSchema
 ```swift
 // Preferred - named agents for debugging
 Parallel {
-    ("analyzer", analyzerAgent)
-    ("summarizer", summarizerAgent)
+    analyzerAgent.named("analyzer")
+    summarizerAgent.named("summarizer")
 }
 
 // Less useful - auto-generated names
-ParallelGroup(agents: [agent1, agent2, agent3])
+Parallel {
+    agent1
+    agent2
+    agent3
+}
 ```
 
 ### 5. Configure Error Handling Appropriately
@@ -612,6 +658,8 @@ let chain = researchAgent --> summaryAgent
         result.output.components(separatedBy: "\n").first ?? ""
     })
 ```
+
+Use `OutputTransformer` when you need access to `AgentResult` (metadata, tool calls, iterations). Use `Transform` when you just need to reshape the current input string in an orchestration flow.
 
 ---
 

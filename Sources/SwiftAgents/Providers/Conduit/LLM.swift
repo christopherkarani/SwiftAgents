@@ -108,6 +108,16 @@ public enum LLM: Sendable, InferenceProvider {
     }
 }
 
+#if DEBUG
+extension LLM {
+    // Test hook: keep Conduit types out of the public API, but allow the package's
+    // unit tests to validate that presets are backed by Conduit providers.
+    func _makeProviderForTesting() -> any InferenceProvider {
+        makeProvider()
+    }
+}
+#endif
+
 extension LLM: ToolCallStreamingInferenceProvider {
     public func streamWithToolCalls(
         prompt: String,
