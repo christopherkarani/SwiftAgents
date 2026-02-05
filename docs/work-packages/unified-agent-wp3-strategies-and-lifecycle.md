@@ -7,14 +7,14 @@ Reduce duplication across `ReActAgent`, `ToolCallingAgent`, `PlanAndExecuteAgent
 Task Breakdown:
 1) Inventory shared lifecycle responsibilities (before changing code):
    - Identify the overlapping steps in:
-     - `Sources/SwiftAgents/Agents/ReActAgent.swift`
-     - `Sources/SwiftAgents/Agents/ToolCallingAgent.swift`
-     - `Sources/SwiftAgents/Agents/PlanAndExecuteAgent.swift`
-     - `Sources/SwiftAgents/Agents/Chat.swift` (ChatAgent)
+     - `Sources/Swarm/Agents/ReActAgent.swift`
+     - `Sources/Swarm/Agents/ToolCallingAgent.swift`
+     - `Sources/Swarm/Agents/PlanAndExecuteAgent.swift`
+     - `Sources/Swarm/Agents/Chat.swift` (ChatAgent)
    - Specifically map: input validation, tracer setup, hooks callbacks, guardrails, session history fetch, memory seeding, inference call(s), tool execution, output guardrails, session/memory writeback, and cancellation.
 2) Extract a shared lifecycle pipeline (internal-only API):
    - Create a small internal "lifecycle core" (name is flexible, but keep it narrow):
-     - Suggested new path: `Sources/SwiftAgents/Agents/Lifecycle/AgentLifecycle.swift`
+     - Suggested new path: `Sources/Swarm/Agents/Lifecycle/AgentLifecycle.swift`
    - The lifecycle core should:
      - take an `AgentRuntime`-like configuration surface (tools/instructions/config/memory/provider/tracer/guardrails/handoffs),
      - accept a per-strategy "loop executor" closure or protocol to run the strategy-specific logic,

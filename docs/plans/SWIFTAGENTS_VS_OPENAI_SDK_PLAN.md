@@ -1,5 +1,5 @@
-# SwiftAgents Feature Parity Plan
-## Comprehensive Gap Analysis: SwiftAgents vs OpenAI Agent SDK
+# Swarm Feature Parity Plan
+## Comprehensive Gap Analysis: Swarm vs OpenAI Agent SDK
 
 **Document Version**: 1.0
 **Analysis Date**: January 2026
@@ -9,10 +9,10 @@
 
 ## Executive Summary
 
-This document provides a comprehensive analysis of SwiftAgents compared to OpenAI's Agent SDK (Python), identifying gaps, advantages, and a prioritized implementation roadmap. After analyzing 100+ types across both frameworks, we identified:
+This document provides a comprehensive analysis of Swarm compared to OpenAI's Agent SDK (Python), identifying gaps, advantages, and a prioritized implementation roadmap. After analyzing 100+ types across both frameworks, we identified:
 
 - **49 total gaps** between the frameworks
-- **8 areas where SwiftAgents is BETTER** than OpenAI SDK
+- **8 areas where Swarm is BETTER** than OpenAI SDK
 - **8 must-implement features** for production parity
 - **3 major Apple-native implementations**: Platform Tools, Trace Integrations, Voice Agents
 - **Estimated implementation**: 31 weeks total (11 weeks core + 20 weeks advanced features)
@@ -22,7 +22,7 @@ This document provides a comprehensive analysis of SwiftAgents compared to OpenA
 ## Table of Contents
 
 1. [Framework Comparison Overview](#1-framework-comparison-overview)
-2. [Where SwiftAgents Excels](#2-where-swiftagents-excels)
+2. [Where Swarm Excels](#2-where-swarm-excels)
 3. [Where OpenAI SDK Excels](#3-where-openai-sdk-excels)
 4. [Feature Categorization](#4-feature-categorization)
 5. [Implementation Roadmap](#5-implementation-roadmap)
@@ -39,7 +39,7 @@ This document provides a comprehensive analysis of SwiftAgents compared to OpenA
 
 ### Architectural Philosophy
 
-| Aspect | SwiftAgents | OpenAI Agent SDK |
+| Aspect | Swarm | OpenAI Agent SDK |
 |--------|-------------|------------------|
 | **Language** | Swift 6.2 | Python 3.9+ |
 | **Paradigm** | Protocol-oriented, value types | Class-based, decorators |
@@ -56,15 +56,15 @@ This document provides a comprehensive analysis of SwiftAgents compared to OpenA
 ┌─────────────────────────────────────────────────────────────────┐
 │                    FEATURE COVERAGE MATRIX                       │
 ├─────────────────────────────────────────────────────────────────┤
-│ Category              │ SwiftAgents │ OpenAI SDK │ Gap Status   │
+│ Category              │ Swarm │ OpenAI SDK │ Gap Status   │
 ├───────────────────────┼─────────────┼────────────┼──────────────┤
 │ Core Agent System     │ ████████░░  │ ████████░░ │ Minor gaps   │
 │ Tool System           │ ██████░░░░  │ █████████░ │ DX gap       │
-│ Memory/Sessions       │ █████████░  │ ███████░░░ │ SwiftAgents+ │
+│ Memory/Sessions       │ █████████░  │ ███████░░░ │ Swarm+ │
 │ Orchestration         │ ████████░░  │ ████████░░ │ Minor gaps   │
 │ Guardrails            │ ███████░░░  │ ████████░░ │ Mode gap     │
 │ Observability         │ ██████░░░░  │ █████████░ │ Auto-trace   │
-│ Resilience            │ █████████░  │ ██░░░░░░░░ │ SwiftAgents+ │
+│ Resilience            │ █████████░  │ ██░░░░░░░░ │ Swarm+ │
 │ MCP Integration       │ ██████░░░░  │ ████████░░ │ Transport    │
 │ Voice/Realtime        │ ████████░░  │ ███████░░░ │ Apple-native │
 │ Platform Tools        │ █████████░  │ █████████░ │ Apple-native │
@@ -73,11 +73,11 @@ This document provides a comprehensive analysis of SwiftAgents compared to OpenA
 
 ---
 
-## 2. Where SwiftAgents Excels
+## 2. Where Swarm Excels
 
 ### 2.1 Actor-Based Concurrency (MAJOR ADVANTAGE)
 
-**SwiftAgents**: Uses Swift actors for thread-safe state management
+**Swarm**: Uses Swift actors for thread-safe state management
 ```swift
 actor ToolRegistry {
     private var tools: [String: any Tool] = [:]
@@ -93,13 +93,13 @@ class ToolRegistry:
         self._tools = {}  # Potential race conditions
 ```
 
-**Advantage**: SwiftAgents prevents data races at compile time. OpenAI SDK relies on runtime discipline.
+**Advantage**: Swarm prevents data races at compile time. OpenAI SDK relies on runtime discipline.
 
 ---
 
 ### 2.2 Memory System Diversity (MAJOR ADVANTAGE)
 
-**SwiftAgents**: 5 specialized memory implementations
+**Swarm**: 5 specialized memory implementations
 
 | Memory Type | Purpose | OpenAI Equivalent |
 |-------------|---------|-------------------|
@@ -111,13 +111,13 @@ class ToolRegistry:
 
 **OpenAI SDK**: 4 session types (SQLite, Redis, Encrypted, SQLAlchemy)
 
-**Advantage**: SwiftAgents has semantic memory capabilities. OpenAI only has conversation storage.
+**Advantage**: Swarm has semantic memory capabilities. OpenAI only has conversation storage.
 
 ---
 
 ### 2.3 Resilience Patterns (MAJOR ADVANTAGE)
 
-**SwiftAgents Built-in Patterns**:
+**Swarm Built-in Patterns**:
 ```swift
 // Circuit Breaker - prevents cascade failures
 let breaker = CircuitBreaker(failureThreshold: 5, recoveryTimeout: .seconds(30))
@@ -140,7 +140,7 @@ let chain = FallbackChain(primary: gpt4Agent, fallbacks: [gpt35Agent, localAgent
 
 ### 2.4 Event Granularity (ADVANTAGE)
 
-**SwiftAgents**: 20+ typed `AgentEvent` cases
+**Swarm**: 20+ typed `AgentEvent` cases
 ```swift
 enum AgentEvent: Sendable {
     case started(input: String)
@@ -172,7 +172,7 @@ class StreamEvent:
 
 ### 2.5 RunHooks Lifecycle (ADVANTAGE)
 
-**SwiftAgents**: 9 typed lifecycle callbacks
+**Swarm**: 9 typed lifecycle callbacks
 ```swift
 protocol RunHooks: Sendable {
     func onAgentStart(context: AgentContext, agent: any Agent, input: String) async
@@ -195,7 +195,7 @@ protocol RunHooks: Sendable {
 
 ### 2.6 Agent Implementations (ADVANTAGE)
 
-**SwiftAgents**: 3 specialized agent types
+**Swarm**: 3 specialized agent types
 - `ReActAgent` - Reasoning + Acting with thought chains
 - `PlanAndExecuteAgent` - Multi-phase planning with replanning
 - `ToolCallingAgent` - Direct tool coordination
@@ -253,7 +253,7 @@ def get_weather(city: str, unit: str = "celsius") -> str:
     return f"Weather in {city}: 72°{unit[0].upper()}"
 ```
 
-**SwiftAgents Current**: Verbose manual definition
+**Swarm Current**: Verbose manual definition
 ```swift
 struct GetWeatherTool: Tool {
     var name = "get_weather"
@@ -290,7 +290,7 @@ result = await Runner.run(agent, input="Weather in NYC", output_type=WeatherRepo
 # result is typed as WeatherReport, validated against schema
 ```
 
-**SwiftAgents Current**: String output only
+**Swarm Current**: String output only
 ```swift
 let result = try await agent.run("Weather in NYC")
 // result.output is String, must parse manually
@@ -319,7 +319,7 @@ def lookup_user(ctx: RunContextWrapper[AppContext]) -> str:
 result = await Runner.run(agent, input="...", context=AppContext(...))
 ```
 
-**SwiftAgents Current**: Ad-hoc metadata dictionary
+**Swarm Current**: Ad-hoc metadata dictionary
 ```swift
 let context = AgentContext(metadata: ["userId": .string("123")])
 // Not type-safe, no compile-time checks
@@ -344,7 +344,7 @@ let context = AgentContext(metadata: ["userId": .string("123")])
 # No code changes needed!
 ```
 
-**SwiftAgents Current**: Manual tracer integration
+**Swarm Current**: Manual tracer integration
 ```swift
 // Must explicitly configure and call tracer
 agent.tracer = OSLogTracer()
@@ -369,7 +369,7 @@ await Runner.run(agent, input="What did I say?", session=session)
 # No manual .to_input_list() or addItem() calls
 ```
 
-**SwiftAgents Current**: Manual history management
+**Swarm Current**: Manual history management
 ```swift
 let session = InMemorySession(sessionId: "user_123")
 let result1 = try await agent.run("Hi", session: session)
@@ -402,7 +402,7 @@ manager_agent = Agent(
 )
 ```
 
-**SwiftAgents Current**: No equivalent
+**Swarm Current**: No equivalent
 ```swift
 // Cannot easily use agents as tools
 // Must manually wrap in custom tool
@@ -427,7 +427,7 @@ async def check_content_fast(ctx, agent, input):
     ...
 ```
 
-**SwiftAgents Current**: Always sequential
+**Swarm Current**: Always sequential
 ```swift
 // Guardrails always run before agent
 // No parallel option for latency optimization
@@ -453,7 +453,7 @@ agent = Agent(
 )
 ```
 
-**SwiftAgents Current**: Static strings only
+**Swarm Current**: Static strings only
 ```swift
 let agent = ReActAgent(
     instructions: "You are a helpful assistant"  // Static only
@@ -555,9 +555,9 @@ These features are truly Python-specific and won't be implemented.
 
 ### 4.6 ALREADY BETTER (Preserve These Advantages)
 
-These SwiftAgents features exceed OpenAI SDK. Do not change.
+These Swarm features exceed OpenAI SDK. Do not change.
 
-| Feature | SwiftAgents Implementation | Why It's Better |
+| Feature | Swarm Implementation | Why It's Better |
 |---------|---------------------------|-----------------|
 | **Actor Concurrency** | `actor ToolRegistry`, `actor Memory` | Compile-time race prevention |
 | **Protocol Tools** | `protocol Tool` with composition | More flexible than inheritance |
@@ -607,7 +607,7 @@ func getWeather(
 ```
 
 **Implementation Tasks**:
-1. Create `@Tool` macro in SwiftAgentsMacros target
+1. Create `@Tool` macro in SwarmMacros target
 2. Use `FunctionDeclSyntax` to extract:
    - Function name → tool name (convert camelCase to snake_case)
    - Docstring → description
@@ -1702,7 +1702,7 @@ public struct SwiftLogExporter: TraceExporter {
     public let identifier = "swift_log"
     private let logger: Logging.Logger
 
-    public init(label: String = "swiftagents.tracing") {
+    public init(label: String = "swarm.tracing") {
         self.logger = Logging.Logger(label: label)
     }
 
@@ -1753,7 +1753,7 @@ public struct OSSignposterExporter: TraceExporter {
     public let identifier = "os_signposter"
     private let signposter: OSSignposter
 
-    public init(subsystem: String = "com.swiftagents", category: String = "Tracing") {
+    public init(subsystem: String = "com.swarm", category: String = "Tracing") {
         self.signposter = OSSignposter(subsystem: subsystem, category: category)
     }
 
@@ -1774,7 +1774,7 @@ public struct OSLogExporter: TraceExporter {
     public let identifier = "os_log"
     private let logger: os.Logger
 
-    public init(subsystem: String = "com.swiftagents", category: String = "Tracing") {
+    public init(subsystem: String = "com.swarm", category: String = "Tracing") {
         self.logger = os.Logger(subsystem: subsystem, category: category)
     }
 
@@ -2666,6 +2666,6 @@ public enum VoiceError: Error, Sendable {
 
 ---
 
-**Document Maintainers**: SwiftAgents Core Team
+**Document Maintainers**: Swarm Core Team
 **Review Cycle**: Quarterly
 **Next Review**: April 2026

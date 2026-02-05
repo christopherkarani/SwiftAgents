@@ -2,14 +2,14 @@
 
 ## Executive Summary
 
-This document provides a comprehensive implementation plan for adding voice agent capabilities to SwiftAgents. The architecture introduces a `VoiceTransport` protocol abstraction layer and `VoiceAgent` implementation that integrates seamlessly with existing SwiftAgents infrastructure.
+This document provides a comprehensive implementation plan for adding voice agent capabilities to Swarm. The architecture introduces a `VoiceTransport` protocol abstraction layer and `VoiceAgent` implementation that integrates seamlessly with existing Swarm infrastructure.
 
 ---
 
 ## Problem Analysis
 
 ### Core Challenge
-SwiftAgents is a text-centric agent orchestration framework. Voice agents require:
+Swarm is a text-centric agent orchestration framework. Voice agents require:
 1. **Real-time bidirectional audio streaming** - Not just request/response
 2. **Multiple transport mechanisms** - WebRTC, WebSocket, on-device
 3. **Voice-specific lifecycle events** - Audio levels, VAD, interruptions
@@ -19,7 +19,7 @@ SwiftAgents is a text-centric agent orchestration framework. Voice agents requir
 ### Key Constraints
 - **Swift 6.2 concurrency** - Must use actors, Sendable, async/await
 - **Cross-platform** - iOS 14+, macOS 11+ (iOS 26+ for SpeechAnalyzer)
-- **Protocol-first design** - Consistent with existing SwiftAgents patterns
+- **Protocol-first design** - Consistent with existing Swarm patterns
 - **Backward compatibility** - Existing text agents must continue to work
 
 ### Critical Success Factors
@@ -88,7 +88,7 @@ Agent (existing)
 ### 1. VoiceTransport Protocol
 
 ```swift
-// Sources/SwiftAgents/Voice/VoiceTransport.swift
+// Sources/Swarm/Voice/VoiceTransport.swift
 
 import Foundation
 
@@ -303,7 +303,7 @@ public struct VoiceSessionConfiguration: Sendable {
 ### 2. VoiceEvent Extension
 
 ```swift
-// Sources/SwiftAgents/Voice/VoiceEvent.swift
+// Sources/Swarm/Voice/VoiceEvent.swift
 
 import Foundation
 
@@ -426,7 +426,7 @@ extension AgentEvent {
 ### 3. VoiceAgent Implementation
 
 ```swift
-// Sources/SwiftAgents/Voice/VoiceAgent.swift
+// Sources/Swarm/Voice/VoiceAgent.swift
 
 import Foundation
 
@@ -477,7 +477,7 @@ public struct VoiceAgentConfiguration: Sendable {
 /// A voice-enabled agent that conducts conversations via audio
 ///
 /// VoiceAgent wraps a VoiceTransport to provide agent capabilities over
-/// voice channels. It integrates with the existing SwiftAgents infrastructure
+/// voice channels. It integrates with the existing Swarm infrastructure
 /// including tools, memory, guardrails, and handoffs.
 ///
 /// Example:
@@ -949,7 +949,7 @@ public extension VoiceAgent {
 ### 4. OpenAI Realtime Transport
 
 ```swift
-// Sources/SwiftAgents/Voice/Transports/OpenAIRealtimeTransport.swift
+// Sources/Swarm/Voice/Transports/OpenAIRealtimeTransport.swift
 
 import Foundation
 
@@ -1249,7 +1249,7 @@ public actor OpenAIRealtimeTransport: VoiceTransport {
 ### 5. ElevenLabs Transport
 
 ```swift
-// Sources/SwiftAgents/Voice/Transports/ElevenLabsTransport.swift
+// Sources/Swarm/Voice/Transports/ElevenLabsTransport.swift
 
 import Foundation
 
@@ -1381,7 +1381,7 @@ public actor ElevenLabsTransport: VoiceTransport {
 
 **Files to Create:**
 ```
-Sources/SwiftAgents/Voice/
+Sources/Swarm/Voice/
 ├── VoiceTransport.swift          # Protocol + events
 ├── VoiceEvent.swift              # Voice-specific events
 ├── VoiceAgent.swift              # Agent implementation
@@ -1402,7 +1402,7 @@ Sources/SwiftAgents/Voice/
 
 **Files to Create:**
 ```
-Sources/SwiftAgents/Voice/Transports/
+Sources/Swarm/Voice/Transports/
 ├── OpenAIRealtimeTransport.swift
 └── OpenAIRealtimeTypes.swift     # API message types
 ```
@@ -1422,7 +1422,7 @@ Sources/SwiftAgents/Voice/Transports/
 
 **Files to Create:**
 ```
-Sources/SwiftAgents/Voice/Transports/
+Sources/Swarm/Voice/Transports/
 ├── ElevenLabsTransport.swift
 └── ElevenLabsTypes.swift
 ```
@@ -1441,7 +1441,7 @@ Sources/SwiftAgents/Voice/Transports/
 
 **Files to Create:**
 ```
-Sources/SwiftAgents/Voice/Transports/
+Sources/Swarm/Voice/Transports/
 ├── CascadedTransport.swift       # STT → Agent → TTS
 ├── AudioPipeline.swift           # Audio capture/playback
 └── AppleSpeechProvider.swift     # SpeechAnalyzer wrapper
@@ -1452,14 +1452,14 @@ Sources/SwiftAgents/Voice/Transports/
 2. [ ] Implement `AppleSpeechProvider` for iOS 26+ SpeechAnalyzer
 3. [ ] Create `CascadedTransport` that composes STT + InferenceProvider + TTS
 4. [ ] Add VAD using SpeechDetector
-5. [ ] Integrate with existing SwiftAgents text agents
+5. [ ] Integrate with existing Swarm text agents
 6. [ ] Write integration tests
 
 ### Phase 5: Audio Utilities (Week 9)
 
 **Files to Create:**
 ```
-Sources/SwiftAgents/Voice/Audio/
+Sources/Swarm/Voice/Audio/
 ├── AudioCapture.swift            # Microphone input
 ├── AudioPlayback.swift           # Speaker output
 ├── AudioLevelMeter.swift         # Level monitoring
@@ -1476,7 +1476,7 @@ Sources/SwiftAgents/Voice/Audio/
 ### Phase 6: Integration & Documentation (Week 10)
 
 **Tasks:**
-1. [ ] Add `SwiftAgentsVoice` product to Package.swift
+1. [ ] Add `SwarmVoice` product to Package.swift
 2. [ ] Create conditional compilation for voice features
 3. [ ] Write comprehensive documentation
 4. [ ] Add example code and playground
@@ -1491,14 +1491,14 @@ Sources/SwiftAgents/Voice/Audio/
 // Package.swift additions
 
 let package = Package(
-    name: "SwiftAgents",
+    name: "Swarm",
     platforms: [
         .iOS(.v14),
         .macOS(.v11)
     ],
     products: [
-        .library(name: "SwiftAgents", targets: ["SwiftAgents"]),
-        .library(name: "SwiftAgentsVoice", targets: ["SwiftAgentsVoice"]),
+        .library(name: "Swarm", targets: ["Swarm"]),
+        .library(name: "SwarmVoice", targets: ["SwarmVoice"]),
     ],
     dependencies: [
         // Existing dependencies...
@@ -1515,13 +1515,13 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "SwiftAgents",
+            name: "Swarm",
             // ... existing configuration
         ),
         .target(
-            name: "SwiftAgentsVoice",
+            name: "SwarmVoice",
             dependencies: [
-                "SwiftAgents",
+                "Swarm",
                 .product(
                     name: "ElevenLabs",
                     package: "elevenlabs-swift-sdk",
@@ -1533,12 +1533,12 @@ let package = Package(
                     condition: .when(platforms: [.iOS, .macOS])
                 ),
             ],
-            path: "Sources/SwiftAgentsVoice"
+            path: "Sources/SwarmVoice"
         ),
         .testTarget(
-            name: "SwiftAgentsVoiceTests",
-            dependencies: ["SwiftAgentsVoice"],
-            path: "Tests/SwiftAgentsVoiceTests"
+            name: "SwarmVoiceTests",
+            dependencies: ["SwarmVoice"],
+            path: "Tests/SwarmVoiceTests"
         ),
     ]
 )
@@ -1551,7 +1551,7 @@ let package = Package(
 ### Mock Transport for Unit Tests
 
 ```swift
-// Tests/SwiftAgentsVoiceTests/Mocks/MockVoiceTransport.swift
+// Tests/SwarmVoiceTests/Mocks/MockVoiceTransport.swift
 
 public actor MockVoiceTransport: VoiceTransport {
     public var connectionState: VoiceConnectionState = .disconnected
@@ -1636,14 +1636,14 @@ public actor MockVoiceTransport: VoiceTransport {
 
 ```
 Sources/
-├── SwiftAgents/                    # Existing
+├── Swarm/                    # Existing
 │   ├── Core/
 │   ├── Agents/
 │   ├── Memory/
 │   ├── Tools/
 │   └── Orchestration/
 │
-└── SwiftAgentsVoice/               # NEW
+└── SwarmVoice/               # NEW
     ├── VoiceTransport.swift
     ├── VoiceEvent.swift
     ├── VoiceAgent.swift
@@ -1661,7 +1661,7 @@ Sources/
         └── AudioFormat.swift
 
 Tests/
-└── SwiftAgentsVoiceTests/
+└── SwarmVoiceTests/
     ├── VoiceAgentTests.swift
     ├── VoiceTransportTests.swift
     └── Mocks/
@@ -1681,4 +1681,4 @@ Tests/
 
 *Document Version: 1.0*
 *Created: 2025-12-30*
-*Author: SwiftAgents Team*
+*Author: Swarm Team*

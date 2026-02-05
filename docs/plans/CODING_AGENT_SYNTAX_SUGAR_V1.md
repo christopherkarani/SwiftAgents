@@ -53,7 +53,7 @@
 - Verify tools surface as `AnyJSONTool`.
 
 **Expected Output:**
-`Tests/SwiftAgentsMacrosTests/AgentActorConformanceTests.swift`.
+`Tests/SwarmMacrosTests/AgentActorConformanceTests.swift`.
 
 ---
 
@@ -66,7 +66,7 @@
 - Add doc comments for public API if generated.
 
 **Expected Output:**
-Edits under `Sources/SwiftAgentsMacros/`.
+Edits under `Sources/SwarmMacros/`.
 
 ---
 
@@ -79,7 +79,7 @@ Edits under `Sources/SwiftAgentsMacros/`.
 - Ensure tests are deterministic and isolated.
 
 **Expected Output:**
-`Tests/SwiftAgentsTests/BuilderErgonomicsTests.swift`.
+`Tests/SwarmTests/BuilderErgonomicsTests.swift`.
 
 ---
 
@@ -92,7 +92,7 @@ Edits under `Sources/SwiftAgentsMacros/`.
 - Ensure no type erasure or unsafe casting.
 
 **Expected Output:**
-Edits under `Sources/SwiftAgents/`.
+Edits under `Sources/Swarm/`.
 
 ---
 

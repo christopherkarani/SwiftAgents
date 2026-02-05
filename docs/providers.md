@@ -2,7 +2,7 @@
 
 ## Overview
 
-SwiftAgents uses inference providers to connect agents to LLM backends. Providers abstract the underlying language model, allowing agents to work with different model backends through a unified interface. This architecture enables flexibility in choosing between cloud APIs, on-device models, and custom inference solutions.
+Swarm uses inference providers to connect agents to LLM backends. Providers abstract the underlying language model, allowing agents to work with different model backends through a unified interface. This architecture enables flexibility in choosing between cloud APIs, on-device models, and custom inference solutions.
 
 The provider system supports:
 - Multiple LLM backends (OpenRouter, Foundation Models, custom providers)
@@ -118,7 +118,7 @@ OpenRouter provides unified access to models from OpenAI, Anthropic, Google, Met
 #### Basic Setup
 
 ```swift
-import SwiftAgents
+import Swarm
 
 // Simple initialization
 let provider = try OpenRouterProvider(
@@ -734,7 +734,7 @@ func processBatch(_ prompts: [String]) async throws -> [String] {
 ### Logging and Observability
 
 ```swift
-import SwiftAgents
+import Swarm
 
 // Enable logging
 Log.bootstrap()
@@ -752,7 +752,7 @@ let agent = ReActAgent(
 
 ## Summary
 
-The inference provider system in SwiftAgents offers:
+The inference provider system in Swarm offers:
 
 1. **Unified Interface** - Single protocol for all LLM backends
 2. **OpenRouter Integration** - Access to 100+ models through one API

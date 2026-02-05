@@ -3,17 +3,17 @@ import PackageDescription
 import CompilerPluginSupport
 import Foundation
 
-let includeDemo = ProcessInfo.processInfo.environment["SWIFTAGENTS_INCLUDE_DEMO"] == "1"
+let includeDemo = ProcessInfo.processInfo.environment["SWARM_INCLUDE_DEMO"] == "1"
 
-// Default OFF. Set SWIFTAGENTS_HIVE_RUNTIME=1 to opt in.
-let useHiveRuntime = ProcessInfo.processInfo.environment["SWIFTAGENTS_HIVE_RUNTIME"] == "1"
+// Default ON. Set SWARM_HIVE_RUNTIME=0 to opt out.
+let useHiveRuntime = ProcessInfo.processInfo.environment["SWARM_HIVE_RUNTIME"] != "0"
 
-// Optional integration target (bridges SwiftAgents tools into HiveCore).
-let includeHiveIntegration = ProcessInfo.processInfo.environment["SWIFTAGENTS_INCLUDE_HIVE"] == "1"
+// Optional integration target (bridges Swarm tools into HiveCore).
+let includeHiveIntegration = ProcessInfo.processInfo.environment["SWARM_INCLUDE_HIVE"] == "1"
 
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 
-let localHiveEnv = ProcessInfo.processInfo.environment["SWIFTAGENTS_USE_LOCAL_HIVE"]
+let localHiveEnv = ProcessInfo.processInfo.environment["SWARM_USE_LOCAL_HIVE"]
 let useLocalHive: Bool
 if localHiveEnv == "1" {
     useLocalHive = true
@@ -23,18 +23,18 @@ if localHiveEnv == "1" {
     let localHivePackage = packageRoot.appendingPathComponent("../Hive/libs/hive/Package.swift").path
     useLocalHive = FileManager.default.fileExists(atPath: localHivePackage)
 }
-let useLocalDependencies = ProcessInfo.processInfo.environment["SWIFTAGENTS_USE_LOCAL_DEPS"] == "1"
+let useLocalDependencies = ProcessInfo.processInfo.environment["SWARM_USE_LOCAL_DEPS"] == "1"
 
 var packageProducts: [Product] = [
-    .library(name: "SwiftAgents", targets: ["SwiftAgents"])
+    .library(name: "Swarm", targets: ["Swarm"])
 ]
 
 if includeHiveIntegration {
-    packageProducts.append(.library(name: "HiveSwiftAgents", targets: ["HiveSwiftAgents"]))
+    packageProducts.append(.library(name: "HiveSwarm", targets: ["HiveSwarm"]))
 }
 
 if includeDemo {
-    packageProducts.append(.executable(name: "SwiftAgentsDemo", targets: ["SwiftAgentsDemo"]))
+    packageProducts.append(.executable(name: "SwarmDemo", targets: ["SwarmDemo"]))
 }
 
 var packageDependencies: [Package.Dependency] = [
@@ -69,15 +69,15 @@ if useHiveRuntime || includeHiveIntegration {
     }
 }
 
-var swiftAgentsDependencies: [Target.Dependency] = [
-    "SwiftAgentsMacros",
+var swarmDependencies: [Target.Dependency] = [
+    "SwarmMacros",
     .product(name: "Logging", package: "swift-log"),
     .product(name: "Conduit", package: "Conduit"),
     .product(name: "Wax", package: "Wax")
 ]
 
 if useHiveRuntime {
-    swiftAgentsDependencies.append(
+    swarmDependencies.append(
         .product(
             name: "HiveCore",
             package: "Hive",
@@ -86,18 +86,18 @@ if useHiveRuntime {
     )
 }
 
-var swiftAgentsSwiftSettings: [SwiftSetting] = [
+var swarmSwiftSettings: [SwiftSetting] = [
     .enableExperimentalFeature("StrictConcurrency")
 ]
 
 if useHiveRuntime {
-    swiftAgentsSwiftSettings.append(.define("SWIFTAGENTS_HIVE_RUNTIME"))
+    swarmSwiftSettings.append(.define("SWARM_HIVE_RUNTIME"))
 }
 
 var packageTargets: [Target] = [
     // MARK: - Macro Implementation (Compiler Plugin)
     .macro(
-        name: "SwiftAgentsMacros",
+        name: "SwarmMacros",
         dependencies: [
             .product(name: "SwiftSyntax", package: "swift-syntax"),
             .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
@@ -111,27 +111,25 @@ var packageTargets: [Target] = [
 
     // MARK: - Main Library
     .target(
-        name: "SwiftAgents",
-        dependencies: swiftAgentsDependencies,
-        swiftSettings: swiftAgentsSwiftSettings
+        name: "Swarm",
+        dependencies: swarmDependencies,
+        swiftSettings: swarmSwiftSettings
     ),
 
     // MARK: - Tests
     .testTarget(
-        name: "SwiftAgentsTests",
-        dependencies: ["SwiftAgents"],
+        name: "SwarmTests",
+        dependencies: ["Swarm"],
         resources: [
             .copy("Guardrails/INTEGRATION_TEST_SUMMARY.md"),
             .copy("Guardrails/QUICK_REFERENCE.md")
         ],
-        swiftSettings: [
-            .enableExperimentalFeature("StrictConcurrency")
-        ]
+        swiftSettings: swarmSwiftSettings
     ),
     .testTarget(
-        name: "SwiftAgentsMacrosTests",
+        name: "SwarmMacrosTests",
         dependencies: [
-            "SwiftAgentsMacros",
+            "SwarmMacros",
             .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax")
         ],
         swiftSettings: [
@@ -143,9 +141,9 @@ var packageTargets: [Target] = [
 if includeHiveIntegration {
     packageTargets.append(
         .target(
-            name: "HiveSwiftAgents",
+            name: "HiveSwarm",
             dependencies: [
-                "SwiftAgents",
+                "Swarm",
                 .product(name: "HiveCore", package: "Hive")
             ],
             swiftSettings: [
@@ -156,8 +154,8 @@ if includeHiveIntegration {
 
     packageTargets.append(
         .testTarget(
-            name: "HiveSwiftAgentsTests",
-            dependencies: ["HiveSwiftAgents"],
+            name: "HiveSwarmTests",
+            dependencies: ["HiveSwarm"],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]
@@ -168,8 +166,8 @@ if includeHiveIntegration {
 if includeDemo {
     packageTargets.append(
         .executableTarget(
-            name: "SwiftAgentsDemo",
-            dependencies: ["SwiftAgents"],
+            name: "SwarmDemo",
+            dependencies: ["Swarm"],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]
@@ -178,7 +176,7 @@ if includeDemo {
 }
 
 let package = Package(
-    name: "SwiftAgents",
+    name: "Swarm",
     platforms: [
         .macOS(.v26),
         .iOS(.v26),

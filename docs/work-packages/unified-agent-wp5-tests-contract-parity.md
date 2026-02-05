@@ -9,17 +9,17 @@ Prevent semantic drift during the multi-phase migration by locking in observable
 Task Breakdown:
 0) Likely files to touch (confirm with `rg` before editing):
    - New test harness:
-     - `Tests/SwiftAgentsTests/TestKit/AgentParityHarness.swift`
+     - `Tests/SwarmTests/TestKit/AgentParityHarness.swift`
    - New parity test suites:
-     - `Tests/SwiftAgentsTests/Agents/UnifiedAgentParityTests.swift`
+     - `Tests/SwarmTests/Agents/UnifiedAgentParityTests.swift`
    - Existing mocks/helpers you should reuse:
-     - `Tests/SwiftAgentsTests/Mocks/MockInferenceProvider.swift`
-     - `Tests/SwiftAgentsTests/Mocks/MockTool.swift`
-     - `Tests/SwiftAgentsTests/Mocks/MockAgentMemory.swift`
-     - `Tests/SwiftAgentsTests/Agents/StreamingEventTests.swift` (as reference for event assertions)
+     - `Tests/SwarmTests/Mocks/MockInferenceProvider.swift`
+     - `Tests/SwarmTests/Mocks/MockTool.swift`
+     - `Tests/SwarmTests/Mocks/MockAgentMemory.swift`
+     - `Tests/SwarmTests/Agents/StreamingEventTests.swift` (as reference for event assertions)
 1) Create a minimal parity harness (test-only):
    - Add a helper in tests (keep it internal to tests):
-     - Suggested: `Tests/SwiftAgentsTests/TestKit/AgentParityHarness.swift`
+     - Suggested: `Tests/SwarmTests/TestKit/AgentParityHarness.swift`
    - The harness should:
      - accept a factory closure that returns `any AgentRuntime`,
      - run a scenario (input, optional session, hooks, tools, provider),
@@ -27,9 +27,9 @@ Task Breakdown:
      - and return a lightweight snapshot struct for assertions.
 2) Deterministic providers/tools for scenarios:
    - Reuse existing mocks:
-     - `Tests/SwiftAgentsTests/Mocks/MockInferenceProvider.swift`
-     - `Tests/SwiftAgentsTests/Mocks/MockTool.swift`
-     - `Tests/SwiftAgentsTests/Mocks/MockAgentMemory.swift` (if needed)
+     - `Tests/SwarmTests/Mocks/MockInferenceProvider.swift`
+     - `Tests/SwarmTests/Mocks/MockTool.swift`
+     - `Tests/SwarmTests/Mocks/MockAgentMemory.swift` (if needed)
    - Add new lightweight mocks only if required for streaming/cancellation determinism.
 3) Scenarios to cover (minimum set from the plan):
    - Run output parity:
@@ -49,13 +49,13 @@ Task Breakdown:
      - Cancelling mid-stream/run results in consistent termination semantics.
 4) Test suite organization:
    - Add a new suite, e.g.:
-     - `Tests/SwiftAgentsTests/Agents/UnifiedAgentParityTests.swift`
+     - `Tests/SwarmTests/Agents/UnifiedAgentParityTests.swift`
    - Structure tests so they can run quickly and fail with clear diffs.
 5) Execution:
    - Run `swift test` and ensure all tests are deterministic (no real network calls).
 
 Expected Output:
-- A reusable parity harness exists under `Tests/SwiftAgentsTests/TestKit/`.
+- A reusable parity harness exists under `Tests/SwarmTests/TestKit/`.
 - New parity tests cover the plan's required behaviors and run deterministically.
 - The test suite prevents accidental behavioral drift between legacy agents and unified runtime `Agent`.
 

@@ -25,8 +25,8 @@ Task Breakdown:
      - Show at least one example where an `AgentBlueprint` embeds a runtime `Agent` step (replacing `Generate/Relay` mental model).
 3) Demo / playground:
    - Update the demo target to compile and demonstrate the preferred APIs:
-     - `Sources/SwiftAgentsDemo/AgentTest.swift`
-     - `Sources/SwiftAgentsDemo/SwiftAgentsPlayground.playground/contents.xcplayground`
+     - `Sources/SwarmDemo/AgentTest.swift`
+     - `Sources/SwarmDemo/SwarmPlayground.playground/contents.xcplayground`
    - Ensure examples run without relying on non-deterministic behavior (use mock providers where possible).
 4) Verify compilation of docs snippets (manual sanity pass):
    - At minimum, ensure the docs snippets are syntactically valid and match real symbol names after WP1-WP4.

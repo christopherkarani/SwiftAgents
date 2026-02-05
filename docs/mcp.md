@@ -2,9 +2,9 @@
 
 ## Overview
 
-The Model Context Protocol (MCP) module in SwiftAgents provides comprehensive support for integrating with MCP-compatible servers and clients. MCP is a JSON-RPC 2.0 based protocol that enables agents to discover and execute tools, access resources, and communicate with external services in a standardized way.
+The Model Context Protocol (MCP) module in Swarm provides comprehensive support for integrating with MCP-compatible servers and clients. MCP is a JSON-RPC 2.0 based protocol that enables agents to discover and execute tools, access resources, and communicate with external services in a standardized way.
 
-SwiftAgents implements MCP with the following components:
+Swarm implements MCP with the following components:
 
 - **MCPClient**: A multi-server client that aggregates tools and resources from multiple MCP servers
 - **MCPServer**: A protocol defining the interface for MCP server implementations
@@ -28,7 +28,7 @@ SwiftAgents implements MCP with the following components:
 #### Connecting to MCP Servers
 
 ```swift
-import SwiftAgents
+import Swarm
 
 // Create the client
 let client = MCPClient()
@@ -318,7 +318,7 @@ let server = HTTPMCPServer(
 
 ### JSON-RPC Messages
 
-MCP uses JSON-RPC 2.0 for communication. SwiftAgents provides `MCPRequest` and `MCPResponse` types for encoding and decoding messages.
+MCP uses JSON-RPC 2.0 for communication. Swarm provides `MCPRequest` and `MCPResponse` types for encoding and decoding messages.
 
 #### MCPRequest
 
@@ -639,7 +639,7 @@ try await withTaskGroup(of: Void.self) { group in
 let params: [String: SendableValue] = [
     "protocolVersion": .string("2024-11-05"),
     "clientInfo": .dictionary([
-        "name": .string("SwiftAgents"),
+        "name": .string("Swarm"),
         "version": .string("1.0.0")
     ])
 ]
@@ -669,7 +669,7 @@ await client.setResourceCacheTTL(0)
 
 ### Thread Safety
 
-All MCP types in SwiftAgents are designed for concurrent use:
+All MCP types in Swarm are designed for concurrent use:
 
 - `MCPClient` is an actor, ensuring thread-safe access to mutable state
 - `HTTPMCPServer` is an actor for safe concurrent request handling

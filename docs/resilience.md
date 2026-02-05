@@ -2,7 +2,7 @@
 
 ## Overview
 
-Building robust agents that handle failures gracefully is critical for production systems. The SwiftAgents framework provides a comprehensive set of resilience patterns that help your agents recover from transient failures, protect against cascading failures, and degrade gracefully when services are unavailable.
+Building robust agents that handle failures gracefully is critical for production systems. The Swarm framework provides a comprehensive set of resilience patterns that help your agents recover from transient failures, protect against cascading failures, and degrade gracefully when services are unavailable.
 
 The resilience module includes four core components:
 
@@ -36,7 +36,7 @@ let result = try await policy.execute {
 
 #### Pre-configured Policies
 
-SwiftAgents provides convenient pre-configured policies for common scenarios:
+Swarm provides convenient pre-configured policies for common scenarios:
 
 ```swift
 // No retry - fails immediately on first error
@@ -512,7 +512,7 @@ class RateLimitedAgent {
 
 ## Timeouts
 
-SwiftAgents resilience patterns work seamlessly with Swift's structured concurrency for timeout handling.
+Swarm resilience patterns work seamlessly with Swift's structured concurrency for timeout handling.
 
 ### Using Task.timeout (Swift 6+)
 
@@ -788,7 +788,7 @@ All `ResilienceError` cases conform to `LocalizedError` for user-friendly error 
 
 ## Summary
 
-The SwiftAgents resilience module provides production-ready patterns for building robust agent systems:
+The Swarm resilience module provides production-ready patterns for building robust agent systems:
 
 | Component | Use Case |
 |-----------|----------|

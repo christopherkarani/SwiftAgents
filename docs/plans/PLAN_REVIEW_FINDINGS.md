@@ -27,7 +27,7 @@ Three sub-agents reviewed the Conduit adapter implementation plan. **Critical is
 **Options**:
 1. **Wait**: Wait for Conduit to implement tool response parsing
 2. **Contribute**: Add tool parsing to Conduit ourselves (preferred)
-3. **Workaround**: Implement raw response parsing in SwiftAgents adapter
+3. **Workaround**: Implement raw response parsing in Swarm adapter
 4. **MVP without tools**: Ship text generation only, add tools later
 
 ---
@@ -165,7 +165,7 @@ public init(configuration: ConduitConfiguration) throws
 
 **Location**: `ConduitTypeMappers.swift`
 
-**Issue**: SwiftAgents uses `Double` for temperature, Conduit uses `Float`.
+**Issue**: Swarm uses `Double` for temperature, Conduit uses `Float`.
 
 ```swift
 config.temperature = Float(temperature)  // Precision loss
@@ -239,7 +239,7 @@ Add to Conduit:
 2. Tool call parsing in AnthropicProvider
 3. Tool call parsing in OpenAIProvider
 
-Then update SwiftAgents adapter to use tool calls.
+Then update Swarm adapter to use tool calls.
 
 ---
 

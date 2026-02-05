@@ -2,7 +2,7 @@
 
 ## Context
 
-SwiftAgents currently supports:
+Swarm currently supports:
 
 - Streaming agent *lifecycle* via `agent.stream(...) -> AsyncThrowingStream<AgentEvent, Error>`
 - Tool calling via `InferenceProvider.generateWithToolCalls(...)` (non-streaming)
@@ -11,7 +11,7 @@ SwiftAgents currently supports:
 Conduit already supports streaming tool-call assembly (partial arguments + completed tool calls) via
 `TextGenerator.streamWithMetadata(messages:model:config:) -> AsyncThrowingStream<GenerationChunk, Error>`.
 
-This plan adds an end-to-end path for **live tool-call UI** in SwiftAgents:
+This plan adds an end-to-end path for **live tool-call UI** in Swarm:
 
 - surface "partial tool call" updates while arguments are being streamed
 - execute tools as soon as tool calls are completed (same execution engine)
@@ -19,7 +19,7 @@ This plan adds an end-to-end path for **live tool-call UI** in SwiftAgents:
 
 ## Goals
 
-- Emit a first-class SwiftAgents event for partial tool call assembly suitable for UI progress.
+- Emit a first-class Swarm event for partial tool call assembly suitable for UI progress.
 - Enable `ToolCallingAgent.stream(...)` to deliver those events when using Conduit-backed providers.
 - Preserve existing `run(...)` behavior and non-Conduit providers without regression.
 - Maintain Swift 6.2 strict concurrency + `Sendable` guarantees.
@@ -47,7 +47,7 @@ Provider layer:
 
 - Add a new protocol (name TBD) for streaming tool calls, e.g.:
   - `protocol ToolCallStreamingInferenceProvider: InferenceProvider { func streamWithToolCalls(...) -> AsyncThrowingStream<InferenceStreamUpdate, Error> }`
-- `InferenceStreamUpdate` enum (SwiftAgents-owned) to avoid leaking Conduit types:
+- `InferenceStreamUpdate` enum (Swarm-owned) to avoid leaking Conduit types:
   - `.outputChunk(String)`
   - `.toolCallPartial(PartialToolCallUpdate)`
   - `.toolCallsCompleted([InferenceResponse.ParsedToolCall])`
@@ -70,9 +70,9 @@ Acceptance criteria:
 
 Files (expected):
 
-- `Sources/SwiftAgents/Core/AgentEvent.swift`
-- `Sources/SwiftAgents/Core/RunHooks.swift`
-- `Sources/SwiftAgents/Core/EventStreamHooks.swift`
+- `Sources/Swarm/Core/AgentEvent.swift`
+- `Sources/Swarm/Core/RunHooks.swift`
+- `Sources/Swarm/Core/EventStreamHooks.swift`
 
 Work:
 
@@ -86,12 +86,12 @@ Acceptance criteria:
 - Swift concurrency: all new types are `Sendable`.
 - Unit tests validate event bridging from hooks to `AgentEvent`.
 
-### Phase 2 - Provider Streaming Abstraction (SwiftAgents-owned)
+### Phase 2 - Provider Streaming Abstraction (Swarm-owned)
 
 Files (expected):
 
-- `Sources/SwiftAgents/Core/Agent.swift` (protocol additions only if needed)
-- `Sources/SwiftAgents/Providers/...` (new protocol + update types)
+- `Sources/Swarm/Core/Agent.swift` (protocol additions only if needed)
+- `Sources/Swarm/Providers/...` (new protocol + update types)
 
 Work:
 
@@ -107,12 +107,12 @@ Acceptance criteria:
 
 Files (expected):
 
-- `Sources/SwiftAgents/Providers/Conduit/ConduitInferenceProvider.swift`
+- `Sources/Swarm/Providers/Conduit/ConduitInferenceProvider.swift`
 
 Work:
 
 - Implement `streamWithToolCalls(...)` using Conduit `streamWithMetadata(messages:model:config:)`.
-- Map Conduit `GenerationChunk` to SwiftAgents `InferenceStreamUpdate`:
+- Map Conduit `GenerationChunk` to Swarm `InferenceStreamUpdate`:
   - `chunk.text` -> `.outputChunk(...)` (optional; useful for UI)
   - `chunk.partialToolCall` -> `.toolCallPartial(...)`
   - `chunk.completedToolCalls` -> `.toolCallsCompleted([...ParsedToolCall...])`
@@ -128,7 +128,7 @@ Acceptance criteria:
 
 Files (expected):
 
-- `Sources/SwiftAgents/Agents/ToolCallingAgent.swift`
+- `Sources/Swarm/Agents/ToolCallingAgent.swift`
 
 Work:
 
@@ -150,14 +150,14 @@ Acceptance criteria:
 
 Files (expected):
 
-- `Tests/SwiftAgentsTests/Providers/...`
-- `Tests/SwiftAgentsTests/Agents/...`
+- `Tests/SwarmTests/Providers/...`
+- `Tests/SwarmTests/Agents/...`
 - `docs/` (optional usage guide snippet)
 
 Work:
 
 - Provider mapping tests:
-  - Given a synthetic sequence of Conduit `GenerationChunk`s, verify emitted SwiftAgents updates/events.
+  - Given a synthetic sequence of Conduit `GenerationChunk`s, verify emitted Swarm updates/events.
 - Agent end-to-end tests:
   - Use a mock streaming provider implementing `ToolCallStreamingInferenceProvider`.
   - Assert `ToolCallingAgent.stream(...)` yields `.toolCallPartial` events before `.toolCallStarted`.
@@ -173,7 +173,7 @@ Acceptance criteria:
 
 ## Risks / Open Questions
 
-- Event volume: partial argument fragments can be frequent; we may want throttling/deduplication in SwiftAgents.
+- Event volume: partial argument fragments can be frequent; we may want throttling/deduplication in Swarm.
 - Buffer growth: ensure streams are bounded and cancellation is respected.
 - Tool argument validity: partial JSON is not parseable until complete; UI should treat `argumentsFragment` as "best effort".
 - Provider differences: not every Conduit provider may emit `partialToolCall` consistently.

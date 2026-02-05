@@ -9,7 +9,7 @@
 
 **Build autonomous AI agents in Swift** — The agent framework for Apple platforms and Linux servers.
 
-SwiftAgents provides everything you need to build AI agents: autonomous reasoning, tool use, memory systems, and multi-agent orchestration. Built natively for Swift 6.2 with full concurrency safety.
+Swarm provides everything you need to build AI agents: autonomous reasoning, tool use, memory systems, and multi-agent orchestration. Built natively for Swift 6.2 with full concurrency safety.
 
 ## Highlights
 
@@ -25,7 +25,9 @@ SwiftAgents provides everything you need to build AI agents: autonomous reasonin
 
 ## Runtime (Hive)
 
-On macOS/iOS, you can opt into Hive graph execution by setting `SWIFTAGENTS_HIVE_RUNTIME=1` at build time. The default executor is the built-in Swift runtime. If a sibling Hive checkout exists at `../Hive`, SwiftAgents auto-uses it; set `SWIFTAGENTS_USE_LOCAL_HIVE=0` to force the remote package.
+On macOS/iOS, Swarm uses Hive graph execution by default (when `HiveCore` is available). Set `SWARM_HIVE_RUNTIME=0` at build time to opt out and use the built-in Swift executor.
+
+If a sibling Hive checkout exists at `../Hive`, Swarm auto-uses it; set `SWARM_USE_LOCAL_HIVE=0` to force the remote package (or `SWARM_USE_LOCAL_HIVE=1` to force local).
 
 ---
 
@@ -33,7 +35,7 @@ On macOS/iOS, you can opt into Hive graph execution by setting `SWIFTAGENTS_HIVE
 
 ### Retrieving Context (Sessions + Memory)
 
-SwiftAgents intentionally keeps **context retrieval** explicit and inspectable. In practice, you’ll pull context from either:
+Swarm intentionally keeps **context retrieval** explicit and inspectable. In practice, you’ll pull context from either:
 
 - **Session** (conversation history): `getItems(limit:)`
 - **Memory** (RAG / summaries / recent-window): `context(for:tokenLimit:)` and `allMessages()`
@@ -60,12 +62,12 @@ if let descriptor = memory as? any MemoryPromptDescriptor {
 
 ### Copy/Paste Prompts
 
-Use these prompts verbatim in Claude Code / Codex / ChatGPT when working with this repo or integrating SwiftAgents.
+Use these prompts verbatim in Claude Code / Codex / ChatGPT when working with this repo or integrating Swarm.
 
 #### 1) Repo Orientation
 
 ```text
-You are a coding agent integrating SwiftAgents.
+You are a coding agent integrating Swarm.
 Please:
 1) Read AGENTS.md and README.md.
 2) Summarize the preferred API surface (AgentBlueprint + @Tool + @AgentActor).
@@ -76,7 +78,7 @@ Please:
 #### 2) “How do I retrieve context?”
 
 ```text
-In SwiftAgents, show me how to retrieve:
+In Swarm, show me how to retrieve:
 - session history (Session.getItems)
 - model context from memory (Memory.context(for:tokenLimit:))
 - raw messages (Memory.allMessages)
@@ -101,31 +103,31 @@ Return a single Swift file with the blueprint + setup code.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/christopherkarani/SwiftAgents.git", from: "0.3.1")
+    .package(url: "https://github.com/christopherkarani/Swarm.git", from: "0.3.1")
 ]
 ```
 
 Add to your target:
 
 ```swift
-.target(name: "YourApp", dependencies: ["SwiftAgents"])
+.target(name: "YourApp", dependencies: ["Swarm"])
 ```
 
 ### Xcode
 
-File → Add Package Dependencies → `https://github.com/chriskarani/SwiftAgents.git`
+File → Add Package Dependencies → `https://github.com/christopherkarani/Swarm.git`
 
 ---
 
 ### Optional integrations (Wax)
 
-Wax support lives behind a SwiftPM trait so that the adapter only builds when you explicitly enable it. Conduit is now built into `SwiftAgents`.
+Wax support lives behind a SwiftPM trait so that the adapter only builds when you explicitly enable it. Conduit is now built into `Swarm`.
 
 Enable the Wax trait when declaring the dependency and bind the trait-aware product inside your target:
 
 ```swift
 .package(
-    url: "https://github.com/christopherkarani/SwiftAgents.git",
+    url: "https://github.com/christopherkarani/Swarm.git",
     from: "0.3.1",
     traits: ["Wax"]
 )
@@ -134,11 +136,11 @@ Enable the Wax trait when declaring the dependency and bind the trait-aware prod
     name: "YourApp",
     dependencies: [
         .product(
-            name: "SwiftAgentsWax",
-            package: "SwiftAgents",
+            name: "SwarmWax",
+            package: "Swarm",
             condition: .when(traits: ["Wax"])
         ),
-        "SwiftAgents"
+        "Swarm"
     ]
 )
 ```
@@ -149,7 +151,7 @@ When invoking SwiftPM directly you must supply `defaults` along with the traits 
 swift build --traits defaults,Wax
 ```
 
-The trait also defines a compile-time flag (`SWIFTAGENTS_WAX_ENABLED`) so downstream code can guard integrations.
+The trait also defines a compile-time flag (`SWARM_WAX_ENABLED`) so downstream code can guard integrations.
 
 ---
 
@@ -158,8 +160,8 @@ The trait also defines a compile-time flag (`SWIFTAGENTS_WAX_ENABLED`) so downst
 When the Wax trait is enabled, you can use `WaxMemory` as a primary RAG-backed memory store:
 
 ```swift
-import SwiftAgents
-import SwiftAgentsWax
+import Swarm
+import SwarmWax
 import WaxVectorSearchMiniLM
 
 let embedder = MiniLMEmbedder()
@@ -180,7 +182,7 @@ When using the legacy loop DSL, `Relay()` will prioritize Wax memory context whe
 Start with runtime agents for model calls, then compose them with the SwiftUI-style `AgentBlueprint` workflow DSL when you need orchestration. The legacy loop DSL (`AgentLoopDefinition` + `@AgentLoopBuilder`) remains for compatibility but is deprecated.
 
 ```swift
-import SwiftAgents
+import Swarm
 
 let provider: any InferenceProvider = .anthropic(key: "ANTHROPIC_API_KEY")
 
@@ -426,7 +428,7 @@ print(final.output)
 │                    Your Application                      │
 │         (iOS, macOS, watchOS, tvOS, visionOS, Linux)    │
 ├─────────────────────────────────────────────────────────┤
-│                      SwiftAgents                         │
+│                      Swarm                         │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐       │
 │  │   Agents    │ │   Memory    │ │    Tools    │       │
 │  │ ReAct, Plan │ │ Conversation│ │ @Tool macro │       │
@@ -489,15 +491,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/chriskarani/SwiftAgents/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/chriskarani/SwiftAgents/discussions)
+- **Issues**: [GitHub Issues](https://github.com/christopherkarani/Swarm/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/christopherkarani/Swarm/discussions)
 - **Twitter**: [@ckarani7](https://x.com/ckarani7)
 
 ---
 
 ## License
 
-SwiftAgents is released under the MIT License. See [LICENSE](LICENSE) for details.
+Swarm is released under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 

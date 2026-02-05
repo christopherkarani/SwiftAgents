@@ -2,7 +2,7 @@
 
 ## Overview
 
-SwiftAgents provides a comprehensive orchestration layer for coordinating multiple specialized agents. The framework supports four primary orchestration patterns:
+Swarm provides a comprehensive orchestration layer for coordinating multiple specialized agents. The framework supports four primary orchestration patterns:
 
 - **SupervisorAgent**: Intelligent routing to specialized sub-agents
 - **SequentialChain**: Pipeline execution with output passing between agents
@@ -628,7 +628,7 @@ let result = try await coordinator.executeHandoff(
 
 ### Using Builders and DSL Operators
 
-SwiftAgents provides multiple ways to construct orchestrations:
+Swarm provides multiple ways to construct orchestrations:
 
 #### Sequential Chain Operator
 

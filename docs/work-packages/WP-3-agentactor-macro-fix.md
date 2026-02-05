@@ -2,10 +2,10 @@ Prompt:
 Fix the `@AgentActor` macro to generate correct `AgentRuntime` conformance and ergonomic builders for coding agents.
 
 Goal:
-After applying the macro, user code should compile with `import SwiftAgents` only and the generated actor should behave like a first-class runtime agent.
+After applying the macro, user code should compile with `import Swarm` only and the generated actor should behave like a first-class runtime agent.
 
 Task Breakdown:
-1. Update `Sources/SwiftAgentsMacros/AgentMacro.swift` to generate:
+1. Update `Sources/SwarmMacros/AgentMacro.swift` to generate:
    - `nonisolated public let tools: [any AnyJSONTool]` (unless user already defines `tools`)
    - `nonisolated public let instructions: String`
    - `nonisolated public let configuration: AgentConfiguration`
@@ -29,9 +29,9 @@ Task Breakdown:
 6. Update macro snapshot tests as needed.
 
 Expected Output:
-- Edits to `Sources/SwiftAgentsMacros/AgentMacro.swift`
-- Edits to `Sources/SwiftAgents/Macros/MacroDeclarations.swift`
-- Updated macro tests under `Tests/SwiftAgentsMacrosTests/`
+- Edits to `Sources/SwarmMacros/AgentMacro.swift`
+- Edits to `Sources/Swarm/Macros/MacroDeclarations.swift`
+- Updated macro tests under `Tests/SwarmMacrosTests/`
 
 Constraints:
 - Preserve user-provided members (don’t duplicate existing `tools`, `init`, etc.).

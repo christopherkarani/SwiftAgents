@@ -1,6 +1,6 @@
 # Enhanced Agent Handoffs
 
-SwiftAgents provides a powerful handoff system for transferring control between agents with full observability and customization.
+Swarm provides a powerful handoff system for transferring control between agents with full observability and customization.
 
 ## Overview
 
@@ -14,7 +14,7 @@ Agent handoffs enable multi-agent workflows where one agent can delegate work to
 ## Quick Start
 
 ```swift
-import SwiftAgents
+import Swarm
 
 // Create a handoff configuration
 let config = handoff(

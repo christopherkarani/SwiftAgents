@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the implementation plan for a SwiftUI-inspired declarative API for building and composing AI agents in SwiftAgents. This is a **novel approach to declarative agent development** — no other language has done this before.
+This document outlines the implementation plan for a SwiftUI-inspired declarative API for building and composing AI agents in Swarm. This is a **novel approach to declarative agent development** — no other language has done this before.
 
 ### Design Philosophy
 
@@ -51,7 +51,7 @@ This document outlines the implementation plan for a SwiftUI-inspired declarativ
 ### 2.1 Agent Protocol (DSL)
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Core/Agent.swift
+// File: Sources/Swarm/DSL/Core/Agent.swift
 
 /// The primary protocol for declaratively defining agents.
 ///
@@ -106,7 +106,7 @@ extension Agent {
 ### 2.2 AgentCore Protocol (Runtime)
 
 ```swift
-// File: Sources/SwiftAgents/Core/AgentCore.swift
+// File: Sources/Swarm/Core/AgentCore.swift
 
 /// Internal protocol for executable agent implementations.
 ///
@@ -135,7 +135,7 @@ public protocol AgentCore: Sendable {
 ### 2.3 AgentBehavior Protocol
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Core/AgentBehavior.swift
+// File: Sources/Swarm/DSL/Core/AgentBehavior.swift
 
 /// Protocol for agent behavior implementations.
 ///
@@ -182,7 +182,7 @@ extension AgentBehavior {
 ### 2.4 ExecutionContext
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Core/ExecutionContext.swift
+// File: Sources/Swarm/DSL/Core/ExecutionContext.swift
 
 /// Type-safe context key protocol.
 public protocol ContextKey {
@@ -238,7 +238,7 @@ public actor ExecutionContext {
 ### 2.5 AgentEnvironment
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Core/AgentEnvironment.swift
+// File: Sources/Swarm/DSL/Core/AgentEnvironment.swift
 
 /// Protocol for environment keys.
 public protocol AgentEnvironmentKey {
@@ -290,7 +290,7 @@ extension AgentEnvironment {
 ### 3.1 Agent (Primary - ReAct Style)
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Behaviors/AgentBehavior.swift
+// File: Sources/Swarm/DSL/Behaviors/AgentBehavior.swift
 
 /// The primary agent behavior using ReAct-style reasoning.
 ///
@@ -351,7 +351,7 @@ public typealias Agent = AgentBody
 ### 3.2 Chat Behavior
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Behaviors/ChatBehavior.swift
+// File: Sources/Swarm/DSL/Behaviors/ChatBehavior.swift
 
 /// Simple chat behavior without tool calling.
 ///
@@ -391,7 +391,7 @@ public struct Chat: AgentBehavior {
 ### 3.3 ToolCallingAgent Behavior
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Behaviors/ToolCallingBehavior.swift
+// File: Sources/Swarm/DSL/Behaviors/ToolCallingBehavior.swift
 
 /// Tool-calling agent using native LLM tool calling (without ReAct reasoning).
 public struct ToolCallingAgent: AgentBehavior {
@@ -409,7 +409,7 @@ public struct ToolCallingAgent: AgentBehavior {
             throw AgentError.inferenceProviderUnavailable(reason: "No inference provider configured")
         }
         
-        let agent = SwiftAgents.ToolCallingAgent(
+        let agent = Swarm.ToolCallingAgent(
             tools: tools,
             instructions: instructions,
             inferenceProvider: provider
@@ -429,7 +429,7 @@ public struct ToolCallingAgent: AgentBehavior {
 ### 3.4 Planner Behavior
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Behaviors/PlannerBehavior.swift
+// File: Sources/Swarm/DSL/Behaviors/PlannerBehavior.swift
 
 /// Plan-and-execute agent that creates a plan before execution.
 public struct Planner: AgentBehavior {
@@ -469,7 +469,7 @@ public struct Planner: AgentBehavior {
 ### 4.1 Guard (Input/Output Validation)
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Flow/Guard.swift
+// File: Sources/Swarm/DSL/Flow/Guard.swift
 
 /// Specifies whether a guard applies to input or output.
 public enum GuardPhase: Sendable {
@@ -569,7 +569,7 @@ public struct GuardrailBuilder {
 ### 4.2 Transform (Input/Output Transformation)
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Flow/Transform.swift
+// File: Sources/Swarm/DSL/Flow/Transform.swift
 
 /// Specifies whether a transform applies to input or output.
 public enum TransformPhase: Sendable {
@@ -608,7 +608,7 @@ public struct Transform: AgentBehavior {
 ### 4.3 Sequential Workflow
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Flow/Sequential.swift
+// File: Sources/Swarm/DSL/Flow/Sequential.swift
 
 /// Sequential agent execution pipeline.
 ///
@@ -688,7 +688,7 @@ public struct AgentSequenceBuilder {
 ### 4.4 Parallel Workflow
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Flow/Parallel.swift
+// File: Sources/Swarm/DSL/Flow/Parallel.swift
 
 /// Merge strategy for parallel execution results.
 public enum MergeStrategy: Sendable {
@@ -790,7 +790,7 @@ public struct ParallelAgentBuilder {
 ### 4.5 Route Workflow
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Flow/Route.swift
+// File: Sources/Swarm/DSL/Flow/Route.swift
 
 /// How routing decisions are made.
 public enum RoutingStrategy<Key: Hashable & Sendable>: Sendable {
@@ -991,7 +991,7 @@ Modifiers are for **configuration**, not flow. They wrap behaviors to add cross-
 ### 5.1 Memory Modifier
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Modifiers/MemoryModifier.swift
+// File: Sources/Swarm/DSL/Modifiers/MemoryModifier.swift
 
 extension AgentBehavior {
     /// Adds memory to the agent.
@@ -1029,7 +1029,7 @@ public enum MemoryConfiguration: Sendable {
 ### 5.2 Retry Modifier
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Modifiers/RetryModifier.swift
+// File: Sources/Swarm/DSL/Modifiers/RetryModifier.swift
 
 extension AgentBehavior {
     /// Adds retry behavior.
@@ -1059,7 +1059,7 @@ public struct RetryModifiedBehavior<Base: AgentBehavior>: AgentBehavior {
 ### 5.3 Timeout Modifier
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Modifiers/TimeoutModifier.swift
+// File: Sources/Swarm/DSL/Modifiers/TimeoutModifier.swift
 
 extension AgentBehavior {
     /// Adds timeout.
@@ -1103,7 +1103,7 @@ public struct TimeoutModifiedBehavior<Base: AgentBehavior>: AgentBehavior {
 ### 5.4 Environment Modifier
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Modifiers/EnvironmentModifier.swift
+// File: Sources/Swarm/DSL/Modifiers/EnvironmentModifier.swift
 
 extension AgentBehavior {
     /// Sets an environment value.
@@ -1142,7 +1142,7 @@ public struct EnvironmentModifiedBehavior<Base: AgentBehavior>: AgentBehavior {
 ### 5.5 Tracing Modifier
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Modifiers/TracingModifier.swift
+// File: Sources/Swarm/DSL/Modifiers/TracingModifier.swift
 
 extension AgentBehavior {
     /// Enables tracing for this behavior.
@@ -1186,7 +1186,7 @@ public struct TracingModifiedBehavior<Base: AgentBehavior>: AgentBehavior {
 ### 6.1 AgentBuilder
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Builders/AgentBuilder.swift
+// File: Sources/Swarm/DSL/Builders/AgentBuilder.swift
 
 /// Result builder for agent body content.
 @resultBuilder
@@ -1284,7 +1284,7 @@ public enum EitherBehavior<First: AgentBehavior, Second: AgentBehavior>: AgentBe
 ### 6.2 ToolBuilder
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Builders/ToolBuilder.swift
+// File: Sources/Swarm/DSL/Builders/ToolBuilder.swift
 
 @resultBuilder
 public struct ToolBuilder {
@@ -1535,7 +1535,7 @@ Agent("...") {
 ## Part 9: Execution Flow Visualization
 
 ```swift
-// File: Sources/SwiftAgents/DSL/Diagnostics/ExecutionFlowDiagram.swift
+// File: Sources/Swarm/DSL/Diagnostics/ExecutionFlowDiagram.swift
 
 /// Visual representation of agent execution flow.
 public struct ExecutionFlowDiagram: Sendable, CustomStringConvertible {
@@ -1588,10 +1588,10 @@ public enum FlowStage: Sendable {
 ### Phase 1: Core Infrastructure
 
 **Files:**
-- `Sources/SwiftAgents/DSL/Core/Agent.swift`
-- `Sources/SwiftAgents/DSL/Core/AgentBehavior.swift`
-- `Sources/SwiftAgents/DSL/Core/ExecutionContext.swift`
-- `Sources/SwiftAgents/DSL/Core/AgentEnvironment.swift`
+- `Sources/Swarm/DSL/Core/Agent.swift`
+- `Sources/Swarm/DSL/Core/AgentBehavior.swift`
+- `Sources/Swarm/DSL/Core/ExecutionContext.swift`
+- `Sources/Swarm/DSL/Core/AgentEnvironment.swift`
 - Rename existing `Agent` protocol to `AgentCore`
 
 **Tasks:**
@@ -1604,10 +1604,10 @@ public enum FlowStage: Sendable {
 ### Phase 2: Agent Behaviors
 
 **Files:**
-- `Sources/SwiftAgents/DSL/Behaviors/AgentBehavior.swift` (primary)
-- `Sources/SwiftAgents/DSL/Behaviors/ChatBehavior.swift`
-- `Sources/SwiftAgents/DSL/Behaviors/ToolCallingBehavior.swift`
-- `Sources/SwiftAgents/DSL/Behaviors/PlannerBehavior.swift`
+- `Sources/Swarm/DSL/Behaviors/AgentBehavior.swift` (primary)
+- `Sources/Swarm/DSL/Behaviors/ChatBehavior.swift`
+- `Sources/Swarm/DSL/Behaviors/ToolCallingBehavior.swift`
+- `Sources/Swarm/DSL/Behaviors/PlannerBehavior.swift`
 
 **Tasks:**
 1. Implement `AgentBody` (ReAct-style primary agent)
@@ -1617,11 +1617,11 @@ public enum FlowStage: Sendable {
 ### Phase 3: Flow Control Structures
 
 **Files:**
-- `Sources/SwiftAgents/DSL/Flow/Guard.swift`
-- `Sources/SwiftAgents/DSL/Flow/Transform.swift`
-- `Sources/SwiftAgents/DSL/Flow/Sequential.swift`
-- `Sources/SwiftAgents/DSL/Flow/Parallel.swift`
-- `Sources/SwiftAgents/DSL/Flow/Route.swift`
+- `Sources/Swarm/DSL/Flow/Guard.swift`
+- `Sources/Swarm/DSL/Flow/Transform.swift`
+- `Sources/Swarm/DSL/Flow/Sequential.swift`
+- `Sources/Swarm/DSL/Flow/Parallel.swift`
+- `Sources/Swarm/DSL/Flow/Route.swift`
 
 **Tasks:**
 1. Implement `Guard` with input/output phases
@@ -1632,24 +1632,24 @@ public enum FlowStage: Sendable {
 ### Phase 4: Modifiers
 
 **Files:**
-- `Sources/SwiftAgents/DSL/Modifiers/MemoryModifier.swift`
-- `Sources/SwiftAgents/DSL/Modifiers/RetryModifier.swift`
-- `Sources/SwiftAgents/DSL/Modifiers/TimeoutModifier.swift`
-- `Sources/SwiftAgents/DSL/Modifiers/EnvironmentModifier.swift`
-- `Sources/SwiftAgents/DSL/Modifiers/TracingModifier.swift`
+- `Sources/Swarm/DSL/Modifiers/MemoryModifier.swift`
+- `Sources/Swarm/DSL/Modifiers/RetryModifier.swift`
+- `Sources/Swarm/DSL/Modifiers/TimeoutModifier.swift`
+- `Sources/Swarm/DSL/Modifiers/EnvironmentModifier.swift`
+- `Sources/Swarm/DSL/Modifiers/TracingModifier.swift`
 
 ### Phase 5: Result Builders
 
 **Files:**
-- `Sources/SwiftAgents/DSL/Builders/AgentBuilder.swift`
-- `Sources/SwiftAgents/DSL/Builders/ToolBuilder.swift`
-- `Sources/SwiftAgents/DSL/Builders/GuardrailBuilder.swift`
-- `Sources/SwiftAgents/DSL/Builders/RouteBuilder.swift`
+- `Sources/Swarm/DSL/Builders/AgentBuilder.swift`
+- `Sources/Swarm/DSL/Builders/ToolBuilder.swift`
+- `Sources/Swarm/DSL/Builders/GuardrailBuilder.swift`
+- `Sources/Swarm/DSL/Builders/RouteBuilder.swift`
 
 ### Phase 6: Diagnostics
 
 **Files:**
-- `Sources/SwiftAgents/DSL/Diagnostics/ExecutionFlowDiagram.swift`
+- `Sources/Swarm/DSL/Diagnostics/ExecutionFlowDiagram.swift`
 
 ### Phase 7: Migration & Documentation
 

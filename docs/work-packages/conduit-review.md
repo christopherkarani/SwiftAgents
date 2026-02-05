@@ -11,10 +11,10 @@ Task Breakdown:
 1) Plan compliance check (no edits):
    - Read `docs/plans/CONDUIT_FIX_PLAN.md` for acceptance criteria.
 2) Code inspection (focus areas):
-   - Inspect `Sources/SwiftAgents/Providers/Conduit/ConduitProviderSelection.swift`:
+   - Inspect `Sources/Swarm/Providers/Conduit/ConduitProviderSelection.swift`:
      - Confirms `ToolCallStreamingInferenceProvider` conformance.
-     - Confirms forwarding behavior matches `Sources/SwiftAgents/Providers/Conduit/LLM.swift` semantics (forward if supported; otherwise throw via stream).
-   - Inspect `Sources/SwiftAgents/Providers/Conduit/ConduitInferenceProvider.swift`:
+     - Confirms forwarding behavior matches `Sources/Swarm/Providers/Conduit/LLM.swift` semantics (forward if supported; otherwise throw via stream).
+   - Inspect `Sources/Swarm/Providers/Conduit/ConduitInferenceProvider.swift`:
      - Confirms `apply(options:to:)` maps `InferenceOptions.topK` -> `GenerateConfig.topK`.
      - Confirms `toolChoice` gating is applied in BOTH:
        - `generateWithToolCalls(prompt:tools:options:)`
@@ -22,8 +22,8 @@ Task Breakdown:
      - Confirms no behavioral regressions (tool definitions still applied, usage mapping unaffected, no accidental changes to tool-call conversion).
 3) Test verification:
    - Ensure new tests exist and cover all 3 deliverables:
-     - `Tests/SwiftAgentsTests/Agents/ToolCallingAgentLiveToolCallStreamingTests.swift`
-     - `Tests/SwiftAgentsTests/Providers/ConduitInferenceProviderOptionsMappingTests.swift`
+     - `Tests/SwarmTests/Agents/ToolCallingAgentLiveToolCallStreamingTests.swift`
+     - `Tests/SwarmTests/Providers/ConduitInferenceProviderOptionsMappingTests.swift`
    - Run: `swift test` (or at minimum the filters used when authoring tests) and confirm green.
 4) Review output:
    - If anything is missing or risky, provide a concrete follow-up checklist with file paths and exact changes needed.

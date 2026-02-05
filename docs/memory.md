@@ -4,7 +4,7 @@ Memory systems are a critical component of intelligent agents. They allow agents
 
 ## Overview
 
-SwiftAgents provides a comprehensive memory system designed for:
+Swarm provides a comprehensive memory system designed for:
 
 - **Context Persistence**: Maintain conversation history across multiple turns
 - **Token Management**: Automatically manage context window limits
@@ -576,7 +576,7 @@ actor SmartMemory: Memory {
 
 ## Memory with Agents
 
-Memory systems integrate seamlessly with SwiftAgents' agent infrastructure.
+Memory systems integrate seamlessly with Swarm' agent infrastructure.
 
 ### Attaching Memory to Agents
 
@@ -780,7 +780,7 @@ Reserve 20-30% for system prompts and response generation.
 
 ## Summary
 
-SwiftAgents' memory system provides flexible, thread-safe options for managing conversation context:
+Swarm' memory system provides flexible, thread-safe options for managing conversation context:
 
 - **ConversationMemory**: Simple FIFO with message count limits
 - **SlidingWindowMemory**: Token-aware with automatic eviction

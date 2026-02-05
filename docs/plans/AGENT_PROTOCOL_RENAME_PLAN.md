@@ -31,7 +31,7 @@ This is a **source-breaking** public API change.
 
 ### Protocol definition (actual code)
 
-- `Sources/SwiftAgents/Core/Agent.swift` (`public protocol Agent: Sendable`)
+- `Sources/Swarm/Core/Agent.swift` (`public protocol Agent: Sendable`)
 
 ### Protocol shown in docs (duplicated signatures)
 
@@ -50,7 +50,7 @@ These docs include `: Agent`, `any Agent`, `protocol …: Agent`, or `extension 
 - `docs/orchestration.md`
 - `docs/TROUBLESHOOTING.md`
 - `docs/VOICE_AGENT_IMPLEMENTATION_PLAN.md` (plan doc; update if we want it to stay accurate)
-- `docs/plans/SWIFTAGENTS_VS_OPENAI_SDK_PLAN.md` (plan doc; contains Swift snippets with `Agent`)
+- `docs/plans/SWARM_VS_OPENAI_SDK_PLAN.md` (plan doc; contains Swift snippets with `Agent`)
 
 ## Where `Agent` (protocol) is referenced (code inventory)
 
@@ -64,89 +64,89 @@ The protocol appears via:
 
 ### Core + type erasure
 
-- `Sources/SwiftAgents/Core/AnyAgent.swift` (`AnyAgent: Agent`, `AgentBox<A: Agent>`, `init(_ agent: some Agent)`)
-- `Sources/SwiftAgents/Core/Agent.swift` (protocol + `extension Agent` blocks)
-- `Sources/SwiftAgents/Core/RunHooks.swift` (hook methods take `agent: any Agent`)
-- `Sources/SwiftAgents/Core/EventStreamHooks.swift` (takes `any Agent`)
+- `Sources/Swarm/Core/AnyAgent.swift` (`AnyAgent: Agent`, `AgentBox<A: Agent>`, `init(_ agent: some Agent)`)
+- `Sources/Swarm/Core/Agent.swift` (protocol + `extension Agent` blocks)
+- `Sources/Swarm/Core/RunHooks.swift` (hook methods take `agent: any Agent`)
+- `Sources/Swarm/Core/EventStreamHooks.swift` (takes `any Agent`)
 
 ### Agents (conformers)
 
-- `Sources/SwiftAgents/Agents/ReActAgent.swift` (`public actor ReActAgent: Agent`)
-- `Sources/SwiftAgents/Agents/PlanAndExecuteAgent.swift` (`public actor PlanAndExecuteAgent: Agent`)
-- `Sources/SwiftAgents/Agents/ToolCallingAgent.swift` (`public actor ToolCallingAgent: Agent`)
-- `Sources/SwiftAgents/Resilience/ResilientAgent.swift` (`public actor ResilientAgent: Agent`)
+- `Sources/Swarm/Agents/ReActAgent.swift` (`public actor ReActAgent: Agent`)
+- `Sources/Swarm/Agents/PlanAndExecuteAgent.swift` (`public actor PlanAndExecuteAgent: Agent`)
+- `Sources/Swarm/Agents/ToolCallingAgent.swift` (`public actor ToolCallingAgent: Agent`)
+- `Sources/Swarm/Resilience/ResilientAgent.swift` (`public actor ResilientAgent: Agent`)
 
 ### Orchestration / DSL / routing
 
 Protocol is used heavily for multi-agent composition:
 
-- `Sources/SwiftAgents/Orchestration/OrchestrationBuilder.swift` (`any Agent` + `public extension Agent`)
-- `Sources/SwiftAgents/Orchestration/Handoff.swift` (`HandoffReceiver: Agent`, stores `any Agent`)
-- `Sources/SwiftAgents/Orchestration/HandoffBuilder.swift` (`HandoffBuilder<Target: Agent>`, `handoff<T: Agent>`, `some Agent`)
-- `Sources/SwiftAgents/Orchestration/HandoffConfiguration.swift` (`HandoffConfiguration<Target: Agent>`, callbacks with `any Agent`)
-- `Sources/SwiftAgents/Orchestration/SequentialChain.swift` (`SequentialChain: Agent`, operators with `any Agent`)
-- `Sources/SwiftAgents/Orchestration/AgentOperators.swift` (compositions: `ParallelComposition: Agent`, etc.)
-- `Sources/SwiftAgents/Orchestration/ParallelGroup.swift` (`ParallelGroup: Agent`)
-- `Sources/SwiftAgents/Orchestration/AgentRouter.swift` (`AgentRouter: Agent`, stores `any Agent`)
-- `Sources/SwiftAgents/Orchestration/SupervisorAgent.swift` (`SupervisorAgent: Agent`, operates over `any Agent`)
-- `Sources/SwiftAgents/Orchestration/Pipeline.swift` (`public extension Agent`, pipelines)
+- `Sources/Swarm/Orchestration/OrchestrationBuilder.swift` (`any Agent` + `public extension Agent`)
+- `Sources/Swarm/Orchestration/Handoff.swift` (`HandoffReceiver: Agent`, stores `any Agent`)
+- `Sources/Swarm/Orchestration/HandoffBuilder.swift` (`HandoffBuilder<Target: Agent>`, `handoff<T: Agent>`, `some Agent`)
+- `Sources/Swarm/Orchestration/HandoffConfiguration.swift` (`HandoffConfiguration<Target: Agent>`, callbacks with `any Agent`)
+- `Sources/Swarm/Orchestration/SequentialChain.swift` (`SequentialChain: Agent`, operators with `any Agent`)
+- `Sources/Swarm/Orchestration/AgentOperators.swift` (compositions: `ParallelComposition: Agent`, etc.)
+- `Sources/Swarm/Orchestration/ParallelGroup.swift` (`ParallelGroup: Agent`)
+- `Sources/Swarm/Orchestration/AgentRouter.swift` (`AgentRouter: Agent`, stores `any Agent`)
+- `Sources/Swarm/Orchestration/SupervisorAgent.swift` (`SupervisorAgent: Agent`, operates over `any Agent`)
+- `Sources/Swarm/Orchestration/Pipeline.swift` (`public extension Agent`, pipelines)
 
 ### Tools / guardrails (agent passed for validation + hooks)
 
-- `Sources/SwiftAgents/Tools/Tool.swift` (`agent: (any Agent)?` in execution path)
-- `Sources/SwiftAgents/Tools/ParallelToolExecutor.swift` (`agent: any Agent`)
-- `Sources/SwiftAgents/Tools/ToolExecutionEngine.swift` (`agent: any Agent`)
-- `Sources/SwiftAgents/Tools/ToolCallGoal.swift` (`agent: any Agent`)
-- `Sources/SwiftAgents/Guardrails/ToolGuardrails.swift` (uses `any Agent`)
-- `Sources/SwiftAgents/Guardrails/OutputGuardrail.swift` (uses `any Agent`)
-- `Sources/SwiftAgents/Guardrails/GuardrailRunner.swift` (uses `any Agent`)
+- `Sources/Swarm/Tools/Tool.swift` (`agent: (any Agent)?` in execution path)
+- `Sources/Swarm/Tools/ParallelToolExecutor.swift` (`agent: any Agent`)
+- `Sources/Swarm/Tools/ToolExecutionEngine.swift` (`agent: any Agent`)
+- `Sources/Swarm/Tools/ToolCallGoal.swift` (`agent: any Agent`)
+- `Sources/Swarm/Guardrails/ToolGuardrails.swift` (uses `any Agent`)
+- `Sources/Swarm/Guardrails/OutputGuardrail.swift` (uses `any Agent`)
+- `Sources/Swarm/Guardrails/GuardrailRunner.swift` (uses `any Agent`)
 
 ### Macros (must be updated or builds will fail)
 
 Macro declarations in the main library reference protocol conformance:
 
-- `Sources/SwiftAgents/Macros/MacroDeclarations.swift` (`@attached(extension, conformances: Agent)` appears twice)
+- `Sources/Swarm/Macros/MacroDeclarations.swift` (`@attached(extension, conformances: Agent)` appears twice)
 
 Macro expansion emits protocol conformance directly:
 
-- `Sources/SwiftAgentsMacros/AgentMacro.swift` (generates `extension <Type>: Agent {}`)
+- `Sources/SwarmMacros/AgentMacro.swift` (generates `extension <Type>: Agent {}`)
 
 Macro tests assert that emitted expansion text matches the old protocol name:
 
-- `Tests/SwiftAgentsMacrosTests/AgentMacroTests.swift`
-- `Tests/SwiftAgentsMacrosTests/MacroIntegrationTests.swift` (likely via macro usage; needs audit)
+- `Tests/SwarmMacrosTests/AgentMacroTests.swift`
+- `Tests/SwarmMacrosTests/MacroIntegrationTests.swift` (likely via macro usage; needs audit)
 
 ### Examples / playgrounds
 
-- `Sources/SwiftAgents/Examples/Playground.swift` (hooks accept `any Agent`)
+- `Sources/Swarm/Examples/Playground.swift` (hooks accept `any Agent`)
 - `Playground.playground/Pages/Main.xcplaygroundpage/Contents.swift` (hooks accept `any Agent`)
 
 ### Tests
 
 Representative (non-exhaustive) test areas that reference the protocol directly:
 
-- `Tests/SwiftAgentsTests/Core/RunHooksTests.swift` (`any Agent`)
-- `Tests/SwiftAgentsTests/DSL/AgentCompositionTests.swift` (`any Agent`, `: Agent`)
-- `Tests/SwiftAgentsTests/Orchestration/*` (handoffs, supervisor, router; `: Agent` and `any Agent`)
-- `Tests/SwiftAgentsTests/Tools/ParallelToolExecutorTests+Mocks.swift` (`: Agent`)
-- `Tests/SwiftAgentsTests/Guardrails/*` (guardrails reference `any Agent`)
+- `Tests/SwarmTests/Core/RunHooksTests.swift` (`any Agent`)
+- `Tests/SwarmTests/DSL/AgentCompositionTests.swift` (`any Agent`, `: Agent`)
+- `Tests/SwarmTests/Orchestration/*` (handoffs, supervisor, router; `: Agent` and `any Agent`)
+- `Tests/SwarmTests/Tools/ParallelToolExecutorTests+Mocks.swift` (`: Agent`)
+- `Tests/SwarmTests/Guardrails/*` (guardrails reference `any Agent`)
 
 ## Where `ToolCallingAgent` exists today (inventory)
 
 ### Concrete implementation
 
-- `Sources/SwiftAgents/Agents/ToolCallingAgent.swift`
+- `Sources/Swarm/Agents/ToolCallingAgent.swift`
 
 ### Docs + plans
 
 - `docs/agents.md`
 - `docs/tools.md`
 - `docs/plans/PLAN_REVIEW_FINDINGS.md`
-- `docs/plans/SWIFTAGENTS_VS_OPENAI_SDK_PLAN.md`
+- `docs/plans/SWARM_VS_OPENAI_SDK_PLAN.md`
 
 ### Tests
 
-- `Tests/SwiftAgentsTests/Agents/StreamingEventTests.swift`
+- `Tests/SwarmTests/Agents/StreamingEventTests.swift`
 
 ## Docs that already assume a concrete `Agent` type
 
@@ -171,7 +171,7 @@ These examples currently read as if `Agent` is instantiable; they should become 
 
 ### Phase 1 — Rename the protocol (`Agent` → `AgentType`)
 
-1. Update `Sources/SwiftAgents/Core/Agent.swift`:
+1. Update `Sources/Swarm/Core/Agent.swift`:
    - Rename protocol declaration.
    - Rename all `extension Agent` blocks to `extension AgentType`.
 2. Update all internal references:
@@ -186,12 +186,12 @@ These examples currently read as if `Agent` is instantiable; they should become 
 ### Phase 2 — Update macros to target `AgentType`
 
 1. Update macro declarations:
-   - `Sources/SwiftAgents/Macros/MacroDeclarations.swift`: change `@attached(extension, conformances: Agent)` → `AgentType`.
+   - `Sources/Swarm/Macros/MacroDeclarations.swift`: change `@attached(extension, conformances: Agent)` → `AgentType`.
 2. Update macro expansion:
-   - `Sources/SwiftAgentsMacros/AgentMacro.swift`: emit `extension <Type>: AgentType {}`.
+   - `Sources/SwarmMacros/AgentMacro.swift`: emit `extension <Type>: AgentType {}`.
 3. Update macro tests:
-   - `Tests/SwiftAgentsMacrosTests/AgentMacroTests.swift` expected expansions.
-   - Audit `Tests/SwiftAgentsMacrosTests/MacroIntegrationTests.swift` if it asserts text containing `Agent`.
+   - `Tests/SwarmMacrosTests/AgentMacroTests.swift` expected expansions.
+   - Audit `Tests/SwarmMacrosTests/MacroIntegrationTests.swift` if it asserts text containing `Agent`.
 
 ### Phase 3 — Rename tool-calling agent (`ToolCallingAgent` → `Agent`)
 
@@ -220,8 +220,8 @@ These examples currently read as if `Agent` is instantiable; they should become 
 
 ### Phase 5 — Build + test verification
 
-1. Run `swift test` for `SwiftAgentsTests` and `SwiftAgentsMacrosTests`.
-2. Build `SwiftAgentsDemo` to ensure the executable target still compiles.
+1. Run `swift test` for `SwarmTests` and `SwarmMacrosTests`.
+2. Build `SwarmDemo` to ensure the executable target still compiles.
 3. If the repo has an Xcode workspace flow, build the workspace scheme(s).
 
 ## Search/replace checklist (safe patterns)
@@ -244,5 +244,5 @@ Separately:
 
 1. Do you want to keep `@Agent` macro name as-is (recommended), even though it will generate `AgentType` conformance?
 2. Do you want a deprecated `ToolCallingAgent` alias to `Agent` for migration, or a hard break?
-3. Should we rename file names for clarity (e.g., `Sources/SwiftAgents/Core/Agent.swift` → `AgentType.swift`, `ToolCallingAgent.swift` → `Agent.swift`), or keep filenames unchanged and only rename symbols?
+3. Should we rename file names for clarity (e.g., `Sources/Swarm/Core/Agent.swift` → `AgentType.swift`, `ToolCallingAgent.swift` → `Agent.swift`), or keep filenames unchanged and only rename symbols?
 4. In docs/examples, should `Agent` type annotations mean the new concrete default `Agent`, or should we prefer `any AgentType` to make examples work with any agent implementation?

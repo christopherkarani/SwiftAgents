@@ -6,7 +6,7 @@ Hive is a Swift 6.2, Swift Concurrency–first, strongly typed **graph runtime**
 - **Deterministic execution** (reproducible results and traces)
 - **Streaming** (first-class event stream for UI)
 - **Checkpointing/memory** (via `Wax`)
-- **Pluggable inference + tools** (via `Conduit` + `SwiftAgents` adapters)
+- **Pluggable inference + tools** (via `Conduit` + `Swarm` adapters)
 
 This document is intentionally verbose: it is a build-spec for coding agents that need clear semantics, interfaces, and testable milestones.
 
@@ -46,9 +46,9 @@ Rationale: this keeps the concurrency and Foundation surface modern and eliminat
 - Persistence model: **full snapshot** (global store + frontier + local overlays).
 - Encoding rule: **checkpointing requires codecs** for all persisted channels; missing codecs are a runtime configuration error before execution starts.
 
-### SwiftAgents deliverables
+### Swarm deliverables
 
-- `HiveSwiftAgents` ships `HiveAgents.makeToolUsingChatAgent(...)` and the façade runtime APIs (`sendUserMessage`, `resumeToolApproval`).
+- `HiveSwarm` ships `HiveAgents.makeToolUsingChatAgent(...)` and the façade runtime APIs (`sendUserMessage`, `resumeToolApproval`).
 - The prebuilt agent graph is the default “works out of the box” path and is documented and fully covered by tests.
 
 ---
@@ -169,7 +169,7 @@ Create `libs/hive` as a SwiftPM workspace root.
 ### 4.1 Targets
 
 - `HiveCore`
-  - zero knowledge of Wax/Conduit/SwiftAgents
+  - zero knowledge of Wax/Conduit/Swarm
   - contains runtime and public API surface
 - `HiveCheckpointWax`
   - depends on `HiveCore` + `Wax`
@@ -177,8 +177,8 @@ Create `libs/hive` as a SwiftPM workspace root.
 - `HiveConduit`
   - depends on `HiveCore` + `Conduit`
   - provides `ConduitModelClient` + Conduit → Hive events mapping
-- `HiveSwiftAgents`
-  - depends on `HiveCore` + `SwiftAgents`
+- `HiveSwarm`
+  - depends on `HiveCore` + `Swarm`
   - provides tool registry and convenience nodes
 
 ### 4.2 File structure
@@ -483,7 +483,7 @@ HiveRunOptions are immutable for a single run and are included in `runStarted` e
 
 - `maxSteps`: hard cap to prevent infinite loops (default for v1: **100**)
 - `maxConcurrentTasks`: bounded concurrency for the frontier (default for v1: **8**)
-- `checkpointPolicy`: when to save checkpoints (**`.everyStep`** for prebuilt SwiftAgents graphs)
+- `checkpointPolicy`: when to save checkpoints (**`.everyStep`** for prebuilt Swarm graphs)
 - `debugPayloads`: when `true`, include full channel payloads in events (default: **false**)
 
 Checkpoint saving is synchronous in v1 (the runtime awaits checkpoint writes before continuing).
@@ -607,7 +607,7 @@ Rules:
 
 - No jitter in v1 (jitter is non-deterministic and is deferred).
 - Retries are safe only for nodes that are idempotent or otherwise retry-tolerant.
-- Prebuilt SwiftAgents graph nodes set retry policies on model/tool execution nodes; pure routing/state nodes use `.none`.
+- Prebuilt Swarm graph nodes set retry policies on model/tool execution nodes; pure routing/state nodes use `.none`.
 
 Retry determinism requirements:
 
@@ -653,7 +653,7 @@ public struct HiveInterruption<Schema: HiveSchema>: Codable, Sendable {
 - Hive completes the current step’s **commit phase** deterministically (writes produced by tasks earlier in deterministic task order are committed).
 - Hive emits:
   - `runInterrupted` (includes interrupt id + payload summary)
-  - `checkpointSaved` (checkpointing is enabled for the prebuilt SwiftAgents graphs and can be enabled for any graph)
+  - `checkpointSaved` (checkpointing is enabled for the prebuilt Swarm graphs and can be enabled for any graph)
 - Hive saves a checkpoint snapshot immediately after commit.
 - Hive returns `.interrupted(HiveInterruption)` containing the interrupt and the checkpoint reference.
 
@@ -666,7 +666,7 @@ public struct HiveInterruption<Schema: HiveSchema>: Codable, Sendable {
   - sets `HiveRunContext.resume = HiveResume(interruptID:payload:)` for the resumed run
   - continues execution from the persisted frontier
 
-Resume is visible to nodes via `HiveRunContext` and is consumed by graph logic (for SwiftAgents prebuilt graphs, the resume payload is converted into a user message and appended to the `messages` channel).
+Resume is visible to nodes via `HiveRunContext` and is consumed by graph logic (for Swarm prebuilt graphs, the resume payload is converted into a user message and appended to the `messages` channel).
 
 **Deterministic rule**
 
@@ -731,7 +731,7 @@ public enum HiveEventKind: Sendable {
   case checkpointSaved(checkpointID: String)
   case checkpointLoaded(checkpointID: String)
 
-  // Adapter-facing events (emitted by HiveConduit / HiveSwiftAgents nodes).
+  // Adapter-facing events (emitted by HiveConduit / HiveSwarm nodes).
   case modelInvocationStarted(model: String)
   case modelToken(text: String)
   case modelInvocationFinished
@@ -895,11 +895,11 @@ Rules:
 
 ---
 
-## 11) Conduit + SwiftAgents integration (adapter boundaries)
+## 11) Conduit + Swarm integration (adapter boundaries)
 
 ### 11.1 Keep HiveCore independent
 
-HiveCore stays independent of Conduit/Wax/SwiftAgents. All third-party integrations live in adapter modules.
+HiveCore stays independent of Conduit/Wax/Swarm. All third-party integrations live in adapter modules.
 
 HiveCore defines minimal, stable protocols and value types used by adapters and convenience nodes:
 
@@ -995,21 +995,21 @@ Responsibilities:
 - emit model invocation start/finish events (including model name and usage metadata)
 - keep prompt templates and provider-specific request knobs inside `HiveConduit`
 
-### 11.3 SwiftAgents adapter (HiveSwiftAgents)
+### 11.3 Swarm adapter (HiveSwarm)
 
 Responsibilities:
 
-- adapt SwiftAgents tool definitions into `HiveToolRegistry` (tool name, args JSON, result content)
+- adapt Swarm tool definitions into `HiveToolRegistry` (tool name, args JSON, result content)
 - expose a typed `HiveAgents` façade that produces ready-to-run graphs and safe defaults
 - emit tool invocation events (`toolInvocationStarted` / `toolInvocationFinished`) with tool name + call id metadata
 
-#### Prebuilt SwiftAgents graph (v1 deliverable)
+#### Prebuilt Swarm graph (v1 deliverable)
 
-HiveSwiftAgents ships a prebuilt graph that is the default entry point for apps:
+HiveSwarm ships a prebuilt graph that is the default entry point for apps:
 
 `HiveAgents.makeToolUsingChatAgent(...) -> CompiledHiveGraph<HiveAgents.Schema>`
 
-HiveSwiftAgents also ships a façade API that makes the prebuilt graph easy to use in apps (no manual wiring):
+HiveSwarm also ships a façade API that makes the prebuilt graph easy to use in apps (no manual wiring):
 
 ```swift
 public struct HiveAgentsRuntime: Sendable {
@@ -1049,7 +1049,7 @@ HiveAgents.Schema locks its interrupt/resume payloads to support tool approval:
 - `InterruptPayload = HiveAgents.Interrupt` (Codable enum)
 - `ResumePayload = HiveAgents.Resume` (Codable enum)
 
-HiveSwiftAgents defines:
+HiveSwarm defines:
 
 ```swift
 public enum HiveAgents {
@@ -1180,7 +1180,7 @@ We build Hive by writing tests first. The runtime is stateful, concurrent, and e
 - missing codec causes clear error when checkpointing enabled
 - external writes: `applyExternalWrites` commits reducer-correct updates and persists a checkpoint
 
-**HiveAgents (SwiftAgents prebuilt)**
+**HiveAgents (Swarm prebuilt)**
 
 - `sendUserMessage` appends a user message then runs to completion
 - tool call loop: model produces tool calls → tools execute → model continues → final answer
@@ -1264,13 +1264,13 @@ Either make `HiveEventKind` codable or map events to a stable, codable trace rec
 - [ ] Implement state inspection + external writes (`getLatestCheckpoint`, `getLatestStore`, `applyExternalWrites`)
 - [ ] Tests: save/load + resume determinism
 
-### Phase 7 — Adapters (Conduit + SwiftAgents)
+### Phase 7 — Adapters (Conduit + Swarm)
 
 - [ ] Implement `HiveModelClient` + `AnyHiveModelClient` in `HiveCore`
 - [ ] Implement `HiveToolRegistry` + `AnyHiveToolRegistry` in `HiveCore`
 - [ ] Implement `ConduitModelClient` in `HiveConduit`
-- [ ] Implement `SwiftAgentsToolRegistry` adapter in `HiveSwiftAgents`
-- [ ] Build prebuilt SwiftAgents graph (`HiveAgents.makeToolUsingChatAgent`)
+- [ ] Implement `SwarmToolRegistry` adapter in `HiveSwarm`
+- [ ] Build prebuilt Swarm graph (`HiveAgents.makeToolUsingChatAgent`)
 - [ ] Build façade runtime API (`HiveAgentsRuntime.sendUserMessage`, `resumeToolApproval`)
 - [ ] Add tool approval interrupt/resume coverage tests
 - [ ] Add end-to-end example app snippet/docs
@@ -1300,7 +1300,7 @@ Hive v1 is “done” when:
 - `HiveCheckpointWax`:
   - saves/loads checkpoints
   - resume produces identical results to uninterrupted run
-- `HiveConduit` + `HiveSwiftAgents`:
+- `HiveConduit` + `HiveSwarm`:
   - at least one working, documented “agent loop” example
 - Tests cover the core semantics and determinism
 
@@ -1330,7 +1330,7 @@ Use this checklist as the final review gate. If any item fails, v1 is not shippa
 - [ ] Interrupt/resume persists interruption state and resumes from the correct frontier.
 - [ ] External state updates (`applyExternalWrites`) produce correct reducer results and emit consistent events.
 
-### SwiftAgents “batteries included” UX
+### Swarm “batteries included” UX
 
 - [ ] `HiveAgents.makeToolUsingChatAgent` exists, compiles, and is documented with a minimal working example.
 - [ ] `HiveAgents.sendUserMessage(threadID:text:)` exists and uses `applyExternalWrites` + graph run to produce an assistant response.
@@ -1344,5 +1344,5 @@ Use this checklist as the final review gate. If any item fails, v1 is not shippa
 
 ### Build + tests
 
-- [ ] `swift test` passes for `HiveCore`, `HiveCheckpointWax`, `HiveConduit`, `HiveSwiftAgents`.
+- [ ] `swift test` passes for `HiveCore`, `HiveCheckpointWax`, `HiveConduit`, `HiveSwarm`.
 - [ ] Public API is reviewed for ergonomics (naming, defaults, minimal footguns).

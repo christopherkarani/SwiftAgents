@@ -1,22 +1,22 @@
-# SwiftAgents (FoundationAgents) Framework
+# Swarm (FoundationAgents) Framework
 
 ## Project Context
 
-SwiftAgents is an open-source Swift framework providing "LangChain for Apple platforms"—comprehensive agent development capabilities built on Apple's Foundation Models. It complements SwiftAI SDK (inference layer) by providing the agent layer: autonomous reasoning, memory systems, and multi-agent orchestration.
+Swarm is an open-source Swift framework providing "LangChain for Apple platforms"—comprehensive agent development capabilities built on Apple's Foundation Models. It complements SwiftAI SDK (inference layer) by providing the agent layer: autonomous reasoning, memory systems, and multi-agent orchestration.
 
 ### Architecture
 ```
-SwiftAI SDK (Inference) → SwiftAgents (Agent Orchestration) → Application
+SwiftAI SDK (Inference) → Swarm (Agent Orchestration) → Application
 ```
 
 ### Key Directories
-- `Sources/SwiftAgents/` - Core framework source
-- `Sources/SwiftAgents/Agents/` - Agent implementations (ReActAgent, PlanAndExecuteAgent)
-- `Sources/SwiftAgents/Memory/` - Memory systems (conversation, vector, summary)
-- `Sources/SwiftAgents/Tools/` - Tool execution framework
-- `Sources/SwiftAgents/Orchestration/` - Multi-agent coordination
-- `Sources/SwiftAgents/Observability/` - Tracing and monitoring
-- `Tests/SwiftAgentsTests/` - Test suites with mock protocols
+- `Sources/Swarm/` - Core framework source
+- `Sources/Swarm/Agents/` - Agent implementations (ReActAgent, PlanAndExecuteAgent)
+- `Sources/Swarm/Memory/` - Memory systems (conversation, vector, summary)
+- `Sources/Swarm/Tools/` - Tool execution framework
+- `Sources/Swarm/Orchestration/` - Multi-agent coordination
+- `Sources/Swarm/Observability/` - Tracing and monitoring
+- `Tests/SwarmTests/` - Test suites with mock protocols
 
 ## Development Standards
 
@@ -67,7 +67,7 @@ swift package plugin --allow-writing-to-package-directory swiftformat  # Format 
 - Use `associatedtype` for type-safe generic protocols
 - Provide protocol extensions with sensible defaults
 - Mark class-only protocols with `AnyObject` constraint
-- See `Sources/SwiftAgents/Core/Protocols/` for patterns
+- See `Sources/Swarm/Core/Protocols/` for patterns
 
 ### Concurrency
 - Use structured concurrency (`TaskGroup`, `async let`) over unstructured
@@ -79,7 +79,7 @@ swift package plugin --allow-writing-to-package-directory swiftformat  # Format 
 - Use `@AgentActor` macro for agent boilerplate
 - Use `@Tool` macro for tool registration
 - Use `@Observable` for state management
-- See `Sources/SwiftAgentsMacros/` for implementation patterns
+- See `Sources/SwarmMacros/` for implementation patterns
 
 ### Memory Systems
 - `ConversationMemory`: Short-term, token-limited context
@@ -190,6 +190,6 @@ Use specialized agents for focused expertise. Delegate proactively:
 6. `code-reviewer` → final review (ensure tests pass)
 
 ## Quick References
-- API patterns: See `Sources/SwiftAgents/Examples/`
-- Protocol design: See `Sources/SwiftAgents/Core/Protocols/`
-- Testing mocks: See `Tests/SwiftAgentsTests/Mocks/`
+- API patterns: See `Sources/Swarm/Examples/`
+- Protocol design: See `Sources/Swarm/Core/Protocols/`
+- Testing mocks: See `Tests/SwarmTests/Mocks/`

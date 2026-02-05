@@ -22,7 +22,7 @@ let agent = Agent(.anthropic(key: "ANTHROPIC_API_KEY"))
 
 ---
 
-## SwiftAgents 2.x → 2.x (Agent Macro Rename)
+## Swarm 2.x → 2.x (Agent Macro Rename)
 
 The public macro used to generate agent boilerplate has been renamed.
 
@@ -44,7 +44,7 @@ actor AssistantAgent { ... }
 
 ---
 
-## SwiftAgents 1.x → 2.0 (Tooling Overhaul)
+## Swarm 1.x → 2.0 (Tooling Overhaul)
 
 This release introduces a breaking redesign of tools to improve reliability, schema support, and developer experience.
 
@@ -94,13 +94,13 @@ let tools: [any AnyJSONTool] = [AnyTool(WeatherTool())]
 
 ---
 
-# Migration Guide: SwiftAgents 1.0 to 1.1
+# Migration Guide: Swarm 1.0 to 1.1
 
-This guide helps you migrate your SwiftAgents code from version 1.0 to 1.1, which introduces API ergonomics improvements and enhanced error handling.
+This guide helps you migrate your Swarm code from version 1.0 to 1.1, which introduces API ergonomics improvements and enhanced error handling.
 
 ## Overview of Changes
 
-SwiftAgents 1.1 focuses on improving developer experience with:
+Swarm 1.1 focuses on improving developer experience with:
 - Type-safe tool registry operations
 - Fluent handoff configuration APIs
 - Enhanced error messages with recovery suggestions
@@ -270,7 +270,7 @@ catch let error as AgentError {
         print("Suggestion: \(suggestion)")
     }
     if let anchor = error.helpAnchor {
-        print("Help: https://swiftagents.dev/docs/\(anchor)")
+        print("Help: https://swarm.dev/docs/\(anchor)")
     }
 }
 ```
@@ -281,7 +281,7 @@ catch let error as AgentError {
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/your-org/SwiftAgents", from: "1.1.0")
+    .package(url: "https://github.com/christopherkarani/Swarm", from: "1.1.0")
 ]
 ```
 
@@ -303,7 +303,7 @@ dependencies: [
 
 ## Compatibility Matrix
 
-| Feature | SwiftAgents 1.0 | SwiftAgents 1.1 |
+| Feature | Swarm 1.0 | Swarm 1.1 |
 |---------|-----------------|-----------------|
 | String-based tool lookup | ✅ | ✅ |
 | Type-safe tool lookup | ❌ | ✅ |

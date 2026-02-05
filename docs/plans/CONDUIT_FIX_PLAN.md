@@ -1,4 +1,4 @@
-# Conduit Fix Plan (SwiftAgents)
+# Conduit Fix Plan (Swarm)
 
 Status: In progress
 Owner: Orchestrator
@@ -15,14 +15,14 @@ Fix correctness + usability gaps in the Conduit bridge:
 ## Context (Current Behavior)
 
 - `ToolCallingAgent` uses live tool-call streaming only when the configured provider downcasts to `ToolCallStreamingInferenceProvider`.
-  - `Sources/SwiftAgents/Agents/ToolCallingAgent.swift:353`
+  - `Sources/Swarm/Agents/ToolCallingAgent.swift:353`
 - `LLM` forwards tool-call streaming.
-  - `Sources/SwiftAgents/Providers/Conduit/LLM.swift:111`
+  - `Sources/Swarm/Providers/Conduit/LLM.swift:111`
 - `ConduitProviderSelection` currently does not forward tool-call streaming, so streaming is silently disabled if users pass `.openAI/.anthropic/.openRouter/...` via `ConduitProviderSelection`.
-  - `Sources/SwiftAgents/Providers/Conduit/ConduitProviderSelection.swift:11`
+  - `Sources/Swarm/Providers/Conduit/ConduitProviderSelection.swift:11`
 - `InferenceOptions.topK` exists but is not applied in the Conduit bridge.
-  - `Sources/SwiftAgents/Core/Agent.swift:309`
-  - `Sources/SwiftAgents/Providers/Conduit/ConduitInferenceProvider.swift:132`
+  - `Sources/Swarm/Core/Agent.swift:309`
+  - `Sources/Swarm/Providers/Conduit/ConduitInferenceProvider.swift:132`
 
 ## Test-Driven Deliverables
 

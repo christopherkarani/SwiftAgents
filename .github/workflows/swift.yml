@@ -1,4 +1,4 @@
-# SwiftAgents CI Workflow
+# Swarm CI Workflow
 # Builds and tests on macOS and Linux
 
 name: Swift CI

@@ -9,15 +9,15 @@
 - Identify deletion targets:
   - `Routes` type + `routeWhen`/`orchestrationRoute` helpers + tuple-based `ParallelBuilder` + `Orchestration(steps:)` init
 - Files likely touched:
-  - `Sources/SwiftAgents/DSL/AgentBlueprint.swift`
-  - `Sources/SwiftAgents/Orchestration/OrchestrationBuilder.swift`
-  - `Sources/SwiftAgents/DSL/Flow/Routes.swift`
-  - `Sources/SwiftAgents/DSL/Modifiers/DeclarativeAgentModifiers.swift`
-  - Tests: `Tests/SwiftAgentsTests/DSL/AgentBlueprintTests.swift`, `Tests/SwiftAgentsTests/DSL/DeclarativeAgentDSLTests.swift`, `Tests/SwiftAgentsTests/DSL/SwiftUIDSLIntegrationTests.swift`, `Tests/SwiftAgentsTests/Orchestration/AgentRouterTests.swift`
+  - `Sources/Swarm/DSL/AgentBlueprint.swift`
+  - `Sources/Swarm/Orchestration/OrchestrationBuilder.swift`
+  - `Sources/Swarm/DSL/Flow/Routes.swift`
+  - `Sources/Swarm/DSL/Modifiers/DeclarativeAgentModifiers.swift`
+  - Tests: `Tests/SwarmTests/DSL/AgentBlueprintTests.swift`, `Tests/SwarmTests/DSL/DeclarativeAgentDSLTests.swift`, `Tests/SwarmTests/DSL/SwiftUIDSLIntegrationTests.swift`, `Tests/SwarmTests/Orchestration/AgentRouterTests.swift`
   - Docs: `README.md`, `docs/dsl.md`, `docs/agents.md`, `docs/orchestration.md`
 
 2) Introduce `OrchestrationGroup` + single-root orchestration
-- `Sources/SwiftAgents/Orchestration/OrchestrationBuilder.swift`
+- `Sources/Swarm/Orchestration/OrchestrationBuilder.swift`
   - Add `public struct OrchestrationGroup: OrchestrationStep` that wraps `[OrchestrationStep]` and executes them sequentially (reuse existing sequential execution logic from `Orchestration.executeSteps` or mirror it).
   - Update `@resultBuilder OrchestrationBuilder`:
     - `buildBlock` returns `OrchestrationGroup` instead of `[OrchestrationStep]`.
@@ -35,7 +35,7 @@
   - Ensure metadata keys remain identical to previous `Orchestration` behavior.
 
 3) AgentBlueprint body + Orchestration init changes
-- `Sources/SwiftAgents/DSL/AgentBlueprint.swift`
+- `Sources/Swarm/DSL/AgentBlueprint.swift`
   - Change `body` to `@OrchestrationBuilder var body: some OrchestrationStep`.
   - Update `makeOrchestration()` to use new `Orchestration(root: body, ...)`.
 - Update any blueprint usages in tests/docs to drop `[OrchestrationStep]` and return a single step (builder allows multiple statements).
@@ -43,10 +43,10 @@
   - If body is a single agent, still compile (builder expression -> `OrchestrationGroup` or direct `AgentStep`).
 
 4) Routing unification: Router { When/Otherwise } + remove Routes/routeWhen
-- `Sources/SwiftAgents/DSL/Flow/Routes.swift`
+- `Sources/Swarm/DSL/Flow/Routes.swift`
   - Replace `Routes` with `Router`-compatible helpers only, or delete file and move `RouteBranch/RouteEntry/When/Otherwise` into `OrchestrationBuilder.swift` (preferred for a single routing DSL).
   - Ensure `When/Otherwise` build `RouteEntry` that Router’s builder consumes.
-- `Sources/SwiftAgents/Orchestration/OrchestrationBuilder.swift`
+- `Sources/Swarm/Orchestration/OrchestrationBuilder.swift`
   - Replace `RouteDefinition`/`RouterBuilder` with `RouteBranch/RouteEntry` (align with existing `Routes.swift`).
   - Router stores `[RouteBranch]` + `fallback: OrchestrationStep?` (step-based) or `any AgentRuntime`? Decide: follow `RouteBranch.step` to support arbitrary steps and blueprints.
   - Replace `routeWhen`/`orchestrationRoute` functions with `When/Otherwise`.
@@ -58,7 +58,7 @@
   - No routes + no fallback -> `OrchestrationError.routingFailed` stays.
 
 5) Parallel DSL: ParallelItem + `.named`
-- `Sources/SwiftAgents/Orchestration/OrchestrationBuilder.swift`
+- `Sources/Swarm/Orchestration/OrchestrationBuilder.swift`
   - Add `public struct ParallelItem: Sendable { name: String; agent: any AgentRuntime }`.
   - Update `Parallel` to store `[ParallelItem]` (rename `agents` to `items`).
   - Update `Parallel` init to use `@ParallelBuilder _ content: () -> [ParallelItem]`.
@@ -69,21 +69,21 @@
   - Update metadata naming to use `item.name`.
 
 6) ConfiguredAgent preserves Base.Loop
-- `Sources/SwiftAgents/DSL/Modifiers/DeclarativeAgentModifiers.swift`
+- `Sources/Swarm/DSL/Modifiers/DeclarativeAgentModifiers.swift`
   - Change `ConfiguredAgent` to preserve `associatedtype Loop = Base.Loop`.
   - `var loop: Base.Loop { base.loop }` instead of `AgentLoopSequence`.
 - Edge cases:
   - Ensure `AgentLoopBuilder` still handles `Base.Loop` without erasure.
 
 7) Update tests to new DSLs and single-root orchestration
-- `Tests/SwiftAgentsTests/DSL/AgentBlueprintTests.swift`
+- `Tests/SwarmTests/DSL/AgentBlueprintTests.swift`
   - Update blueprint bodies to `some OrchestrationStep`.
   - Update Router usage to `Router { When(...) { ... } Otherwise { ... } }`.
-- `Tests/SwiftAgentsTests/DSL/DeclarativeAgentDSLTests.swift`
+- `Tests/SwarmTests/DSL/DeclarativeAgentDSLTests.swift`
   - Replace `Routes { When/Otherwise }` with `Router { When/Otherwise }` (if routing moved).
-- `Tests/SwiftAgentsTests/DSL/SwiftUIDSLIntegrationTests.swift`
+- `Tests/SwarmTests/DSL/SwiftUIDSLIntegrationTests.swift`
   - Update blueprint body signature.
-- `Tests/SwiftAgentsTests/Orchestration/AgentRouterTests.swift`
+- `Tests/SwarmTests/Orchestration/AgentRouterTests.swift`
   - Only if `AgentRouter` API changed (likely not); otherwise keep.
 - Add new tests (Swift Testing):
   - `OrchestrationGroup` executes sequentially and preserves metadata count.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Guardrails provide safety validation for AI agent inputs and outputs in the SwiftAgents framework. They act as protective barriers that intercept, validate, and optionally transform data flowing through your agent systems.
+Guardrails provide safety validation for AI agent inputs and outputs in the Swarm framework. They act as protective barriers that intercept, validate, and optionally transform data flowing through your agent systems.
 
 The guardrails system supports four types of validation:
 - **Input Guardrails**: Validate user input before agent processing
@@ -82,7 +82,7 @@ let guardrail = InputGuardrailBuilder()
 
 ### Built-in Input Guardrail Factories
 
-SwiftAgents provides convenience factory methods for common scenarios:
+Swarm provides convenience factory methods for common scenarios:
 
 ```swift
 // Maximum length validation

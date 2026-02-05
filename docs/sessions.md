@@ -1,6 +1,6 @@
 # Session Management
 
-Sessions provide automatic conversation history management for multi-turn agent interactions in SwiftAgents. Unlike the `Memory` protocol which provides context retrieval with token limits, sessions focus on simple, chronological message storage and retrieval.
+Sessions provide automatic conversation history management for multi-turn agent interactions in Swarm. Unlike the `Memory` protocol which provides context retrieval with token limits, sessions focus on simple, chronological message storage and retrieval.
 
 ## Table of Contents
 
@@ -15,7 +15,7 @@ Sessions provide automatic conversation history management for multi-turn agent 
 
 ## Session vs Memory
 
-SwiftAgents provides two distinct abstractions for managing conversation history:
+Swarm provides two distinct abstractions for managing conversation history:
 
 ### Session
 **Purpose**: Simple chronological storage and retrieval of conversation messages.
@@ -128,7 +128,7 @@ In-memory session implementation for testing, development, and short-lived conve
 ### Usage
 
 ```swift
-import SwiftAgents
+import Swarm
 
 // Create with auto-generated UUID session ID
 let session = InMemorySession()
@@ -199,7 +199,7 @@ SwiftData-backed session implementation for long-term persistence on Apple platf
 ### Factory Methods
 
 ```swift
-import SwiftAgents
+import Swarm
 
 // Create with persistent disk storage
 let session = try PersistentSession.persistent(sessionId: "user-123-chat")
@@ -387,12 +387,12 @@ try await session.addItem(.user("New conversation"))
 
 ## Using Sessions with Agents
 
-Sessions integrate seamlessly with all SwiftAgents agent types, automatically managing conversation history across multiple turns.
+Sessions integrate seamlessly with all Swarm agent types, automatically managing conversation history across multiple turns.
 
 ### Basic Multi-Turn Conversation
 
 ```swift
-import SwiftAgents
+import Swarm
 
 // Create session
 let session = InMemorySession()
@@ -760,4 +760,4 @@ struct AgentSessionTests {
 For more information, see:
 - [Memory Systems Documentation](./memory.md) (when available)
 - [Agent Configuration Guide](./configuration.md) (when available)
-- [SwiftAgents API Reference](./api-reference.md) (when available)
+- [Swarm API Reference](./api-reference.md) (when available)

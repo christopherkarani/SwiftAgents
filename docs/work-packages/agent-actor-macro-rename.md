@@ -24,9 +24,9 @@ Constraints:
 - Do not change macro expansion behavior.
 
 Concrete File List (likely to change):
-- `Sources/SwiftAgents/Macros/MacroDeclarations.swift`
-- `Sources/SwiftAgentsMacros/AgentMacro.swift`
-- `Tests/SwiftAgentsMacrosTests/` (macro tests and registries)
+- `Sources/Swarm/Macros/MacroDeclarations.swift`
+- `Sources/SwarmMacros/AgentMacro.swift`
+- `Tests/SwarmMacrosTests/` (macro tests and registries)
 - `README.md`
 - `MIGRATION_GUIDE.md`
 - `CLAUDE.md`

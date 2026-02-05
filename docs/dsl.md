@@ -2,7 +2,7 @@
 
 ## Overview
 
-SwiftAgents provides Swift operators and result builders for composing agents declaratively. This enables a SwiftUI-like DSL for defining complex multi-agent workflows with compile-time type safety.
+Swarm provides Swift operators and result builders for composing agents declaratively. This enables a SwiftUI-like DSL for defining complex multi-agent workflows with compile-time type safety.
 
 The DSL consists of three main components:
 1. **Pipeline Operators** - Infix operators for chaining agents
@@ -20,7 +20,7 @@ The DSL consists of three main components:
 
 ## Pipeline Operators
 
-SwiftAgents defines custom operators at different precedence levels for composing agents:
+Swarm defines custom operators at different precedence levels for composing agents:
 
 ```swift
 precedencegroup AgentConditionalPrecedence {

@@ -8,9 +8,9 @@ Rename the public macro from `@Agent` to `@AgentActor` to unblock introducing a 
 
 ## Scope
 
-- Rename macro declarations in `Sources/SwiftAgents/Macros/MacroDeclarations.swift`.
-- Update macro diagnostics/docs in `Sources/SwiftAgentsMacros/AgentMacro.swift`.
-- Update macro tests in `Tests/SwiftAgentsMacrosTests/*`.
+- Rename macro declarations in `Sources/Swarm/Macros/MacroDeclarations.swift`.
+- Update macro diagnostics/docs in `Sources/SwarmMacros/AgentMacro.swift`.
+- Update macro tests in `Tests/SwarmMacrosTests/*`.
 - Update docs referencing `@Agent` (README/CLAUDE/MIGRATION_GUIDE/etc).
 
 ## Constraints
@@ -26,7 +26,7 @@ Rename the public macro from `@Agent` to `@AgentActor` to unblock introducing a 
    - Update doc comments/examples to use `@AgentActor`.
 
 2) **Update macro implementation docs/diagnostics**
-   - Update `Sources/SwiftAgentsMacros/AgentMacro.swift` comments and error messages to reference `@AgentActor`.
+   - Update `Sources/SwarmMacros/AgentMacro.swift` comments and error messages to reference `@AgentActor`.
 
 3) **Update tests**
    - Update macro registry in `AgentMacroTests` to `AgentActor`.
@@ -41,7 +41,7 @@ Rename the public macro from `@Agent` to `@AgentActor` to unblock introducing a 
 
 ## Acceptance Criteria
 
-- `@AgentActor` is the only public macro exposed in SwiftAgents (no `@Agent`).
+- `@AgentActor` is the only public macro exposed in Swarm (no `@Agent`).
 - Macro behavior is unchanged; only the attribute name changes.
 - All tests pass (`swift test`).
 - Docs/examples show `@AgentActor`.
