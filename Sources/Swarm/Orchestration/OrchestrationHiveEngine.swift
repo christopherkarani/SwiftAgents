@@ -97,8 +97,8 @@ enum OrchestrationHiveEngine {
         orchestrator: (any AgentRuntime)?,
         orchestratorName: String,
         handoffs: [AnyHandoffConfiguration],
-        onIterationStart: ((Int) -> Void)?,
-        onIterationEnd: ((Int) -> Void)?
+        onIterationStart: (@Sendable (Int) -> Void)?,
+        onIterationEnd: (@Sendable (Int) -> Void)?
     ) async throws -> AgentResult {
         let startTime = ContinuousClock.now
 
@@ -129,34 +129,55 @@ enum OrchestrationHiveEngine {
             checkpointPolicy: .disabled,
             debugPayloads: false,
             deterministicTokenStreaming: false,
-            eventBufferCapacity: max(64, steps.count * 8),
-            outputProjectionOverride: .fullStore
+            eventBufferCapacity: max(64, steps.count * 8)
         )
 
         let handle = await runtime.run(threadID: threadID, input: input, options: options)
-
-        do {
-            for try await event in handle.events {
-                switch event.kind {
-                case .stepStarted(let stepIndex, _):
-                    onIterationStart?(stepIndex + 1)
-                case .stepFinished(let stepIndex, _):
-                    onIterationEnd?(stepIndex + 1)
-                default:
-                    break
+        let eventsTask = Task<String?, Never> {
+            do {
+                for try await event in handle.events {
+                    switch event.kind {
+                    case .stepStarted(let stepIndex, _):
+                        onIterationStart?(stepIndex + 1)
+                    case .stepFinished(let stepIndex, _):
+                        onIterationEnd?(stepIndex + 1)
+                    default:
+                        break
+                    }
                 }
+                return nil
+            } catch {
+                return error.localizedDescription
             }
-        } catch {
-            // Ignore stream errors; outcome handles the terminal error path.
         }
 
-        let outcome = try await handle.outcome.value
+        let outcome: HiveRunOutcome<Schema>
+        do {
+            outcome = try await withTaskCancellationHandler {
+                try await handle.outcome.value
+            } onCancel: {
+                handle.outcome.cancel()
+                eventsTask.cancel()
+            }
+        } catch is CancellationError {
+            eventsTask.cancel()
+            _ = await eventsTask.value
+            throw AgentError.cancelled
+        }
+
+        let eventError = await eventsTask.value
+        if let eventError {
+            Log.orchestration.error(
+                "Hive orchestration event stream terminated with error.",
+                metadata: ["error": .string(eventError)]
+            )
+        }
 
         switch outcome {
         case .finished(let output, _):
-            let store = try requireFullStore(output)
-            let currentInput = try store.get(Schema.currentInputKey)
-            let accumulator = try store.get(Schema.accumulatorKey)
+            let result = try extractResult(output)
+            let currentInput = result.currentInput
+            let accumulator = result.accumulator
 
             let duration = ContinuousClock.now - startTime
             var metadata = accumulator.metadata
@@ -229,17 +250,43 @@ enum OrchestrationHiveEngine {
             }
         }
 
-        builder.setOutputProjection(.fullStore)
+        builder.setOutputProjection(.channels([Schema.currentInputKey.id, Schema.accumulatorKey.id]))
         return try builder.compile()
     }
 
-    private static func requireFullStore(_ output: HiveRunOutput<Schema>) throws -> HiveGlobalStore<Schema> {
+    private static func extractResult(
+        _ output: HiveRunOutput<Schema>
+    ) throws -> (currentInput: String, accumulator: Accumulator) {
         switch output {
         case .fullStore(let store):
-            return store
-        case .channels:
-            throw AgentError.internalError(reason: "Hive orchestration output projection mismatch.")
+            return (
+                currentInput: try store.get(Schema.currentInputKey),
+                accumulator: try store.get(Schema.accumulatorKey)
+            )
+        case .channels(let channels):
+            let currentInput: String = try requireProjectedValue(
+                channelID: Schema.currentInputKey.id,
+                in: channels
+            )
+            let accumulator: Accumulator = try requireProjectedValue(
+                channelID: Schema.accumulatorKey.id,
+                in: channels
+            )
+            return (currentInput: currentInput, accumulator: accumulator)
         }
+    }
+
+    private static func requireProjectedValue<Value: Sendable>(
+        channelID: HiveChannelID,
+        in channels: [HiveProjectedChannelValue]
+    ) throws -> Value {
+        guard let value = channels.first(where: { $0.id == channelID })?.value else {
+            throw AgentError.internalError(reason: "Hive orchestration output missing channel '\(channelID.rawValue)'.")
+        }
+        guard let typed = value as? Value else {
+            throw AgentError.internalError(reason: "Hive orchestration output type mismatch for channel '\(channelID.rawValue)'.")
+        }
+        return typed
     }
 }
 

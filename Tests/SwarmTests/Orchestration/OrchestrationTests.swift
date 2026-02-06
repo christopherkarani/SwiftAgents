@@ -80,6 +80,15 @@ struct ContextReadStep: OrchestrationStep {
     }
 }
 
+struct DelayedStep: OrchestrationStep {
+    let nanoseconds: UInt64
+
+    func execute(_ input: String, context _: OrchestrationStepContext) async throws -> AgentResult {
+        try await Task.sleep(nanoseconds: nanoseconds)
+        return AgentResult(output: input)
+    }
+}
+
 @Suite("Orchestration Tests")
 struct OrchestrationTests {
     @Test("Shared context persists across steps")
@@ -179,5 +188,31 @@ struct OrchestrationTests {
         #expect(started == [1, 2, 3])
         #expect(completed == [1, 2, 3])
         #expect(finalOutput == "x123")
+    }
+
+    @Test("Orchestration cancel stops active run")
+    func orchestrationCancelStopsActiveRun() async throws {
+        let workflow = Orchestration {
+            DelayedStep(nanoseconds: 5_000_000_000)
+            Transform { $0 + "done" }
+        }
+
+        let runTask = Task {
+            try await workflow.run("start")
+        }
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await workflow.cancel()
+
+        do {
+            _ = try await runTask.value
+            Issue.record("Expected orchestration run to be cancelled.")
+        } catch let error as AgentError {
+            #expect(error == .cancelled)
+        } catch is CancellationError {
+            // Accept native task cancellation surface as equivalent behavior.
+        } catch {
+            Issue.record("Expected cancellation, got \(error)")
+        }
     }
 }

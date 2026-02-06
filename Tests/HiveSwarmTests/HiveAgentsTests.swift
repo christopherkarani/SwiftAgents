@@ -120,10 +120,17 @@ struct HiveAgentsTests {
         )
 
         let runtime = HiveRuntime(graph: graph, environment: environment)
-        let agents = HiveAgentsRuntime(threadID: HiveThreadID("t"), runtime: runtime)
+        let agents = HiveAgentsRuntime(threadID: HiveThreadID("t"), runtime: runtime, environment: environment)
 
-        await #expect(throws: HiveRuntimeError.checkpointStoreMissing) {
+        let thrown = await #expect(throws: (any Error).self) {
             _ = try await agents.sendUserMessage("Hello")
+        }
+        let runtimeError = try #require(thrown as? HiveRuntimeError)
+        switch runtimeError {
+        case .checkpointStoreMissing:
+            break
+        default:
+            Issue.record("Expected checkpointStoreMissing, got \(runtimeError)")
         }
     }
 
@@ -155,6 +162,7 @@ struct HiveAgentsTests {
         let agents = HiveAgentsRuntime(
             threadID: HiveThreadID("approval-thread"),
             runtime: runtime,
+            environment: environment,
             options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
         )
 
@@ -175,7 +183,12 @@ struct HiveAgentsTests {
 
         let finalStore = try requireFullStore(outcome: resumed)
         let messages = try finalStore.get(HiveAgents.Schema.messagesKey)
-        #expect(messages.contains(where: { $0.role.rawValue == "tool" && $0.content == "42" && $0.toolCallID == "c1" }))
+        let hasToolReply = messages.contains { message in
+            message.role.rawValue == "tool" &&
+                message.content == "42" &&
+                message.toolCallID == "c1"
+        }
+        #expect(hasToolReply)
     }
 
     @Test("Deterministic message IDs: model taskID drives assistant message id")
@@ -206,16 +219,20 @@ struct HiveAgentsTests {
         let outcome = try await handle.outcome.value
         let store = try requireFullStore(outcome: outcome)
 
-        let modelTaskID = try #require(
-            events.compactMap { event in
-                guard case let .taskStarted(node, taskID) = event.kind else { return nil }
-                return node == HiveNodeID("model") ? taskID : nil
-            }.first
-        )
+        let modelTaskIDs: [HiveTaskID] = events.compactMap { event -> HiveTaskID? in
+            guard case let .taskStarted(node, taskID) = event.kind else { return nil }
+            return node == HiveNodeID("model") ? taskID : nil
+        }
+        let modelTaskID = try #require(modelTaskIDs.first)
 
         let expectedID = expectedRoleBasedMessageID(taskID: modelTaskID.rawValue, role: "assistant")
         let messages = try store.get(HiveAgents.Schema.messagesKey)
-        #expect(messages.contains(where: { $0.id == expectedID && $0.role.rawValue == "assistant" && $0.content == "ok" }))
+        let hasExpectedAssistantMessage = messages.contains { message in
+            message.id == expectedID &&
+                message.role.rawValue == "assistant" &&
+                message.content == "ok"
+        }
+        #expect(hasExpectedAssistantMessage)
     }
 }
 

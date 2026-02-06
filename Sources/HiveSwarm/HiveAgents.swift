@@ -97,20 +97,22 @@ public struct HiveAgentsContext: Sendable {
 public struct HiveAgentsRuntime: Sendable {
     public let threadID: HiveThreadID
     public let runtime: HiveRuntime<HiveAgents.Schema>
+    public let environment: HiveEnvironment<HiveAgents.Schema>
     public let options: HiveRunOptions
 
     public init(
         threadID: HiveThreadID,
         runtime: HiveRuntime<HiveAgents.Schema>,
+        environment: HiveEnvironment<HiveAgents.Schema>,
         options: HiveRunOptions = .init(checkpointPolicy: .everyStep)
     ) {
         self.threadID = threadID
         self.runtime = runtime
+        self.environment = environment
         self.options = options
     }
 
     public func sendUserMessage(_ text: String) async throws -> HiveRunHandle<HiveAgents.Schema> {
-        let environment = await runtime.environment
         try Self.preflight(environment: environment)
         return await runtime.run(threadID: threadID, input: text, options: options)
     }
@@ -119,7 +121,6 @@ public struct HiveAgentsRuntime: Sendable {
         interruptID: HiveInterruptID,
         decision: HiveAgents.ToolApprovalDecision
     ) async throws -> HiveRunHandle<HiveAgents.Schema> {
-        let environment = await runtime.environment
         try Self.preflight(environment: environment)
         return await runtime.resume(
             threadID: threadID,
@@ -204,8 +205,8 @@ public extension HiveAgents {
                         reducer: .lastWriteWins(),
                         updatePolicy: .single,
                         initial: { Optional<[HiveChatMessage]>.none },
-                        codec: nil,
-                        persistence: .untracked
+                        codec: HiveAnyCodec(HiveCodableJSONCodec<[HiveChatMessage]?>()),
+                        persistence: .checkpointed
                     )
                 )
             ]

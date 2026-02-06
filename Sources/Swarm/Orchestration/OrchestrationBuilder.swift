@@ -976,6 +976,28 @@ public struct Transform: OrchestrationStep {
 
 // MARK: - Orchestration
 
+private actor OrchestrationRunRegistry {
+    typealias Canceller = @Sendable () -> Void
+
+    private var cancellers: [UUID: Canceller] = [:]
+
+    func register(id: UUID, cancel: @escaping Canceller) {
+        cancellers[id] = cancel
+    }
+
+    func unregister(id: UUID) {
+        cancellers.removeValue(forKey: id)
+    }
+
+    func cancelAll() {
+        let active = Array(cancellers.values)
+        cancellers.removeAll()
+        for cancel in active {
+            cancel()
+        }
+    }
+}
+
 /// A complete orchestrated workflow composed of multiple steps.
 ///
 /// `Orchestration` is the top-level container for declaratively defining
@@ -1012,6 +1034,7 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
 
     /// Handoff configurations applied to sub-agents.
     public let handoffs: [AnyHandoffConfiguration]
+    private let runRegistry = OrchestrationRunRegistry()
 
     // MARK: - Agent Protocol Properties
 
@@ -1060,15 +1083,30 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
         session: (any Session)? = nil,
         hooks: (any RunHooks)? = nil
     ) async throws -> AgentResult {
-        let result = try await executeSteps(
-            steps: rootSteps,
-            input: input,
-            session: session,
-            hooks: hooks,
-            onIterationStart: nil,
-            onIterationEnd: nil
-        )
-        return applyGroupMetadataIfNeeded(to: result)
+        let runID = UUID()
+        let task = Task {
+            try await executeSteps(
+                steps: rootSteps,
+                input: input,
+                session: session,
+                hooks: hooks,
+                onIterationStart: nil,
+                onIterationEnd: nil
+            )
+        }
+
+        await runRegistry.register(id: runID) {
+            task.cancel()
+        }
+
+        do {
+            let result = try await task.value
+            await runRegistry.unregister(id: runID)
+            return applyGroupMetadataIfNeeded(to: result)
+        } catch {
+            await runRegistry.unregister(id: runID)
+            throw error
+        }
     }
 
     public func stream(
@@ -1078,8 +1116,9 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
     ) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream { continuation in
             continuation.yield(.started(input: input))
-            do {
-                let result = try await executeSteps(
+            let runID = UUID()
+            let task = Task {
+                try await executeSteps(
                     steps: rootSteps,
                     input: input,
                     session: session,
@@ -1091,13 +1130,24 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
                         continuation.yield(.iterationCompleted(number: iteration))
                     }
                 )
+            }
+
+            await runRegistry.register(id: runID) {
+                task.cancel()
+            }
+
+            do {
+                let result = try await task.value
+                await runRegistry.unregister(id: runID)
                 let finalized = applyGroupMetadataIfNeeded(to: result)
                 continuation.yield(.completed(result: finalized))
                 continuation.finish()
             } catch let error as AgentError {
+                await runRegistry.unregister(id: runID)
                 continuation.yield(.failed(error: error))
                 continuation.finish(throwing: error)
             } catch {
+                await runRegistry.unregister(id: runID)
                 let agentError = AgentError.internalError(reason: error.localizedDescription)
                 continuation.yield(.failed(error: agentError))
                 continuation.finish(throwing: error)
@@ -1106,6 +1156,7 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
     }
 
     public func cancel() async {
+        await runRegistry.cancelAll()
         for agent in collectAgents(from: root) {
             await agent.cancel()
         }
@@ -1118,8 +1169,8 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
         input: String,
         session: (any Session)?,
         hooks: (any RunHooks)?,
-        onIterationStart: ((Int) -> Void)?,
-        onIterationEnd: ((Int) -> Void)?
+        onIterationStart: (@Sendable (Int) -> Void)?,
+        onIterationEnd: (@Sendable (Int) -> Void)?
     ) async throws -> AgentResult {
         guard !steps.isEmpty else {
             return AgentResult(output: input)
