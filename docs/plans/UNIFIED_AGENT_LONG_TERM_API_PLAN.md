@@ -28,11 +28,11 @@ Non-goals (initial rollout):
 
 2) **Naming collision**
 
-The module previously had a SwiftUI-style legacy loop DSL protocol named `Agent` (now renamed to `AgentLoopDefinition`, deprecated) in `Sources/SwiftAgents/DSL/DeclarativeAgent.swift`. Long-term we want a unified runtime concrete type named `Agent`, so the legacy DSL must remain non-colliding.
+The module previously had a SwiftUI-style legacy loop DSL protocol named `Agent` (now renamed to `AgentLoopDefinition`, deprecated) in `Sources/Swarm/DSL/DeclarativeAgent.swift`. Long-term we want a unified runtime concrete type named `Agent`, so the legacy DSL must remain non-colliding.
 
 3) **Two DSL layers**
 
-- `AgentBlueprint` already exists and is explicitly intended to be the primary high-level API long-term (`Sources/SwiftAgents/DSL/AgentBlueprint.swift`).
+- `AgentBlueprint` already exists and is explicitly intended to be the primary high-level API long-term (`Sources/Swarm/DSL/AgentBlueprint.swift`).
 - The legacy loop DSL (`protocol Agent` + `@AgentLoopBuilder`) provides `Generate/Relay` model-turn steps by implicitly constructing a relay runtime agent. AgentBlueprint does not include `Generate/Relay` today; within blueprints, model turns should be explicit runtime `Agent` steps (or a later convenience layer).
 
 ## Naming Decisions (Long-Term)
@@ -61,7 +61,7 @@ The module previously had a SwiftUI-style legacy loop DSL protocol named `Agent`
 
 To-do:
 
-- Rename legacy DSL protocol `Agent` (in `Sources/SwiftAgents/DSL/DeclarativeAgent.swift`) to `AgentLoopDefinition` (or final chosen name).
+- Rename legacy DSL protocol `Agent` (in `Sources/Swarm/DSL/DeclarativeAgent.swift`) to `AgentLoopDefinition` (or final chosen name).
 - Rename related types/extensions/tests accordingly:
   - `LoopAgentStep` builder overloads in `OrchestrationBuilder` currently accept `A: Agent`; update to new name.
   - Any `handoff(to: A)` overloads or builder utilities referencing `Agent` (legacy DSL) updated similarly.

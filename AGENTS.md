@@ -1,4 +1,4 @@
-# SwiftAgents: Agent Instructions (AGENTS.md)
+# Swarm: Agent Instructions (AGENTS.md)
 
 This repository is developed with an "orchestrator + sub-agents" workflow.
 
@@ -84,10 +84,10 @@ Constraints:
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `Sources/SwiftAgents/` contains the core framework (agents, tools, memory, orchestration, observability).
-- `Sources/SwiftAgentsMacros/` hosts macro implementations.
-- `Sources/SwiftAgentsDemo/` is the demo executable target.
-- `Tests/SwiftAgentsTests/` and `Tests/SwiftAgentsMacrosTests/` contain Swift Testing suites.
+- `Sources/Swarm/` contains the core framework (agents, tools, memory, orchestration, observability).
+- `Sources/SwarmMacros/` hosts macro implementations.
+- `Sources/SwarmDemo/` is the demo executable target.
+- `Tests/SwarmTests/` and `Tests/SwarmMacrosTests/` contain Swift Testing suites.
 - `docs/` holds architectural notes, guides, and API references.
 - `scripts/` contains developer utilities (for example `generate-coverage-report.sh`).
 
@@ -95,7 +95,7 @@ Constraints:
 - `swift build` builds the package and validates Swift 6.2 compatibility.
 - `swift test` runs all test suites.
 - `swift test --filter AgentTests` runs a focused subset of tests.
-- `swift run SwiftAgentsDemo` runs the demo executable target.
+- `swift run SwarmDemo` runs the demo executable target.
 - `./scripts/generate-coverage-report.sh` generates coverage artifacts in `.build/coverage/` and enforces a minimum threshold (70% by default).
 - `swift package plugin --allow-writing-to-package-directory swiftformat` applies SwiftFormat.
 - `swiftlint lint` runs linting (install via Homebrew if needed).
@@ -110,7 +110,7 @@ Constraints:
 ## Testing Guidelines
 - Use Swift Testing (`import Testing`) with `@Suite` and `@Test`.
 - Follow TDD: write failing tests first, then minimal implementation, then refactor.
-- Tests live under `Tests/SwiftAgentsTests/` and `Tests/SwiftAgentsMacrosTests/`.
+- Tests live under `Tests/SwarmTests/` and `Tests/SwarmMacrosTests/`.
 
 ## Commit & Pull Request Guidelines
 - Commit messages are short, imperative, and capitalized (e.g., `Add`, `Refactor`, `Default`, `Revert`).

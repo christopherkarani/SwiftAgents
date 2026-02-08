@@ -1,4 +1,4 @@
-# SwiftAgents Scripts
+# Swarm Scripts
 
 This directory contains utility scripts for development, testing, and CI/CD automation.
 
@@ -6,7 +6,7 @@ This directory contains utility scripts for development, testing, and CI/CD auto
 
 ### generate-coverage-report.sh
 
-Generates comprehensive code coverage reports for the SwiftAgents framework.
+Generates comprehensive code coverage reports for the Swarm framework.
 
 **Usage:**
 ```bash

@@ -1,4 +1,4 @@
-# SwiftAgents CI Workflow
+# Swarm CI Workflow
 # Builds and tests on macOS and Linux
 
 name: Swift CI
@@ -48,6 +48,9 @@ jobs:
 
       - name: Run tests
         run: swift test --no-parallel
+
+      - name: Run Hive integration tests
+        run: SWARM_INCLUDE_HIVE=1 swift test --no-parallel --filter HiveSwarmTests
 
   # Linux Build & Test (core features, no SwiftData)
   build-linux:

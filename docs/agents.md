@@ -2,9 +2,9 @@
 
 ## Overview
 
-Agents are the core building blocks of the SwiftAgents framework. An agent is an autonomous entity that can reason about tasks, use tools, and maintain context across interactions. Unlike simple LLM wrappers, agents can make decisions, execute multi-step workflows, and adapt their behavior based on observations.
+Agents are the core building blocks of the Swarm framework. An agent is an autonomous entity that can reason about tasks, use tools, and maintain context across interactions. Unlike simple LLM wrappers, agents can make decisions, execute multi-step workflows, and adapt their behavior based on observations.
 
-SwiftAgents provides three primary agent types, each implementing a different reasoning paradigm:
+Swarm provides three primary agent types, each implementing a different reasoning paradigm:
 
 - **ReActAgent**: Interleaved reasoning and acting (Thought-Action-Observation loop)
 - **Agent**: Direct tool invocation using structured LLM APIs
@@ -12,7 +12,7 @@ SwiftAgents provides three primary agent types, each implementing a different re
 
 All *runtime* agents implement the `AgentRuntime` protocol and share common configuration options for tools, memory, guardrails, sessions, and observability.
 
-SwiftAgents also includes SwiftUI-style DSLs for defining workflows:
+Swarm also includes SwiftUI-style DSLs for defining workflows:
 
 - `AgentBlueprint` (preferred, long-term) - orchestrations built with `@OrchestrationBuilder`.
 - `AgentLoopDefinition` (legacy, deprecated) - a loop DSL built with `@AgentLoopBuilder`, executed via `LoopAgent`.
@@ -24,7 +24,7 @@ When you want **maximum leverage with minimum code**, use macros for tools + age
 ### 1) Define a tool with `@Tool`
 
 ```swift
-import SwiftAgents
+import Swarm
 
 @Tool("Echoes a string back to the caller.")
 struct EchoTool {
@@ -40,7 +40,7 @@ struct EchoTool {
 ### 2) Define an agent with `@AgentActor`
 
 ```swift
-import SwiftAgents
+import Swarm
 
 @AgentActor(instructions: "You are a concise coding assistant.")
 actor CodingAgent {
@@ -61,7 +61,7 @@ print(result.output)
 ### 3) Compose multiple agents with `AgentBlueprint`
 
 ```swift
-import SwiftAgents
+import Swarm
 
 struct Workflow: AgentBlueprint {
     let coder: any AgentRuntime
@@ -153,11 +153,11 @@ let result = try await agent.run("Hello", session: mySession, hooks: myHooks)
 
 ## Declarative Workflow DSL (SwiftUI-Style)
 
-SwiftAgents also provides a SwiftUI-style API for defining orchestration flow. This is a *separate* concept from `AgentRuntime`: you describe a sequential workflow of steps, and SwiftAgents adapts it into an executable runtime at the call site.
+Swarm also provides a SwiftUI-style API for defining orchestration flow. This is a *separate* concept from `AgentRuntime`: you describe a sequential workflow of steps, and Swarm adapts it into an executable runtime at the call site.
 
 ### AgentBlueprint (Preferred High-Level DSL)
 
-`AgentBlueprint` is a SwiftUI-style workflow protocol intended to be the primary high-level API long-term (`Sources/SwiftAgents/DSL/AgentBlueprint.swift:12`). A blueprint defines:
+`AgentBlueprint` is a SwiftUI-style workflow protocol intended to be the primary high-level API long-term (`Sources/Swarm/DSL/AgentBlueprint.swift:12`). A blueprint defines:
 
 - a declarative `body` built with `@OrchestrationBuilder`
 - orchestration-level configuration (`AgentConfiguration`, `handoffs`)
@@ -166,7 +166,7 @@ Blueprints execute by compiling down to an `Orchestration` at runtime, and can b
 
 ### Legacy Loop DSL: AgentLoopDefinition (Deprecated)
 
-The legacy loop DSL is centered on `protocol AgentLoopDefinition` in `Sources/SwiftAgents/DSL/DeclarativeAgent.swift:23`. Conformers define:
+The legacy loop DSL is centered on `protocol AgentLoopDefinition` in `Sources/Swarm/DSL/DeclarativeAgent.swift:23`. Conformers define:
 
 - configuration-like properties (`instructions`, `tools`, `configuration`, guardrails, etc.)
 - an execution flow in `loop`, built using `@AgentLoopBuilder`
@@ -188,7 +188,7 @@ This means declarative agents are primarily an orchestration layer; the model in
 
 ### “Builder DSL” for Runtime Agent Configuration
 
-Separately from the declarative workflow DSL, SwiftAgents includes a builder-style configuration DSL for concrete runtime agents:
+Separately from the declarative workflow DSL, Swarm includes a builder-style configuration DSL for concrete runtime agents:
 
 ```swift
 let agent = Agent {
@@ -198,7 +198,7 @@ let agent = Agent {
 }
 ```
 
-This is powered by `LegacyAgentBuilder` and friends in `Sources/SwiftAgents/Agents/AgentBuilder.swift`.
+This is powered by `LegacyAgentBuilder` and friends in `Sources/Swarm/Agents/AgentBuilder.swift`.
 
 ## Agent Types
 

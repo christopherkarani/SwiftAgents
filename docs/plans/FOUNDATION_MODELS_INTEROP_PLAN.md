@@ -1,20 +1,20 @@
 # Foundation Models Interoperability Plan
 
 ## Goal
-Establish full bidirectional interoperability between `SwiftAgents` and Apple's `FoundationModels` framework, enabling:
-1.  **Foundation -> Agent**: Wrapping `FoundationModels` tools for use in `SwiftAgents`.
-2.  **Agent -> Foundation**: Adapting `SwiftAgents` tools for use in `FoundationModels` sessions.
+Establish full bidirectional interoperability between `Swarm` and Apple's `FoundationModels` framework, enabling:
+1.  **Foundation -> Agent**: Wrapping `FoundationModels` tools for use in `Swarm`.
+2.  **Agent -> Foundation**: Adapting `Swarm` tools for use in `FoundationModels` sessions.
 3.  **Context Synergy**: Ensuring both tool types can access necessary context (agent state, other tools) regardless of the host environment.
 
 ## Technical Analysis
 
 ### The `Generable` Constraint
 My research confirms that `FoundationModels` relies on the `@Generable` macro to generate tool schemas at **compile time**. 
-*   **Implication**: We cannot dynamically generate strictly-typed `Generable` structs at runtime for arbitrary `SwiftAgents` tools.
+*   **Implication**: We cannot dynamically generate strictly-typed `Generable` structs at runtime for arbitrary `Swarm` tools.
 *   **Solution**: We must use a **Universal JSON Proxy** strategy for the Agent -> Foundation adapter.
 
-### 1. Protocol Enhancement (SwiftAgents)
-Update `SwiftAgents.Tool` to support the "Context" pattern used by Foundation Models.
+### 1. Protocol Enhancement (Swarm)
+Update `Swarm.Tool` to support the "Context" pattern used by Foundation Models.
 
 ```swift
 func execute(
@@ -26,19 +26,19 @@ func execute(
 
 ### 2. Adapters
 
-#### A. `FoundationToolAdapter` (Use FM Tool in SwiftAgents)
-Wraps a `FoundationModels.Tool` to work in `SwiftAgents`.
+#### A. `FoundationToolAdapter` (Use FM Tool in Swarm)
+Wraps a `FoundationModels.Tool` to work in `Swarm`.
 
 *   **Capabilities**:
     *   **Schema Extraction**: Uses Swift `Mirror` to inspect the `Generable` argument struct and dynamically generate `[ToolParameter]` definitions.
     *   **Execution**: 
-        1.  Receives `[String: SendableValue]` from SwiftAgents.
+        1.  Receives `[String: SendableValue]` from Swarm.
         2.  Dynamically instantiates the `Generable` struct (via JSON decoding or memberwise init via reflection).
         3.  Calls the underlying `FoundationModels.Tool`.
     *   **Output**: Unwraps `ToolOutput` to `SendableValue`.
 
 #### B. `SwiftAgentToolAdapter` (Use SA Tool in FoundationModels)
-Wraps a `SwiftAgents.Tool` to work in `FoundationModels`.
+Wraps a `Swarm.Tool` to work in `FoundationModels`.
 
 *   **Strategy**: "Universal JSON Proxy"
 *   **Implementation**:
@@ -56,15 +56,15 @@ Wraps a `SwiftAgents.Tool` to work in `FoundationModels`.
     4.  **Execution**: 
         *   Receives `DynamicToolArguments(json: "{...}")`.
         *   Parses JSON to `[String: SendableValue]`.
-        *   Calls the underlying `SwiftAgents` tool.
+        *   Calls the underlying `Swarm` tool.
 
 ### 3. Context & Registry Bridge
-*   **Foundation Session**: When running in `FoundationModels`, the `LanguageModelSession` manages context. We need to ensure `SwiftAgents` tools access this via the `AgentContext` bridge.
-*   **SwiftAgents Session**: When running in `SwiftAgents`, we pass the `AgentContext` directly.
+*   **Foundation Session**: When running in `FoundationModels`, the `LanguageModelSession` manages context. We need to ensure `Swarm` tools access this via the `AgentContext` bridge.
+*   **Swarm Session**: When running in `Swarm`, we pass the `AgentContext` directly.
 
 ## Execution Plan
 
-1.  **Core Protocol Update**: Modify `SwiftAgents.Tool` signature.
+1.  **Core Protocol Update**: Modify `Swarm.Tool` signature.
 2.  **Adapter Implementation**:
     *   Create `FoundationToolAdapter`.
     *   Create `SwiftAgentToolAdapter` (with `DynamicToolArguments` strategy).

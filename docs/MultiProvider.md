@@ -14,7 +14,7 @@ When building applications that need to use different LLM providers (Anthropic, 
 ## Quick Start
 
 ```swift
-import SwiftAgents
+import Swarm
 
 // Create with a default provider
 let multiProvider = MultiProvider(defaultProvider: openRouterProvider)

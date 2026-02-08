@@ -1,6 +1,6 @@
 # Pull Request
 
-## Thank you for contributing to SwiftAgents! 🎉
+## Thank you for contributing to Swarm! 🎉
 
 We appreciate your effort to improve the framework. This template helps ensure high-quality contributions that align with the project's standards.
 
@@ -106,7 +106,7 @@ Please check the relevant option(s):
 ### Documentation
 - [ ] I have added/updated documentation comments for public APIs
 - [ ] I have updated the README.md if needed
-- [ ] I have added examples to `Sources/SwiftAgents/Examples/` if introducing new features
+- [ ] I have added examples to `Sources/Swarm/Examples/` if introducing new features
 - [ ] My code does not use `print()` statements (uses `swift-log` instead)
 
 ### Testing (TDD Required)
@@ -152,4 +152,4 @@ Please check the relevant option(s):
 
 ---
 
-**Thank you again for your contribution!** Your efforts help make SwiftAgents better for the entire Swift community. If you have any questions, feel free to ask in the comments below.
+**Thank you again for your contribution!** Your efforts help make Swarm better for the entire Swift community. If you have any questions, feel free to ask in the comments below.

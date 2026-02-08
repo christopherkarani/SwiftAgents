@@ -1,6 +1,6 @@
-# SwiftAgents Tools Documentation
+# Swarm Tools Documentation
 
-Tools are the fundamental building blocks that enable agents to perform actions in SwiftAgents. They encapsulate functionality that agents can invoke during execution, from simple calculations to complex API integrations.
+Tools are the fundamental building blocks that enable agents to perform actions in Swarm. They encapsulate functionality that agents can invoke during execution, from simple calculations to complex API integrations.
 
 ## Table of Contents
 
@@ -19,7 +19,7 @@ Tools are the fundamental building blocks that enable agents to perform actions 
 
 ## Overview
 
-SwiftAgents provides three ways to create tools:
+Swarm provides three ways to create tools:
 
 1. **Typed Tools (recommended)**: Implement the typed `Tool` protocol with `Codable` input and typed output
 2. **@Tool Macro (recommended for speed)**: Use `@Tool` + `@Parameter` to generate an `AnyJSONTool`
@@ -31,7 +31,7 @@ All approaches are compatible and can be mixed in the same application.
 
 ## Tool Protocol
 
-SwiftAgents has two tool protocols:
+Swarm has two tool protocols:
 
 - `Tool` (typed): the primary developer-facing API
 - `AnyJSONTool` (dynamic): the runtime ABI used at the model boundary
@@ -212,7 +212,7 @@ struct AdvancedWeatherTool {
 
 ## Parameter Types
 
-SwiftAgents supports comprehensive parameter type mapping:
+Swarm supports comprehensive parameter type mapping:
 
 ### Basic Types
 
@@ -265,7 +265,7 @@ let parameters: [ToolParameter] = [
 
 ## Built-in Tools
 
-SwiftAgents includes several built-in tools for common operations:
+Swarm includes several built-in tools for common operations:
 
 ### CalculatorTool
 
@@ -475,7 +475,7 @@ let agent = Agent(
 let result = try await agent.run("What's the weather in Tokyo?")
 ```
 
-Typed `Tool` instances can be passed directly; SwiftAgents bridges them to the
+Typed `Tool` instances can be passed directly; Swarm bridges them to the
 runtime `AnyJSONTool` ABI automatically.
 
 ### Using Builder Pattern
@@ -529,7 +529,7 @@ let result = try await toolAgent.run(
 
 ## Parallel Tool Execution
 
-SwiftAgents includes `ParallelToolExecutor` for executing multiple tools concurrently with structured concurrency.
+Swarm includes `ParallelToolExecutor` for executing multiple tools concurrently with structured concurrency.
 
 ### Features
 
@@ -998,7 +998,7 @@ final class WeatherToolTests: XCTestCase {
 
 ## Summary
 
-SwiftAgents provides a comprehensive tools system with:
+Swarm provides a comprehensive tools system with:
 
 - **@Tool Macro**: Eliminates boilerplate for rapid development
 - **Type Safety**: Compile-time checking with `Tool` and `Codable` inputs
@@ -1008,4 +1008,4 @@ SwiftAgents provides a comprehensive tools system with:
 - **Guardrails**: Input/output validation for safety
 - **Error Handling**: Comprehensive error types and validation helpers
 
-Start with the `@Tool` macro for quick development, and use manual implementation when you need full control over tool behavior. Both approaches integrate seamlessly with all SwiftAgents agent types.
+Start with the `@Tool` macro for quick development, and use manual implementation when you need full control over tool behavior. Both approaches integrate seamlessly with all Swarm agent types.

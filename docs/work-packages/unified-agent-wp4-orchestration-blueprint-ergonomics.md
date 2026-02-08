@@ -6,30 +6,30 @@ Make the "happy path" orchestration story be `AgentBlueprint` + runtime `Agent` 
 
 Task Breakdown:
 1) OrchestrationBuilder integration points:
-   - Edit `Sources/SwiftAgents/Orchestration/OrchestrationBuilder.swift`:
+   - Edit `Sources/Swarm/Orchestration/OrchestrationBuilder.swift`:
      - Ensure `buildExpression(_ agent: any AgentRuntime)` continues to work for unified runtime `Agent`.
      - Ensure `buildExpression<B: AgentBlueprint>(_ blueprint: B)` is present (it is) and remains stable.
      - Update the legacy overload `buildExpression<A: Agent>(_ agent: A)` to the renamed protocol:
        - `buildExpression<A: AgentLoopDefinition>(_ agent: A) -> OrchestrationStep`
      - Mark the legacy overload deprecated (migration message to `AgentBlueprint` + runtime `Agent` steps).
 2) Handoff ergonomics for blueprints:
-   - Edit `Sources/SwiftAgents/Orchestration/HandoffBuilder.swift`:
+   - Edit `Sources/Swarm/Orchestration/HandoffBuilder.swift`:
      - Add: `public func handoff<B: AgentBlueprint>(to blueprint: B, ...) -> HandoffConfiguration<BlueprintAgent<B>>`
      - Ensure default tool name/description follow existing conventions (`handoff_to_<snake_case>` and `Hand off execution to ...`).
    - Keep the existing runtime overload `handoff<T: AgentRuntime>(to: T, ...)` unchanged.
    - Update the legacy overload `handoff<A: Agent>(to: A, ...)` to `A: AgentLoopDefinition` and deprecate it.
 3) Tests for blueprint handoff:
    - Extend existing tests to cover the new overload:
-     - `Tests/SwiftAgentsTests/Orchestration/HandoffConfigurationTests.swift`
-     - and/or `Tests/SwiftAgentsTests/Orchestration/HandoffConfigurationTests+Builder.swift`
+     - `Tests/SwarmTests/Orchestration/HandoffConfigurationTests.swift`
+     - and/or `Tests/SwarmTests/Orchestration/HandoffConfigurationTests+Builder.swift`
    - Add a small `AgentBlueprint` test blueprint and assert:
      - the returned config targets a `BlueprintAgent`,
      - the default effective tool name/description are correct,
      - and the config is `Sendable`.
 4) Example ergonomics (code-level only; docs in WP6):
    - Add doc comments where needed in:
-     - `Sources/SwiftAgents/Orchestration/HandoffBuilder.swift`
-     - `Sources/SwiftAgents/Orchestration/OrchestrationBuilder.swift`
+     - `Sources/Swarm/Orchestration/HandoffBuilder.swift`
+     - `Sources/Swarm/Orchestration/OrchestrationBuilder.swift`
    - Keep examples small and compilable.
 
 Expected Output:

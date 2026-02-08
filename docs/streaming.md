@@ -2,7 +2,7 @@
 
 ## Overview
 
-SwiftAgents provides real-time event streaming for building responsive UIs. As agents execute, they emit `AgentEvent` values that allow your application to display thinking processes, tool executions, and results as they happen.
+Swarm provides real-time event streaming for building responsive UIs. As agents execute, they emit `AgentEvent` values that allow your application to display thinking processes, tool executions, and results as they happen.
 
 Streaming enables:
 - **Responsive UIs**: Show progress immediately instead of waiting for completion

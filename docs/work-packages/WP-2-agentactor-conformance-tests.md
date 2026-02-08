@@ -5,7 +5,7 @@ Goal:
 Create failing tests (with current code) that pass once the macro is corrected.
 
 Task Breakdown:
-1. Add a Swift Testing suite under `Tests/SwiftAgentsTests/` that:
+1. Add a Swift Testing suite under `Tests/SwarmTests/` that:
    - Declares an `@AgentActor` actor with a `process(_:)` method.
    - Verifies it can be used as `any AgentRuntime`.
    - Calls `run(_:, session:, hooks:)` and `stream(_:, session:, hooks:)` successfully.
@@ -14,7 +14,7 @@ Task Breakdown:
 3. Keep tests deterministic; use an `InMemorySession` when needed.
 
 Expected Output:
-- New test file(s) under `Tests/SwiftAgentsTests/` that fail to compile/run before WP-3.
+- New test file(s) under `Tests/SwarmTests/` that fail to compile/run before WP-3.
 
 Constraints:
 - Use Swift Testing (`import Testing`) for new tests.

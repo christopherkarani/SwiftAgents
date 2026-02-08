@@ -7,19 +7,19 @@ Provide a single, ergonomic runtime entry point (`Agent`) that can replace the c
 Task Breakdown:
 0) Likely files to touch (confirm with `rg` before editing):
    - New type:
-     - `Sources/SwiftAgents/Agents/Agent.swift` (or `Sources/SwiftAgents/Agents/UnifiedAgent.swift`)
+     - `Sources/Swarm/Agents/Agent.swift` (or `Sources/Swarm/Agents/UnifiedAgent.swift`)
    - Existing runtime agents used as underlying implementations:
-     - `Sources/SwiftAgents/Agents/ToolCallingAgent.swift`
-     - `Sources/SwiftAgents/Agents/ReActAgent.swift`
-     - `Sources/SwiftAgents/Agents/Chat.swift` (ChatAgent)
-     - `Sources/SwiftAgents/Agents/PlanAndExecuteAgent.swift`
+     - `Sources/Swarm/Agents/ToolCallingAgent.swift`
+     - `Sources/Swarm/Agents/ReActAgent.swift`
+     - `Sources/Swarm/Agents/Chat.swift` (ChatAgent)
+     - `Sources/Swarm/Agents/PlanAndExecuteAgent.swift`
    - Tests:
-     - `Tests/SwiftAgentsTests/Agents/UnifiedAgentAPITests.swift` (new)
+     - `Tests/SwarmTests/Agents/UnifiedAgentAPITests.swift` (new)
    - Optional (only if needed for build/export hygiene):
      - `Package.swift` (should not be required)
 1) Add unified runtime type:
-   - Create a new source file for the type declaration (avoid colliding with `Sources/SwiftAgents/Core/Agent.swift` which contains `AgentRuntime`):
-     - Suggested: `Sources/SwiftAgents/Agents/Agent.swift` (type name `Agent`, file name ok), or `Sources/SwiftAgents/Agents/UnifiedAgent.swift` (preferred if your toolchain/tools get confused by two `Agent.swift` files).
+   - Create a new source file for the type declaration (avoid colliding with `Sources/Swarm/Core/Agent.swift` which contains `AgentRuntime`):
+     - Suggested: `Sources/Swarm/Agents/Agent.swift` (type name `Agent`, file name ok), or `Sources/Swarm/Agents/UnifiedAgent.swift` (preferred if your toolchain/tools get confused by two `Agent.swift` files).
    - Define: `public actor Agent: AgentRuntime`.
 2) Strategy API design (keep it hard to misuse):
    - Add a nested strategy enum:
@@ -46,7 +46,7 @@ Task Breakdown:
 6) Basic tests (compile + default strategy behavior):
    - Add a minimal Swift Testing suite proving the default strategy uses ToolCalling semantics (i.e., tool-call generation path) with `MockInferenceProvider`.
    - Suggested new file:
-     - `Tests/SwiftAgentsTests/Agents/UnifiedAgentAPITests.swift`
+     - `Tests/SwarmTests/Agents/UnifiedAgentAPITests.swift`
    - Keep parity/deeper coverage for WP5; this package just needs to lock the default and verify the type is usable end-to-end.
 
 Expected Output:

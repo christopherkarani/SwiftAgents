@@ -1,10 +1,10 @@
 1) Confirm targets and current behavior
-- Review Router + Transform in `Sources/SwiftAgents/Orchestration/OrchestrationBuilder.swift`.
-- Review routing helpers in `Sources/SwiftAgents/DSL/Flow/Routes.swift`.
+- Review Router + Transform in `Sources/Swarm/Orchestration/OrchestrationBuilder.swift`.
+- Review routing helpers in `Sources/Swarm/DSL/Flow/Routes.swift`.
 - Review docs: `docs/dsl.md`, `docs/orchestration.md`.
 
 2) TDD: add failing tests for Router multi-Otherwise
-- Add Swift Testing cases in `Tests/SwiftAgentsTests/DSL/BreakingAPIChangesTests.swift`:
+- Add Swift Testing cases in `Tests/SwarmTests/DSL/BreakingAPIChangesTests.swift`:
   - Multiple `Otherwise` branches run sequentially (deterministic order).
   - Single `Otherwise` still works (regression coverage).
 
@@ -20,7 +20,7 @@
   - `OutputTransformer` (AgentResult-level shaping).
 
 5) Optional additive ergonomics
-- Add `When(..., use:)` and `Otherwise(use:)` overloads in `Sources/SwiftAgents/DSL/Flow/Routes.swift`
+- Add `When(..., use:)` and `Otherwise(use:)` overloads in `Sources/Swarm/DSL/Flow/Routes.swift`
   to reduce boilerplate for common agent-only branches.
 
 6) Documentation updates for Router DSL

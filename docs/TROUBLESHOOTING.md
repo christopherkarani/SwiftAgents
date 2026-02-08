@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This guide helps you diagnose and resolve common issues when using SwiftAgents.
+This guide helps you diagnose and resolve common issues when using Swarm.
 
 ## Table of Contents
 
@@ -633,7 +633,7 @@ If you can't resolve an issue:
    ```
 
 4. **File an issue** with:
-   - SwiftAgents version
+   - Swarm version
    - iOS/macOS version
    - Minimal reproduction code
    - Expected vs actual behavior
@@ -641,7 +641,7 @@ If you can't resolve an issue:
 
 5. **Community support:**
    - GitHub Discussions
-   - Stack Overflow (tag: swiftagents)
+   - Stack Overflow (tag: swarm)
    - Discord/Slack communities
 
 Remember: Most issues are configuration-related. Start with the basics and work your way up to complex scenarios.

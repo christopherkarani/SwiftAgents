@@ -1,6 +1,6 @@
 # Best Practices Guide
 
-This guide outlines recommended patterns and practices for building robust, maintainable applications with SwiftAgents.
+This guide outlines recommended patterns and practices for building robust, maintainable applications with Swarm.
 
 ## Table of Contents
 
@@ -32,7 +32,7 @@ Sources/
 │   ├── AgentConfigs.swift
 │   └── ToolRegistry.swift
 └── Extensions/
-    └── SwiftAgents+Extensions.swift
+    └── Swarm+Extensions.swift
 
 Tests/
 ├── Tools/

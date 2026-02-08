@@ -2,7 +2,7 @@
 
 ## Overview
 
-SwiftAgents provides comprehensive observability capabilities for monitoring and debugging agent execution. The observability system includes distributed tracing, performance metrics, and structured logging to help you understand agent behavior, identify bottlenecks, and diagnose issues in production.
+Swarm provides comprehensive observability capabilities for monitoring and debugging agent execution. The observability system includes distributed tracing, performance metrics, and structured logging to help you understand agent behavior, identify bottlenecks, and diagnose issues in production.
 
 Key components:
 - **TraceContext**: Distributed tracing with task-local propagation
@@ -235,7 +235,7 @@ await tracker.start()
 
 ## Logging
 
-SwiftAgents uses `swift-log` for cross-platform logging compatibility. Category-specific loggers are available for different subsystems.
+Swarm uses `swift-log` for cross-platform logging compatibility. Category-specific loggers are available for different subsystems.
 
 ### Log Categories
 
@@ -285,7 +285,7 @@ Unlike `os.Logger`, swift-log does not support `privacy:` parameter annotations.
 
 ## AgentTracer
 
-The `Tracer` protocol defines the contract for tracing agent execution events. SwiftAgents provides several implementations for different use cases.
+The `Tracer` protocol defines the contract for tracing agent execution events. Swarm provides several implementations for different use cases.
 
 ### Tracer Protocol
 
@@ -464,7 +464,7 @@ public actor TelemetryTracer: Tracer {
 
 ### Integration with Observability Backends
 
-SwiftAgents traces can be exported to various observability platforms.
+Swarm traces can be exported to various observability platforms.
 
 #### OpenTelemetry Export
 

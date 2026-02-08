@@ -1,11 +1,11 @@
 Prompt:
-Update documentation so coding agents (Codex/Claude Code) can adopt SwiftAgents quickly with minimal confusion.
+Update documentation so coding agents (Codex/Claude Code) can adopt Swarm quickly with minimal confusion.
 
 Goal:
 Make “the happy path” obvious: define tools with `@Tool`, define an agent with `@AgentActor`, wire provider/memory with `.environment`, compose with `AgentBlueprint`.
 
 Task Breakdown:
-1. Update `Sources/SwiftAgents/Macros/MacroDeclarations.swift` docs for `@AgentActor`:
+1. Update `Sources/Swarm/Macros/MacroDeclarations.swift` docs for `@AgentActor`:
    - correct tool type (`AnyJSONTool`)
    - correct run/stream signatures (session/hooks)
    - remove/replace references to non-existent `@Tools`

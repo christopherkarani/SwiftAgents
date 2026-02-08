@@ -1,8 +1,8 @@
 #!/bin/bash
-# SwiftAgents Framework
+# Swarm Framework
 # Test Coverage Report Generation Script
 #
-# This script generates comprehensive code coverage reports for SwiftAgents
+# This script generates comprehensive code coverage reports for Swarm
 # Usage: ./scripts/generate-coverage-report.sh
 
 set -euo pipefail
@@ -21,7 +21,7 @@ BUILD_DIR=".build/debug"
 MIN_COVERAGE=70  # Minimum acceptable coverage percentage
 
 echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║        SwiftAgents Code Coverage Report Generator         ║${NC}"
+echo -e "${BLUE}║        Swarm Code Coverage Report Generator         ║${NC}"
 echo -e "${BLUE}╚═══════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -44,15 +44,15 @@ echo -e "${GREEN}✅ Tests completed successfully${NC}"
 echo ""
 
 # Find test binaries
-TEST_BINARIES=$(find "$BUILD_DIR" -name "*PackageTests.xctest" -o -name "*Tests.xctest" 2>/dev/null | grep -v "SwiftAgentsUITests" || true)
+TEST_BINARIES=$(find "$BUILD_DIR" -name "*PackageTests.xctest" -o -name "*Tests.xctest" 2>/dev/null | grep -v "SwarmUITests" || true)
 
 if [ -z "$TEST_BINARIES" ]; then
     echo -e "${RED}❌ Error: No test binaries found${NC}"
     exit 1
 fi
 
-# Get the main test binary (SwiftAgentsTests)
-TEST_BINARY=$(echo "$TEST_BINARIES" | grep "SwiftAgentsPackageTests.xctest" | head -n 1)
+# Get the main test binary (SwarmTests)
+TEST_BINARY=$(echo "$TEST_BINARIES" | grep "SwarmPackageTests.xctest" | head -n 1)
 
 if [ -z "$TEST_BINARY" ]; then
     TEST_BINARY=$(echo "$TEST_BINARIES" | head -n 1)

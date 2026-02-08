@@ -2,7 +2,7 @@
 
 ## Overview
 
-This plan outlines improvements to the SwiftAgents API to enhance developer experience and type safety.
+This plan outlines improvements to the Swarm API to enhance developer experience and type safety.
 
 ## Phase 1: Typed Handoffs & Tool Registry Type Safety (Completed)
 
@@ -18,12 +18,12 @@ This plan outlines improvements to the SwiftAgents API to enhance developer expe
 **Breaking Change**: `handoff(to:)` now returns `HandoffConfiguration<T>` instead of `AnyHandoffConfiguration`. Code expecting `AnyHandoffConfiguration` should use `anyHandoff(to:)` instead.
 
 **Files Modified**:
-- `Sources/SwiftAgents/Orchestration/HandoffBuilder.swift`
+- `Sources/Swarm/Orchestration/HandoffBuilder.swift`
   - Modified `handoff(to:)` to return `HandoffConfiguration<T>`
   - Added `anyHandoff()` function
 
 **Tests Added**:
-- `Tests/SwiftAgentsTests/Orchestration/HandoffConfigurationTests+TypedHandoff.swift`
+- `Tests/SwarmTests/Orchestration/HandoffConfigurationTests+TypedHandoff.swift`
   - 7 tests for typed handoff configuration
   - Tests for `anyHandoff()` function
 
@@ -39,10 +39,10 @@ This plan outlines improvements to the SwiftAgents API to enhance developer expe
   - `contains(toolOfType:)` - checks if tool exists by type
 
 **Files Added**:
-- `Sources/SwiftAgents/Tools/ToolRegistry+TypeSafe.swift` - Type-safe extensions
+- `Sources/Swarm/Tools/ToolRegistry+TypeSafe.swift` - Type-safe extensions
 
 **Tests Added**:
-- `Tests/SwiftAgentsTests/Tools/ToolRegistryTests+TypeSafe.swift`
+- `Tests/SwarmTests/Tools/ToolRegistryTests+TypeSafe.swift`
   - 10 tests for type-safe tool registry methods
 
 ### Code Quality Improvements
@@ -83,13 +83,13 @@ This plan outlines improvements to the SwiftAgents API to enhance developer expe
   - `.oneOf(_:)` - creates enum choice type
 
 **Files Modified**:
-- `Sources/SwiftAgents/Tools/Tool.swift`
+- `Sources/Swarm/Tools/Tool.swift`
   - Added `ParameterTypeRepresentable` protocol
   - Added conformances for `String`, `Int`, `Double`, `Bool`
   - Added static factory methods to `ParameterType` enum
 
 **Tests Added**:
-- `Tests/SwiftAgentsTests/Tools/ToolParameterTests+Factories.swift`
+- `Tests/SwarmTests/Tools/ToolParameterTests+Factories.swift`
   - 5 tests for `ParameterTypeRepresentable` protocol
   - 8 tests for factory functions
   - 6 tests for factory usage integration
@@ -119,11 +119,11 @@ Create an actor-based `AgentResult.Builder` with automatic thread-safe mutation.
 
 ### Files to Modify
 
-- `Sources/SwiftAgents/Core/AgentResult.swift`
+- `Sources/Swarm/Core/AgentResult.swift`
 
 ### Tests to Update
 
-- `Tests/SwiftAgentsTests/Core/AgentResultTests.swift`
+- `Tests/SwarmTests/Core/AgentResultTests.swift`
 
 ## Phase 3: Memory Typed Message Retrieval (Pending)
 
@@ -146,9 +146,9 @@ Add typed message retrieval methods with generics.
 
 ### Files to Modify
 
-- `Sources/SwiftAgents/Memory/ConversationMemory.swift`
-- `Sources/SwiftAgents/Memory/HybridMemory.swift`
-- `Sources/SwiftAgents/Memory/VectorMemory.swift`
+- `Sources/Swarm/Memory/ConversationMemory.swift`
+- `Sources/Swarm/Memory/HybridMemory.swift`
+- `Sources/Swarm/Memory/VectorMemory.swift`
 
 ## Timeline
 

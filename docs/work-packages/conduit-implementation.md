@@ -6,21 +6,21 @@ Restore correct tool-call streaming behavior for `ConduitProviderSelection`, for
 
 Task Breakdown:
 1) Forward tool-call streaming through `ConduitProviderSelection`:
-   - Edit `Sources/SwiftAgents/Providers/Conduit/ConduitProviderSelection.swift`.
+   - Edit `Sources/Swarm/Providers/Conduit/ConduitProviderSelection.swift`.
    - Make `ConduitProviderSelection` conform to `ToolCallStreamingInferenceProvider`.
    - Implement:
      - `streamWithToolCalls(prompt:tools:options:) -> AsyncThrowingStream<InferenceStreamUpdate, Error>`
    - Behavior:
      - If `makeProvider()` can be downcast to `any ToolCallStreamingInferenceProvider`, forward the call.
      - Otherwise, return an `AsyncThrowingStream` that finishes by throwing `AgentError.generationFailed(...)`.
-   - Mirror the behavior/shape already used in `Sources/SwiftAgents/Providers/Conduit/LLM.swift` (but do not refactor `LLM` as part of this package).
+   - Mirror the behavior/shape already used in `Sources/Swarm/Providers/Conduit/LLM.swift` (but do not refactor `LLM` as part of this package).
 2) Map `InferenceOptions.topK` into Conduit `GenerateConfig.topK`:
-   - Edit `Sources/SwiftAgents/Providers/Conduit/ConduitInferenceProvider.swift`.
+   - Edit `Sources/Swarm/Providers/Conduit/ConduitInferenceProvider.swift`.
    - In `apply(options:to:)`, add:
      - `if let topK = options.topK { updated = updated.topK(topK) }`
    - Keep the mapping consistent with existing option forwarding style.
 3) Harden toolChoice application so it only applies when tools are non-empty:
-   - Edit `Sources/SwiftAgents/Providers/Conduit/ConduitInferenceProvider.swift`.
+   - Edit `Sources/Swarm/Providers/Conduit/ConduitInferenceProvider.swift`.
    - In both:
      - `generateWithToolCalls(prompt:tools:options:)`
      - `streamWithToolCalls(prompt:tools:options:)`
@@ -31,8 +31,8 @@ Task Breakdown:
    - Run the narrow test filters introduced in `docs/work-packages/conduit-tests.md` until green.
 
 Expected Output:
-- `Sources/SwiftAgents/Providers/Conduit/ConduitProviderSelection.swift` forwards `streamWithToolCalls(...)` and type-checks as `ToolCallStreamingInferenceProvider`.
-- `Sources/SwiftAgents/Providers/Conduit/ConduitInferenceProvider.swift` forwards `topK` and gates `toolChoice` on non-empty tools in both tool-call paths.
+- `Sources/Swarm/Providers/Conduit/ConduitProviderSelection.swift` forwards `streamWithToolCalls(...)` and type-checks as `ToolCallStreamingInferenceProvider`.
+- `Sources/Swarm/Providers/Conduit/ConduitInferenceProvider.swift` forwards `topK` and gates `toolChoice` on non-empty tools in both tool-call paths.
 - All Conduit fix tests pass locally (`swift test` and/or targeted filters).
 
 Constraints:
