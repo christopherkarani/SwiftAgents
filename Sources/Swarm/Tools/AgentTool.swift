@@ -1,5 +1,5 @@
 // AgentTool.swift
-// SwiftAgents Framework
+// Swarm Framework
 //
 // Wraps an AgentRuntime as a callable tool for agent composition.
 

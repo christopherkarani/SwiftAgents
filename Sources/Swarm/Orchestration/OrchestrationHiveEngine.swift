@@ -65,7 +65,8 @@ enum OrchestrationHiveEngine {
                         reducer: .lastWriteWins(),
                         updatePolicy: .single,
                         initial: { "" },
-                        persistence: .untracked
+                        codec: HiveAnyCodec(JSONCodec<String>()),
+                        persistence: .checkpointed
                     )
                 ),
                 AnyHiveChannelSpec(
@@ -75,7 +76,8 @@ enum OrchestrationHiveEngine {
                         reducer: HiveReducer(Accumulator.reduce),
                         updatePolicy: .single,
                         initial: { Accumulator() },
-                        persistence: .untracked
+                        codec: HiveAnyCodec(JSONCodec<Accumulator>()),
+                        persistence: .checkpointed
                     )
                 )
             ]
@@ -97,6 +99,14 @@ enum OrchestrationHiveEngine {
         orchestrator: (any AgentRuntime)?,
         orchestratorName: String,
         handoffs: [AnyHandoffConfiguration],
+        inferencePolicy: InferencePolicy?,
+        hiveRunOptionsOverride: SwarmHiveRunOptionsOverride?,
+        checkpointPolicy: HiveCheckpointPolicy = .disabled,
+        checkpointStore: AnyHiveCheckpointStore<Schema>? = nil,
+        modelClient: AnyHiveModelClient? = nil,
+        modelRouter: AnyHiveModelRouter? = nil,
+        toolRegistry: AnyHiveToolRegistry? = nil,
+        inferenceHints: HiveInferenceHints? = nil,
         onIterationStart: (@Sendable (Int) -> Void)?,
         onIterationEnd: (@Sendable (Int) -> Void)?
     ) async throws -> AgentResult {
@@ -117,19 +127,21 @@ enum OrchestrationHiveEngine {
         let environment = HiveEnvironment<Schema>(
             context: stepContext,
             clock: SwarmHiveClock(),
-            logger: SwarmHiveLogger()
+            logger: SwarmHiveLogger(),
+            model: modelClient,
+            modelRouter: modelRouter,
+            inferenceHints: inferenceHints ?? makeInferenceHints(from: inferencePolicy),
+            tools: toolRegistry,
+            checkpointStore: checkpointStore
         )
 
         let runtime = HiveRuntime(graph: graph, environment: environment)
         let threadID = HiveThreadID(UUID().uuidString)
 
-        let options = HiveRunOptions(
-            maxSteps: steps.count,
-            maxConcurrentTasks: 1,
-            checkpointPolicy: .disabled,
-            debugPayloads: false,
-            deterministicTokenStreaming: false,
-            eventBufferCapacity: max(64, steps.count * 8)
+        let options = makeRunOptions(
+            stepCount: steps.count,
+            checkpointPolicy: checkpointPolicy,
+            override: hiveRunOptionsOverride
         )
 
         let handle = await runtime.run(threadID: threadID, input: input, options: options)
@@ -209,6 +221,62 @@ enum OrchestrationHiveEngine {
         }
     }
 
+    private static func makeRunOptions(
+        stepCount: Int,
+        checkpointPolicy: HiveCheckpointPolicy,
+        override optionsOverride: SwarmHiveRunOptionsOverride?
+    ) -> HiveRunOptions {
+        let defaultOptions = HiveRunOptions(
+            maxSteps: stepCount,
+            maxConcurrentTasks: 1,
+            checkpointPolicy: checkpointPolicy,
+            debugPayloads: false,
+            deterministicTokenStreaming: false,
+            eventBufferCapacity: max(64, stepCount * 8)
+        )
+
+        guard let optionsOverride else {
+            return defaultOptions
+        }
+
+        return HiveRunOptions(
+            maxSteps: optionsOverride.maxSteps ?? defaultOptions.maxSteps,
+            maxConcurrentTasks: optionsOverride.maxConcurrentTasks ?? defaultOptions.maxConcurrentTasks,
+            checkpointPolicy: checkpointPolicy,
+            debugPayloads: optionsOverride.debugPayloads ?? defaultOptions.debugPayloads,
+            deterministicTokenStreaming: optionsOverride.deterministicTokenStreaming ?? defaultOptions.deterministicTokenStreaming,
+            eventBufferCapacity: optionsOverride.eventBufferCapacity ?? defaultOptions.eventBufferCapacity,
+            outputProjectionOverride: defaultOptions.outputProjectionOverride
+        )
+    }
+
+    static func makeInferenceHints(from policy: InferencePolicy?) -> HiveInferenceHints? {
+        guard let policy else { return nil }
+
+        let latencyTier: HiveLatencyTier = switch policy.latencyTier {
+        case .interactive:
+            .interactive
+        case .background:
+            .background
+        }
+
+        let networkState: HiveNetworkState = switch policy.networkState {
+        case .offline:
+            .offline
+        case .online:
+            .online
+        case .metered:
+            .metered
+        }
+
+        return HiveInferenceHints(
+            latencyTier: latencyTier,
+            privacyRequired: policy.privacyRequired,
+            tokenBudget: policy.tokenBudget,
+            networkState: networkState
+        )
+    }
+
     private static func makeGraph(steps: [OrchestrationStep]) throws -> CompiledHiveGraph<Schema> {
         precondition(!steps.isEmpty)
 
@@ -223,7 +291,7 @@ enum OrchestrationHiveEngine {
                 let currentInput = try input.store.get(Schema.currentInputKey)
                 let result = try await step.execute(currentInput, context: stepContext)
 
-                var metadataUpdate = result.metadata
+                var metadataUpdate: [String: SendableValue] = [:]
                 for (key, value) in result.metadata {
                     metadataUpdate["orchestration.step_\(index).\(key)"] = value
                 }
@@ -296,7 +364,7 @@ private struct SwarmHiveClock: HiveClock {
     }
 
     func sleep(nanoseconds: UInt64) async throws {
-        try await Task.sleep(nanoseconds: nanoseconds)
+        try await Task.sleep(for: .nanoseconds(nanoseconds))
     }
 }
 
@@ -326,6 +394,25 @@ private struct SwarmHiveLogger: HiveLogger {
             swiftMetadata[key] = .string(value)
         }
         return swiftMetadata
+    }
+}
+
+/// Deterministic JSON codec for Hive checkpointing within the Swarm target.
+private struct JSONCodec<Value: Codable & Sendable>: HiveCodec {
+    let id: String
+
+    init() {
+        self.id = "Swarm.JSONCodec<\(String(reflecting: Value.self))>"
+    }
+
+    func encode(_ value: Value) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return try encoder.encode(value)
+    }
+
+    func decode(_ data: Data) throws -> Value {
+        try JSONDecoder().decode(Value.self, from: data)
     }
 }
 

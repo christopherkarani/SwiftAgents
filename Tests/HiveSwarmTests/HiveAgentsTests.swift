@@ -120,10 +120,16 @@ struct HiveAgentsTests {
         )
 
         let runtime = HiveRuntime(graph: graph, environment: environment)
-        let agents = HiveAgentsRuntime(threadID: HiveThreadID("t"), runtime: runtime, environment: environment)
+        let runControl = HiveAgentsRunController(runtime: runtime)
 
         let thrown = await #expect(throws: (any Error).self) {
-            _ = try await agents.sendUserMessage("Hello")
+            _ = try await runControl.start(
+                HiveAgentsRunStartRequest(
+                    threadID: HiveThreadID("t"),
+                    input: "Hello",
+                    options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
+                )
+            )
         }
         let runtimeError = try #require(thrown as? HiveRuntimeError)
         switch runtimeError {
@@ -151,7 +157,14 @@ struct HiveAgentsTests {
                     content: "",
                     toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
                 )))],
-                [.final(HiveChatResponse(message: message(id: "m2", role: .assistant, content: "done")))]
+                [.final(HiveChatResponse(message: message(id: "m2", role: .assistant, content: "done")))],
+                [.final(HiveChatResponse(message: message(
+                    id: "m3",
+                    role: .assistant,
+                    content: "",
+                    toolCalls: [HiveToolCall(id: "c2", name: "calc", argumentsJSON: "{}")]
+                )))],
+                [.final(HiveChatResponse(message: message(id: "m4", role: .assistant, content: "done")))]
             ]))),
             modelRouter: nil,
             tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
@@ -159,14 +172,17 @@ struct HiveAgentsTests {
         )
 
         let runtime = HiveRuntime(graph: graph, environment: environment)
-        let agents = HiveAgentsRuntime(
+        let runControl = HiveAgentsRunController(runtime: runtime)
+        let startRequest = HiveAgentsRunStartRequest(
             threadID: HiveThreadID("approval-thread"),
-            runtime: runtime,
-            environment: environment,
+            input: "Hello",
             options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
         )
+        let handle = try await runControl.start(startRequest)
+        let startEvents = await collectEvents(handle.events)
+        #expect(startEvents.allSatisfy { event in event.id.runID == handle.runID })
+        #expect(startEvents.allSatisfy { event in event.id.attemptID == handle.attemptID })
 
-        let handle = try await agents.sendUserMessage("Hello")
         let outcome = try await handle.outcome.value
 
         let interruption = try requireInterruption(outcome: outcome)
@@ -174,11 +190,23 @@ struct HiveAgentsTests {
         case let .toolApprovalRequired(toolCalls):
             #expect(toolCalls.map(\.name) == ["calc"])
         }
+        let interruptEventID = startEvents.compactMap { event -> HiveInterruptID? in
+            guard case let .runInterrupted(interruptID) = event.kind else { return nil }
+            return interruptID
+        }.first
+        #expect(interruptEventID == interruption.interrupt.id)
 
-        let resumeHandle = try await agents.resumeToolApproval(
-            interruptID: interruption.interrupt.id,
-            decision: .approved
+        let resumeHandle = try await runControl.resume(
+            HiveAgentsRunResumeRequest(
+                threadID: startRequest.threadID,
+                interruptID: interruption.interrupt.id,
+                payload: .toolApproval(decision: .approved),
+                options: startRequest.options
+            )
         )
+        let resumeEvents = await collectEvents(resumeHandle.events)
+        #expect(resumeEvents.allSatisfy { event in event.id.runID == resumeHandle.runID })
+        #expect(resumeEvents.allSatisfy { event in event.id.attemptID == resumeHandle.attemptID })
         let resumed = try await resumeHandle.outcome.value
 
         let finalStore = try requireFullStore(outcome: resumed)
@@ -189,6 +217,158 @@ struct HiveAgentsTests {
                 message.toolCallID == "c1"
         }
         #expect(hasToolReply)
+    }
+
+    @Test("Tool approval: cancelled decision skips tool execution")
+    func toolApproval_cancelledDecision_skipsToolExecution() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let store = InMemoryCheckpointStore<HiveAgents.Schema>()
+
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .always)
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(ScriptedModelClient(script: ModelScript(chunksByInvocation: [
+                [.final(HiveChatResponse(message: message(
+                    id: "m1",
+                    role: .assistant,
+                    content: "",
+                    toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
+                )))],
+                [.final(HiveChatResponse(message: message(id: "m2", role: .assistant, content: "done")))]
+            ]))),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
+            checkpointStore: AnyHiveCheckpointStore(store)
+        )
+
+        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runControl = HiveAgentsRunController(runtime: runtime)
+
+        let start = try await runControl.start(
+            .init(
+                threadID: HiveThreadID("approval-cancelled"),
+                input: "Hello",
+                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
+            )
+        )
+        let interrupted = try requireInterruption(outcome: try await start.outcome.value)
+
+        let resumed = try await runControl.resume(
+            .init(
+                threadID: HiveThreadID("approval-cancelled"),
+                interruptID: interrupted.interrupt.id,
+                payload: .toolApproval(decision: .cancelled),
+                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
+            )
+        )
+        let finalStore = try requireFullStore(outcome: try await resumed.outcome.value)
+        let messages = try finalStore.get(HiveAgents.Schema.messagesKey)
+
+        let hasCancellationSystem = messages.contains { message in
+            message.role.rawValue == "system" && message.content == "Tool execution cancelled by user."
+        }
+        #expect(hasCancellationSystem)
+
+        let hasCancelledToolMessage = messages.contains { message in
+            message.role.rawValue == "tool" &&
+                message.toolCallID == "c1" &&
+                message.content.contains("cancelled")
+        }
+        #expect(hasCancelledToolMessage)
+
+        let hasExecutedToolMessage = messages.contains { message in
+            message.role.rawValue == "tool" &&
+                message.toolCallID == "c1" &&
+                message.content == "42"
+        }
+        #expect(hasExecutedToolMessage == false)
+    }
+
+    @Test("Run control resume request options are passed through")
+    func runControl_resumeOptions_passthrough() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let store = InMemoryCheckpointStore<HiveAgents.Schema>()
+
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .always)
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(ScriptedModelClient(script: ModelScript(chunksByInvocation: [
+                [.final(HiveChatResponse(message: message(
+                    id: "m1",
+                    role: .assistant,
+                    content: "",
+                    toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
+                )))],
+                [.final(HiveChatResponse(message: message(id: "m2", role: .assistant, content: "done")))]
+            ]))),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
+            checkpointStore: AnyHiveCheckpointStore(store)
+        )
+
+        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runControl = HiveAgentsRunController(runtime: runtime)
+        let threadID = HiveThreadID("approval-options")
+
+        let start = try await runControl.start(
+            .init(
+                threadID: threadID,
+                input: "Hello",
+                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
+            )
+        )
+        let interrupted = try requireInterruption(outcome: try await start.outcome.value)
+
+        let resumed = try await runControl.resume(
+            .init(
+                threadID: threadID,
+                interruptID: interrupted.interrupt.id,
+                payload: .toolApproval(decision: .approved),
+                options: HiveRunOptions(maxSteps: 0, checkpointPolicy: .disabled)
+            )
+        )
+        let outcome = try await resumed.outcome.value
+        guard case let .outOfSteps(maxSteps, _, _) = outcome else {
+            Issue.record("Expected outOfSteps from maxSteps=0 resume override.")
+            return
+        }
+        #expect(maxSteps == 0)
+    }
+
+    @Test("HiveBackedAgent preserves ToolCall/ToolResult correlation IDs")
+    func hiveBackedAgent_preservesToolCorrelationIDs() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(ScriptedModelClient(script: ModelScript(chunksByInvocation: [
+                [.final(HiveChatResponse(message: message(
+                    id: "m1",
+                    role: .assistant,
+                    content: "",
+                    toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
+                )))],
+                [.final(HiveChatResponse(message: message(id: "m2", role: .assistant, content: "done")))]
+            ]))),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
+            checkpointStore: nil
+        )
+
+        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let hiveRuntime = HiveAgentsRuntime(runControl: HiveAgentsRunController(runtime: runtime))
+        let agent = HiveBackedAgent(runtime: hiveRuntime, name: "bridge")
+
+        let result = try await agent.run("hello")
+        #expect(result.toolCalls.count == 1)
+        #expect(result.toolResults.count == 1)
+        #expect(result.toolResults.first?.callId == result.toolCalls.first?.id)
     }
 
     @Test("Deterministic message IDs: model taskID drives assistant message id")

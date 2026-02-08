@@ -1176,19 +1176,48 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
             return AgentResult(output: input)
         }
 
+        switch configuration.runtimeMode {
+        case .swift:
+            return try await executeSwiftSteps(
+                steps: steps,
+                input: input,
+                session: session,
+                hooks: hooks,
+                onIterationStart: onIterationStart,
+                onIterationEnd: onIterationEnd
+            )
+
+        case .hive, .requireHive:
 #if SWARM_HIVE_RUNTIME && canImport(HiveCore)
-        return try await OrchestrationHiveEngine.execute(
-            steps: steps,
-            input: input,
-            session: session,
-            hooks: hooks,
-            orchestrator: self,
-            orchestratorName: orchestratorName,
-            handoffs: handoffs,
-            onIterationStart: onIterationStart,
-            onIterationEnd: onIterationEnd
-        )
+            return try await OrchestrationHiveEngine.execute(
+                steps: steps,
+                input: input,
+                session: session,
+                hooks: hooks,
+                orchestrator: self,
+                orchestratorName: orchestratorName,
+                handoffs: handoffs,
+                inferencePolicy: configuration.inferencePolicy,
+                hiveRunOptionsOverride: configuration.hiveRunOptionsOverride,
+                onIterationStart: onIterationStart,
+                onIterationEnd: onIterationEnd
+            )
 #else
+            throw OrchestrationError.hiveRuntimeUnavailable(
+                reason: "SWARM_HIVE_RUNTIME is not enabled for this build."
+            )
+#endif
+        }
+    }
+
+    private func executeSwiftSteps(
+        steps: [OrchestrationStep],
+        input: String,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        onIterationStart: (@Sendable (Int) -> Void)?,
+        onIterationEnd: (@Sendable (Int) -> Void)?
+    ) async throws -> AgentResult {
         let startTime = ContinuousClock.now
         let context = AgentContext(input: input)
         let stepContext = OrchestrationStepContext(
@@ -1250,7 +1279,6 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
             tokenUsage: nil,
             metadata: allMetadata
         )
-#endif
     }
 
     private func applyGroupMetadataIfNeeded(to result: AgentResult) -> AgentResult {

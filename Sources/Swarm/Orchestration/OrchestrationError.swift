@@ -40,6 +40,9 @@ public enum OrchestrationError: Error, Sendable, Equatable {
 
     /// All agents in parallel execution failed.
     case allAgentsFailed(errors: [String])
+
+    /// Hive runtime was required but unavailable for this build/runtime.
+    case hiveRuntimeUnavailable(reason: String)
 }
 
 // MARK: LocalizedError
@@ -64,6 +67,8 @@ extension OrchestrationError: LocalizedError {
         case let .allAgentsFailed(errors):
             let errorList = errors.joined(separator: ", ")
             return "All parallel agents failed: [\(errorList)]"
+        case let .hiveRuntimeUnavailable(reason):
+            return "Hive runtime unavailable: \(reason)"
         }
     }
 }
@@ -89,6 +94,8 @@ extension OrchestrationError: CustomDebugStringConvertible {
             return "OrchestrationError.mergeStrategyFailed(reason: \(reason))"
         case let .allAgentsFailed(errors):
             return "OrchestrationError.allAgentsFailed(errors: \(errors))"
+        case let .hiveRuntimeUnavailable(reason):
+            return "OrchestrationError.hiveRuntimeUnavailable(reason: \(reason))"
         }
     }
 }

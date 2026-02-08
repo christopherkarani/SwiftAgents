@@ -5,6 +5,97 @@
 
 import Foundation
 
+// MARK: - SwarmRuntimeMode
+
+/// Runtime execution mode for orchestration.
+public enum SwarmRuntimeMode: Sendable, Equatable {
+    /// Always execute orchestration using the Swift in-process engine.
+    case swift
+
+    /// Execute orchestration using the Hive runtime. Fails if Hive is unavailable.
+    case hive
+
+    /// Alias for `.hive` — explicitly communicates that Hive is required.
+    case requireHive
+}
+
+/// Optional Hive run options override for orchestration execution.
+public struct SwarmHiveRunOptionsOverride: Sendable, Equatable {
+    public var maxSteps: Int?
+    public var maxConcurrentTasks: Int?
+    public var debugPayloads: Bool?
+    public var deterministicTokenStreaming: Bool?
+    public var eventBufferCapacity: Int?
+
+    public init(
+        maxSteps: Int? = nil,
+        maxConcurrentTasks: Int? = nil,
+        debugPayloads: Bool? = nil,
+        deterministicTokenStreaming: Bool? = nil,
+        eventBufferCapacity: Int? = nil
+    ) {
+        self.maxSteps = maxSteps
+        self.maxConcurrentTasks = maxConcurrentTasks
+        self.debugPayloads = debugPayloads
+        self.deterministicTokenStreaming = deterministicTokenStreaming
+        self.eventBufferCapacity = eventBufferCapacity
+    }
+}
+
+// MARK: - InferencePolicy
+
+/// Policy hints for model inference routing.
+///
+/// When running on the Hive runtime, these map to `HiveInferenceHints`.
+/// On the Swift runtime, these inform provider selection.
+public struct InferencePolicy: Sendable, Equatable {
+    /// Desired latency tier for inference.
+    public enum LatencyTier: String, Sendable, Equatable {
+        /// Low-latency, interactive use (e.g., chat).
+        case interactive
+        /// Higher latency acceptable (e.g., batch processing).
+        case background
+    }
+
+    /// Network conditions relevant to inference routing.
+    public enum NetworkState: String, Sendable, Equatable {
+        case offline
+        case online
+        case metered
+    }
+
+    /// Desired latency tier. Default: `.interactive`
+    public var latencyTier: LatencyTier
+
+    /// Whether on-device/private inference is required. Default: `false`
+    public var privacyRequired: Bool
+
+    /// Optional output token budget hint for inference.
+    ///
+    /// This limits the model's generation length, not the context window.
+    /// For context window management, see ``AgentConfiguration/contextProfile``.
+    /// Default: `nil`
+    public var tokenBudget: Int?
+
+    /// Current network state hint. Default: `.online`
+    public var networkState: NetworkState
+
+    public init(
+        latencyTier: LatencyTier = .interactive,
+        privacyRequired: Bool = false,
+        tokenBudget: Int? = nil,
+        networkState: NetworkState = .online
+    ) {
+        if let tokenBudget {
+            precondition(tokenBudget > 0, "tokenBudget must be positive")
+        }
+        self.latencyTier = latencyTier
+        self.privacyRequired = privacyRequired
+        self.tokenBudget = tokenBudget
+        self.networkState = networkState
+    }
+}
+
 // MARK: - AgentConfiguration
 
 /// Configuration settings for agent execution.
@@ -25,6 +116,15 @@ public struct AgentConfiguration: Sendable, Equatable {
 
     /// Default configuration with sensible defaults.
     public static let `default` = AgentConfiguration()
+
+    /// Default runtime mode based on build capabilities.
+    public static var defaultRuntimeMode: SwarmRuntimeMode {
+#if SWARM_HIVE_RUNTIME && canImport(HiveCore)
+        .hive
+#else
+        .swift
+#endif
+    }
 
     // MARK: - Identity
 
@@ -78,6 +178,26 @@ public struct AgentConfiguration: Sendable, Equatable {
     ///
     /// Default: `.platformDefault`
     public var contextProfile: ContextProfile
+
+    // MARK: - Runtime Engine Settings
+
+    /// Runtime mode for orchestration execution.
+    ///
+    /// Default: `.hive` when Hive runtime support is compiled in, otherwise `.swift`.
+    public var runtimeMode: SwarmRuntimeMode
+
+    /// Optional Hive run options override used by orchestration runs in Hive mode.
+    ///
+    /// Default: `nil` (engine defaults are used).
+    public var hiveRunOptionsOverride: SwarmHiveRunOptionsOverride?
+
+    /// Inference routing policy hints.
+    ///
+    /// Controls model selection when multiple backends are available.
+    /// When using the Hive runtime, maps directly to `HiveInferenceHints`.
+    ///
+    /// Default: `nil` (use default routing)
+    public var inferencePolicy: InferencePolicy?
 
     // MARK: - Behavior Settings
 
@@ -173,6 +293,9 @@ public struct AgentConfiguration: Sendable, Equatable {
     ///   - includeReasoning: Include reasoning in events. Default: true
     ///   - sessionHistoryLimit: Maximum session history messages to load. Default: 50
     ///   - contextProfile: Context budgeting profile. Default: `.platformDefault`
+    ///   - runtimeMode: Runtime mode for orchestration execution. Default: build-dependent
+    ///   - hiveRunOptionsOverride: Optional Hive run options override for orchestration. Default: nil
+    ///   - inferencePolicy: Inference routing policy hints. Default: nil
     ///   - parallelToolCalls: Enable parallel tool execution. Default: false
     ///   - previousResponseId: Previous response ID for continuation. Default: nil
     ///   - autoPreviousResponseId: Enable auto response ID tracking. Default: false
@@ -186,6 +309,9 @@ public struct AgentConfiguration: Sendable, Equatable {
         stopSequences: [String] = [],
         modelSettings: ModelSettings? = nil,
         contextProfile: ContextProfile = .platformDefault,
+        runtimeMode: SwarmRuntimeMode = AgentConfiguration.defaultRuntimeMode,
+        hiveRunOptionsOverride: SwarmHiveRunOptionsOverride? = nil,
+        inferencePolicy: InferencePolicy? = nil,
         enableStreaming: Bool = true,
         includeToolCallDetails: Bool = true,
         stopOnToolError: Bool = false,
@@ -208,6 +334,9 @@ public struct AgentConfiguration: Sendable, Equatable {
         self.stopSequences = stopSequences
         self.modelSettings = modelSettings
         self.contextProfile = contextProfile
+        self.runtimeMode = runtimeMode
+        self.hiveRunOptionsOverride = hiveRunOptionsOverride
+        self.inferencePolicy = inferencePolicy
         self.enableStreaming = enableStreaming
         self.includeToolCallDetails = includeToolCallDetails
         self.stopOnToolError = stopOnToolError
@@ -234,6 +363,9 @@ extension AgentConfiguration: CustomStringConvertible {
             stopSequences: \(stopSequences),
             modelSettings: \(modelSettings.map { String(describing: $0) } ?? "nil"),
             contextProfile: \(contextProfile),
+            runtimeMode: \(runtimeMode),
+            hiveRunOptionsOverride: \(hiveRunOptionsOverride.map { String(describing: $0) } ?? "nil"),
+            inferencePolicy: \(inferencePolicy.map { String(describing: $0) } ?? "nil"),
             enableStreaming: \(enableStreaming),
             includeToolCallDetails: \(includeToolCallDetails),
             stopOnToolError: \(stopOnToolError),

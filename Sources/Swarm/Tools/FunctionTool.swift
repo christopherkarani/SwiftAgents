@@ -1,5 +1,5 @@
 // FunctionTool.swift
-// SwiftAgents Framework
+// Swarm Framework
 
 import Foundation
 

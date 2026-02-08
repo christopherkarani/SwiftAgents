@@ -8,21 +8,31 @@ let includeDemo = ProcessInfo.processInfo.environment["SWARM_INCLUDE_DEMO"] == "
 // Default ON. Set SWARM_HIVE_RUNTIME=0 to opt out.
 let useHiveRuntime = ProcessInfo.processInfo.environment["SWARM_HIVE_RUNTIME"] != "0"
 
-// Optional integration target (bridges Swarm tools into HiveCore).
-let includeHiveIntegration = ProcessInfo.processInfo.environment["SWARM_INCLUDE_HIVE"] == "1"
+// Hive integration target is enabled by default for migration/cutover branches.
+// Set SWARM_INCLUDE_HIVE=0 to opt out explicitly.
+let includeHiveIntegration = ProcessInfo.processInfo.environment["SWARM_INCLUDE_HIVE"] != "0"
 
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 
 let localHiveEnv = ProcessInfo.processInfo.environment["SWARM_USE_LOCAL_HIVE"]
-let useLocalHive: Bool
+let hiveCandidates = ["../Hive/Sources/Hive", "../Hive/libs/hive"]
+let localHivePath: String?
 if localHiveEnv == "1" {
-    useLocalHive = true
+    // Try new path first, fall back to old
+    localHivePath = hiveCandidates.first(where: { candidate in
+        FileManager.default.fileExists(atPath: packageRoot.appendingPathComponent(candidate + "/Package.swift").path)
+    })
+    if localHivePath == nil {
+        fatalError("SWARM_USE_LOCAL_HIVE=1 but no Hive Package.swift found at: \(hiveCandidates)")
+    }
 } else if localHiveEnv == "0" {
-    useLocalHive = false
+    localHivePath = nil
 } else {
-    let localHivePackage = packageRoot.appendingPathComponent("../Hive/libs/hive/Package.swift").path
-    useLocalHive = FileManager.default.fileExists(atPath: localHivePackage)
+    localHivePath = hiveCandidates.first(where: { candidate in
+        FileManager.default.fileExists(atPath: packageRoot.appendingPathComponent(candidate + "/Package.swift").path)
+    })
 }
+let useLocalHive = localHivePath != nil
 let useLocalDependencies = ProcessInfo.processInfo.environment["SWARM_USE_LOCAL_DEPS"] == "1"
 
 var packageProducts: [Product] = [
@@ -62,8 +72,8 @@ if useLocalDependencies {
 }
 
 if useHiveRuntime || includeHiveIntegration {
-    if useLocalHive {
-        packageDependencies.append(.package(path: "../Hive/libs/hive"))
+    if let hivePath = localHivePath {
+        packageDependencies.append(.package(path: hivePath))
     } else {
         packageDependencies.append(.package(url: "https://github.com/christopherkarani/Hive", from: "0.1.0"))
     }

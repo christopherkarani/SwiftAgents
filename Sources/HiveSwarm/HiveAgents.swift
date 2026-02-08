@@ -14,6 +14,7 @@ public enum HiveAgents {
     public enum ToolApprovalDecision: String, Codable, Sendable, Equatable {
         case approved
         case rejected
+        case cancelled
     }
 
     public enum Interrupt: Codable, Sendable {
@@ -80,53 +81,87 @@ public struct HiveAgentsContext: Sendable {
     public let toolApprovalPolicy: HiveAgentsToolApprovalPolicy
     public let compactionPolicy: HiveCompactionPolicy?
     public let tokenizer: (any HiveTokenizer)?
+    public let retryPolicy: HiveRetryPolicy?
 
     public init(
         modelName: String,
         toolApprovalPolicy: HiveAgentsToolApprovalPolicy,
         compactionPolicy: HiveCompactionPolicy? = nil,
-        tokenizer: (any HiveTokenizer)? = nil
+        tokenizer: (any HiveTokenizer)? = nil,
+        retryPolicy: HiveRetryPolicy? = nil
     ) {
         self.modelName = modelName
         self.toolApprovalPolicy = toolApprovalPolicy
         self.compactionPolicy = compactionPolicy
         self.tokenizer = tokenizer
+        self.retryPolicy = retryPolicy
     }
 }
 
 public struct HiveAgentsRuntime: Sendable {
-    public let threadID: HiveThreadID
-    public let runtime: HiveRuntime<HiveAgents.Schema>
-    public let environment: HiveEnvironment<HiveAgents.Schema>
-    public let options: HiveRunOptions
+    public let runControl: HiveAgentsRunController
+
+    public init(runControl: HiveAgentsRunController) {
+        self.runControl = runControl
+    }
+}
+
+public struct HiveAgentsRunStartRequest: Sendable {
+    public var threadID: HiveThreadID
+    public var input: String
+    public var options: HiveRunOptions
+
+    public init(threadID: HiveThreadID, input: String, options: HiveRunOptions) {
+        self.threadID = threadID
+        self.input = input
+        self.options = options
+    }
+}
+
+public struct HiveAgentsRunResumeRequest: Sendable {
+    public var threadID: HiveThreadID
+    public var interruptID: HiveInterruptID
+    public var payload: HiveAgents.Resume
+    public var options: HiveRunOptions
 
     public init(
         threadID: HiveThreadID,
-        runtime: HiveRuntime<HiveAgents.Schema>,
-        environment: HiveEnvironment<HiveAgents.Schema>,
-        options: HiveRunOptions = .init(checkpointPolicy: .everyStep)
+        interruptID: HiveInterruptID,
+        payload: HiveAgents.Resume,
+        options: HiveRunOptions
     ) {
         self.threadID = threadID
-        self.runtime = runtime
-        self.environment = environment
+        self.interruptID = interruptID
+        self.payload = payload
         self.options = options
     }
+}
 
-    public func sendUserMessage(_ text: String) async throws -> HiveRunHandle<HiveAgents.Schema> {
-        try Self.preflight(environment: environment)
-        return await runtime.run(threadID: threadID, input: text, options: options)
+public struct HiveAgentsRunController: Sendable {
+    public let runtime: HiveRuntime<HiveAgents.Schema>
+
+    public init(
+        runtime: HiveRuntime<HiveAgents.Schema>
+    ) {
+        self.runtime = runtime
     }
 
-    public func resumeToolApproval(
-        interruptID: HiveInterruptID,
-        decision: HiveAgents.ToolApprovalDecision
-    ) async throws -> HiveRunHandle<HiveAgents.Schema> {
-        try Self.preflight(environment: environment)
+    public func start(_ request: HiveAgentsRunStartRequest) async throws -> HiveRunHandle<HiveAgents.Schema> {
+        try Self.preflight(environment: runtime.environmentSnapshot)
+        return await runtime.run(
+            threadID: request.threadID,
+            input: request.input,
+            options: request.options
+        )
+    }
+
+    public func resume(_ request: HiveAgentsRunResumeRequest) async throws -> HiveRunHandle<HiveAgents.Schema> {
+        try Self.preflight(environment: runtime.environmentSnapshot)
         return await runtime.resume(
-            threadID: threadID,
-            interruptID: interruptID,
-            payload: .toolApproval(decision: decision),
-            options: options
+            threadID: request.threadID,
+            interruptID: request.interruptID,
+            payload: request.payload,
+            options: request.options
         )
     }
 
@@ -414,32 +449,39 @@ extension HiveAgents {
                 throw HiveRuntimeError.modelClientMissing
             }
 
-            input.emitStream(.modelInvocationStarted(model: request.model), [:])
+            // Wrap model invocation in retry if configured.
+            let assistantMessage: HiveChatMessage = try await withRetry(
+                policy: input.context.retryPolicy,
+                clock: input.environment.clock
+            ) {
+                input.emitStream(.modelInvocationStarted(model: request.model), [:])
 
-            var assistantMessage: HiveChatMessage?
-            var sawFinal = false
+                var resultMessage: HiveChatMessage?
+                var sawFinal = false
 
-            for try await chunk in client.stream(request) {
-                if sawFinal {
-                    throw HiveRuntimeError.modelStreamInvalid("Received token after final.")
-                }
-                switch chunk {
-                case let .token(text):
-                    input.emitStream(.modelToken(text: text), [:])
-                case let .final(response):
-                    if assistantMessage != nil {
-                        throw HiveRuntimeError.modelStreamInvalid("Received multiple final chunks.")
+                for try await chunk in client.stream(request) {
+                    if sawFinal {
+                        throw HiveRuntimeError.modelStreamInvalid("Received token after final.")
                     }
-                    assistantMessage = response.message
-                    sawFinal = true
+                    switch chunk {
+                    case let .token(text):
+                        input.emitStream(.modelToken(text: text), [:])
+                    case let .final(response):
+                        if resultMessage != nil {
+                            throw HiveRuntimeError.modelStreamInvalid("Received multiple final chunks.")
+                        }
+                        resultMessage = response.message
+                        sawFinal = true
+                    }
                 }
-            }
 
-            guard sawFinal, let assistantMessage else {
-                throw HiveRuntimeError.modelStreamInvalid("Missing final chunk.")
-            }
+                guard sawFinal, let resultMessage else {
+                    throw HiveRuntimeError.modelStreamInvalid("Missing final chunk.")
+                }
 
-            input.emitStream(.modelInvocationFinished, [:])
+                input.emitStream(.modelInvocationFinished, [:])
+                return resultMessage
+            }
 
             let deterministicID = MessageID.assistant(taskID: input.run.taskID)
             let deterministicAssistant = HiveChatMessage(
@@ -488,6 +530,9 @@ extension HiveAgents {
                         if decision == .rejected {
                             return rejectedOutput(taskID: input.run.taskID, calls: calls)
                         }
+                        if decision == .cancelled {
+                            return cancelledOutput(taskID: input.run.taskID, calls: calls)
+                        }
                     }
                 } else {
                     return HiveNodeOutput(
@@ -520,10 +565,57 @@ extension HiveAgents {
         )
     }
 
+    private static func cancelledOutput(
+        taskID: HiveTaskID,
+        calls: [HiveToolCall]
+    ) -> HiveNodeOutput<Schema> {
+        let systemMessage = HiveChatMessage(
+            id: MessageID.system(taskID: taskID),
+            role: .system,
+            content: "Tool execution cancelled by user.",
+            toolCalls: [],
+            op: nil
+        )
+
+        let toolMessages = calls.map { call in
+            HiveChatMessage(
+                id: "tool:" + call.id + ":cancelled",
+                role: .tool,
+                content: "Tool call cancelled by user.",
+                toolCallID: call.id,
+                toolCalls: [],
+                op: nil
+            )
+        }
+
+        return HiveNodeOutput(
+            writes: [
+                AnyHiveWrite(Schema.pendingToolCallsKey, []),
+                AnyHiveWrite(Schema.messagesKey, [systemMessage] + toolMessages)
+            ],
+            next: .nodes([NodeID.model])
+        )
+    }
+
     private static func toolExecuteNode() -> HiveNode<Schema> {
         { input in
             let pending = try input.store.get(Schema.pendingToolCallsKey)
             let calls = pending.sorted(by: Self.toolCallSort)
+
+            if let resume = input.run.resume?.payload {
+                switch resume {
+                case let .toolApproval(decision):
+                    switch decision {
+                    case .approved:
+                        break
+                    case .rejected:
+                        return rejectedOutput(taskID: input.run.taskID, calls: calls)
+                    case .cancelled:
+                        return cancelledOutput(taskID: input.run.taskID, calls: calls)
+                    }
+                }
+            }
+
             guard calls.isEmpty == false else {
                 return HiveNodeOutput(next: .nodes([NodeID.model]))
             }
@@ -539,7 +631,12 @@ extension HiveAgents {
                 let metadata = ["toolCallID": call.id]
                 input.emitStream(.toolInvocationStarted(name: call.name), metadata)
                 do {
-                    let result = try await registry.invoke(call)
+                    let result = try await withRetry(
+                        policy: input.context.retryPolicy,
+                        clock: input.environment.clock
+                    ) {
+                        try await registry.invoke(call)
+                    }
                     input.emitStream(.toolInvocationFinished(name: call.name, success: true), metadata)
                     toolMessages.append(
                         HiveChatMessage(
@@ -564,6 +661,45 @@ extension HiveAgents {
                 ],
                 next: .nodes([NodeID.model])
             )
+        }
+    }
+
+    /// Executes an operation with retry according to the given `HiveRetryPolicy`.
+    ///
+    /// Uses the Hive clock for deterministic backoff sleep — no jitter is applied.
+    /// Returns immediately on the first success, or rethrows the last error
+    /// after all attempts are exhausted.
+    private static func withRetry<T>(
+        policy: HiveRetryPolicy?,
+        clock: any HiveClock,
+        operation: @Sendable () async throws -> T
+    ) async throws -> T {
+        guard let policy else { return try await operation() }
+
+        switch policy {
+        case .none:
+            return try await operation()
+        case .exponentialBackoff(let initialNs, let factor, let maxAttempts, let maxNs):
+            guard maxAttempts > 0 else { return try await operation() }
+
+            var lastError: (any Error)?
+            var delay = initialNs
+
+            for attempt in 0 ..< maxAttempts {
+                do {
+                    return try await operation()
+                } catch {
+                    lastError = error
+                    if attempt + 1 < maxAttempts {
+                        let sleepNs = min(delay, maxNs)
+                        if sleepNs > 0 {
+                            try await clock.sleep(nanoseconds: sleepNs)
+                        }
+                        delay = UInt64(Double(delay) * factor)
+                    }
+                }
+            }
+            throw lastError!
         }
     }
 

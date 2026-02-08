@@ -47,10 +47,13 @@ jobs:
         run: swift build
 
       - name: Run tests
-        run: swift test --no-parallel
+        run: SWARM_HIVE_RUNTIME=1 SWARM_INCLUDE_HIVE=1 swift test --no-parallel
 
       - name: Run Hive integration tests
-        run: SWARM_INCLUDE_HIVE=1 swift test --no-parallel --filter HiveSwarmTests
+        run: SWARM_HIVE_RUNTIME=1 SWARM_INCLUDE_HIVE=1 swift test --no-parallel --filter HiveSwarmTests
+
+      - name: Assert requireHive fail-closed contract
+        run: SWARM_HIVE_RUNTIME=1 SWARM_INCLUDE_HIVE=1 swift test --no-parallel --filter orchestrationRequireHiveFailClosed
 
   # Linux Build & Test (core features, no SwiftData)
   build-linux:
@@ -85,7 +88,7 @@ jobs:
         run: swift build
 
       - name: Run tests
-        run: swift test --no-parallel
+        run: SWARM_HIVE_RUNTIME=1 SWARM_INCLUDE_HIVE=1 swift test --no-parallel
 
   # Code Quality (macOS only - SwiftLint/SwiftFormat)
   code-quality:

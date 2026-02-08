@@ -160,6 +160,92 @@ struct OrchestrationTests {
         #endif
     }
 
+    @Test("Orchestration runtimeMode.swift forces Swift engine")
+    func orchestrationRuntimeModeSwiftForcesSwiftEngine() async throws {
+        let workflow = Orchestration(
+            configuration: AgentConfiguration(runtimeMode: .swift)
+        ) {
+            Transform { $0 }
+        }
+
+        let result = try await workflow.run("ping")
+        #expect(result.metadata["orchestration.engine"]?.stringValue == "swift")
+    }
+
+    @Test("Orchestration requireHive fails closed when Hive runtime is unavailable")
+    func orchestrationRequireHiveFailClosed() async throws {
+        let workflow = Orchestration(
+            configuration: AgentConfiguration(runtimeMode: .requireHive)
+        ) {
+            Transform { $0 }
+        }
+
+#if SWARM_HIVE_RUNTIME && canImport(HiveCore)
+        let result = try await workflow.run("ping")
+        #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
+#else
+        let thrown = await #expect(throws: (any Error).self) {
+            _ = try await workflow.run("ping")
+        }
+        let orchestrationError = try #require(thrown as? OrchestrationError)
+        switch orchestrationError {
+        case let .hiveRuntimeUnavailable(reason):
+            #expect(reason.contains("SWARM_HIVE_RUNTIME"))
+        default:
+            Issue.record("Expected hiveRuntimeUnavailable, got \(orchestrationError)")
+        }
+#endif
+    }
+
+    @Test("Orchestration Hive run options override is passed through")
+    func orchestrationHiveRunOptionsOverridePassesThrough() async throws {
+#if SWARM_HIVE_RUNTIME && canImport(HiveCore)
+        let workflow = Orchestration(
+            configuration: AgentConfiguration(
+                runtimeMode: .hive,
+                hiveRunOptionsOverride: .init(maxSteps: 1)
+            )
+        ) {
+            Transform { $0 + "1" }
+            Transform { $0 + "2" }
+            Transform { $0 + "3" }
+        }
+
+        do {
+            _ = try await workflow.run("x")
+            Issue.record("Expected maxSteps=1 override to terminate early in Hive mode.")
+        } catch let error as AgentError {
+            if case let .internalError(reason) = error {
+                #expect(reason.contains("maxSteps=1"))
+            } else {
+                Issue.record("Expected internal out-of-steps error, got \(error).")
+            }
+        }
+#else
+        #expect(Bool(true))
+#endif
+    }
+
+    @Test("Orchestration inferencePolicy maps to Hive inference hints")
+    func orchestrationInferencePolicyMapsToHiveHints() {
+#if SWARM_HIVE_RUNTIME && canImport(HiveCore)
+        let policy = InferencePolicy(
+            latencyTier: .background,
+            privacyRequired: true,
+            tokenBudget: 2048,
+            networkState: .metered
+        )
+        let hints = OrchestrationHiveEngine.makeInferenceHints(from: policy)
+
+        #expect(hints?.latencyTier.rawValue == "background")
+        #expect(hints?.privacyRequired == true)
+        #expect(hints?.tokenBudget == 2048)
+        #expect(hints?.networkState.rawValue == "metered")
+#else
+        #expect(Bool(true))
+#endif
+    }
+
     @Test("Orchestration stream emits per-step iteration events")
     func orchestrationStreamIterationEvents() async throws {
         let workflow = Orchestration {

@@ -1,10 +1,10 @@
 // APIAuditTests.swift
-// SwiftAgentsTests
+// SwarmTests
 //
-// Comprehensive tests for the SwiftAgents API audit improvements.
+// Tests for API improvements: FunctionTool, AgentTool, isEnabled, handoffs.
 
 import Foundation
-@testable import SwiftAgents
+@testable import Swarm
 import XCTest
 
 // MARK: - DisabledTool
@@ -497,41 +497,6 @@ final class APIAuditTests: XCTestCase {
     func testDefaultTracingEnabledExplicitlyTrue() {
         let config = AgentConfiguration(defaultTracingEnabled: true)
         XCTAssertTrue(config.defaultTracingEnabled)
-    }
-
-    // MARK: - Runner Tests
-
-    func testRunnerRunDelegatesToAgent() async throws {
-        let mock = await MockInferenceProvider()
-        await mock.setResponses(["Final Answer: Runner works"])
-
-        let agent = ReActAgent(
-            tools: [],
-            instructions: "You are helpful.",
-            inferenceProvider: mock
-        )
-
-        let result = try await Runner.run(agent, input: "test")
-        XCTAssertEqual(result.output, "Runner works")
-    }
-
-    func testRunnerStreamReturnsEvents() async throws {
-        let mock = await MockInferenceProvider()
-        await mock.setResponses(["Final Answer: Streamed"])
-
-        let agent = ReActAgent(
-            tools: [],
-            instructions: "You are helpful.",
-            inferenceProvider: mock
-        )
-
-        let stream = Runner.stream(agent, input: "test")
-        var eventCount = 0
-        for try await _ in stream {
-            eventCount += 1
-        }
-
-        XCTAssertGreaterThan(eventCount, 0)
     }
 
     // MARK: - FunctionTool as AnyJSONTool Tests
