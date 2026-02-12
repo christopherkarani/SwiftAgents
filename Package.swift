@@ -42,11 +42,13 @@ if includeHiveIntegration {
 
 if includeDemo {
     packageProducts.append(.executable(name: "SwarmDemo", targets: ["SwarmDemo"]))
+    packageProducts.append(.executable(name: "SwarmMCPServerDemo", targets: ["SwarmMCPServerDemo"]))
 }
 
 var packageDependencies: [Package.Dependency] = [
     .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
-    .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")
+    .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
+    .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.10.0")
 ]
 
 if useLocalDependencies {
@@ -77,6 +79,7 @@ if let hivePath = localHivePath {
 var swarmDependencies: [Target.Dependency] = [
     "SwarmMacros",
     .product(name: "Logging", package: "swift-log"),
+    .product(name: "MCP", package: "swift-sdk"),
     .product(name: "Conduit", package: "Conduit"),
     .product(name: "Wax", package: "Wax")
 ]
@@ -165,6 +168,16 @@ if includeDemo {
     packageTargets.append(
         .executableTarget(
             name: "SwarmDemo",
+            dependencies: ["Swarm"],
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        )
+    )
+
+    packageTargets.append(
+        .executableTarget(
+            name: "SwarmMCPServerDemo",
             dependencies: ["Swarm"],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")

@@ -11,6 +11,99 @@ Swarm implements MCP with the following components:
 - **HTTPMCPServer**: An HTTP-based transport implementation for connecting to MCP servers
 - **MCPProtocol**: JSON-RPC 2.0 request/response types for MCP operations
 
+## Swarm as an MCP Server (Official SDK)
+
+Swarm now supports running as an MCP server using the official
+`modelcontextprotocol/swift-sdk` (`MCP` product).
+
+### Core Types
+
+- `SwarmMCPToolCatalog`: boundary for listing MCP-exposed tools.
+- `SwarmMCPToolExecutor`: boundary for executing tool calls.
+- `SwarmMCPToolRegistryAdapter`: default adapter backed by `ToolRegistry`.
+- `SwarmMCPServerService`: owns SDK `Server`, wires handlers for:
+  - `ListTools` (`tools/list`)
+  - `CallTool` (`tools/call`)
+
+### Start/Stop API
+
+```swift
+import Swarm
+
+let registry = ToolRegistry(tools: [DateTimeTool(), StringTool()])
+let adapter = SwarmMCPToolRegistryAdapter(registry: registry)
+
+let service = SwarmMCPServerService(
+    name: "swarm-mcp-server",
+    version: Swarm.version,
+    toolCatalog: adapter,
+    toolExecutor: adapter
+)
+
+try await service.startStdio()
+await service.waitUntilCompleted()
+```
+
+You can also provide any SDK transport:
+
+```swift
+import MCP
+
+let transport = StdioTransport()
+try await service.start(transport: transport)
+```
+
+### Tool Mapping Rules
+
+- Tool IDs are deterministic: tool `name` is the MCP tool identifier.
+- `tools/list` output is stable: tools are sorted by name.
+- Input schemas are generated from `ToolSchema`/`ToolParameter`:
+  - required parameters are explicit in `required`
+  - `array`, `object`, `oneOf`, and scalar types map to JSON Schema
+  - `additionalProperties` is `false` for deterministic validation shape
+- `tools/call` arguments map from MCP `Value` to Swarm `SendableValue`.
+- Success results map to MCP content:
+  - scalar values: `.text(...)`
+  - object/array values: `.text(json)` + JSON `.resource(...)`
+
+### Error Semantics
+
+- Unknown tool -> MCP protocol error `methodNotFound` (`-32601`).
+- Invalid arguments -> MCP protocol error `invalidParams` (`-32602`).
+- Execution failures -> `CallTool.Result(isError: true)` with deterministic JSON metadata.
+- Approval required/rejected -> deterministic `isError` result with actionable metadata:
+  - `code`
+  - `action`
+  - `tool`
+  - `message`
+  - optional `details` (`prompt`, policy metadata, etc.)
+- Timeout/cancellation -> deterministic `isError` result (`code: timeout|cancelled`).
+
+### Observability
+
+`SwarmMCPServerService` tracks:
+
+- `listToolsRequests`
+- `listedToolCount`
+- `callToolRequests`
+- `callToolSuccesses`
+- `callToolFailures`
+- `approvalRequiredCount`
+- `approvalRejectedCount`
+- `cumulativeCallToolLatencyMs`
+
+Use `snapshotMetrics()` to fetch current counters.
+
+### Demo Executable
+
+When demos are enabled (`SWARM_INCLUDE_DEMO=1`), run:
+
+```bash
+swift run SwarmMCPServerDemo
+```
+
+This starts a local stdio MCP server backed by Swarm tools.
+
 ## MCP Client
 
 ### MCPClient
