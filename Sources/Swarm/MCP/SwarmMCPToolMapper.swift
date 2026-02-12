@@ -21,12 +21,7 @@ enum SwarmMCPToolMapper {
     static func buildInputSchema(from parameters: [ToolParameter]) -> Value {
         let sorted = parameters.sorted { $0.name < $1.name }
         let properties = propertiesMap(from: sorted)
-
-        let required = sorted
-            .filter(\.isRequired)
-            .map(\.name)
-            .sorted()
-            .map(Value.string)
+        let required = requiredFields(from: sorted)
 
         return .object([
             "type": .string("object"),
@@ -71,13 +66,7 @@ enum SwarmMCPToolMapper {
             return .object([
                 "type": .string("object"),
                 "properties": .object(propertiesMap(from: sorted)),
-                "required": .array(
-                    sorted
-                        .filter(\.isRequired)
-                        .map(\.name)
-                        .sorted()
-                        .map(Value.string)
-                ),
+                "required": .array(requiredFields(from: sorted)),
                 "additionalProperties": .bool(false),
             ])
         case let .oneOf(options):
@@ -98,5 +87,11 @@ enum SwarmMCPToolMapper {
             output[parameter.name] = parameterSchema(for: parameter)
         }
         return output
+    }
+
+    private static func requiredFields(from parameters: [ToolParameter]) -> [Value] {
+        Array(Set(parameters.filter(\.isRequired).map(\.name)))
+            .sorted()
+            .map(Value.string)
     }
 }

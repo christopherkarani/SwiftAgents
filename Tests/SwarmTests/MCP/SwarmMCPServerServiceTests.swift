@@ -280,6 +280,7 @@ struct SwarmMCPServerServiceTests {
         }
         #expect(properties.keys.count == 1)
         #expect(properties["id"] != nil)
+        #expect(schema["required"] == .array([.string("id")]))
     }
 
     @Test("CallTool returns internal protocol error when tool catalog listing fails")
