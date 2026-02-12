@@ -46,6 +46,9 @@ public actor SwarmMCPServerService {
     private var hasStarted = false
     private var handlersRegistered = false
 
+    // Cache for tool catalog (since listChanged: false, tools won't change during service lifetime)
+    private var cachedToolSchemas: [ToolSchema]?
+
     public init(
         name: String = "swarm-mcp-server",
         version: String = Swarm.version,
@@ -143,8 +146,19 @@ public actor SwarmMCPServerService {
         handlersRegistered = true
     }
 
-    private func handleListTools() async throws -> ListTools.Result {
+    /// Returns cached tool schemas or fetches and caches them.
+    private func getToolSchemas() async throws -> [ToolSchema] {
+        if let cached = cachedToolSchemas {
+            return cached
+        }
+
         let schemas = try await toolCatalog.listTools()
+        cachedToolSchemas = schemas
+        return schemas
+    }
+
+    private func handleListTools() async throws -> ListTools.Result {
+        let schemas = try await getToolSchemas()
         let tools = SwarmMCPToolMapper.mapSchemas(schemas)
 
         metrics.listToolsRequests += 1
@@ -164,7 +178,7 @@ public actor SwarmMCPServerService {
 
         let availableTools: [ToolSchema]
         do {
-            availableTools = try await toolCatalog.listTools()
+            availableTools = try await getToolSchemas()
         } catch let protocolError as MCP.MCPError {
             metrics.callToolFailures += 1
             recordLatency(from: start)
