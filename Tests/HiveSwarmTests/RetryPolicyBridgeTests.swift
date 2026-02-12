@@ -109,7 +109,7 @@ struct HiveAgentsRetryTests {
             checkpointStore: nil
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let handle = await runtime.run(
             threadID: HiveThreadID("retry-test"),
             input: "Hello",
@@ -154,7 +154,7 @@ struct HiveAgentsRetryTests {
             checkpointStore: nil
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let handle = await runtime.run(
             threadID: HiveThreadID("no-retry-test"),
             input: "Hello",

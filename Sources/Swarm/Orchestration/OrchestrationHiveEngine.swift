@@ -135,7 +135,7 @@ enum OrchestrationHiveEngine {
             checkpointStore: checkpointStore
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let threadID = HiveThreadID(UUID().uuidString)
 
         let options = makeRunOptions(

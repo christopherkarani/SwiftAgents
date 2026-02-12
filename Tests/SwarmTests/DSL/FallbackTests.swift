@@ -102,10 +102,10 @@ private final class FallbackCountingAgent: AgentRuntime, @unchecked Sendable {
         session _: (any Session)? = nil,
         hooks _: (any RunHooks)? = nil
     ) async throws -> AgentResult {
-        lock.lock()
-        _callCount += 1
-        let count = _callCount
-        lock.unlock()
+        let count = lock.withLock {
+            _callCount += 1
+            return _callCount
+        }
 
         if count <= failCount {
             throw AgentError.invalidInput(reason: "attempt \(count) failed")

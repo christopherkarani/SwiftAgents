@@ -371,7 +371,7 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         } catch {
             Log.agents.error("Failed to extract tool calls from Hive messages: \(error)")
             // Set metadata to indicate extraction failure
-            _ = builder.setMetadata(["extraction_error": .string("Failed to extract tool calls: \(error.localizedDescription)")])
+            _ = builder.setMetadata("extraction_error", .string("Failed to extract tool calls: \(error.localizedDescription)"))
             _ = builder.incrementIteration()
         }
 
