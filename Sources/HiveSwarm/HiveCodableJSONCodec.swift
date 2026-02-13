@@ -13,7 +13,7 @@ public struct HiveCodableJSONCodec<Value: Codable & Sendable>: HiveCodec, Sendab
 
     public func encode(_ value: Value) throws -> Data {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        encoder.outputFormatting = [.sortedKeys]
         return try encoder.encode(value)
     }
 

@@ -180,19 +180,33 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
                 await cancellation.track(handle)
 
                 // Fork a task to consume Hive events and yield mapped AgentEvents.
-                let eventsTask = Task<Void, Never> {
+                let eventsTask = Task {
+                    defer { 
+                        if !continuation.isFinished {
+                            continuation.finish()
+                        }
+                    }
                     do {
                         for try await event in handle.events {
+                            if Task.isCancelled { break }
                             if let agentEvent = Self.mapHiveEvent(event) {
                                 continuation.yield(agentEvent)
                             }
                         }
                     } catch {
-                        Log.agents.debug("Hive event stream ended: \(error.localizedDescription)")
+                        if !Task.isCancelled {
+                            Log.agents.debug("Hive event stream ended: \(error.localizedDescription)")
+                        }
                     }
                 }
 
-                let outcome = try await handle.outcome.value
+                let outcome: HiveRunOutcome<HiveAgents.Schema>
+                do {
+                    outcome = try await handle.outcome.value
+                } catch {
+                    eventsTask.cancel()
+                    throw error
+                }
 
                 // Wait for all events to be consumed before building the result.
                 await eventsTask.value
@@ -335,7 +349,7 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
                 }
             }
 
-            for message in messages where message.role.rawValue == "tool" {
+            for message in messages where message.role == .tool {
                 guard let hiveCallID = message.toolCallID else { continue }
                 let callID: UUID
                 if let existing = hiveToSwarmID[hiveCallID] {
@@ -364,7 +378,7 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
             }
 
             // Count model invocations as iterations (assistant messages)
-            let assistantCount = messages.filter { $0.role.rawValue == "assistant" }.count
+            let assistantCount = messages.filter { $0.role == .assistant }.count
             for _ in 0 ..< max(assistantCount, 1) {
                 _ = builder.incrementIteration()
             }
@@ -463,4 +477,10 @@ private actor CancellationController {
         currentHandle?.outcome.cancel()
         currentHandle = nil
     }
+}
+
+private extension HiveChatRole {
+    static let system = Self(rawValue: "system")
+    static let tool = Self(rawValue: "tool")
+    static let assistant = Self(rawValue: "assistant")
 }

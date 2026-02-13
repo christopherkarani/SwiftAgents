@@ -7,6 +7,9 @@ public enum SwarmToolRegistryError: Error, Equatable, Sendable {
     case argumentsMustBeJSONObject
     case resultEncodingFailed
     case schemaEncodingFailed
+    case toolNotFound(name: String)
+    case toolInvocationFailed(name: String, reason: String)
+    case duplicateToolName(String)
 }
 
 /// Bridges Swarm tools into HiveCore's `HiveToolRegistry` interface.
@@ -21,6 +24,9 @@ public struct SwarmToolRegistry: HiveToolRegistry, Sendable {
         self.registry = registry
         var byName: [String: any AnyJSONTool] = [:]
         for tool in tools {
+            guard byName[tool.name] == nil else {
+                throw SwarmToolRegistryError.duplicateToolName(tool.name)
+            }
             byName[tool.name] = tool
         }
         self.toolDefinitions = try byName.values
@@ -42,10 +48,21 @@ public struct SwarmToolRegistry: HiveToolRegistry, Sendable {
 
     public func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
         let arguments = try Self.parseArgumentsJSON(call.argumentsJSON)
-        let output = try await registry.execute(toolNamed: call.name, arguments: arguments)
-        let content = try Self.encodeJSONFragment(output)
-
-        return HiveToolResult(toolCallID: call.id, content: content)
+        
+        guard registry.tools.keys.contains(call.name) else {
+            throw SwarmToolRegistryError.toolNotFound(name: call.name)
+        }
+        
+        do {
+            let output = try await registry.execute(toolNamed: call.name, arguments: arguments)
+            let content = try Self.encodeJSONFragment(output)
+            return HiveToolResult(toolCallID: call.id, content: content)
+        } catch {
+            throw SwarmToolRegistryError.toolInvocationFailed(
+                name: call.name,
+                reason: error.localizedDescription
+            )
+        }
     }
 }
 

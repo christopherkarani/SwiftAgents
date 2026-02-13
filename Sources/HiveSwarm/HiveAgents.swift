@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import HiveCore
+import Swarm
 
 public enum HiveAgentsToolApprovalPolicy: Sendable, Equatable {
     case never
@@ -46,6 +47,7 @@ public enum HiveAgents {
                 let pending = try store.get(Schema.pendingToolCallsKey)
                 return pending.isEmpty ? .end : .nodes([nodeIDs.tools])
             } catch {
+                Log.agents.error("Router failed to read pendingToolCallsKey, ending graph: \(error)")
                 return .end
             }
         }
@@ -71,6 +73,8 @@ public struct HiveCompactionPolicy: Sendable {
     public let preserveLastMessages: Int
 
     public init(maxTokens: Int, preserveLastMessages: Int) {
+        precondition(maxTokens >= 1, "maxTokens must be >= 1")
+        precondition(preserveLastMessages >= 0, "preserveLastMessages must be >= 0")
         self.maxTokens = maxTokens
         self.preserveLastMessages = preserveLastMessages
     }
@@ -732,7 +736,7 @@ extension HiveAgents {
         }
 
         if let first = history.first,
-           first.role.rawValue == "system",
+           first.role == .system,
            history.count > kept.count,
            kept.first?.id != first.id,
            tokenizer.countTokens([first] + kept) <= policy.maxTokens {
@@ -752,6 +756,13 @@ extension HiveAgents {
         }
         return lhs.name.utf8.lexicographicallyPrecedes(rhs.name.utf8)
     }
+}
+
+/// Typed constants for HiveChatRole to avoid raw string comparisons.
+private extension HiveChatRole {
+    static let system = Self(rawValue: "system")
+    static let tool = Self(rawValue: "tool")
+    static let assistant = Self(rawValue: "assistant")
 }
 
 private extension UUID {
