@@ -878,8 +878,9 @@ public extension PlanAndExecuteAgent {
 
         /// Builds the agent.
         /// - Returns: A new PlanAndExecuteAgent instance.
-        public func build() -> PlanAndExecuteAgent {
-            PlanAndExecuteAgent(
+        /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+        public func build() throws -> PlanAndExecuteAgent {
+            try PlanAndExecuteAgent(
                 tools: _tools,
                 instructions: _instructions,
                 configuration: _configuration,
@@ -930,9 +931,10 @@ public extension PlanAndExecuteAgent {
     /// ```
     ///
     /// - Parameter content: A closure that builds the agent components.
-    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) {
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) throws {
         let components = content()
-        self.init(
+        try self.init(
             tools: components.tools,
             instructions: components.instructions ?? "",
             configuration: components.configuration ?? .default,

@@ -1168,9 +1168,10 @@ public extension Agent {
     /// ```
     ///
     /// - Parameter content: A closure that builds the agent components.
-    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) {
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) throws {
         let components = content()
-        self.init(
+        try self.init(
             tools: components.tools,
             instructions: components.instructions ?? "",
             configuration: components.configuration ?? .default,
@@ -1211,6 +1212,7 @@ public extension Agent {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     init(
         name: String,
         instructions: String = "",
@@ -1223,11 +1225,11 @@ public extension Agent {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         // Merge the name into the configuration
         var config = configuration
         config.name = name
-        self.init(
+        try self.init(
             tools: tools,
             instructions: instructions,
             configuration: config,
@@ -1272,6 +1274,7 @@ public extension Agent {
     ///   - outputGuardrails: Output guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Guardrail runner config. Default: .default
     ///   - handoffAgents: Agents to use as handoff targets.
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     init(
         name: String,
         instructions: String = "",
@@ -1284,11 +1287,11 @@ public extension Agent {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffAgents: [any AgentRuntime]
-    ) {
+    ) throws {
         let handoffs = handoffAgents.map { agent in
             AnyHandoffConfiguration(targetAgent: agent)
         }
-        self.init(
+        try self.init(
             name: name,
             instructions: instructions,
             tools: tools,
