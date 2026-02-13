@@ -27,9 +27,12 @@ struct ResearchAgent: Agent {
 
 Task {
     print("Starting")
-    let response = try! await ResearchAgent().run("Hello").output
-
-    print("Agent Response: ", response)
+    do {
+        let response = try await ResearchAgent().run("Hello").output
+        print("Agent Response: ", response)
+    } catch {
+        print("Error: \(error)")
+    }
     var greeting = "Hello, playground"
 }
 
