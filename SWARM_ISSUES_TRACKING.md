@@ -35,16 +35,16 @@
 ### Major
 - [ ] MAJ-001: Complete OrchestrationBuilder.swift or remove deprecated DSL
 - [x] MAJ-002: Fix race condition in Agent.cancel()
-- [ ] MAJ-003: Resolve session/memory duplication
+- [x] MAJ-003: Resolve session/memory duplication
 - [x] MAJ-004: Add tool name collision detection
 - [x] MAJ-005: Fix handoff configuration lookup (type→identity)
 
 ### Medium
 - [ ] MED-001: Review and reduce type erasure usage
-- [ ] MED-002: Deprecate redundant runtime mode enum cases
+- [x] MED-002: Deprecate redundant runtime mode enum cases
 - [ ] MED-003: Split AgentConfiguration into focused structs
 - [ ] MED-004: Replace global environment with explicit injection
-- [ ] MED-005: Fix retry policy attempt counting
+- [x] MED-005: Fix retry policy attempt counting
 - [ ] MED-006: Clarify Hive module architecture
 
 ### Low
