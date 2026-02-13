@@ -414,6 +414,24 @@ struct HiveAgentsTests {
         }
         #expect(hasExpectedAssistantMessage)
     }
+
+    @Test("SwarmToolRegistry throws duplicateToolName when given duplicate tools")
+    func swarmToolRegistry_rejectsDuplicateToolNames() throws {
+        let duplicateTools = [
+            DuplicateTestTool(name: "calc"),
+            DuplicateTestTool(name: "calc")
+        ]
+
+        let thrown = try? SwarmToolRegistry(tools: duplicateTools)
+        #expect(thrown == nil)
+
+        do {
+            _ = try SwarmToolRegistry(tools: duplicateTools)
+            Issue.record("Expected to throw duplicateToolName error")
+        } catch let error as SwarmToolRegistryError {
+            #expect(error == .duplicateToolName("calc"))
+        }
+    }
 }
 
 // MARK: - Helpers
@@ -599,4 +617,15 @@ private func expectedRoleBasedMessageID(taskID: String, role: String) -> String 
 private struct TestFailure: Error, CustomStringConvertible {
     let description: String
     init(_ description: String) { self.description = description }
+}
+
+private struct DuplicateTestTool: AnyJSONTool {
+    let name: String
+    let description: String = "Test tool"
+
+    var parameters: [ToolParameter] { [] }
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        .string("result")
+    }
 }
