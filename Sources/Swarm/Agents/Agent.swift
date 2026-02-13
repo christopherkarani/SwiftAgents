@@ -293,7 +293,7 @@ public actor Agent: AgentRuntime {
             let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
             _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
-            isCancelled = false
+            // Reset cancellation state and create result builder
             let resultBuilder = AgentResult.Builder()
             _ = resultBuilder.start()
 
@@ -382,9 +382,9 @@ public actor Agent: AgentRuntime {
 
     /// Cancels any ongoing execution.
     public func cancel() async {
-        isCancelled = true
+        // Simply cancel the current task - the task cancellation handler
+        // will perform any necessary cleanup
         currentTask?.cancel()
-        currentTask = nil
     }
 
     // MARK: Private
@@ -415,7 +415,6 @@ public actor Agent: AgentRuntime {
 
     // MARK: - Internal State
 
-    private var isCancelled: Bool = false
     private var currentTask: Task<Void, Never>?
     private let toolRegistry: ToolRegistry
 
@@ -568,8 +567,9 @@ public actor Agent: AgentRuntime {
 
     /// Checks for cancellation and timeout conditions.
     private func checkCancellationAndTimeout(startTime: ContinuousClock.Instant) throws {
+        // Use Task.checkCancellation() for reliable cancellation detection
+        // This is the standard Swift concurrency pattern
         try Task.checkCancellation()
-        if isCancelled { throw AgentError.cancelled }
 
         let elapsed = ContinuousClock.now - startTime
         if elapsed > configuration.timeout {

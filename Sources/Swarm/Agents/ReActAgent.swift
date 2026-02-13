@@ -162,7 +162,7 @@ public actor ReActAgent: AgentRuntime {
             let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
             _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
-            isCancelled = false
+            // Reset cancellation state and create result builder
             let resultBuilder = AgentResult.Builder()
             _ = resultBuilder.start()
 
@@ -247,9 +247,9 @@ public actor ReActAgent: AgentRuntime {
 
     /// Cancels any ongoing execution.
     public func cancel() async {
-        isCancelled = true
+        // Simply cancel the current task - the task cancellation handler
+        // will perform any necessary cleanup
         currentTask?.cancel()
-        currentTask = nil
     }
 
     // MARK: Private
@@ -259,7 +259,6 @@ public actor ReActAgent: AgentRuntime {
     // MARK: - Internal State
 
     private var currentTask: Task<Void, Never>?
-    private var isCancelled: Bool = false
     private let toolRegistry: ToolRegistry
 
     // MARK: - ReAct Loop Implementation
@@ -286,11 +285,8 @@ public actor ReActAgent: AgentRuntime {
         }
 
         while iteration < configuration.maxIterations {
-            // Check for cancellation
+            // Check for cancellation using standard Swift concurrency pattern
             try Task.checkCancellation()
-            if isCancelled {
-                throw AgentError.cancelled
-            }
 
             // Check timeout
             let elapsed = ContinuousClock.now - startTime
