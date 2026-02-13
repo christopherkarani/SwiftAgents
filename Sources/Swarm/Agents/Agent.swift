@@ -130,7 +130,7 @@ public actor Agent: AgentRuntime {
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
     ) throws {
-        self.init(
+        try self.init(
             tools: tools,
             instructions: instructions,
             configuration: configuration,
@@ -1107,8 +1107,9 @@ public extension Agent {
 
         /// Builds the agent.
         /// - Returns: A new Agent instance.
-        public func build() -> Agent {
-            Agent(
+        /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+        public func build() throws -> Agent {
+            try Agent(
                 tools: _tools,
                 instructions: _instructions,
                 configuration: _configuration,

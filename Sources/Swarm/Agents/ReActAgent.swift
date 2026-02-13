@@ -923,8 +923,9 @@ public extension ReActAgent {
 
         /// Builds the agent.
         /// - Returns: A new ReActAgent instance.
-        public func build() -> ReActAgent {
-            ReActAgent(
+        /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+        public func build() throws -> ReActAgent {
+            try ReActAgent(
                 tools: tools,
                 instructions: instructions,
                 configuration: configuration,
