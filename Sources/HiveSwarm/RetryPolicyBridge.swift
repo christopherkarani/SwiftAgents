@@ -96,6 +96,7 @@ public enum RetryPolicyBridge {
     }
 
     private static func secondsToNanoseconds(_ seconds: TimeInterval) -> UInt64 {
-        UInt64(seconds * 1_000_000_000)
+        guard seconds > 0 else { return 0 }
+        return UInt64(clamping: Int64(seconds * 1_000_000_000))
     }
 }

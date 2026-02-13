@@ -348,9 +348,10 @@ extension HiveAgents {
                 merged.removeAll { deleted.contains($0.id) }
             }
 
-            return merged.filter { message in
-                if case .none = message.op { return true }
-                return false
+            return merged.map { message in
+                var cleaned = message
+                cleaned.op = nil
+                return cleaned
             }
         }
     }
@@ -699,7 +700,11 @@ extension HiveAgents {
                     }
                 }
             }
-            throw lastError!
+            if let error = lastError {
+                throw error
+            } else {
+                throw HiveRuntimeError.invalidRunOptions("Retry policy exhausted with no error recorded")
+            }
         }
     }
 
