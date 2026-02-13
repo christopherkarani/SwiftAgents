@@ -33,7 +33,7 @@ struct ModelRouterTests {
             checkpointStore: nil
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let handle = await runtime.run(
             threadID: HiveThreadID("router-test"),
             input: "Hello",
@@ -71,7 +71,7 @@ struct ModelRouterTests {
             checkpointStore: nil
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let handle = await runtime.run(
             threadID: HiveThreadID("precedence-test"),
             input: "Hello",
@@ -138,7 +138,7 @@ struct ModelRouterTests {
             checkpointStore: nil
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let hiveRuntime = HiveAgentsRuntime(runControl: HiveAgentsRunController(runtime: runtime))
         let agent = HiveBackedAgent(runtime: hiveRuntime, name: "router-agent")
 
@@ -169,7 +169,7 @@ struct ModelRouterTests {
             checkpointStore: nil
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let runControl = HiveAgentsRunController(runtime: runtime)
 
         // Should not throw — modelRouter satisfies the model requirement

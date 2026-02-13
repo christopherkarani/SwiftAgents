@@ -18,7 +18,7 @@ struct HiveBackedAgentStreamingTests {
             .token(" world"),
             .final(HiveChatResponse(message: assistantMsg(id: "m1", content: "Hello world")))
         ]
-        let agent = makeAgent(modelChunks: chunks)
+        let agent = try makeAgent(modelChunks: chunks)
 
         var events: [AgentEvent] = []
         for try await event in agent.stream("test") {
@@ -37,7 +37,7 @@ struct HiveBackedAgentStreamingTests {
         let chunks: [HiveChatStreamChunk] = [
             .final(HiveChatResponse(message: assistantMsg(id: "m1", content: "ok")))
         ]
-        let agent = makeAgent(modelChunks: chunks)
+        let agent = try makeAgent(modelChunks: chunks)
 
         var events: [AgentEvent] = []
         for try await event in agent.stream("test") {
@@ -65,7 +65,7 @@ struct HiveBackedAgentStreamingTests {
             )))],
             [.final(HiveChatResponse(message: assistantMsg(id: "m2", content: "done")))]
         ])
-        let agent = makeScriptedAgent(script: script)
+        let agent = try makeScriptedAgent(script: script)
 
         var events: [AgentEvent] = []
         for try await event in agent.stream("test") {
@@ -89,7 +89,7 @@ struct HiveBackedAgentStreamingTests {
         let chunks: [HiveChatStreamChunk] = [
             .final(HiveChatResponse(message: assistantMsg(id: "m1", content: "ok")))
         ]
-        let agent = makeAgent(modelChunks: chunks)
+        let agent = try makeAgent(modelChunks: chunks)
 
         var events: [AgentEvent] = []
         for try await event in agent.stream("test") {
@@ -113,7 +113,7 @@ struct HiveBackedAgentStreamingTests {
         let chunks: [HiveChatStreamChunk] = [
             .final(HiveChatResponse(message: assistantMsg(id: "m1", content: "ok")))
         ]
-        let agent = makeAgent(modelChunks: chunks)
+        let agent = try makeAgent(modelChunks: chunks)
 
         var events: [AgentEvent] = []
         for try await event in agent.stream("test") {
@@ -138,7 +138,7 @@ struct HiveBackedAgentStreamingTests {
             .token("Hello"),
             .final(HiveChatResponse(message: assistantMsg(id: "m1", content: "Hello")))
         ]
-        let agent = makeAgent(modelChunks: chunks)
+        let agent = try makeAgent(modelChunks: chunks)
 
         var finalResult: AgentResult?
         for try await event in agent.stream("test") {
@@ -157,7 +157,7 @@ struct HiveBackedAgentStreamingTests {
             .token("Hi"),
             .final(HiveChatResponse(message: assistantMsg(id: "m1", content: "Hi")))
         ]
-        let agent = makeAgent(modelChunks: chunks)
+        let agent = try makeAgent(modelChunks: chunks)
 
         var eventKinds: [String] = []
         for try await event in agent.stream("test") {
@@ -185,7 +185,7 @@ struct HiveBackedAgentStreamingTests {
 
 // MARK: - Helpers
 
-private func makeAgent(modelChunks: [HiveChatStreamChunk]) -> HiveBackedAgent {
+private func makeAgent(modelChunks: [HiveChatStreamChunk]) throws -> HiveBackedAgent {
     let graph = try! HiveAgents.makeToolUsingChatAgent()
     let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
     let environment = HiveEnvironment<HiveAgents.Schema>(
@@ -197,12 +197,12 @@ private func makeAgent(modelChunks: [HiveChatStreamChunk]) -> HiveBackedAgent {
         tools: AnyHiveToolRegistry(StreamingStubToolRegistry(resultContent: "ok")),
         checkpointStore: nil
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let hiveRuntime = HiveAgentsRuntime(runControl: HiveAgentsRunController(runtime: runtime))
     return HiveBackedAgent(runtime: hiveRuntime, name: "stream-test")
 }
 
-private func makeScriptedAgent(script: StreamingModelScript) -> HiveBackedAgent {
+private func makeScriptedAgent(script: StreamingModelScript) throws -> HiveBackedAgent {
     let graph = try! HiveAgents.makeToolUsingChatAgent()
     let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
     let environment = HiveEnvironment<HiveAgents.Schema>(
@@ -214,7 +214,7 @@ private func makeScriptedAgent(script: StreamingModelScript) -> HiveBackedAgent 
         tools: AnyHiveToolRegistry(StreamingStubToolRegistry(resultContent: "42")),
         checkpointStore: nil
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let hiveRuntime = HiveAgentsRuntime(runControl: HiveAgentsRunController(runtime: runtime))
     return HiveBackedAgent(runtime: hiveRuntime, name: "scripted-stream-test")
 }

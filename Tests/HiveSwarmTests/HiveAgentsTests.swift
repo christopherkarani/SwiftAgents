@@ -52,7 +52,7 @@ struct HiveAgentsTests {
             checkpointStore: nil
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let threadID = HiveThreadID("compaction-thread")
 
         // Seed canonical history without invoking nodes.
@@ -119,7 +119,7 @@ struct HiveAgentsTests {
             checkpointStore: nil
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let runControl = HiveAgentsRunController(runtime: runtime)
 
         let thrown = await #expect(throws: (any Error).self) {
@@ -171,7 +171,7 @@ struct HiveAgentsTests {
             checkpointStore: AnyHiveCheckpointStore(store)
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let runControl = HiveAgentsRunController(runtime: runtime)
         let startRequest = HiveAgentsRunStartRequest(
             threadID: HiveThreadID("approval-thread"),
@@ -243,7 +243,7 @@ struct HiveAgentsTests {
             checkpointStore: AnyHiveCheckpointStore(store)
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let runControl = HiveAgentsRunController(runtime: runtime)
 
         let start = try await runControl.start(
@@ -310,7 +310,7 @@ struct HiveAgentsTests {
             checkpointStore: AnyHiveCheckpointStore(store)
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let runControl = HiveAgentsRunController(runtime: runtime)
         let threadID = HiveThreadID("approval-options")
 
@@ -361,7 +361,7 @@ struct HiveAgentsTests {
             checkpointStore: nil
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let hiveRuntime = HiveAgentsRuntime(runControl: HiveAgentsRunController(runtime: runtime))
         let agent = HiveBackedAgent(runtime: hiveRuntime, name: "bridge")
 
@@ -388,7 +388,7 @@ struct HiveAgentsTests {
             checkpointStore: nil
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let handle = await runtime.run(
             threadID: HiveThreadID("id-thread"),
             input: "Hello",

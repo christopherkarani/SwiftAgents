@@ -5,6 +5,10 @@
 
 import Foundation
 
+private struct SendableRegex<Output>: @unchecked Sendable {
+    let regex: Regex<Output>
+}
+
 // MARK: - RouteCondition
 
 /// A condition that determines whether a route should be taken.
@@ -118,6 +122,39 @@ public extension RouteCondition {
         }
     }
 
+    /// A condition that matches input using a Swift Regex.
+    ///
+    /// - Parameter regex: The Swift Regex to evaluate against the input.
+    /// - Returns: A condition that matches when the regex finds a match.
+    static func matching<Output>(_ regex: Regex<Output>) -> RouteCondition {
+        let wrapped = SendableRegex(regex: regex)
+        return RouteCondition { input, _ in
+            input.firstMatch(of: wrapped.regex) != nil
+        }
+    }
+
+    /// A condition that matches input and stores the matched substring in context.
+    ///
+    /// - Parameters:
+    ///   - regex: The Swift Regex to evaluate against the input.
+    ///   - key: The context key to store the matched substring. Default: `regex_match`.
+    /// - Returns: A condition that matches when the regex finds a match.
+    static func extracting<Output>(_ regex: Regex<Output>, into key: String = "regex_match") -> RouteCondition {
+        let wrapped = SendableRegex(regex: regex)
+        return RouteCondition { input, context in
+            guard let match = input.firstMatch(of: wrapped.regex) else {
+                return false
+            }
+
+            if let context {
+                let matched = String(input[match.range])
+                await context.set(key, value: .string(matched))
+            }
+
+            return true
+        }
+    }
+
     /// A condition that checks if the input starts with a prefix.
     ///
     /// - Parameter prefix: The prefix to check for.
@@ -176,6 +213,60 @@ public extension RouteCondition {
         RouteCondition { _, context in
             guard let context else { return false }
             return await context.get(key) != nil
+        }
+    }
+
+    /// Combines conditions with logical AND using variadic arguments.
+    ///
+    /// - Parameter conditions: Conditions to evaluate.
+    /// - Returns: A condition that matches only when all conditions match.
+    static func all(_ conditions: RouteCondition...) -> RouteCondition {
+        RouteCondition { input, context in
+            for condition in conditions {
+                guard await condition.matches(input: input, context: context) else {
+                    return false
+                }
+            }
+            return true
+        }
+    }
+
+    /// Combines conditions with logical OR using variadic arguments.
+    ///
+    /// - Parameter conditions: Conditions to evaluate.
+    /// - Returns: A condition that matches when any condition matches.
+    static func any(_ conditions: RouteCondition...) -> RouteCondition {
+        RouteCondition { input, context in
+            for condition in conditions {
+                if await condition.matches(input: input, context: context) {
+                    return true
+                }
+            }
+            return false
+        }
+    }
+
+    /// Matches when exactly `count` conditions evaluate to true.
+    ///
+    /// - Parameters:
+    ///   - count: The exact number of conditions that must match.
+    ///   - conditions: Conditions to evaluate.
+    /// - Returns: A condition that matches when exactly `count` conditions match.
+    static func exactly(_ count: Int, of conditions: RouteCondition...) -> RouteCondition {
+        RouteCondition { input, context in
+            guard count >= 0 else { return false }
+
+            var matches = 0
+            for condition in conditions {
+                if await condition.matches(input: input, context: context) {
+                    matches += 1
+                    if matches > count {
+                        return false
+                    }
+                }
+            }
+
+            return matches == count
         }
     }
 }

@@ -10,30 +10,11 @@ let includeDemo = ProcessInfo.processInfo.environment["SWARM_INCLUDE_DEMO"] == "
 let includeHiveIntegration = ProcessInfo.processInfo.environment["SWARM_INCLUDE_HIVE"] != "0"
 
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-
-let localHiveEnv = ProcessInfo.processInfo.environment["SWARM_USE_LOCAL_HIVE"]
-let hiveCandidates = ["../Hive/Sources/Hive", "../Hive/libs/hive"]
-let localHivePath: String?
-if localHiveEnv == "1" {
-    // Try new path first, fall back to old
-    localHivePath = hiveCandidates.first(where: { candidate in
-        FileManager.default.fileExists(atPath: packageRoot.appendingPathComponent(candidate + "/Package.swift").path)
-    })
-    if localHivePath == nil {
-        fatalError("SWARM_USE_LOCAL_HIVE=1 but no Hive Package.swift found at: \(hiveCandidates)")
-    }
-} else if localHiveEnv == "0" {
-    localHivePath = nil
-} else {
-    localHivePath = hiveCandidates.first(where: { candidate in
-        FileManager.default.fileExists(atPath: packageRoot.appendingPathComponent(candidate + "/Package.swift").path)
-    })
-}
-let useLocalHive = localHivePath != nil
 let useLocalDependencies = ProcessInfo.processInfo.environment["SWARM_USE_LOCAL_DEPS"] == "1"
 
 var packageProducts: [Product] = [
-    .library(name: "Swarm", targets: ["Swarm"])
+    .library(name: "Swarm", targets: ["Swarm"]),
+    .library(name: "SwarmMCP", targets: ["SwarmMCP"]),
 ]
 
 if includeHiveIntegration {
@@ -42,11 +23,13 @@ if includeHiveIntegration {
 
 if includeDemo {
     packageProducts.append(.executable(name: "SwarmDemo", targets: ["SwarmDemo"]))
+    packageProducts.append(.executable(name: "SwarmMCPServerDemo", targets: ["SwarmMCPServerDemo"]))
 }
 
 var packageDependencies: [Package.Dependency] = [
-    .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
-    .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")
+    .package(url: "https://github.com/swiftlang/swift-syntax.git", "600.0.0"..<"603.0.0"),
+    .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
+    .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.10.0")
 ]
 
 if useLocalDependencies {
@@ -68,11 +51,7 @@ if useLocalDependencies {
     packageDependencies.append(.package(url: "https://github.com/christopherkarani/Conduit", from: "0.3.1"))
 }
 
-if let hivePath = localHivePath {
-    packageDependencies.append(.package(path: hivePath))
-} else {
-    packageDependencies.append(.package(url: "https://github.com/christopherkarani/Hive", from: "0.1.0"))
-}
+packageDependencies.append(.package(url: "https://github.com/christopherkarani/Hive", from: "0.1.0"))
 
 var swarmDependencies: [Target.Dependency] = [
     "SwarmMacros",
@@ -113,11 +92,22 @@ var packageTargets: [Target] = [
         dependencies: swarmDependencies,
         swiftSettings: swarmSwiftSettings
     ),
+    .target(
+        name: "SwarmMCP",
+        dependencies: [
+            "Swarm",
+            .product(name: "MCP", package: "swift-sdk"),
+        ],
+        swiftSettings: swarmSwiftSettings
+    ),
 
     // MARK: - Tests
     .testTarget(
         name: "SwarmTests",
-        dependencies: ["Swarm"],
+        dependencies: [
+            "Swarm",
+            "SwarmMCP",
+        ],
         resources: [
             .copy("Guardrails/INTEGRATION_TEST_SUMMARY.md"),
             .copy("Guardrails/QUICK_REFERENCE.md")
@@ -166,6 +156,19 @@ if includeDemo {
         .executableTarget(
             name: "SwarmDemo",
             dependencies: ["Swarm"],
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        )
+    )
+
+    packageTargets.append(
+        .executableTarget(
+            name: "SwarmMCPServerDemo",
+            dependencies: [
+                "Swarm",
+                "SwarmMCP",
+            ],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]
