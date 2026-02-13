@@ -20,7 +20,15 @@ public struct SwarmToolRegistry: HiveToolRegistry, Sendable {
     private let toolDefinitions: [HiveToolDefinition]
 
     public init(tools: [any AnyJSONTool]) throws {
-        let registry = ToolRegistry(tools: tools)
+        let registry: ToolRegistry
+        do {
+            registry = try ToolRegistry(tools: tools)
+        } catch let error as ToolRegistryError {
+            switch error {
+            case .duplicateToolName(let name):
+                throw SwarmToolRegistryError.duplicateToolName(name)
+            }
+        }
         self.registry = registry
         var byName: [String: any AnyJSONTool] = [:]
         for tool in tools {
@@ -48,16 +56,32 @@ public struct SwarmToolRegistry: HiveToolRegistry, Sendable {
 
     public func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
         let arguments = try Self.parseArgumentsJSON(call.argumentsJSON)
-        
-        guard registry.tools.keys.contains(call.name) else {
+
+        guard await registry.contains(named: call.name) else {
             throw SwarmToolRegistryError.toolNotFound(name: call.name)
         }
-        
+
         do {
             let output = try await registry.execute(toolNamed: call.name, arguments: arguments)
             let content = try Self.encodeJSONFragment(output)
             return HiveToolResult(toolCallID: call.id, content: content)
+        } catch is CancellationError {
+            throw
+        } catch let error as AgentError {
+            switch error {
+            case let .toolNotFound(name):
+                throw SwarmToolRegistryError.toolNotFound(name: name)
+            case let .toolExecutionFailed(toolName, underlyingError):
+                throw SwarmToolRegistryError.toolInvocationFailed(name: toolName, reason: underlyingError)
+            case let .invalidToolArguments(toolName, reason):
+                throw SwarmToolRegistryError.toolInvocationFailed(name: toolName, reason: reason)
+            default:
+                throw SwarmToolRegistryError.toolInvocationFailed(name: call.name, reason: error.localizedDescription)
+            }
         } catch {
+            if let guardrailError = error as? GuardrailError {
+                throw guardrailError
+            }
             throw SwarmToolRegistryError.toolInvocationFailed(
                 name: call.name,
                 reason: error.localizedDescription

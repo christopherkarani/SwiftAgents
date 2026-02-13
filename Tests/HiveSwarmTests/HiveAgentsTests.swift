@@ -432,6 +432,34 @@ struct HiveAgentsTests {
             #expect(error == .duplicateToolName("calc"))
         }
     }
+
+    @Test("SwarmToolRegistry invoke throws toolNotFound for unknown tool")
+    func swarmToolRegistry_invokeUnknownTool() async throws {
+        let registry = try SwarmToolRegistry(tools: [DuplicateTestTool(name: "calc")])
+
+        do {
+            _ = try await registry.invoke(
+                HiveToolCall(id: "call-1", name: "missing", argumentsJSON: "{}")
+            )
+            Issue.record("Expected to throw toolNotFound.")
+        } catch let error as SwarmToolRegistryError {
+            #expect(error == .toolNotFound(name: "missing"))
+        }
+    }
+
+    @Test("SwarmToolRegistry invoke throws invalidArgumentsJSON for malformed arguments")
+    func swarmToolRegistry_invokeInvalidArgumentsJSON() async throws {
+        let registry = try SwarmToolRegistry(tools: [DuplicateTestTool(name: "calc")])
+
+        do {
+            _ = try await registry.invoke(
+                HiveToolCall(id: "call-2", name: "calc", argumentsJSON: "not-json")
+            )
+            Issue.record("Expected to throw invalidArgumentsJSON.")
+        } catch let error as SwarmToolRegistryError {
+            #expect(error == .invalidArgumentsJSON)
+        }
+    }
 }
 
 // MARK: - Helpers

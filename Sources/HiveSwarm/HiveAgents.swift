@@ -367,8 +367,15 @@ extension HiveAgents {
             }
 
             return merged.map { message in
-                var cleaned = message
-                cleaned.op = nil
+                let cleaned = HiveChatMessage(
+                    id: message.id,
+                    role: message.role,
+                    content: message.content,
+                    name: message.name,
+                    toolCallID: message.toolCallID,
+                    toolCalls: message.toolCalls,
+                    op: nil
+                )
                 return cleaned
             }
         }
