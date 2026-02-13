@@ -58,10 +58,19 @@ public extension OrchestrationStepContext {
     /// Finds a handoff configuration for the given target agent.
     func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
         handoffs.first { config in
-            let configTargetType = type(of: config.targetAgent)
-            let currentType = type(of: targetAgent)
-            return configTargetType == currentType
+            areSameRuntime(config.targetAgent, targetAgent)
         }
+    }
+
+    private func areSameRuntime(_ lhs: any AgentRuntime, _ rhs: any AgentRuntime) -> Bool {
+        let lhsObject = lhs as AnyObject
+        let rhsObject = rhs as AnyObject
+        if ObjectIdentifier(lhsObject) == ObjectIdentifier(rhsObject) {
+            return true
+        }
+
+        return lhs.name == rhs.name
+            && String(describing: type(of: lhs)) == String(describing: type(of: rhs))
     }
 
     /// Applies handoff configuration for the target agent if present.

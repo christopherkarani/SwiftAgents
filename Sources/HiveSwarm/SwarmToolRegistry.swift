@@ -7,6 +7,9 @@ public enum SwarmToolRegistryError: Error, Equatable, Sendable {
     case argumentsMustBeJSONObject
     case resultEncodingFailed
     case schemaEncodingFailed
+    case toolNotFound(name: String)
+    case toolInvocationFailed(name: String, reason: String)
+    case duplicateToolName(String)
 }
 
 /// Bridges Swarm tools into HiveCore's `HiveToolRegistry` interface.
@@ -17,13 +20,17 @@ public struct SwarmToolRegistry: HiveToolRegistry, Sendable {
     private let toolDefinitions: [HiveToolDefinition]
 
     public init(tools: [any AnyJSONTool]) throws {
-        let registry = ToolRegistry(tools: tools)
-        self.registry = registry
-        var byName: [String: any AnyJSONTool] = [:]
-        for tool in tools {
-            byName[tool.name] = tool
+        let registry: ToolRegistry
+        do {
+            registry = try ToolRegistry(tools: tools)
+        } catch let error as ToolRegistryError {
+            switch error {
+            case .duplicateToolName(let name):
+                throw SwarmToolRegistryError.duplicateToolName(name)
+            }
         }
-        self.toolDefinitions = try byName.values
+        self.registry = registry
+        self.toolDefinitions = try tools
             .map { try Self.makeToolDefinition(for: $0.schema) }
             .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
     }
@@ -42,10 +49,37 @@ public struct SwarmToolRegistry: HiveToolRegistry, Sendable {
 
     public func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
         let arguments = try Self.parseArgumentsJSON(call.argumentsJSON)
-        let output = try await registry.execute(toolNamed: call.name, arguments: arguments)
-        let content = try Self.encodeJSONFragment(output)
 
-        return HiveToolResult(toolCallID: call.id, content: content)
+        guard await registry.contains(named: call.name) else {
+            throw SwarmToolRegistryError.toolNotFound(name: call.name)
+        }
+
+        do {
+            let output = try await registry.execute(toolNamed: call.name, arguments: arguments)
+            let content = try Self.encodeJSONFragment(output)
+            return HiveToolResult(toolCallID: call.id, content: content)
+        } catch is CancellationError {
+            throw
+        } catch let error as AgentError {
+            switch error {
+            case let .toolNotFound(name):
+                throw SwarmToolRegistryError.toolNotFound(name: name)
+            case let .toolExecutionFailed(toolName, underlyingError):
+                throw SwarmToolRegistryError.toolInvocationFailed(name: toolName, reason: underlyingError)
+            case let .invalidToolArguments(toolName, reason):
+                throw SwarmToolRegistryError.toolInvocationFailed(name: toolName, reason: reason)
+            default:
+                throw SwarmToolRegistryError.toolInvocationFailed(name: call.name, reason: error.localizedDescription)
+            }
+        } catch {
+            if let guardrailError = error as? GuardrailError {
+                throw guardrailError
+            }
+            throw SwarmToolRegistryError.toolInvocationFailed(
+                name: call.name,
+                reason: error.localizedDescription
+            )
+        }
     }
 }
 
@@ -188,7 +222,7 @@ extension SwarmToolRegistry {
 }
 
 extension SendableValue {
-    fileprivate func toJSONObject() -> Any {
+    func toJSONObject() -> Any {
         switch self {
         case .null:
             return NSNull()

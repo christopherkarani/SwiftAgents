@@ -74,6 +74,19 @@ public actor Agent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// Creates a new Agent.
+    /// - Parameters:
+    ///   - tools: Tools available to the agent. Default: []
+    ///   - instructions: System instructions defining agent behavior. Default: ""
+    ///   - configuration: Agent configuration settings. Default: .default
+    ///   - memory: Optional memory system. Default: nil
+    ///   - inferenceProvider: Optional custom inference provider. Default: nil
+    ///   - tracer: Optional tracer for observability. Default: nil
+    ///   - inputGuardrails: Input validation guardrails. Default: []
+    ///   - outputGuardrails: Output validation guardrails. Default: []
+    ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
+    ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init(
         tools: [any AnyJSONTool] = [],
         instructions: String = "",
@@ -85,7 +98,7 @@ public actor Agent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         self.tools = tools
         self.instructions = instructions
         self.configuration = configuration
@@ -96,7 +109,7 @@ public actor Agent: AgentRuntime {
         self.outputGuardrails = outputGuardrails
         self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
         _handoffs = handoffs
-        toolRegistry = ToolRegistry(tools: tools)
+        toolRegistry = try ToolRegistry(tools: tools)
     }
 
     /// Convenience initializer that takes an unlabeled inference provider.
@@ -116,8 +129,8 @@ public actor Agent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
-        self.init(
+    ) throws {
+        try self.init(
             tools: tools,
             instructions: instructions,
             configuration: configuration,
@@ -143,8 +156,21 @@ public actor Agent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
-    public init(
-        tools: [some Tool] = [],
+    /// Creates a new Agent with typed tools.
+    /// - Parameters:
+    ///   - tools: Typed tools available to the agent. Default: []
+    ///   - instructions: System instructions defining agent behavior. Default: ""
+    ///   - configuration: Agent configuration settings. Default: .default
+    ///   - memory: Optional memory system. Default: nil
+    ///   - inferenceProvider: Optional custom inference provider. Default: nil
+    ///   - tracer: Optional tracer for observability. Default: nil
+    ///   - inputGuardrails: Input validation guardrails. Default: []
+    ///   - outputGuardrails: Output validation guardrails. Default: []
+    ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
+    ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+    public init<T: Tool>(
+        tools: [T] = [],
         instructions: String = "",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
@@ -154,9 +180,9 @@ public actor Agent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         let bridged = tools.map { AnyJSONToolAdapter($0) }
-        self.init(
+        try self.init(
             tools: bridged,
             instructions: instructions,
             configuration: configuration,
@@ -195,6 +221,7 @@ public actor Agent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffAgents: Agents to hand off to, automatically wrapped as handoff configurations.
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init(
         tools: [any AnyJSONTool] = [],
         instructions: String = "",
@@ -206,7 +233,7 @@ public actor Agent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffAgents: [any AgentRuntime]
-    ) {
+    ) throws {
         let configs = handoffAgents.map { agent in
             AnyHandoffConfiguration(
                 targetAgent: agent,
@@ -214,7 +241,7 @@ public actor Agent: AgentRuntime {
                 toolDescription: nil
             )
         }
-        self.init(
+        try self.init(
             tools: tools,
             instructions: instructions,
             configuration: configuration,
@@ -266,7 +293,7 @@ public actor Agent: AgentRuntime {
             let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
             _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
-            isCancelled = false
+            // Reset cancellation state and create result builder
             let resultBuilder = AgentResult.Builder()
             _ = resultBuilder.start()
 
@@ -279,17 +306,6 @@ public actor Agent: AgentRuntime {
             // Create user message for this turn
             let userMessage = MemoryMessage.user(input)
 
-            // Store in memory (for AI context) if available
-            if let mem = activeMemory {
-                // Seed session history only once for a fresh memory instance.
-                if session != nil, await mem.isEmpty, !sessionHistory.isEmpty {
-                    for msg in sessionHistory {
-                        await mem.add(msg)
-                    }
-                }
-                await mem.add(userMessage)
-            }
-
             // Execute the tool calling loop with session context
             let output = try await executeToolCallingLoop(
                 input: input,
@@ -301,19 +317,19 @@ public actor Agent: AgentRuntime {
 
             _ = resultBuilder.setOutput(output)
 
-            // Run output guardrails BEFORE storing in memory/session
+            // Run output guardrails BEFORE storing in session/memory
             _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
 
-            // Store turn in session (user + assistant messages)
+            // Store turn in session for conversation persistence
+            // Session is the source of truth for conversation history
             if let session {
                 let assistantMessage = MemoryMessage.assistant(output)
                 try await session.addItems([userMessage, assistantMessage])
             }
 
-            // Only store output in memory if validation passed
-            if let mem = activeMemory {
-                await mem.add(.assistant(output))
-            }
+            // Memory provides additional context (RAG, summaries) - NOT for conversation storage
+            // This avoids duplication: session stores conversation, memory provides context
+            // Note: If using memory for conversation context, populate it from session on demand
 
             let result = resultBuilder.build()
             await tracing.traceComplete(result: result)
@@ -366,9 +382,9 @@ public actor Agent: AgentRuntime {
 
     /// Cancels any ongoing execution.
     public func cancel() async {
-        isCancelled = true
+        // Simply cancel the current task - the task cancellation handler
+        // will perform any necessary cleanup
         currentTask?.cancel()
-        currentTask = nil
     }
 
     // MARK: Private
@@ -399,7 +415,6 @@ public actor Agent: AgentRuntime {
 
     // MARK: - Internal State
 
-    private var isCancelled: Bool = false
     private var currentTask: Task<Void, Never>?
     private let toolRegistry: ToolRegistry
 
@@ -552,8 +567,9 @@ public actor Agent: AgentRuntime {
 
     /// Checks for cancellation and timeout conditions.
     private func checkCancellationAndTimeout(startTime: ContinuousClock.Instant) throws {
+        // Use Task.checkCancellation() for reliable cancellation detection
+        // This is the standard Swift concurrency pattern
         try Task.checkCancellation()
-        if isCancelled { throw AgentError.cancelled }
 
         let elapsed = ContinuousClock.now - startTime
         if elapsed > configuration.timeout {
@@ -1091,8 +1107,9 @@ public extension Agent {
 
         /// Builds the agent.
         /// - Returns: A new Agent instance.
-        public func build() -> Agent {
-            Agent(
+        /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+        public func build() throws -> Agent {
+            try Agent(
                 tools: _tools,
                 instructions: _instructions,
                 configuration: _configuration,
@@ -1141,9 +1158,10 @@ public extension Agent {
     /// ```
     ///
     /// - Parameter content: A closure that builds the agent components.
-    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) {
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) throws {
         let components = content()
-        self.init(
+        try self.init(
             tools: components.tools,
             instructions: components.instructions ?? "",
             configuration: components.configuration ?? .default,
@@ -1184,6 +1202,7 @@ public extension Agent {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     init(
         name: String,
         instructions: String = "",
@@ -1196,11 +1215,11 @@ public extension Agent {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         // Merge the name into the configuration
         var config = configuration
         config.name = name
-        self.init(
+        try self.init(
             tools: tools,
             instructions: instructions,
             configuration: config,
@@ -1245,6 +1264,7 @@ public extension Agent {
     ///   - outputGuardrails: Output guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Guardrail runner config. Default: .default
     ///   - handoffAgents: Agents to use as handoff targets.
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     init(
         name: String,
         instructions: String = "",
@@ -1257,11 +1277,11 @@ public extension Agent {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffAgents: [any AgentRuntime]
-    ) {
+    ) throws {
         let handoffs = handoffAgents.map { agent in
             AnyHandoffConfiguration(targetAgent: agent)
         }
-        self.init(
+        try self.init(
             name: name,
             instructions: instructions,
             tools: tools,

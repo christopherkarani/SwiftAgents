@@ -180,7 +180,10 @@ let package = Package(
     name: "Swarm",
     platforms: [
         .macOS(.v26),
-        .iOS(.v26)
+        .iOS(.v26),
+        .watchOS(.v10),
+        .tvOS(.v26),
+        .visionOS(.v1)
     ],
     products: packageProducts,
     dependencies: packageDependencies,

@@ -532,11 +532,19 @@ public actor SequentialChain: AgentRuntime {
     /// - Returns: The matching handoff configuration, or nil if none found.
     private func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
         _handoffs.first { config in
-            // Match by type - compare the target agent's type
-            let configTargetType = type(of: config.targetAgent)
-            let currentType = type(of: targetAgent)
-            return configTargetType == currentType
+            areSameRuntime(config.targetAgent, targetAgent)
         }
+    }
+
+    private func areSameRuntime(_ lhs: any AgentRuntime, _ rhs: any AgentRuntime) -> Bool {
+        let lhsObject = lhs as AnyObject
+        let rhsObject = rhs as AnyObject
+        if ObjectIdentifier(lhsObject) == ObjectIdentifier(rhsObject) {
+            return true
+        }
+
+        return lhs.name == rhs.name
+            && String(describing: type(of: lhs)) == String(describing: type(of: rhs))
     }
 
     private func setContext(_ context: AgentContext?) {

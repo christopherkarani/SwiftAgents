@@ -9,15 +9,15 @@ import Foundation
 
 /// Runtime execution mode for orchestration.
 public enum SwarmRuntimeMode: Sendable, Equatable {
-    /// Legacy mode selector retained for source compatibility.
-    ///
-    /// Orchestration execution always uses the Hive runtime.
-    case swift
-
     /// Execute orchestration using the Hive runtime.
     case hive
 
-    /// Alias for `.hive` retained for source compatibility.
+    /// Deprecated: Legacy mode selector, now same as `.hive`.
+    @available(*, deprecated, renamed: "hive")
+    case swift
+
+    /// Deprecated: Alias for `.hive`.
+    @available(*, deprecated, renamed: "hive")
     case requireHive
 }
 

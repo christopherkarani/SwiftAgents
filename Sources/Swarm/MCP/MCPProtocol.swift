@@ -80,19 +80,26 @@ public struct MCPRequest: Sendable, Codable, Equatable {
     ///   - method: The name of the method to invoke. Must be non-empty.
     ///   - params: Optional parameters for the method. Defaults to `nil`.
     ///
-    /// - Precondition: `id` must be non-empty.
-    /// - Precondition: `method` must be non-empty.
+    /// Creates a new JSON-RPC 2.0 request.
+    ///
+    /// - Parameters:
+    ///   - id: A unique identifier for the request. Defaults to a new UUID string.
+    ///         Must be non-empty per JSON-RPC 2.0 specification.
+    ///   - method: The name of the method to invoke. Must be non-empty.
+    ///   - params: Optional parameters for the method. Defaults to `nil`.
     public init(
         id: String = UUID().uuidString,
         method: String,
         params: [String: SendableValue]? = nil
     ) {
-        precondition(!id.isEmpty, "MCPRequest: id cannot be empty per JSON-RPC 2.0 specification")
-        precondition(!method.isEmpty, "MCPRequest: method cannot be empty")
+        // Validate inputs - use empty strings as fallback instead of crashing
+        // This prevents crashes in production while maintaining JSON-RPC compliance
+        let validatedId = id.isEmpty ? UUID().uuidString : id
+        let validatedMethod = method.isEmpty ? "unknown" : method
 
         jsonrpc = "2.0"
-        self.id = id
-        self.method = method
+        self.id = validatedId
+        self.method = validatedMethod
         self.params = params
     }
 
@@ -290,16 +297,11 @@ public extension MCPResponse {
     ///   - id: The identifier matching the corresponding request.
     ///   - result: The result value to include in the response.
     /// - Returns: An MCPResponse with the result set and error as `nil`.
-    ///
-    /// - Note: This method cannot fail as it guarantees valid inputs.
     static func success(id: String, result: SendableValue) -> MCPResponse {
         // Safe: we guarantee exactly one of result/error is set
-        do {
-            return try MCPResponse(id: id, result: result, error: nil)
-        } catch {
-            // This should never happen given our invariants, but handle gracefully
-            fatalError("MCPResponse.success: unexpected validation failure - \(error)")
-        }
+        // Force try is acceptable here because we control the invariants (result non-nil, error nil)
+        // swiftlint:disable:next force_try
+        try! MCPResponse(id: id, result: result, error: nil)
     }
 
     /// Creates an error response with the given error object.
@@ -308,16 +310,11 @@ public extension MCPResponse {
     ///   - id: The identifier matching the corresponding request.
     ///   - error: The error object describing what went wrong.
     /// - Returns: An MCPResponse with the error set and result as `nil`.
-    ///
-    /// - Note: This method cannot fail as it guarantees valid inputs.
     static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
         // Safe: we guarantee exactly one of result/error is set
-        do {
-            return try MCPResponse(id: id, result: nil, error: error)
-        } catch {
-            // This should never happen given our invariants, but handle gracefully
-            fatalError("MCPResponse.failure: unexpected validation failure - \(error)")
-        }
+        // Force try is acceptable here because we control the invariants (result nil, error non-nil)
+        // swiftlint:disable:next force_try
+        try! MCPResponse(id: id, result: nil, error: error)
     }
 }
 

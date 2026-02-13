@@ -180,19 +180,28 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
                 await cancellation.track(handle)
 
                 // Fork a task to consume Hive events and yield mapped AgentEvents.
-                let eventsTask = Task<Void, Never> {
+                let eventsTask = Task {
                     do {
                         for try await event in handle.events {
+                            if Task.isCancelled { break }
                             if let agentEvent = Self.mapHiveEvent(event) {
                                 continuation.yield(agentEvent)
                             }
                         }
                     } catch {
-                        Log.agents.debug("Hive event stream ended: \(error.localizedDescription)")
+                        if !Task.isCancelled {
+                            Log.agents.debug("Hive event stream ended: \(error.localizedDescription)")
+                        }
                     }
                 }
 
-                let outcome = try await handle.outcome.value
+                let outcome: HiveRunOutcome<HiveAgents.Schema>
+                do {
+                    outcome = try await handle.outcome.value
+                } catch {
+                    eventsTask.cancel()
+                    throw error
+                }
 
                 // Wait for all events to be consumed before building the result.
                 await eventsTask.value
@@ -335,7 +344,7 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
                 }
             }
 
-            for message in messages where message.role.rawValue == "tool" {
+            for message in messages where message.role == .tool {
                 guard let hiveCallID = message.toolCallID else { continue }
                 let callID: UUID
                 if let existing = hiveToSwarmID[hiveCallID] {
@@ -364,7 +373,7 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
             }
 
             // Count model invocations as iterations (assistant messages)
-            let assistantCount = messages.filter { $0.role.rawValue == "assistant" }.count
+            let assistantCount = messages.filter { $0.role == .assistant }.count
             for _ in 0 ..< max(assistantCount, 1) {
                 _ = builder.incrementIteration()
             }
@@ -388,37 +397,9 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
 
         var result: [String: SendableValue] = [:]
         for (key, value) in json {
-            result[key] = convertToSendableValue(value)
+            result[key] = SendableValue.fromJSONValue(value)
         }
         return result
-    }
-
-    /// Converts a JSON-deserialized value to `SendableValue`.
-    private func convertToSendableValue(_ value: Any) -> SendableValue {
-        switch value {
-        case let string as String:
-            return .string(string)
-        case let number as NSNumber:
-            if CFBooleanGetTypeID() == CFGetTypeID(number) {
-                return .bool(number.boolValue)
-            }
-            if number.doubleValue == Double(number.intValue) {
-                return .int(number.intValue)
-            }
-            return .double(number.doubleValue)
-        case let array as [Any]:
-            return .array(array.map { convertToSendableValue($0) })
-        case let dict as [String: Any]:
-            var mapped: [String: SendableValue] = [:]
-            for (k, v) in dict {
-                mapped[k] = convertToSendableValue(v)
-            }
-            return .dictionary(mapped)
-        case is NSNull:
-            return .null
-        default:
-            return .string(String(describing: value))
-        }
     }
 
     /// Maps a `HiveRuntimeError` to an appropriate `AgentError`.
@@ -463,4 +444,10 @@ private actor CancellationController {
         currentHandle?.outcome.cancel()
         currentHandle = nil
     }
+}
+
+private extension HiveChatRole {
+    static let system = Self(rawValue: "system")
+    static let tool = Self(rawValue: "tool")
+    static let assistant = Self(rawValue: "assistant")
 }

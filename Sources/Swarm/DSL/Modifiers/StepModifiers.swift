@@ -159,7 +159,10 @@ public struct RetryModifier: StepModifier {
             }
         }
 
-        throw lastError!
+        guard let error = lastError else {
+            throw AgentError.internalError(reason: "RetryModifier: maxAttempts reached but no error captured")
+        }
+        throw error
     }
 }
 

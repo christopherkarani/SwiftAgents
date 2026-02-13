@@ -276,20 +276,28 @@ public extension SendableValue {
     func decode<T: Decodable>() throws -> T {
         // Handle primitive types directly
         if T.self == Bool.self, let value = boolValue {
-            // swiftlint:disable:next force_cast
-            return value as! T
+            guard let result = value as? T else {
+                throw ConversionError.decodingFailed("Failed to cast Bool to \(T.self)")
+            }
+            return result
         }
         if T.self == Int.self, let value = intValue {
-            // swiftlint:disable:next force_cast
-            return value as! T
+            guard let result = value as? T else {
+                throw ConversionError.decodingFailed("Failed to cast Int to \(T.self)")
+            }
+            return result
         }
         if T.self == Double.self, let value = doubleValue {
-            // swiftlint:disable:next force_cast
-            return value as! T
+            guard let result = value as? T else {
+                throw ConversionError.decodingFailed("Failed to cast Double to \(T.self)")
+            }
+            return result
         }
         if T.self == String.self, let value = stringValue {
-            // swiftlint:disable:next force_cast
-            return value as! T
+            guard let result = value as? T else {
+                throw ConversionError.decodingFailed("Failed to cast String to \(T.self)")
+            }
+            return result
         }
 
         // For complex types, use JSON decoding as an intermediate format
