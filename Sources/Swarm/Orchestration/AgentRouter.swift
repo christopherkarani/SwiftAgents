@@ -710,10 +710,13 @@ public actor AgentRouter: AgentRuntime {
     /// - Returns: The matching handoff configuration, or nil if none found.
     private func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
         _handoffs.first { config in
-            // Match by type - compare the target agent's type
-            let configTargetType = type(of: config.targetAgent)
-            let currentType = type(of: targetAgent)
-            return configTargetType == currentType
+            // Match by identity - compare object references if classes, or name if structs
+            if let configAgent = config.targetAgent as? AnyObject,
+               let target = targetAgent as? AnyObject {
+                return configAgent === target
+            }
+            // Fallback: compare by name and configuration identity
+            return config.targetAgent.name == targetAgent.name
         }
     }
 }
