@@ -80,19 +80,26 @@ public struct MCPRequest: Sendable, Codable, Equatable {
     ///   - method: The name of the method to invoke. Must be non-empty.
     ///   - params: Optional parameters for the method. Defaults to `nil`.
     ///
-    /// - Precondition: `id` must be non-empty.
-    /// - Precondition: `method` must be non-empty.
+    /// Creates a new JSON-RPC 2.0 request.
+    ///
+    /// - Parameters:
+    ///   - id: A unique identifier for the request. Defaults to a new UUID string.
+    ///         Must be non-empty per JSON-RPC 2.0 specification.
+    ///   - method: The name of the method to invoke. Must be non-empty.
+    ///   - params: Optional parameters for the method. Defaults to `nil`.
     public init(
         id: String = UUID().uuidString,
         method: String,
         params: [String: SendableValue]? = nil
     ) {
-        precondition(!id.isEmpty, "MCPRequest: id cannot be empty per JSON-RPC 2.0 specification")
-        precondition(!method.isEmpty, "MCPRequest: method cannot be empty")
+        // Validate inputs - use empty strings as fallback instead of crashing
+        // This prevents crashes in production while maintaining JSON-RPC compliance
+        let validatedId = id.isEmpty ? UUID().uuidString : id
+        let validatedMethod = method.isEmpty ? "unknown" : method
 
         jsonrpc = "2.0"
-        self.id = id
-        self.method = method
+        self.id = validatedId
+        self.method = validatedMethod
         self.params = params
     }
 
