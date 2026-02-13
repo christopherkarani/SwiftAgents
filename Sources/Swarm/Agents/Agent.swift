@@ -306,17 +306,6 @@ public actor Agent: AgentRuntime {
             // Create user message for this turn
             let userMessage = MemoryMessage.user(input)
 
-            // Store in memory (for AI context) if available
-            if let mem = activeMemory {
-                // Seed session history only once for a fresh memory instance.
-                if session != nil, await mem.isEmpty, !sessionHistory.isEmpty {
-                    for msg in sessionHistory {
-                        await mem.add(msg)
-                    }
-                }
-                await mem.add(userMessage)
-            }
-
             // Execute the tool calling loop with session context
             let output = try await executeToolCallingLoop(
                 input: input,
@@ -328,19 +317,19 @@ public actor Agent: AgentRuntime {
 
             _ = resultBuilder.setOutput(output)
 
-            // Run output guardrails BEFORE storing in memory/session
+            // Run output guardrails BEFORE storing in session/memory
             _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
 
-            // Store turn in session (user + assistant messages)
+            // Store turn in session for conversation persistence
+            // Session is the source of truth for conversation history
             if let session {
                 let assistantMessage = MemoryMessage.assistant(output)
                 try await session.addItems([userMessage, assistantMessage])
             }
 
-            // Only store output in memory if validation passed
-            if let mem = activeMemory {
-                await mem.add(.assistant(output))
-            }
+            // Memory provides additional context (RAG, summaries) - NOT for conversation storage
+            // This avoids duplication: session stores conversation, memory provides context
+            // Note: If using memory for conversation context, populate it from session on demand
 
             let result = resultBuilder.build()
             await tracing.traceComplete(result: result)
