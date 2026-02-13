@@ -290,16 +290,11 @@ public extension MCPResponse {
     ///   - id: The identifier matching the corresponding request.
     ///   - result: The result value to include in the response.
     /// - Returns: An MCPResponse with the result set and error as `nil`.
-    ///
-    /// - Note: This method cannot fail as it guarantees valid inputs.
     static func success(id: String, result: SendableValue) -> MCPResponse {
         // Safe: we guarantee exactly one of result/error is set
-        do {
-            return try MCPResponse(id: id, result: result, error: nil)
-        } catch {
-            // This should never happen given our invariants, but handle gracefully
-            fatalError("MCPResponse.success: unexpected validation failure - \(error)")
-        }
+        // Force try is acceptable here because we control the invariants (result non-nil, error nil)
+        // swiftlint:disable:next force_try
+        try! MCPResponse(id: id, result: result, error: nil)
     }
 
     /// Creates an error response with the given error object.
@@ -308,16 +303,11 @@ public extension MCPResponse {
     ///   - id: The identifier matching the corresponding request.
     ///   - error: The error object describing what went wrong.
     /// - Returns: An MCPResponse with the error set and result as `nil`.
-    ///
-    /// - Note: This method cannot fail as it guarantees valid inputs.
     static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
         // Safe: we guarantee exactly one of result/error is set
-        do {
-            return try MCPResponse(id: id, result: nil, error: error)
-        } catch {
-            // This should never happen given our invariants, but handle gracefully
-            fatalError("MCPResponse.failure: unexpected validation failure - \(error)")
-        }
+        // Force try is acceptable here because we control the invariants (result nil, error non-nil)
+        // swiftlint:disable:next force_try
+        try! MCPResponse(id: id, result: nil, error: error)
     }
 }
 
