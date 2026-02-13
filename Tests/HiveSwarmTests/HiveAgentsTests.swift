@@ -460,6 +460,33 @@ struct HiveAgentsTests {
             #expect(error == .invalidArgumentsJSON)
         }
     }
+
+    @Test("SwarmToolRegistry invoke returns tool result on success")
+    func swarmToolRegistry_invokeReturnsToolResult() async throws {
+        let registry = try SwarmToolRegistry(tools: [DuplicateTestTool(name: "calc")])
+        let result = try await registry.invoke(
+            HiveToolCall(id: "call-3", name: "calc", argumentsJSON: "{}")
+        )
+
+        #expect(result.toolCallID == "call-3")
+        #expect(result.content == "result")
+    }
+
+    @Test("SwarmToolRegistry invoke preserves cancellation errors")
+    func swarmToolRegistry_invokePreservesCancellation() async throws {
+        let registry = try SwarmToolRegistry(tools: [CancellableTestTool(name: "cancelled-tool")])
+
+        do {
+            _ = try await registry.invoke(
+                HiveToolCall(id: "call-4", name: "cancelled-tool", argumentsJSON: "{}")
+            )
+            Issue.record("Expected CancellationError.")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            Issue.record("Expected CancellationError, got \(error).")
+        }
+    }
 }
 
 // MARK: - Helpers
@@ -655,5 +682,16 @@ private struct DuplicateTestTool: AnyJSONTool {
 
     func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         .string("result")
+    }
+}
+
+private struct CancellableTestTool: AnyJSONTool {
+    let name: String
+    let description: String = "Cancellation test tool"
+
+    var parameters: [ToolParameter] { [] }
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        throw CancellationError()
     }
 }

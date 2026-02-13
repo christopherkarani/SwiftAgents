@@ -30,14 +30,7 @@ public struct SwarmToolRegistry: HiveToolRegistry, Sendable {
             }
         }
         self.registry = registry
-        var byName: [String: any AnyJSONTool] = [:]
-        for tool in tools {
-            guard byName[tool.name] == nil else {
-                throw SwarmToolRegistryError.duplicateToolName(tool.name)
-            }
-            byName[tool.name] = tool
-        }
-        self.toolDefinitions = try byName.values
+        self.toolDefinitions = try tools
             .map { try Self.makeToolDefinition(for: $0.schema) }
             .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
     }
