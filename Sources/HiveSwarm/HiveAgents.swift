@@ -26,6 +26,20 @@ public enum HiveAgents {
         case toolApproval(decision: ToolApprovalDecision)
     }
 
+    /// Builds a compiled Hive graph for a tool-using chat agent.
+    ///
+    /// The graph implements a model→tools loop: the model generates tool calls, tools execute,
+    /// results are added to the message history, and the cycle repeats until no more tool calls.
+    ///
+    /// - Parameters:
+    ///   - preModel: Optional node that runs before each model invocation. Receives input with
+    ///     `messagesKey` (the conversation history) and should produce `llmInputMessagesKey`
+    ///     (the messages actually sent to the model). Use for compaction, context selection, or
+    ///     injecting system prompts. If nil, a default preModel handles compaction.
+    ///   - postModel: Optional node that runs after each model invocation (before routing).
+    ///     Receives the same input as preModel plus any tool results. Can be used for
+    ///     guardrails, response filtering, or custom routing logic.
+    /// - Returns: A compiled Hive graph ready for execution.
     public static func makeToolUsingChatAgent(
         preModel: HiveNode<Schema>? = nil,
         postModel: HiveNode<Schema>? = nil
@@ -616,34 +630,40 @@ extension HiveAgents {
                 throw HiveRuntimeError.toolRegistryMissing
             }
 
-            var toolMessages: [HiveChatMessage] = []
-            toolMessages.reserveCapacity(calls.count)
-
-            for call in calls {
-                let metadata = ["toolCallID": call.id]
-                input.emitStream(.toolInvocationStarted(name: call.name), metadata)
-                do {
-                    let result = try await withRetry(
-                        policy: input.context.retryPolicy,
-                        clock: input.environment.clock
-                    ) {
-                        try await registry.invoke(call)
+            let toolMessages: [HiveChatMessage] = try await withThrowingTaskGroup(
+                of: (Int, HiveChatMessage).self
+            ) { group in
+                for (index, call) in calls.enumerated() {
+                    group.addTask {
+                        let metadata = ["toolCallID": call.id]
+                        input.emitStream(.toolInvocationStarted(name: call.name), metadata)
+                        do {
+                            let result = try await withRetry(
+                                policy: input.context.retryPolicy,
+                                clock: input.environment.clock
+                            ) {
+                                try await registry.invoke(call)
+                            }
+                            input.emitStream(.toolInvocationFinished(name: call.name, success: true), metadata)
+                            return (index, HiveChatMessage(
+                                id: "tool:" + call.id,
+                                role: .tool,
+                                content: result.content,
+                                toolCallID: call.id,
+                                toolCalls: [],
+                                op: nil
+                            ))
+                        } catch {
+                            input.emitStream(.toolInvocationFinished(name: call.name, success: false), metadata)
+                            throw error
+                        }
                     }
-                    input.emitStream(.toolInvocationFinished(name: call.name, success: true), metadata)
-                    toolMessages.append(
-                        HiveChatMessage(
-                            id: "tool:" + call.id,
-                            role: .tool,
-                            content: result.content,
-                            toolCallID: call.id,
-                            toolCalls: [],
-                            op: nil
-                        )
-                    )
-                } catch {
-                    input.emitStream(.toolInvocationFinished(name: call.name, success: false), metadata)
-                    throw error
                 }
+                var results: [(Int, HiveChatMessage)] = []
+                for try await result in group {
+                    results.append(result)
+                }
+                return results.sorted { $0.0 < $1.0 }.map(\.1)
             }
 
             return HiveNodeOutput(

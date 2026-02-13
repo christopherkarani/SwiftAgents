@@ -181,11 +181,6 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
 
                 // Fork a task to consume Hive events and yield mapped AgentEvents.
                 let eventsTask = Task {
-                    defer { 
-                        if !continuation.isFinished {
-                            continuation.finish()
-                        }
-                    }
                     do {
                         for try await event in handle.events {
                             if Task.isCancelled { break }
