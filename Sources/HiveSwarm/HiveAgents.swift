@@ -401,6 +401,7 @@ extension HiveAgents {
     private static func builtInPreModel() -> HiveNode<Schema> {
         { input in
             let messages = try input.store.get(Schema.messagesKey)
+            // Ensure llmInputMessages channel is initialized before reading messages.
             _ = try input.store.get(Schema.llmInputMessagesKey)
 
             guard let policy = input.context.compactionPolicy else {
@@ -408,6 +409,8 @@ extension HiveAgents {
             }
 
             guard policy.maxTokens >= 1, policy.preserveLastMessages >= 0 else {
+                // Defense-in-depth: preflight() validates these, but builtInPreModel
+                // guards independently in case it's used outside the standard run path.
                 throw HiveRuntimeError.invalidRunOptions("Invalid compaction policy bounds.")
             }
 
@@ -437,7 +440,7 @@ extension HiveAgents {
             guard let registry = input.environment.tools else {
                 throw HiveRuntimeError.toolRegistryMissing
             }
-            let sortedTools = registry.listTools().sorted(by: Self.toolDefinitionSort)
+            let sortedTools = registry.listTools().sorted(by: HiveDeterministicSort.byName)
 
             let request = HiveChatRequest(
                 model: input.context.modelName,
@@ -516,7 +519,7 @@ extension HiveAgents {
     private static func toolsNode() -> HiveNode<Schema> {
         { input in
             let pending = try input.store.get(Schema.pendingToolCallsKey)
-            let calls = pending.sorted(by: Self.toolCallSort)
+            let calls = pending.sorted(by: HiveDeterministicSort.toolCalls)
 
             let approvalRequired: Bool
             switch input.context.toolApprovalPolicy {
@@ -529,14 +532,16 @@ extension HiveAgents {
             }
 
             if approvalRequired {
-                if let resume = input.run.resume?.payload {
+            // Defense-in-depth: toolsNode handles approval flow, but if graph edges
+            // are reconfigured, this ensures rejected/cancelled decisions are honored.
+            if let resume = input.run.resume?.payload {
                     switch resume {
                     case let .toolApproval(decision):
                         if decision == .rejected {
-                            return rejectedOutput(taskID: input.run.taskID, calls: calls)
+                            return makeApprovalOutput(taskID: input.run.taskID, calls: calls, systemMessage: "Tool execution rejected by user.", includeToolMessages: false)
                         }
                         if decision == .cancelled {
-                            return cancelledOutput(taskID: input.run.taskID, calls: calls)
+                            return makeApprovalOutput(taskID: input.run.taskID, calls: calls, systemMessage: "Tool execution cancelled by user.", includeToolMessages: true)
                         }
                     }
                 } else {
@@ -549,54 +554,36 @@ extension HiveAgents {
         }
     }
 
-    private static func rejectedOutput(
+    private static func makeApprovalOutput(
         taskID: HiveTaskID,
-        calls _: [HiveToolCall]
+        calls: [HiveToolCall],
+        systemMessage: String,
+        includeToolMessages: Bool
     ) -> HiveNodeOutput<Schema> {
-        let systemMessage = HiveChatMessage(
+        let sysMsg = HiveChatMessage(
             id: MessageID.system(taskID: taskID),
             role: .system,
-            content: "Tool execution rejected by user.",
+            content: systemMessage,
             toolCalls: [],
             op: nil
         )
-
-        return HiveNodeOutput(
-            writes: [
-                AnyHiveWrite(Schema.pendingToolCallsKey, []),
-                AnyHiveWrite(Schema.messagesKey, [systemMessage])
-            ],
-            next: .nodes([NodeID.model])
-        )
-    }
-
-    private static func cancelledOutput(
-        taskID: HiveTaskID,
-        calls: [HiveToolCall]
-    ) -> HiveNodeOutput<Schema> {
-        let systemMessage = HiveChatMessage(
-            id: MessageID.system(taskID: taskID),
-            role: .system,
-            content: "Tool execution cancelled by user.",
-            toolCalls: [],
-            op: nil
-        )
-
-        let toolMessages = calls.map { call in
-            HiveChatMessage(
-                id: "tool:" + call.id + ":cancelled",
-                role: .tool,
-                content: "Tool call cancelled by user.",
-                toolCallID: call.id,
-                toolCalls: [],
-                op: nil
-            )
+        var messages: [HiveChatMessage] = [sysMsg]
+        if includeToolMessages {
+            messages += calls.map { call in
+                HiveChatMessage(
+                    id: "tool:" + call.id + ":cancelled",
+                    role: .tool,
+                    content: "Tool call cancelled by user.",
+                    toolCallID: call.id,
+                    toolCalls: [],
+                    op: nil
+                )
+            }
         }
-
         return HiveNodeOutput(
             writes: [
                 AnyHiveWrite(Schema.pendingToolCallsKey, []),
-                AnyHiveWrite(Schema.messagesKey, [systemMessage] + toolMessages)
+                AnyHiveWrite(Schema.messagesKey, messages)
             ],
             next: .nodes([NodeID.model])
         )
@@ -605,7 +592,7 @@ extension HiveAgents {
     private static func toolExecuteNode() -> HiveNode<Schema> {
         { input in
             let pending = try input.store.get(Schema.pendingToolCallsKey)
-            let calls = pending.sorted(by: Self.toolCallSort)
+            let calls = pending.sorted(by: HiveDeterministicSort.toolCalls)
 
             if let resume = input.run.resume?.payload {
                 switch resume {
@@ -614,9 +601,9 @@ extension HiveAgents {
                     case .approved:
                         break
                     case .rejected:
-                        return rejectedOutput(taskID: input.run.taskID, calls: calls)
+                        return makeApprovalOutput(taskID: input.run.taskID, calls: calls, systemMessage: "Tool execution rejected by user.", includeToolMessages: false)
                     case .cancelled:
-                        return cancelledOutput(taskID: input.run.taskID, calls: calls)
+                        return makeApprovalOutput(taskID: input.run.taskID, calls: calls, systemMessage: "Tool execution cancelled by user.", includeToolMessages: true)
                     }
                 }
             }
@@ -746,16 +733,6 @@ extension HiveAgents {
         return kept
     }
 
-    private static func toolDefinitionSort(_ lhs: HiveToolDefinition, _ rhs: HiveToolDefinition) -> Bool {
-        lhs.name.utf8.lexicographicallyPrecedes(rhs.name.utf8)
-    }
-
-    private static func toolCallSort(_ lhs: HiveToolCall, _ rhs: HiveToolCall) -> Bool {
-        if lhs.name == rhs.name {
-            return lhs.id.utf8.lexicographicallyPrecedes(rhs.id.utf8)
-        }
-        return lhs.name.utf8.lexicographicallyPrecedes(rhs.name.utf8)
-    }
 }
 
 /// Typed constants for HiveChatRole to avoid raw string comparisons.
@@ -763,6 +740,24 @@ private extension HiveChatRole {
     static let system = Self(rawValue: "system")
     static let tool = Self(rawValue: "tool")
     static let assistant = Self(rawValue: "assistant")
+}
+
+/// Deterministic sorting utilities to ensure reproducible message ordering.
+enum HiveDeterministicSort {
+    static func byName(_ lhs: HiveToolDefinition, _ rhs: HiveToolDefinition) -> Bool {
+        lhs.name.utf8.lexicographicallyPrecedes(rhs.name.utf8)
+    }
+
+    static func toolCalls(_ lhs: HiveToolCall, _ rhs: HiveToolCall) -> Bool {
+        if lhs.name == rhs.name {
+            return lhs.id.utf8.lexicographicallyPrecedes(rhs.id.utf8)
+        }
+        return lhs.name.utf8.lexicographicallyPrecedes(rhs.name.utf8)
+    }
+
+    static func strings(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.utf8.lexicographicallyPrecedes(rhs.utf8)
+    }
 }
 
 private extension UUID {

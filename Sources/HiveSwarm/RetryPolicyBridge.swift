@@ -67,7 +67,7 @@ public enum RetryPolicyBridge {
             )
 
         case .linear(let initial, _, let maxDelay):
-            // Approximate linear growth with 1.5x factor.
+            Log.agents.info("RetryPolicyBridge: linear backoff (step=\(0)) approximated as 1.5x exponential for Hive determinism.")
             return .exponentialBackoff(
                 initialNanoseconds: secondsToNanoseconds(initial),
                 factor: 1.5,
@@ -84,8 +84,7 @@ public enum RetryPolicyBridge {
             )
 
         case .custom:
-            // Custom closures can't be represented in Hive's deterministic model.
-            // Fall back to sensible defaults.
+            Log.agents.warning("Custom retry policy cannot be represented in Hive's deterministic model; using default exponential backoff (1s base, 2x factor, 60s max).")
             return .exponentialBackoff(
                 initialNanoseconds: 1_000_000_000,
                 factor: 2.0,

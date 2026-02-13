@@ -402,37 +402,9 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
 
         var result: [String: SendableValue] = [:]
         for (key, value) in json {
-            result[key] = convertToSendableValue(value)
+            result[key] = SendableValue.fromJSONValue(value)
         }
         return result
-    }
-
-    /// Converts a JSON-deserialized value to `SendableValue`.
-    private func convertToSendableValue(_ value: Any) -> SendableValue {
-        switch value {
-        case let string as String:
-            return .string(string)
-        case let number as NSNumber:
-            if CFBooleanGetTypeID() == CFGetTypeID(number) {
-                return .bool(number.boolValue)
-            }
-            if number.doubleValue == Double(number.intValue) {
-                return .int(number.intValue)
-            }
-            return .double(number.doubleValue)
-        case let array as [Any]:
-            return .array(array.map { convertToSendableValue($0) })
-        case let dict as [String: Any]:
-            var mapped: [String: SendableValue] = [:]
-            for (k, v) in dict {
-                mapped[k] = convertToSendableValue(v)
-            }
-            return .dictionary(mapped)
-        case is NSNull:
-            return .null
-        default:
-            return .string(String(describing: value))
-        }
     }
 
     /// Maps a `HiveRuntimeError` to an appropriate `AgentError`.

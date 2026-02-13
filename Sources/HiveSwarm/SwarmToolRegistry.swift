@@ -205,7 +205,7 @@ extension SwarmToolRegistry {
 }
 
 extension SendableValue {
-    fileprivate func toJSONObject() -> Any {
+    func toJSONObject() -> Any {
         switch self {
         case .null:
             return NSNull()
