@@ -87,10 +87,14 @@ public struct HiveCompactionPolicy: Sendable {
     public let preserveLastMessages: Int
 
     public init(maxTokens: Int, preserveLastMessages: Int) {
-        precondition(maxTokens >= 1, "maxTokens must be >= 1")
-        precondition(preserveLastMessages >= 0, "preserveLastMessages must be >= 0")
-        self.maxTokens = maxTokens
-        self.preserveLastMessages = preserveLastMessages
+        if maxTokens < 1 {
+            Log.agents.warning("HiveCompactionPolicy: maxTokens must be >= 1, got \(maxTokens). Clamping to 1.")
+        }
+        if preserveLastMessages < 0 {
+            Log.agents.warning("HiveCompactionPolicy: preserveLastMessages must be >= 0, got \(preserveLastMessages). Clamping to 0.")
+        }
+        self.maxTokens = max(1, maxTokens)
+        self.preserveLastMessages = max(0, preserveLastMessages)
     }
 }
 
