@@ -238,6 +238,71 @@ public actor Agent: AgentRuntime {
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+        let runID = UUID()
+        let task = Task { [self] in
+            try await runInternal(input, session: session, hooks: hooks)
+        }
+        currentTask = task
+        currentRunID = runID
+        defer {
+            if currentRunID == runID {
+                currentTask = nil
+                currentRunID = nil
+            }
+        }
+
+        do {
+            return try await withTaskCancellationHandler(
+                operation: {
+                    try await task.value
+                },
+                onCancel: {
+                    task.cancel()
+                }
+            )
+        } catch is CancellationError {
+            task.cancel()
+            throw AgentError.cancelled
+        }
+    }
+
+    /// Streams the agent's execution, yielding events as they occur.
+    /// - Parameters:
+    ///   - input: The user's input/query.
+    ///   - session: Optional session for conversation history management.
+    ///   - hooks: Optional run hooks for observing agent execution events.
+    /// - Returns: An async stream of agent events.
+    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+        StreamHelper.makeTrackedStream(for: self) { agent, continuation in
+            // Create event bridge hooks
+            let streamHooks = EventStreamHooks(continuation: continuation)
+
+            // Combine with user-provided hooks
+            let combinedHooks: any RunHooks = if let userHooks = hooks {
+                CompositeRunHooks(hooks: [userHooks, streamHooks])
+            } else {
+                streamHooks
+            }
+
+            do {
+                _ = try await agent.run(input, session: session, hooks: combinedHooks)
+                continuation.finish()
+            } catch {
+                // Error is handled by EventStreamHooks.onError
+                continuation.finish(throwing: error)
+            }
+        }
+    }
+
+    /// Cancels any ongoing execution.
+    public func cancel() async {
+        isCancelled = true
+        currentTask?.cancel()
+    }
+
+    // MARK: Private
+
+    private func runInternal(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
@@ -326,52 +391,16 @@ public actor Agent: AgentRuntime {
             }
             return result
         } catch {
+            let normalizedError = normalizeCancellation(error)
             // Notify hooks of error
-            await hooks?.onError(context: nil, agent: self, error: error)
-            await tracing.traceError(error)
+            await hooks?.onError(context: nil, agent: self, error: normalizedError)
+            await tracing.traceError(normalizedError)
             if let lifecycleMemory {
                 await lifecycleMemory.endMemorySession()
             }
-            throw error
+            throw normalizedError
         }
     }
-
-    /// Streams the agent's execution, yielding events as they occur.
-    /// - Parameters:
-    ///   - input: The user's input/query.
-    ///   - session: Optional session for conversation history management.
-    ///   - hooks: Optional run hooks for observing agent execution events.
-    /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
-        StreamHelper.makeTrackedStream(for: self) { agent, continuation in
-            // Create event bridge hooks
-            let streamHooks = EventStreamHooks(continuation: continuation)
-
-            // Combine with user-provided hooks
-            let combinedHooks: any RunHooks = if let userHooks = hooks {
-                CompositeRunHooks(hooks: [userHooks, streamHooks])
-            } else {
-                streamHooks
-            }
-
-            do {
-                _ = try await agent.run(input, session: session, hooks: combinedHooks)
-                continuation.finish()
-            } catch {
-                // Error is handled by EventStreamHooks.onError
-                continuation.finish(throwing: error)
-            }
-        }
-    }
-
-    /// Cancels any ongoing execution.
-    public func cancel() async {
-        isCancelled = true
-        currentTask?.cancel()
-        currentTask = nil
-    }
-
-    // MARK: Private
 
     // MARK: - Conversation History
 
@@ -400,7 +429,8 @@ public actor Agent: AgentRuntime {
     // MARK: - Internal State
 
     private var isCancelled: Bool = false
-    private var currentTask: Task<Void, Never>?
+    private var currentTask: Task<AgentResult, Error>?
+    private var currentRunID: UUID?
     private let toolRegistry: ToolRegistry
 
     // MARK: - Inference Provider Resolution
@@ -466,62 +496,71 @@ public actor Agent: AgentRuntime {
             _ = resultBuilder.incrementIteration()
             await hooks?.onIterationStart(context: nil, agent: self, number: iteration)
 
-            try checkCancellationAndTimeout(startTime: startTime)
+            do {
+                try checkCancellationAndTimeout(startTime: startTime)
 
-            let prompt = buildPrompt(from: conversationHistory)
-            let toolSchemas = await buildToolSchemasWithHandoffs()
+                let prompt = buildPrompt(from: conversationHistory)
+                let toolSchemas = await buildToolSchemasWithHandoffs()
 
-            // If no tools defined, generate without tool calling
-            if toolSchemas.isEmpty {
-                return try await generateWithoutTools(
-                    provider: provider,
-                    prompt: prompt,
-                    systemPrompt: systemMessage,
-                    enableStreaming: enableStreaming,
-                    hooks: hooks
-                )
-            }
-
-            // Generate response with tool calls
-            let response = if useToolStreaming, let provider = toolStreamingProvider {
-                try await generateWithToolsStreaming(
-                    provider: provider,
-                    prompt: prompt,
-                    tools: toolSchemas,
-                    systemPrompt: systemMessage,
-                    hooks: hooks
-                )
-            } else {
-                try await generateWithTools(
-                    provider: provider,
-                    prompt: prompt,
-                    tools: toolSchemas,
-                    systemPrompt: systemMessage,
-                    hooks: hooks,
-                    emitOutputTokens: enableStreaming
-                )
-            }
-
-            if response.hasToolCalls {
-                let handoffResult = try await processToolCallsWithHandoffs(
-                    response: response,
-                    conversationHistory: &conversationHistory,
-                    resultBuilder: resultBuilder,
-                    hooks: hooks,
-                    tracing: tracing
-                )
-                // If a handoff occurred, return the target agent's result
-                if let handoffOutput = handoffResult {
-                    return handoffOutput
+                // If no tools defined, generate without tool calling
+                if toolSchemas.isEmpty {
+                    let output = try await generateWithoutTools(
+                        provider: provider,
+                        prompt: prompt,
+                        systemPrompt: systemMessage,
+                        enableStreaming: enableStreaming,
+                        hooks: hooks
+                    )
+                    await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
+                    return output
                 }
-            } else {
-                guard let content = response.content else {
-                    throw AgentError.generationFailed(reason: "Model returned no content or tool calls")
-                }
-                return content
-            }
 
-            await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
+                // Generate response with tool calls
+                let response = if useToolStreaming, let provider = toolStreamingProvider {
+                    try await generateWithToolsStreaming(
+                        provider: provider,
+                        prompt: prompt,
+                        tools: toolSchemas,
+                        systemPrompt: systemMessage,
+                        hooks: hooks
+                    )
+                } else {
+                    try await generateWithTools(
+                        provider: provider,
+                        prompt: prompt,
+                        tools: toolSchemas,
+                        systemPrompt: systemMessage,
+                        hooks: hooks,
+                        emitOutputTokens: enableStreaming
+                    )
+                }
+
+                if response.hasToolCalls {
+                    let handoffResult = try await processToolCallsWithHandoffs(
+                        response: response,
+                        conversationHistory: &conversationHistory,
+                        resultBuilder: resultBuilder,
+                        hooks: hooks,
+                        tracing: tracing
+                    )
+                    // If a handoff occurred, return the target agent's result
+                    if let handoffOutput = handoffResult {
+                        await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
+                        return handoffOutput
+                    }
+                } else {
+                    guard let content = response.content else {
+                        throw AgentError.generationFailed(reason: "Model returned no content or tool calls")
+                    }
+                    await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
+                    return content
+                }
+
+                await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
+            } catch {
+                await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
+                throw normalizeCancellation(error)
+            }
         }
 
         throw AgentError.maxIterationsExceeded(iterations: iteration)
@@ -552,13 +591,29 @@ public actor Agent: AgentRuntime {
 
     /// Checks for cancellation and timeout conditions.
     private func checkCancellationAndTimeout(startTime: ContinuousClock.Instant) throws {
-        try Task.checkCancellation()
-        if isCancelled { throw AgentError.cancelled }
+        if isCancelled {
+            throw AgentError.cancelled
+        }
+        do {
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            throw AgentError.cancelled
+        }
 
         let elapsed = ContinuousClock.now - startTime
         if elapsed > configuration.timeout {
             throw AgentError.timeout(duration: configuration.timeout)
         }
+    }
+
+    private func normalizeCancellation(_ error: Error) -> Error {
+        if error is CancellationError {
+            return AgentError.cancelled
+        }
+        if let agentError = error as? AgentError, agentError == .cancelled {
+            return agentError
+        }
+        return error
     }
 
     /// Generates a response without tool calling.
