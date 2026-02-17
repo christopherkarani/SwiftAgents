@@ -1004,10 +1004,7 @@ public actor SupervisorAgent: AgentRuntime {
     /// - Returns: The matching handoff configuration, or nil if none found.
     private func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
         _handoffs.first { config in
-            // Match by type - compare the target agent's type
-            let configTargetType = type(of: config.targetAgent)
-            let currentType = type(of: targetAgent)
-            return configTargetType == currentType
+            areSameRuntime(config.targetAgent, targetAgent)
         }
     }
 }
