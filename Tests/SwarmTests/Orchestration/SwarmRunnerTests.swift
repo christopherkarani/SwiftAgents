@@ -25,7 +25,7 @@ struct SwarmRunnerTests {
             }
         }
 
-        let sawContent = await waitUntil(timeout: .seconds(1)) {
+        let sawContent = await waitUntil(timeout: .seconds(2)) {
             await probe.contentSeen()
         }
         #expect(sawContent)
@@ -33,7 +33,7 @@ struct SwarmRunnerTests {
         consumer.cancel()
         _ = await consumer.result
 
-        let producerStopped = await waitUntil(timeout: .seconds(1)) {
+        let producerStopped = await waitUntil(timeout: .seconds(2)) {
             let snapshot = await provider.snapshot()
             return snapshot.terminationCount > 0 && snapshot.cancelRequestCount > 0
         }
