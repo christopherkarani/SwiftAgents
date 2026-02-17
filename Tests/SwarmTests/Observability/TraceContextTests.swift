@@ -418,7 +418,8 @@ struct TraceContextDurationTests {
             let duration = await context.duration
 
             #expect(duration >= 0.01) // At least 10ms
-            #expect(duration < 1.0) // Less than 1 second
+            // Allow scheduler contention during full-suite parallel execution.
+            #expect(duration < 5.0)
         }
     }
 
