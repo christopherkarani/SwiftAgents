@@ -81,8 +81,11 @@ public actor ChatAgent: AgentRuntime {
 
             // Store session history + user message in memory (if configured)
             if let mem = activeMemory {
-                for msg in sessionHistory {
-                    await mem.add(msg)
+                // Seed session history only once for a fresh memory instance.
+                if session != nil, await mem.isEmpty, !sessionHistory.isEmpty {
+                    for msg in sessionHistory {
+                        await mem.add(msg)
+                    }
                 }
                 await mem.add(.user(input))
             }
