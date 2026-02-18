@@ -295,23 +295,9 @@ struct OrchestrationTests {
         #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
     }
 
-    @Test("Orchestration runtimeMode.swift remains source-compatible and executes on Hive")
-    func orchestrationRuntimeModeSwiftExecutesOnHive() async throws {
-        let workflow = Orchestration(
-            configuration: AgentConfiguration(runtimeMode: .swift)
-        ) {
-            Transform { $0 }
-        }
-
-        let result = try await workflow.run("ping")
-        #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
-    }
-
-    @Test("Orchestration runtimeMode.requireHive executes on Hive")
-    func orchestrationRuntimeModeRequireHiveExecutesOnHive() async throws {
-        let workflow = Orchestration(
-            configuration: AgentConfiguration(runtimeMode: .requireHive)
-        ) {
+    @Test("Orchestration executes on Hive runtime")
+    func orchestrationExecutesOnHiveRuntime() async throws {
+        let workflow = Orchestration {
             Transform { $0 }
         }
 
@@ -323,7 +309,6 @@ struct OrchestrationTests {
     func orchestrationHiveRunOptionsOverridePassesThrough() async throws {
         let workflow = Orchestration(
             configuration: AgentConfiguration(
-                runtimeMode: .hive,
                 hiveRunOptionsOverride: .init(maxSteps: 1)
             )
         ) {

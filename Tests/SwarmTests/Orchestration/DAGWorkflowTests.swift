@@ -20,13 +20,8 @@ struct DAGWorkflowTests {
     func emptyDAGThrows() async {
         let dag = DAG { }
 
-        do {
+        await #expect(throws: OrchestrationError.self) {
             _ = try await dag.execute("input", hooks: nil)
-            #expect(false, "Expected empty DAG to throw")
-        } catch let error as DAGValidationError {
-            #expect(error == .emptyGraph)
-        } catch {
-            #expect(false, "Unexpected error: \(error)")
         }
     }
 
@@ -40,14 +35,17 @@ struct DAGWorkflowTests {
         do {
             _ = try await dag.execute("input", hooks: nil)
             #expect(false, "Expected missing dependency to throw")
-        } catch let error as DAGValidationError {
-            switch error {
-            case let .missingDependency(node, dependency, _):
-                #expect(node == "a")
-                #expect(dependency == "missing")
-            default:
-                #expect(false, "Unexpected DAGValidationError: \(error)")
+        } catch let error as OrchestrationError {
+            guard case let .invalidGraph(validationError) = error else {
+                Issue.record("Expected invalidGraph, got \(error)")
+                return
             }
+            guard case let .unknownDependency(node, dependency, _) = validationError else {
+                Issue.record("Expected unknownDependency, got \(validationError)")
+                return
+            }
+            #expect(node == "a")
+            #expect(dependency == "missing")
         } catch {
             #expect(false, "Unexpected error: \(error)")
         }
@@ -65,14 +63,17 @@ struct DAGWorkflowTests {
         do {
             _ = try await dag.execute("input", hooks: nil)
             #expect(false, "Expected cycle to throw")
-        } catch let error as DAGValidationError {
-            switch error {
-            case let .cycleDetected(nodes):
-                #expect(nodes.contains("a"))
-                #expect(nodes.contains("b"))
-            default:
-                #expect(false, "Unexpected DAGValidationError: \(error)")
+        } catch let error as OrchestrationError {
+            guard case let .invalidGraph(validationError) = error else {
+                Issue.record("Expected invalidGraph, got \(error)")
+                return
             }
+            guard case let .cycleDetected(nodes) = validationError else {
+                Issue.record("Expected cycleDetected, got \(validationError)")
+                return
+            }
+            #expect(nodes.contains("a"))
+            #expect(nodes.contains("b"))
         } catch {
             #expect(false, "Unexpected error: \(error)")
         }

@@ -380,6 +380,7 @@ public actor Agent: AgentRuntime {
                 await mem.add(.assistant(output))
             }
 
+            _ = resultBuilder.setMetadata(RuntimeMetadata.runtimeEngineKey, .string(RuntimeMetadata.hiveRuntimeEngineName))
             let result = resultBuilder.build()
             await tracing.traceComplete(result: result)
 
@@ -475,7 +476,7 @@ public actor Agent: AgentRuntime {
         let activeMemory = memory ?? AgentEnvironmentValues.current.memory
         var memoryContext = ""
         if let mem = activeMemory {
-            let tokenLimit = configuration.contextProfile.memoryTokenLimit
+            let tokenLimit = configuration.effectiveContextProfile.memoryTokenLimit
             memoryContext = await mem.context(for: input, tokenLimit: tokenLimit)
         }
 
@@ -499,7 +500,10 @@ public actor Agent: AgentRuntime {
             do {
                 try checkCancellationAndTimeout(startTime: startTime)
 
-                let prompt = buildPrompt(from: conversationHistory)
+                let prompt = PromptEnvelope.enforce(
+                    prompt: buildPrompt(from: conversationHistory),
+                    profile: configuration.effectiveContextProfile
+                )
                 let toolSchemas = await buildToolSchemasWithHandoffs()
 
                 // If no tools defined, generate without tool calling

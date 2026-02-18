@@ -126,10 +126,7 @@ public struct DAG: OrchestrationStep, Sendable {
 
     /// Creates a new DAG workflow from a builder closure.
     ///
-    /// Validates the graph structure at construction time. If the graph contains
-    /// cycles or references missing dependencies, the error is stored and thrown
-    /// when ``execute(_:context:)`` is first called, allowing callers to handle
-    /// misconfigured DAGs gracefully.
+    /// Validates the graph structure at construction time.
     ///
     /// - Parameter content: A builder closure producing DAG nodes.
     public init(@DAGBuilder _ content: () -> [DAGNode]) {
@@ -142,20 +139,25 @@ public struct DAG: OrchestrationStep, Sendable {
 
     /// Internal initializer for testing with pre-validated nodes.
     init(validatedNodes: [DAGNode]) {
-        self.nodes = validatedNodes
         self.validationError = nil
+        self.nodes = validatedNodes
         self.sortedNodes = DAG.topologicalSort(validatedNodes)
     }
 
     // MARK: - Validation
 
     /// Validates that the DAG has no missing dependencies and no cycles.
-    ///
-    /// Returns a tuple of the validation error (if any) and the topologically sorted nodes.
-    /// The sorted nodes are only populated when there is no error.
     private static func validate(_ nodes: [DAGNode]) -> (error: DAGValidationError?, sorted: [DAGNode]) {
         guard !nodes.isEmpty else {
             return (.emptyGraph, [])
+        }
+
+        var seenNames = Set<String>()
+        for node in nodes {
+            let inserted = seenNames.insert(node.name).inserted
+            if !inserted {
+                return (.duplicateNode(name: node.name), [])
+            }
         }
 
         let nodeNames = Set(nodes.map(\.name))
@@ -165,10 +167,10 @@ public struct DAG: OrchestrationStep, Sendable {
             for dep in node.dependencies {
                 if !nodeNames.contains(dep) {
                     return (
-                        .missingDependency(
+                        .unknownDependency(
                             node: node.name,
                             dependency: dep,
-                            available: nodeNames.sorted()
+                            availableNodes: nodeNames.sorted()
                         ),
                         []
                     )
@@ -228,7 +230,7 @@ public struct DAG: OrchestrationStep, Sendable {
 
     public func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
         if let validationError {
-            throw validationError
+            throw OrchestrationError.invalidGraph(validationError)
         }
 
         let startTime = ContinuousClock.now
@@ -390,28 +392,7 @@ public struct DAG: OrchestrationStep, Sendable {
 
 // MARK: - DAGValidationError
 
-public enum DAGValidationError: Error, Sendable, Equatable {
-    case emptyGraph
-    case missingDependency(node: String, dependency: String, available: [String])
-    case cycleDetected(nodes: [String])
-}
-
-extension DAGValidationError: CustomStringConvertible {
-    public var description: String {
-        switch self {
-        case .emptyGraph:
-            return "DAG must contain at least one node."
-        case let .missingDependency(node, dependency, available):
-            return "DAG node '\(node)' depends on unknown node '\(dependency)'. Available nodes: \(available.joined(separator: ", "))"
-        case let .cycleDetected(nodes):
-            return "Cycle detected in DAG involving nodes: \(nodes.joined(separator: ", "))"
-        }
-    }
-}
-
-extension DAGValidationError: LocalizedError {
-    public var errorDescription: String? { description }
-}
+public typealias DAGValidationError = OrchestrationValidationError
 
 // MARK: - DAGExecutionState
 
