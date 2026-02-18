@@ -46,6 +46,9 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
     /// The current cancellation task handle (actor-isolated for safe mutation).
     private let cancellation: CancellationController
 
+    /// Optional model router for model-aware runtime initialization.
+    private let modelRouter: (any HiveModelRouter)?
+
     // MARK: - AgentRuntime Properties
 
     nonisolated public let tools: [any AnyJSONTool]
@@ -71,11 +74,13 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         instructions: String = "",
         threadID: HiveThreadID = HiveThreadID(UUID().uuidString),
         runOptions: HiveRunOptions = HiveRunOptions(maxSteps: 20, checkpointPolicy: .disabled),
+        modelRouter: (any HiveModelRouter)? = nil,
         configuration: AgentConfiguration? = nil
     ) {
         self.runtime = runtime
         self.threadID = threadID
         self.runOptions = runOptions
+        self.modelRouter = modelRouter
         self.instructions = instructions
         self.cancellation = CancellationController()
         tools = []
