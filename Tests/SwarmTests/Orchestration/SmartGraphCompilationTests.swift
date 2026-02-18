@@ -134,9 +134,7 @@ struct SmartGraphCompilationIntegrationTests {
 
     @Test("Sequential workflow produces chain graph")
     func sequentialWorkflowProducesChainGraph() async throws {
-        let workflow = Orchestration(
-            configuration: AgentConfiguration(runtimeMode: .hive)
-        ) {
+        let workflow = Orchestration {
             Transform { $0 + "1" }
             Transform { $0 + "2" }
             Transform { $0 + "3" }
@@ -149,9 +147,7 @@ struct SmartGraphCompilationIntegrationTests {
 
     @Test("Parallel workflow uses computed maxConcurrentTasks > 1")
     func parallelWorkflowUsesComputedConcurrency() async throws {
-        let workflow = Orchestration(
-            configuration: AgentConfiguration(runtimeMode: .hive)
-        ) {
+        let workflow = Orchestration {
             Parallel(merge: .concatenate) {
                 PrefixAgent(prefix: "A:").named("a")
                 PrefixAgent(prefix: "B:").named("b")
@@ -172,9 +168,7 @@ struct SmartGraphCompilationIntegrationTests {
 
     @Test("Parallel workflow with structured merge preserves order")
     func parallelStructuredMergePreservesOrder() async throws {
-        let workflow = Orchestration(
-            configuration: AgentConfiguration(runtimeMode: .hive)
-        ) {
+        let workflow = Orchestration {
             Parallel(merge: .structured) {
                 PrefixAgent(prefix: "first:").named("first")
                 PrefixAgent(prefix: "second:").named("second")
@@ -195,9 +189,7 @@ struct SmartGraphCompilationIntegrationTests {
 
     @Test("Router workflow uses Hive conditional routing")
     func routerWorkflowUsesHiveRouting() async throws {
-        let workflow = Orchestration(
-            configuration: AgentConfiguration(runtimeMode: .hive)
-        ) {
+        let workflow = Orchestration {
             Router {
                 When(.contains("code")) {
                     PrefixAgent(prefix: "CODE:")
@@ -224,9 +216,7 @@ struct SmartGraphCompilationIntegrationTests {
 
     @Test("Nested Parallel inside Sequential compiles correctly")
     func nestedParallelInsideSequential() async throws {
-        let workflow = Orchestration(
-            configuration: AgentConfiguration(runtimeMode: .hive)
-        ) {
+        let workflow = Orchestration {
             Sequential {
                 Transform { "processed: \($0)" }
                 Parallel(merge: .concatenate) {
@@ -248,7 +238,6 @@ struct SmartGraphCompilationIntegrationTests {
     func maxConcurrentTasksOverrideRespected() async throws {
         let workflow = Orchestration(
             configuration: AgentConfiguration(
-                runtimeMode: .hive,
                 hiveRunOptionsOverride: SwarmHiveRunOptionsOverride(maxConcurrentTasks: 1)
             )
         ) {

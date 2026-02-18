@@ -275,6 +275,7 @@ public actor ReActAgent: AgentRuntime {
                 await mem.add(.assistant(output))
             }
 
+            _ = resultBuilder.setMetadata(RuntimeMetadata.runtimeEngineKey, .string(RuntimeMetadata.hiveRuntimeEngineName))
             let result = resultBuilder.build()
             await tracing.traceComplete(result: result)
             await hooks?.onAgentEnd(context: nil, agent: self, result: result)
@@ -321,7 +322,7 @@ public actor ReActAgent: AgentRuntime {
         var memoryContext = ""
         if let mem = memory ?? AgentEnvironmentValues.current.memory {
             // Use a reasonable token limit for context (configurable via maxTokens or default)
-            let tokenLimit = configuration.contextProfile.memoryTokenLimit
+            let tokenLimit = configuration.effectiveContextProfile.memoryTokenLimit
             memoryContext = await mem.context(for: input, tokenLimit: tokenLimit)
         }
 
@@ -347,12 +348,15 @@ public actor ReActAgent: AgentRuntime {
                 }
 
                 // Step 1: Build prompt with current context (including memory context)
-                let prompt = buildPrompt(
-                    input: input,
-                    sessionHistory: sessionHistory,
-                    scratchpad: scratchpad,
-                    iteration: iteration,
-                    memoryContext: memoryContext
+                let prompt = PromptEnvelope.enforce(
+                    prompt: buildPrompt(
+                        input: input,
+                        sessionHistory: sessionHistory,
+                        scratchpad: scratchpad,
+                        iteration: iteration,
+                        memoryContext: memoryContext
+                    ),
+                    profile: configuration.effectiveContextProfile
                 )
 
                 // Step 2: Generate response from model

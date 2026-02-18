@@ -49,6 +49,9 @@ public enum OrchestrationError: Error, Sendable, Equatable {
     /// Workflow was interrupted (e.g. by an `Interrupt` step).
     case workflowInterrupted(reason: String)
 
+    /// User-configurable orchestration graph failed validation.
+    case invalidGraph(OrchestrationValidationError)
+
     /// Human approval request timed out.
     case humanApprovalTimeout(prompt: String)
 
@@ -82,6 +85,8 @@ extension OrchestrationError: LocalizedError {
             return "Hive runtime unavailable: \(reason)"
         case let .workflowInterrupted(reason):
             return "Workflow interrupted: \(reason)"
+        case let .invalidGraph(validationError):
+            return "Invalid orchestration graph: \(validationError.localizedDescription)"
         case let .humanApprovalTimeout(prompt):
             return "Human approval timed out for: \(prompt)"
         case let .humanApprovalRejected(prompt, reason):
@@ -115,6 +120,8 @@ extension OrchestrationError: CustomDebugStringConvertible {
             return "OrchestrationError.hiveRuntimeUnavailable(reason: \(reason))"
         case let .workflowInterrupted(reason):
             return "OrchestrationError.workflowInterrupted(reason: \(reason))"
+        case let .invalidGraph(validationError):
+            return "OrchestrationError.invalidGraph(\(validationError))"
         case let .humanApprovalTimeout(prompt):
             return "OrchestrationError.humanApprovalTimeout(prompt: \(prompt))"
         case let .humanApprovalRejected(prompt, reason):
