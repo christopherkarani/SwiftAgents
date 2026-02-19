@@ -167,6 +167,239 @@ struct HiveSwarmEnhancementTasksTests {
         #expect(result.toolResults.contains { $0.isSuccess })
         #expect(await flakyBackend.invocationCount == 2)
     }
+
+    @Test("Cache telemetry metadata is attached to HiveBackedAgent results")
+    func cacheTelemetryMetadataIsPresent() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(
+            modelName: "test-model",
+            toolApprovalPolicy: .never
+        )
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(
+                ScriptedModelClient(
+                    script: ModelScript(
+                        chunksByInvocation: [
+                            [.final(HiveChatResponse(message: message(id: "m-cache", role: .assistant, content: "ok")))]
+                        ]
+                    )
+                )
+            ),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
+            checkpointStore: nil
+        )
+
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let hiveRuntime = HiveAgentsRuntime(runControl: HiveAgentsRunController(runtime: runtime))
+        let agent = HiveBackedAgent(
+            runtime: hiveRuntime,
+            name: "bridge",
+            threadID: HiveThreadID("cache-telemetry"),
+            runOptions: HiveRunOptions(maxSteps: 5, checkpointPolicy: .disabled)
+        )
+
+        let result = try await agent.run("hello")
+        #expect((result.metadata["hive.cache.model.task_starts"]?.intValue ?? 0) >= 1)
+        #expect((result.metadata["hive.cache.model.misses"]?.intValue ?? 0) >= 1)
+        #expect((result.metadata["hive.cache.preModel.task_starts"]?.intValue ?? 0) >= 1)
+        #expect(result.metadata["hive.cache.model.enabled"]?.boolValue == true)
+        #expect(result.metadata["hive.cache.preModel.enabled"]?.boolValue == true)
+    }
+
+    @Test("Replay and checkpoint diff APIs expose deterministic debugging views")
+    func replayAndCheckpointDiffAPIs() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let checkpointStore = QueryableCheckpointStore<HiveAgents.Schema>()
+        let context = HiveAgentsContext(
+            modelName: "test-model",
+            toolApprovalPolicy: .never
+        )
+
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(ScriptedModelClient(script: ModelScript(chunksByInvocation: [
+                [.final(HiveChatResponse(message: message(
+                    id: "m-r1",
+                    role: .assistant,
+                    content: "",
+                    toolCalls: [HiveToolCall(id: "c-r1", name: "calc", argumentsJSON: "{}")]
+                )))],
+                [.final(HiveChatResponse(message: message(id: "m-r2", role: .assistant, content: "done")))],
+                [.final(HiveChatResponse(message: message(id: "m-r3", role: .assistant, content: "done")))],
+            ]))),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
+            checkpointStore: AnyHiveCheckpointStore(checkpointStore)
+        )
+
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let hiveRuntime = HiveAgentsRuntime(runControl: HiveAgentsRunController(runtime: runtime))
+        let agent = HiveBackedAgent(
+            runtime: hiveRuntime,
+            name: "bridge",
+            threadID: HiveThreadID("replay-state"),
+            runOptions: HiveRunOptions(maxSteps: 20, checkpointPolicy: .everyStep)
+        )
+
+        let runResult = try await agent.run("run with checkpoints")
+        #expect(runResult.output == "done")
+
+        let history = try await agent.checkpointHistory()
+        #expect(history.count >= 2)
+
+        let first = try #require(history.first)
+        let last = try #require(history.last)
+        let diff = try #require(
+            try await agent.diffCheckpoints(from: first.id, to: last.id)
+        )
+        #expect(diff.stepDelta >= 0)
+        #expect(diff.changedChannelIDs.contains("messages"))
+
+        let replay = try await agent.replayFromCheckpoint(
+            checkpointID: first.id,
+            into: "replay-state:fork"
+        )
+        #expect(replay.output == "done")
+    }
+
+    @Test("Per-node retry policies and tool circuit breaker protect the loop")
+    func perNodeRetryAndCircuitBreaker() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+
+        let modelBackend = FlakyModelBackend(
+            message: message(id: "m-model-retry", role: .assistant, content: "model recovered"),
+            failFirst: true
+        )
+        let modelRetryContext = HiveAgentsContext(
+            modelName: "test-model",
+            toolApprovalPolicy: .never,
+            retryPolicy: nil,
+            modelRetryPolicy: .exponentialBackoff(
+                initialNanoseconds: 0,
+                factor: 1.0,
+                maxAttempts: 2,
+                maxNanoseconds: 0
+            ),
+            toolRetryPolicy: nil,
+            maxForkRetries: 0
+        )
+
+        let modelRetryRuntime = try HiveRuntime(
+            graph: graph,
+            environment: HiveEnvironment<HiveAgents.Schema>(
+                context: modelRetryContext,
+                clock: NoopClock(),
+                logger: NoopLogger(),
+                model: AnyHiveModelClient(FlakyModelClient(backend: modelBackend)),
+                modelRouter: nil,
+                tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
+                checkpointStore: nil
+            )
+        )
+        let modelRetryAgent = HiveBackedAgent(
+            runtime: HiveAgentsRuntime(runControl: HiveAgentsRunController(runtime: modelRetryRuntime)),
+            name: "model-retry",
+            threadID: HiveThreadID("model-retry-thread"),
+            runOptions: HiveRunOptions(maxSteps: 5, checkpointPolicy: .disabled)
+        )
+
+        let modelRetryResult = try await modelRetryAgent.run("model retry")
+        #expect(modelRetryResult.output == "model recovered")
+        #expect(await modelBackend.invocationCount == 2)
+
+        let toolBackend = FlakyToolBackend()
+        let toolRetryContext = HiveAgentsContext(
+            modelName: "test-model",
+            toolApprovalPolicy: .never,
+            retryPolicy: nil,
+            modelRetryPolicy: nil,
+            toolRetryPolicy: .exponentialBackoff(
+                initialNanoseconds: 0,
+                factor: 1.0,
+                maxAttempts: 2,
+                maxNanoseconds: 0
+            ),
+            maxForkRetries: 0
+        )
+
+        let toolRetryRuntime = try HiveRuntime(
+            graph: graph,
+            environment: HiveEnvironment<HiveAgents.Schema>(
+                context: toolRetryContext,
+                clock: NoopClock(),
+                logger: NoopLogger(),
+                model: AnyHiveModelClient(ScriptedModelClient(script: ModelScript(chunksByInvocation: [
+                    [.final(HiveChatResponse(message: message(
+                        id: "m-tool-r1",
+                        role: .assistant,
+                        content: "",
+                        toolCalls: [HiveToolCall(id: "c-tool-r1", name: "calc", argumentsJSON: "{}")]
+                    )))],
+                    [.final(HiveChatResponse(message: message(id: "m-tool-r2", role: .assistant, content: "tool recovered")))],
+                ]))),
+                modelRouter: nil,
+                tools: AnyHiveToolRegistry(FlakyToolRegistry(backend: toolBackend)),
+                checkpointStore: nil
+            )
+        )
+        let toolRetryAgent = HiveBackedAgent(
+            runtime: HiveAgentsRuntime(runControl: HiveAgentsRunController(runtime: toolRetryRuntime)),
+            name: "tool-retry",
+            threadID: HiveThreadID("tool-retry-thread"),
+            runOptions: HiveRunOptions(maxSteps: 20, checkpointPolicy: .disabled)
+        )
+
+        let toolRetryResult = try await toolRetryAgent.run("tool retry")
+        #expect(toolRetryResult.output == "tool recovered")
+        #expect(await toolBackend.invocationCount == 2)
+
+        let circuitRuntime = try HiveRuntime(
+            graph: graph,
+            environment: HiveEnvironment<HiveAgents.Schema>(
+                context: HiveAgentsContext(
+                    modelName: "test-model",
+                    toolApprovalPolicy: .never,
+                    retryPolicy: nil,
+                    modelRetryPolicy: nil,
+                    toolRetryPolicy: nil,
+                    toolCircuitBreakerPolicy: HiveToolCircuitBreakerPolicy(failureThreshold: 1, cooldownSteps: 2),
+                    maxForkRetries: 0
+                ),
+                clock: NoopClock(),
+                logger: NoopLogger(),
+                model: AnyHiveModelClient(ScriptedModelClient(script: ModelScript(chunksByInvocation: [
+                    [.final(HiveChatResponse(message: message(
+                        id: "m-circuit-1",
+                        role: .assistant,
+                        content: "",
+                        toolCalls: [HiveToolCall(id: "c-circuit", name: "calc", argumentsJSON: "{}")]
+                    )))],
+                    [.final(HiveChatResponse(message: message(id: "m-circuit-2", role: .assistant, content: "circuit fallback")))],
+                ]))),
+                modelRouter: nil,
+                tools: AnyHiveToolRegistry(AlwaysFailToolRegistry()),
+                checkpointStore: nil
+            )
+        )
+
+        let circuitAgent = HiveBackedAgent(
+            runtime: HiveAgentsRuntime(runControl: HiveAgentsRunController(runtime: circuitRuntime)),
+            name: "tool-circuit",
+            threadID: HiveThreadID("tool-circuit-thread"),
+            runOptions: HiveRunOptions(maxSteps: 20, checkpointPolicy: .disabled)
+        )
+        let circuitResult = try await circuitAgent.run("trip breaker")
+        #expect(circuitResult.output == "circuit fallback")
+
+        let state = try #require(try await circuitAgent.currentState())
+        #expect(state.messages.contains { $0.content.contains("circuit breaker") })
+    }
 }
 
 private func message(
@@ -258,6 +491,57 @@ private actor FlakyToolBackend {
     }
 }
 
+private actor FlakyModelBackend {
+    private let message: HiveChatMessage
+    private let failFirst: Bool
+    private var didFail = false
+    private(set) var invocationCount = 0
+
+    init(message: HiveChatMessage, failFirst: Bool) {
+        self.message = message
+        self.failFirst = failFirst
+    }
+
+    func nextChunks() throws -> [HiveChatStreamChunk] {
+        invocationCount += 1
+        if failFirst, !didFail {
+            didFail = true
+            throw TestFailure("intentional model failure")
+        }
+        return [.final(HiveChatResponse(message: message))]
+    }
+}
+
+private struct FlakyModelClient: HiveModelClient {
+    let backend: FlakyModelBackend
+
+    func complete(_: HiveChatRequest) async throws -> HiveChatResponse {
+        let chunks = try await backend.nextChunks()
+        for chunk in chunks {
+            if case let .final(response) = chunk {
+                return response
+            }
+        }
+        throw TestFailure("Missing final chunk.")
+    }
+
+    func stream(_: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let chunks = try await backend.nextChunks()
+                    for chunk in chunks {
+                        continuation.yield(chunk)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+}
+
 private struct FlakyToolRegistry: HiveToolRegistry, Sendable {
     let backend: FlakyToolBackend
 
@@ -273,6 +557,22 @@ private struct FlakyToolRegistry: HiveToolRegistry, Sendable {
 
     func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
         try await backend.invoke(call: call)
+    }
+}
+
+private struct AlwaysFailToolRegistry: HiveToolRegistry, Sendable {
+    func listTools() -> [HiveToolDefinition] {
+        [
+            HiveToolDefinition(
+                name: "calc",
+                description: "calculator",
+                parametersJSONSchema: "{}"
+            )
+        ]
+    }
+
+    func invoke(_: HiveToolCall) async throws -> HiveToolResult {
+        throw TestFailure("always failing tool")
     }
 }
 

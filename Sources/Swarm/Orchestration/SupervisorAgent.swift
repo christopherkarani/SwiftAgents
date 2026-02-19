@@ -129,6 +129,23 @@ public struct RoutingDecision: Sendable, Equatable {
     }
 }
 
+// MARK: - SupervisorInterruptionPolicy
+
+/// Strategy used when a selected sub-agent is interrupted and waiting for external resume.
+public enum SupervisorInterruptionPolicy: Sendable, Equatable {
+    /// Preserve interruption semantics and bubble the sub-agent error.
+    case wait
+
+    /// Route to fallback immediately (if configured), otherwise bubble the error.
+    case fallback
+
+    /// Wait for interruption to resolve up to `timeout`, then route to fallback.
+    case timeoutThenFallback(timeout: Duration = .seconds(2), pollInterval: Duration = .milliseconds(100))
+
+    /// Start fallback immediately and prefer fallback output over waiting on resume.
+    case parallelRace(timeout: Duration = .seconds(2), pollInterval: Duration = .milliseconds(100))
+}
+
 // MARK: - LLMRoutingStrategy
 
 /// Routes requests using an LLM to analyze input and select the best agent.
@@ -511,6 +528,7 @@ public actor SupervisorAgent: AgentRuntime {
     ///   - instructions: Custom instructions. Default: auto-generated
     ///   - enableContextTracking: Track execution in AgentContext. Default: true
     ///   - handoffs: Handoff configurations for sub-agents. Default: []
+    ///   - interruptionPolicy: Behavior when selected sub-agent is interrupted. Default: `.wait`
     public init(
         agents: [(name: String, agent: any AgentRuntime, description: AgentDescription)],
         routingStrategy: any RoutingStrategy,
@@ -518,13 +536,15 @@ public actor SupervisorAgent: AgentRuntime {
         configuration: AgentConfiguration = .default,
         instructions: String? = nil,
         enableContextTracking: Bool = true,
-        handoffs: [AnyHandoffConfiguration] = []
+        handoffs: [AnyHandoffConfiguration] = [],
+        interruptionPolicy: SupervisorInterruptionPolicy = .wait
     ) {
         agentRegistry = agents
         self.routingStrategy = routingStrategy
         self.fallbackAgent = fallbackAgent
         self.configuration = configuration
         self.enableContextTracking = enableContextTracking
+        self.interruptionPolicy = interruptionPolicy
         _handoffs = handoffs
 
         // Generate instructions if not provided
@@ -545,13 +565,14 @@ public actor SupervisorAgent: AgentRuntime {
         let builder = AgentResult.Builder()
         builder.start()
         var dispatchedAgent: (any AgentRuntime)?
+        var dispatchedAgentName: String?
+        var dispatchedInput = input
+        var routingDecision: RoutingDecision?
+        let context: AgentContext? = enableContextTracking ? AgentContext(input: input) : nil
 
         do {
             // Get agent descriptions for routing
             let descriptions = agentRegistry.map(\.description)
-
-            // Create context if tracking is enabled
-            let context: AgentContext? = enableContextTracking ? AgentContext(input: input) : nil
 
             // Select the appropriate agent
             let decision = try await routingStrategy.selectAgent(
@@ -559,6 +580,7 @@ public actor SupervisorAgent: AgentRuntime {
                 from: descriptions,
                 context: context
             )
+            routingDecision = decision
 
             // Find the selected agent
             guard let selectedEntry = agentRegistry.first(where: { $0.name == decision.selectedAgentName }) else {
@@ -593,6 +615,8 @@ public actor SupervisorAgent: AgentRuntime {
 
             // Execute the selected agent with potentially modified input
             dispatchedAgent = selectedEntry.agent
+            dispatchedAgentName = selectedEntry.name
+            dispatchedInput = effectiveInput
             let result = try await selectedEntry.agent.run(effectiveInput, session: session, hooks: hooks)
 
             // Update context with result
@@ -614,6 +638,20 @@ public actor SupervisorAgent: AgentRuntime {
 
         } catch {
             if let dispatchedAgent, await isSubAgentInterrupted(dispatchedAgent) {
+                if let handled = try await handleInterruptedSubAgent(
+                    error,
+                    dispatchedAgent: dispatchedAgent,
+                    dispatchedAgentName: dispatchedAgentName,
+                    dispatchedInput: dispatchedInput,
+                    input: input,
+                    session: session,
+                    hooks: hooks,
+                    context: context,
+                    decision: routingDecision,
+                    builder: builder
+                ) {
+                    return handled
+                }
                 throw error
             }
             return try await handleRoutingError(
@@ -753,6 +791,17 @@ public actor SupervisorAgent: AgentRuntime {
                 continuation.finish()
             } catch {
                 if let dispatchedAgent, await actor.isSubAgentInterrupted(dispatchedAgent) {
+                    let handled = await actor.handleInterruptedStreamFallback(
+                        error: error,
+                        dispatchedAgent: dispatchedAgent,
+                        input: input,
+                        session: session,
+                        hooks: hooks,
+                        continuation: continuation
+                    )
+                    if handled {
+                        return
+                    }
                     let agentError = (error as? AgentError) ?? AgentError.internalError(reason: error.localizedDescription)
                     continuation.yield(.failed(error: agentError))
                     continuation.finish(throwing: agentError)
@@ -847,6 +896,9 @@ public actor SupervisorAgent: AgentRuntime {
 
     /// Whether to track execution in a shared context.
     private let enableContextTracking: Bool
+
+    /// How interruptions from selected sub-agents are handled.
+    private let interruptionPolicy: SupervisorInterruptionPolicy
 
     /// Handoff configurations for sub-agents.
     private let _handoffs: [AnyHandoffConfiguration]
@@ -962,6 +1014,262 @@ public actor SupervisorAgent: AgentRuntime {
         return builder.build()
     }
 
+    private func handleInterruptedSubAgent(
+        _ error: Error,
+        dispatchedAgent: any AgentRuntime,
+        dispatchedAgentName: String?,
+        dispatchedInput: String,
+        input: String,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        context: AgentContext?,
+        decision: RoutingDecision?,
+        builder: AgentResult.Builder
+    ) async throws -> AgentResult? {
+        switch interruptionPolicy {
+        case .wait:
+            return nil
+
+        case .fallback:
+            return try await handleFallback(
+                input: input,
+                session: session,
+                hooks: hooks,
+                context: context,
+                builder: builder,
+                reason: "selected_agent_interrupted"
+            )
+
+        case let .timeoutThenFallback(timeout, pollInterval):
+            let resolved = await waitForInterruptionResolution(
+                of: dispatchedAgent,
+                timeout: timeout,
+                pollInterval: pollInterval
+            )
+            if resolved {
+                let rerun = try await dispatchedAgent.run(dispatchedInput, session: session, hooks: hooks)
+                if let context {
+                    await context.setPreviousOutput(rerun)
+                }
+                if let decision {
+                    return buildResultFromExecution(
+                        decision: decision,
+                        subAgentResult: rerun,
+                        builder: builder
+                    )
+                }
+                builder.setOutput(rerun.output)
+                return builder.build()
+            }
+            return try await handleFallback(
+                input: input,
+                session: session,
+                hooks: hooks,
+                context: context,
+                builder: builder,
+                reason: "selected_agent_interrupted_timeout"
+            )
+
+        case let .parallelRace(timeout, pollInterval):
+            guard fallbackAgent != nil else {
+                return nil
+            }
+            return try await raceInterruptedAgentAgainstFallback(
+                dispatchedAgent: dispatchedAgent,
+                dispatchedAgentName: dispatchedAgentName,
+                dispatchedInput: dispatchedInput,
+                input: input,
+                session: session,
+                hooks: hooks,
+                context: context,
+                decision: decision,
+                timeout: timeout,
+                pollInterval: pollInterval,
+                builder: builder
+            )
+        }
+    }
+
+    private func raceInterruptedAgentAgainstFallback(
+        dispatchedAgent: any AgentRuntime,
+        dispatchedAgentName: String?,
+        dispatchedInput: String,
+        input: String,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        context: AgentContext?,
+        decision: RoutingDecision?,
+        timeout: Duration,
+        pollInterval: Duration,
+        builder: AgentResult.Builder
+    ) async throws -> AgentResult {
+        guard let fallback = fallbackAgent else {
+            throw AgentError.internalError(reason: "No fallback configured for interruption parallel race.")
+        }
+
+        enum InterruptionRaceResult: Sendable {
+            case selected(AgentResult)
+            case fallback(AgentResult)
+        }
+
+        return try await withThrowingTaskGroup(of: InterruptionRaceResult.self) { group in
+            group.addTask {
+                let resolved = await self.waitForInterruptionResolution(
+                    of: dispatchedAgent,
+                    timeout: timeout,
+                    pollInterval: pollInterval
+                )
+                guard resolved else {
+                    throw AgentError.internalError(reason: "Selected agent remained interrupted.")
+                }
+                let result = try await dispatchedAgent.run(dispatchedInput, session: session, hooks: hooks)
+                return .selected(result)
+            }
+
+            group.addTask {
+                if let context {
+                    await hooks?.onHandoff(context: context, fromAgent: self, toAgent: fallback)
+                }
+                let result = try await fallback.run(input, session: session, hooks: hooks)
+                return .fallback(result)
+            }
+
+            guard let winner = try await group.next() else {
+                throw AgentError.internalError(reason: "Interruption race did not produce a result.")
+            }
+            group.cancelAll()
+
+            switch winner {
+            case let .selected(result):
+                if let context {
+                    await context.setPreviousOutput(result)
+                }
+                if let decision {
+                    return buildResultFromExecution(
+                        decision: decision,
+                        subAgentResult: result,
+                        builder: builder
+                    )
+                }
+                builder.setOutput(result.output)
+                for toolCall in result.toolCalls {
+                    builder.addToolCall(toolCall)
+                }
+                for toolResult in result.toolResults {
+                    builder.addToolResult(toolResult)
+                }
+                builder.setMetadata("routing_decision", .string("selected_after_interrupt_race"))
+                return builder.build()
+
+            case let .fallback(result):
+                builder.setOutput(result.output)
+                for toolCall in result.toolCalls {
+                    builder.addToolCall(toolCall)
+                }
+                for toolResult in result.toolResults {
+                    builder.addToolResult(toolResult)
+                }
+                builder.setMetadata("routing_decision", .string("fallback_after_interrupt_race"))
+                builder.setMetadata("fallback_reason", .string("selected_agent_interrupted"))
+                if let dispatchedAgentName {
+                    builder.setMetadata("interrupted_agent", .string(dispatchedAgentName))
+                }
+                return builder.build()
+            }
+        }
+    }
+
+    private func waitForInterruptionResolution(
+        of agent: any AgentRuntime,
+        timeout: Duration,
+        pollInterval: Duration
+    ) async -> Bool {
+        let timeoutNs = durationToNanoseconds(timeout)
+        let pollNs = max(durationToNanoseconds(pollInterval), 1_000_000)
+        let started = DispatchTime.now().uptimeNanoseconds
+
+        while DispatchTime.now().uptimeNanoseconds - started < timeoutNs {
+            if await isSubAgentInterrupted(agent) == false {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: pollNs)
+        }
+        return await isSubAgentInterrupted(agent) == false
+    }
+
+    private func durationToNanoseconds(_ duration: Duration) -> UInt64 {
+        let seconds = max(0, duration.components.seconds)
+        let attoseconds = max(0, duration.components.attoseconds)
+        let secPart = UInt64(seconds) * 1_000_000_000
+        let attosecondPart = UInt64(attoseconds / 1_000_000_000)
+        return secPart &+ attosecondPart
+    }
+
+    private func handleInterruptedStreamFallback(
+        error: Error,
+        dispatchedAgent: any AgentRuntime,
+        input: String,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
+    ) async -> Bool {
+        switch interruptionPolicy {
+        case .wait:
+            return false
+        case .fallback, .parallelRace:
+            break
+        case let .timeoutThenFallback(timeout, pollInterval):
+            let resolved = await waitForInterruptionResolution(
+                of: dispatchedAgent,
+                timeout: timeout,
+                pollInterval: pollInterval
+            )
+            if resolved {
+                return false
+            }
+        }
+
+        guard let fallback = fallbackAgent else {
+            return false
+        }
+
+        do {
+            var fallbackResult: AgentResult?
+            for try await event in fallback.stream(input, session: session, hooks: hooks) {
+                switch event {
+                case .started:
+                    continue
+                case let .completed(result):
+                    fallbackResult = result
+                case let .failed(streamError):
+                    throw streamError
+                default:
+                    continuation.yield(event)
+                }
+            }
+
+            guard let fallbackResult else {
+                return false
+            }
+            let builder = AgentResult.Builder()
+            builder.start()
+            builder.setOutput(fallbackResult.output)
+            builder.setMetadata("routing_decision", .string("fallback_after_interrupt"))
+            builder.setMetadata("routing_error", .string(error.localizedDescription))
+            for toolCall in fallbackResult.toolCalls {
+                builder.addToolCall(toolCall)
+            }
+            for toolResult in fallbackResult.toolResults {
+                builder.addToolResult(toolResult)
+            }
+            continuation.yield(.completed(result: builder.build()))
+            continuation.finish()
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Handles fallback when no suitable agent is found.
     /// - Parameters:
     ///   - input: The original input.
@@ -996,6 +1304,12 @@ public actor SupervisorAgent: AgentRuntime {
         builder.setMetadata("routing_decision", .string("fallback"))
         builder.setMetadata("fallback_reason", .string(reason))
         builder.setMetadata("routing_confidence", .double(0.0))
+        for toolCall in result.toolCalls {
+            builder.addToolCall(toolCall)
+        }
+        for toolResult in result.toolResults {
+            builder.addToolResult(toolResult)
+        }
         return builder.build()
     }
 
@@ -1025,6 +1339,12 @@ public actor SupervisorAgent: AgentRuntime {
             builder.setOutput(result.output)
             builder.setMetadata("routing_decision", .string("fallback_after_error"))
             builder.setMetadata("routing_error", .string(error.localizedDescription))
+            for toolCall in result.toolCalls {
+                builder.addToolCall(toolCall)
+            }
+            for toolResult in result.toolResults {
+                builder.addToolResult(toolResult)
+            }
             return builder.build()
         } else {
             // Convert to AgentError if needed

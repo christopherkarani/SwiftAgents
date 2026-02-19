@@ -22,6 +22,65 @@ struct SupervisorInterruptionRoutingTests {
             _ = try await supervisor.run("hello")
         }
     }
+
+    @Test("Supervisor fallback policy routes interrupted sub-agent to fallback")
+    func supervisorFallbackPolicyUsesFallbackOnInterrupt() async throws {
+        let primary = InterruptingInspectableAgent(name: "primary")
+        let fallback = StaticResultAgent(name: "fallback", output: "fallback-output")
+        let strategy = FixedRoutingStrategy(selected: "primary")
+
+        let supervisor = SupervisorAgent(
+            agents: [
+                ("primary", primary, AgentDescription(name: "primary", description: "Primary agent")),
+            ],
+            routingStrategy: strategy,
+            fallbackAgent: fallback,
+            interruptionPolicy: .fallback
+        )
+
+        let result = try await supervisor.run("hello")
+        #expect(result.output == "fallback-output")
+        #expect(result.metadata["routing_decision"]?.stringValue == "fallback")
+    }
+
+    @Test("Supervisor timeout-then-fallback policy routes after interruption timeout")
+    func supervisorTimeoutThenFallbackPolicy() async throws {
+        let primary = InterruptingInspectableAgent(name: "primary")
+        let fallback = StaticResultAgent(name: "fallback", output: "timeout-fallback-output")
+        let strategy = FixedRoutingStrategy(selected: "primary")
+
+        let supervisor = SupervisorAgent(
+            agents: [
+                ("primary", primary, AgentDescription(name: "primary", description: "Primary agent")),
+            ],
+            routingStrategy: strategy,
+            fallbackAgent: fallback,
+            interruptionPolicy: .timeoutThenFallback(timeout: .milliseconds(50), pollInterval: .milliseconds(10))
+        )
+
+        let result = try await supervisor.run("hello")
+        #expect(result.output == "timeout-fallback-output")
+        #expect(result.metadata["routing_decision"]?.stringValue == "fallback")
+    }
+
+    @Test("Supervisor parallel-race policy prefers fallback when sub-agent stays interrupted")
+    func supervisorParallelRacePolicyFallsBack() async throws {
+        let primary = InterruptingInspectableAgent(name: "primary")
+        let fallback = StaticResultAgent(name: "fallback", output: "race-fallback-output")
+        let strategy = FixedRoutingStrategy(selected: "primary")
+
+        let supervisor = SupervisorAgent(
+            agents: [
+                ("primary", primary, AgentDescription(name: "primary", description: "Primary agent")),
+            ],
+            routingStrategy: strategy,
+            fallbackAgent: fallback,
+            interruptionPolicy: .parallelRace(timeout: .milliseconds(50), pollInterval: .milliseconds(10))
+        )
+
+        let result = try await supervisor.run("hello")
+        #expect(result.output == "race-fallback-output")
+    }
 }
 
 private struct FixedRoutingStrategy: RoutingStrategy {

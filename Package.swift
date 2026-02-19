@@ -74,6 +74,9 @@ var packageTargets: [Target] = [
             .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
             .product(name: "SwiftSyntaxBuilder", package: "swift-syntax")
         ],
+        exclude: [
+            "CLAUDE.md"
+        ],
         swiftSettings: [
             .enableExperimentalFeature("StrictConcurrency")
         ]
@@ -83,6 +86,19 @@ var packageTargets: [Target] = [
     .target(
         name: "Swarm",
         dependencies: swarmDependencies,
+        exclude: [
+            "CLAUDE.md",
+            "Agents/CLAUDE.md",
+            "Core/CLAUDE.md",
+            "DSL/CLAUDE.md",
+            "DSL/Core/CLAUDE.md",
+            "DSL/Flow/CLAUDE.md",
+            "DSL/Modifiers/CLAUDE.md",
+            "Memory/CLAUDE.md",
+            "Orchestration/CLAUDE.md",
+            "Resilience/CLAUDE.md",
+            "Tools/CLAUDE.md"
+        ],
         swiftSettings: swarmSwiftSettings
     ),
     .target(
@@ -100,6 +116,12 @@ var packageTargets: [Target] = [
         dependencies: [
             "Swarm",
             "SwarmMCP",
+        ],
+        exclude: [
+            "CLAUDE.md",
+            "DSL/CLAUDE.md",
+            "Orchestration/CLAUDE.md",
+            "Tools/CLAUDE.md"
         ],
         resources: [
             .copy("Guardrails/INTEGRATION_TEST_SUMMARY.md"),
@@ -126,6 +148,9 @@ packageTargets.append(
             "Swarm",
             .product(name: "HiveCore", package: "Hive")
         ],
+        exclude: [
+            "CLAUDE.md"
+        ],
         swiftSettings: [
             .enableExperimentalFeature("StrictConcurrency")
         ]
@@ -136,6 +161,9 @@ packageTargets.append(
     .testTarget(
         name: "HiveSwarmTests",
         dependencies: ["HiveSwarm"],
+        exclude: [
+            "CLAUDE.md"
+        ],
         swiftSettings: [
             .enableExperimentalFeature("StrictConcurrency")
         ]

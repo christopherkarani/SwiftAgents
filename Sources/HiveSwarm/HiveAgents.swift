@@ -91,6 +91,16 @@ public struct HiveCompactionPolicy: Sendable {
     }
 }
 
+public struct HiveToolCircuitBreakerPolicy: Sendable, Equatable {
+    public let failureThreshold: Int
+    public let cooldownSteps: Int
+
+    public init(failureThreshold: Int = 3, cooldownSteps: Int = 2) {
+        self.failureThreshold = max(1, failureThreshold)
+        self.cooldownSteps = max(1, cooldownSteps)
+    }
+}
+
 public struct HiveAgentsContext: Sendable {
     public static var defaultModelNodeCachePolicy: HiveCachePolicy<HiveAgents.Schema>? {
         .lru(maxEntries: 64)
@@ -105,6 +115,9 @@ public struct HiveAgentsContext: Sendable {
     public let compactionPolicy: HiveCompactionPolicy?
     public let tokenizer: (any HiveTokenizer)?
     public let retryPolicy: HiveRetryPolicy?
+    public let modelRetryPolicy: HiveRetryPolicy?
+    public let toolRetryPolicy: HiveRetryPolicy?
+    public let toolCircuitBreakerPolicy: HiveToolCircuitBreakerPolicy?
     public let modelNodeCachePolicy: HiveCachePolicy<HiveAgents.Schema>?
     public let compactionCachePolicy: HiveCachePolicy<HiveAgents.Schema>?
     public let maxForkRetries: Int
@@ -115,6 +128,9 @@ public struct HiveAgentsContext: Sendable {
         compactionPolicy: HiveCompactionPolicy? = nil,
         tokenizer: (any HiveTokenizer)? = nil,
         retryPolicy: HiveRetryPolicy? = nil,
+        modelRetryPolicy: HiveRetryPolicy? = nil,
+        toolRetryPolicy: HiveRetryPolicy? = nil,
+        toolCircuitBreakerPolicy: HiveToolCircuitBreakerPolicy? = nil,
         modelNodeCachePolicy: HiveCachePolicy<HiveAgents.Schema>? = HiveAgentsContext.defaultModelNodeCachePolicy,
         compactionCachePolicy: HiveCachePolicy<HiveAgents.Schema>? = HiveAgentsContext.defaultCompactionCachePolicy,
         maxForkRetries: Int = 2
@@ -124,6 +140,9 @@ public struct HiveAgentsContext: Sendable {
         self.compactionPolicy = compactionPolicy
         self.tokenizer = tokenizer
         self.retryPolicy = retryPolicy
+        self.modelRetryPolicy = modelRetryPolicy
+        self.toolRetryPolicy = toolRetryPolicy
+        self.toolCircuitBreakerPolicy = toolCircuitBreakerPolicy
         self.modelNodeCachePolicy = modelNodeCachePolicy
         self.compactionCachePolicy = compactionCachePolicy
         self.maxForkRetries = max(0, maxForkRetries)
@@ -259,6 +278,8 @@ public extension HiveAgents {
         public static let finalAnswerKey = HiveChannelKey<Self, String?>(HiveChannelID("finalAnswer"))
         public static let llmInputMessagesKey = HiveChannelKey<Self, [HiveChatMessage]?>(HiveChannelID("llmInputMessages"))
         public static let tokenCountKey = HiveChannelKey<Self, Int>(HiveChannelID("tokenCount"))
+        public static let toolFailureStreakKey = HiveChannelKey<Self, Int>(HiveChannelID("toolFailureStreak"))
+        public static let toolCircuitOpenedAtStepKey = HiveChannelKey<Self, Int?>(HiveChannelID("toolCircuitOpenedAtStep"))
 
         public static var channelSpecs: [AnyHiveChannelSpec<Self>] {
             [
@@ -315,6 +336,28 @@ public extension HiveAgents {
                         initial: { 0 },
                         codec: HiveAnyCodec(HiveCodableJSONCodec<Int>()),
                         persistence: .untracked
+                    )
+                ),
+                AnyHiveChannelSpec(
+                    HiveChannelSpec(
+                        key: toolFailureStreakKey,
+                        scope: .global,
+                        reducer: .lastWriteWins(),
+                        updatePolicy: .single,
+                        initial: { 0 },
+                        codec: HiveAnyCodec(HiveCodableJSONCodec<Int>()),
+                        persistence: .checkpointed
+                    )
+                ),
+                AnyHiveChannelSpec(
+                    HiveChannelSpec(
+                        key: toolCircuitOpenedAtStepKey,
+                        scope: .global,
+                        reducer: .lastWriteWins(),
+                        updatePolicy: .single,
+                        initial: { Optional<Int>.none },
+                        codec: HiveAnyCodec(HiveCodableJSONCodec<Int?>()),
+                        persistence: .checkpointed
                     )
                 )
             ]
@@ -471,6 +514,10 @@ extension HiveAgents {
         { input in
             let messages = try input.store.get(Schema.messagesKey)
             let accumulatedTokenCount = try input.store.get(Schema.tokenCountKey)
+            input.emitStream(
+                .customDebug(name: "swarm.cache.preModel.miss"),
+                ["cacheKey": cacheSignature(for: messages)]
+            )
 
             guard let policy = input.context.compactionPolicy else {
                 return HiveNodeOutput(next: .useGraphEdges)
@@ -517,6 +564,10 @@ extension HiveAgents {
             let messages = try input.store.get(Schema.messagesKey)
             let llmInputMessages = try input.store.get(Schema.llmInputMessagesKey)
             let inputMessages = llmInputMessages ?? messages
+            input.emitStream(
+                .customDebug(name: "swarm.cache.model.miss"),
+                ["cacheKey": cacheSignature(for: inputMessages)]
+            )
             guard let registry = input.environment.tools else {
                 throw HiveRuntimeError.toolRegistryMissing
             }
@@ -539,7 +590,7 @@ extension HiveAgents {
 
             // Wrap model invocation in retry if configured.
             let assistantMessage: HiveChatMessage = try await withRetry(
-                policy: input.context.retryPolicy,
+                policy: input.context.modelRetryPolicy ?? input.context.retryPolicy,
                 clock: input.environment.clock
             ) {
                 input.emitStream(.modelInvocationStarted(model: request.model), [:])
@@ -712,6 +763,25 @@ extension HiveAgents {
         { input in
             let pending = try input.store.get(Schema.pendingToolCallsKey)
             let calls = pending.sorted(by: Self.toolCallSort)
+            let breakerPolicy = input.context.toolCircuitBreakerPolicy
+            let existingFailureStreak = try input.store.get(Schema.toolFailureStreakKey)
+            let existingOpenedAtStep = try input.store.get(Schema.toolCircuitOpenedAtStepKey)
+            var circuitResetWrites: [AnyHiveWrite<Schema>] = []
+
+            if let breakerPolicy, let openedAtStep = existingOpenedAtStep {
+                let stepsSinceOpen = max(0, input.run.stepIndex - openedAtStep)
+                if stepsSinceOpen < breakerPolicy.cooldownSteps {
+                    return circuitBreakerCooldownOutput(
+                        taskID: input.run.taskID,
+                        openedAtStep: openedAtStep,
+                        cooldownSteps: breakerPolicy.cooldownSteps,
+                        failureStreak: existingFailureStreak,
+                        tokenizer: input.context.tokenizer
+                    )
+                }
+                circuitResetWrites.append(AnyHiveWrite(Schema.toolFailureStreakKey, 0))
+                circuitResetWrites.append(AnyHiveWrite(Schema.toolCircuitOpenedAtStepKey, Optional<Int>.none))
+            }
 
             if let resume = input.run.resume?.payload {
                 switch resume {
@@ -736,7 +806,10 @@ extension HiveAgents {
             }
 
             guard calls.isEmpty == false else {
-                return HiveNodeOutput(next: .nodes([NodeID.model]))
+                if circuitResetWrites.isEmpty {
+                    return HiveNodeOutput(next: .nodes([NodeID.model]))
+                }
+                return HiveNodeOutput(writes: circuitResetWrites, next: .nodes([NodeID.model]))
             }
 
             guard let registry = input.environment.tools else {
@@ -745,18 +818,20 @@ extension HiveAgents {
 
             var toolMessages: [HiveChatMessage] = []
             toolMessages.reserveCapacity(calls.count)
+            var failureStreak = existingFailureStreak
 
             for call in calls {
                 let metadata = ["toolCallID": call.id]
                 input.emitStream(.toolInvocationStarted(name: call.name), metadata)
                 do {
                     let result = try await withRetry(
-                        policy: input.context.retryPolicy,
+                        policy: input.context.toolRetryPolicy ?? input.context.retryPolicy,
                         clock: input.environment.clock
                     ) {
                         try await registry.invoke(call)
                     }
                     input.emitStream(.toolInvocationFinished(name: call.name, success: true), metadata)
+                    failureStreak = 0
                     toolMessages.append(
                         HiveChatMessage(
                             id: "tool:" + call.id,
@@ -769,14 +844,27 @@ extension HiveAgents {
                     )
                 } catch {
                     input.emitStream(.toolInvocationFinished(name: call.name, success: false), metadata)
+                    failureStreak += 1
+                    if let breakerPolicy, failureStreak >= breakerPolicy.failureThreshold {
+                        return circuitBreakerOpenedOutput(
+                            taskID: input.run.taskID,
+                            failureStreak: failureStreak,
+                            openedAtStep: input.run.stepIndex,
+                            tokenizer: input.context.tokenizer
+                        )
+                    }
                     throw error
                 }
             }
 
-            var writes: [AnyHiveWrite<Schema>] = [
+            var writes: [AnyHiveWrite<Schema>] = circuitResetWrites + [
                 AnyHiveWrite(Schema.pendingToolCallsKey, []),
                 AnyHiveWrite(Schema.messagesKey, toolMessages)
             ]
+            if breakerPolicy != nil {
+                writes.append(AnyHiveWrite(Schema.toolFailureStreakKey, 0))
+                writes.append(AnyHiveWrite(Schema.toolCircuitOpenedAtStepKey, Optional<Int>.none))
+            }
             if let delta = tokenDeltaForMessages(toolMessages, tokenizer: input.context.tokenizer) {
                 writes.append(AnyHiveWrite(Schema.tokenCountKey, delta))
             }
@@ -795,6 +883,57 @@ extension HiveAgents {
         guard let tokenizer else { return nil }
         guard messages.isEmpty == false else { return nil }
         return tokenizer.countTokens(messages)
+    }
+
+    private static func circuitBreakerOpenedOutput(
+        taskID: HiveTaskID,
+        failureStreak: Int,
+        openedAtStep: Int,
+        tokenizer: (any HiveTokenizer)?
+    ) -> HiveNodeOutput<Schema> {
+        let systemMessage = HiveChatMessage(
+            id: MessageID.system(taskID: taskID),
+            role: .system,
+            content: "Tool circuit breaker opened after \(failureStreak) consecutive failures.",
+            toolCalls: [],
+            op: nil
+        )
+        var writes: [AnyHiveWrite<Schema>] = [
+            AnyHiveWrite(Schema.pendingToolCallsKey, []),
+            AnyHiveWrite(Schema.messagesKey, [systemMessage]),
+            AnyHiveWrite(Schema.toolFailureStreakKey, failureStreak),
+            AnyHiveWrite(Schema.toolCircuitOpenedAtStepKey, Optional(openedAtStep))
+        ]
+        if let delta = tokenDeltaForMessages([systemMessage], tokenizer: tokenizer) {
+            writes.append(AnyHiveWrite(Schema.tokenCountKey, delta))
+        }
+        return HiveNodeOutput(writes: writes, next: .nodes([NodeID.model]))
+    }
+
+    private static func circuitBreakerCooldownOutput(
+        taskID: HiveTaskID,
+        openedAtStep: Int,
+        cooldownSteps: Int,
+        failureStreak: Int,
+        tokenizer: (any HiveTokenizer)?
+    ) -> HiveNodeOutput<Schema> {
+        let systemMessage = HiveChatMessage(
+            id: MessageID.system(taskID: taskID),
+            role: .system,
+            content: "Tool circuit breaker is cooling down (opened at step \(openedAtStep), cooldown \(cooldownSteps) steps).",
+            toolCalls: [],
+            op: nil
+        )
+        var writes: [AnyHiveWrite<Schema>] = [
+            AnyHiveWrite(Schema.pendingToolCallsKey, []),
+            AnyHiveWrite(Schema.messagesKey, [systemMessage]),
+            AnyHiveWrite(Schema.toolFailureStreakKey, failureStreak),
+            AnyHiveWrite(Schema.toolCircuitOpenedAtStepKey, Optional(openedAtStep))
+        ]
+        if let delta = tokenDeltaForMessages([systemMessage], tokenizer: tokenizer) {
+            writes.append(AnyHiveWrite(Schema.tokenCountKey, delta))
+        }
+        return HiveNodeOutput(writes: writes, next: .nodes([NodeID.model]))
     }
 
     /// Executes an operation with retry according to the given `HiveRetryPolicy`.
@@ -879,6 +1018,33 @@ extension HiveAgents {
             return lhs.id.utf8.lexicographicallyPrecedes(rhs.id.utf8)
         }
         return lhs.name.utf8.lexicographicallyPrecedes(rhs.name.utf8)
+    }
+
+    private static func cacheSignature(for messages: [HiveChatMessage]) -> String {
+        var data = Data()
+        data.append(contentsOf: Array("HCS1".utf8))
+        for message in messages {
+            data.append(contentsOf: Array(message.id.utf8))
+            data.append(0x00)
+            data.append(contentsOf: Array(message.role.rawValue.utf8))
+            data.append(0x00)
+            data.append(contentsOf: Array(message.content.utf8))
+            data.append(0x00)
+            if let toolCallID = message.toolCallID {
+                data.append(contentsOf: Array(toolCallID.utf8))
+            }
+            data.append(0x00)
+            for toolCall in message.toolCalls.sorted(by: toolCallSort) {
+                data.append(contentsOf: Array(toolCall.id.utf8))
+                data.append(0x00)
+                data.append(contentsOf: Array(toolCall.name.utf8))
+                data.append(0x00)
+                data.append(contentsOf: Array(toolCall.argumentsJSON.utf8))
+                data.append(0x00)
+            }
+        }
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
 

@@ -31,6 +31,49 @@ public struct AgentStateSnapshot: Sendable {
     }
 }
 
+/// Public checkpoint summary for replay and debugging workflows.
+public struct AgentCheckpointSnapshot: Sendable, Equatable {
+    public let id: String
+    public let threadID: String
+    public let runID: String
+    public let stepIndex: Int
+    public let createdAt: Date?
+
+    public init(
+        id: String,
+        threadID: String,
+        runID: String,
+        stepIndex: Int,
+        createdAt: Date?
+    ) {
+        self.id = id
+        self.threadID = threadID
+        self.runID = runID
+        self.stepIndex = stepIndex
+        self.createdAt = createdAt
+    }
+}
+
+/// Public diff between two checkpoints for time-travel debugging.
+public struct AgentCheckpointDiff: Sendable, Equatable {
+    public let fromCheckpointID: String
+    public let toCheckpointID: String
+    public let stepDelta: Int
+    public let changedChannelIDs: [String]
+
+    public init(
+        fromCheckpointID: String,
+        toCheckpointID: String,
+        stepDelta: Int,
+        changedChannelIDs: [String]
+    ) {
+        self.fromCheckpointID = fromCheckpointID
+        self.toCheckpointID = toCheckpointID
+        self.stepDelta = stepDelta
+        self.changedChannelIDs = changedChannelIDs
+    }
+}
+
 /// Bridges a Hive-native agent graph into Swarm's `AgentRuntime` protocol.
 ///
 /// This allows `HiveAgentsRuntime` (which uses Hive's deterministic graph engine
@@ -140,8 +183,12 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         await hooks?.onAgentStart(context: nil, agent: self, input: input)
 
         do {
-            let outcome = try await runWithForkRecovery(input: input)
-            let result = try buildResult(from: outcome, builder: resultBuilder)
+            let recovery = try await runWithForkRecovery(input: input)
+            let result = try buildResult(
+                from: recovery.outcome,
+                builder: resultBuilder,
+                cacheTelemetry: recovery.cacheTelemetry
+            )
 
             await hooks?.onAgentEnd(context: nil, agent: self, result: result)
             return result
@@ -212,6 +259,80 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         )
     }
 
+    /// Lists available checkpoints for this thread (latest-last ordering from the store backend).
+    public func checkpointHistory(limit: Int? = nil) async throws -> [AgentCheckpointSnapshot] {
+        let summaries = try await runtime.runControl.runtime.getCheckpointHistory(
+            threadID: threadID,
+            limit: limit
+        )
+        return summaries.map { summary in
+            AgentCheckpointSnapshot(
+                id: summary.id.rawValue,
+                threadID: summary.threadID.rawValue,
+                runID: summary.runID.rawValue.uuidString,
+                stepIndex: summary.stepIndex,
+                createdAt: summary.createdAt
+            )
+        }
+    }
+
+    /// Replays execution by forking this thread from a historical checkpoint.
+    ///
+    /// - Parameters:
+    ///   - checkpointID: Checkpoint identifier from `checkpointHistory()`.
+    ///   - newThreadID: Optional destination thread identifier. A UUID is generated when omitted.
+    /// - Returns: Final `AgentResult` from the replayed run.
+    public func replayFromCheckpoint(
+        checkpointID: String,
+        into newThreadID: String? = nil
+    ) async throws -> AgentResult {
+        let destinationThreadID = HiveThreadID(newThreadID ?? "\(threadID.rawValue):replay:\(UUID().uuidString)")
+        let handle = await runtime.runControl.runtime.fork(
+            threadID: threadID,
+            fromCheckpointID: HiveCheckpointID(checkpointID),
+            into: destinationThreadID,
+            options: runOptions
+        )
+        let outcome = try await handle.outcome.value
+        return try buildResult(from: outcome)
+    }
+
+    /// Computes a channel-level diff between two checkpoints in this thread.
+    ///
+    /// Returns `nil` when either checkpoint ID is not present in the configured checkpoint store.
+    public func diffCheckpoints(
+        from fromCheckpointID: String,
+        to toCheckpointID: String
+    ) async throws -> AgentCheckpointDiff? {
+        guard let from = try await runtime.runControl.runtime.getCheckpoint(
+            threadID: threadID,
+            id: HiveCheckpointID(fromCheckpointID)
+        ),
+            let to = try await runtime.runControl.runtime.getCheckpoint(
+                threadID: threadID,
+                id: HiveCheckpointID(toCheckpointID)
+            )
+        else {
+            return nil
+        }
+
+        let fromKeys = Set(from.globalDataByChannelID.keys)
+        let toKeys = Set(to.globalDataByChannelID.keys)
+        let allKeys = fromKeys.union(toKeys)
+        let changed = allKeys
+            .filter { key in
+                from.globalDataByChannelID[key] != to.globalDataByChannelID[key]
+            }
+            .sorted()
+
+        return AgentCheckpointDiff(
+            fromCheckpointID: fromCheckpointID,
+            toCheckpointID: toCheckpointID,
+            stepDelta: to.stepIndex - from.stepIndex,
+            changedChannelIDs: changed
+        )
+    }
+
     /// Streams the agent's execution, mapping Hive events to Swarm `AgentEvent`.
     ///
     /// Unlike `run()`, this method consumes the Hive event stream (`handle.events`)
@@ -255,9 +376,11 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
                 await cancellation.track(handle)
 
                 // Fork a task to consume Hive events and yield mapped AgentEvents.
-                let eventsTask = Task<Void, Never> {
+                let cacheTelemetryTask = Task { () -> HiveCacheTelemetry in
+                    var cacheTelemetry = HiveCacheTelemetry()
                     do {
                         for try await event in handle.events {
+                            cacheTelemetry.record(event)
                             if let agentEvent = Self.mapHiveEvent(event) {
                                 continuation.yield(agentEvent)
                             }
@@ -265,14 +388,19 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
                     } catch {
                         Log.agents.debug("Hive event stream ended: \(error.localizedDescription)")
                     }
+                    return cacheTelemetry
                 }
 
                 let outcome = try await handle.outcome.value
 
                 // Wait for all events to be consumed before building the result.
-                await eventsTask.value
+                let cacheTelemetry = await cacheTelemetryTask.value
 
-                let result = try buildResult(from: outcome, builder: resultBuilder)
+                let result = try buildResult(
+                    from: outcome,
+                    builder: resultBuilder,
+                    cacheTelemetry: cacheTelemetry
+                )
 
                 await hooks?.onAgentEnd(context: nil, agent: self, result: result)
                 continuation.yield(.completed(result: result))
@@ -339,18 +467,19 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
     // MARK: - Private Methods
 
     /// Extracts an `AgentResult` from a `HiveRunOutcome`.
-    func buildResult(
+    private func buildResult(
         from outcome: HiveRunOutcome<HiveAgents.Schema>
     ) throws -> AgentResult {
         let builder = AgentResult.Builder()
         _ = builder.start()
-        return try buildResult(from: outcome, builder: builder)
+        return try buildResult(from: outcome, builder: builder, cacheTelemetry: nil)
     }
 
     /// Extracts an `AgentResult` from a `HiveRunOutcome`.
-    func buildResult(
+    private func buildResult(
         from outcome: HiveRunOutcome<HiveAgents.Schema>,
-        builder: AgentResult.Builder
+        builder: AgentResult.Builder,
+        cacheTelemetry: HiveCacheTelemetry?
     ) throws -> AgentResult {
         let store: HiveGlobalStore<HiveAgents.Schema>
 
@@ -459,6 +588,13 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
             _ = builder.incrementIteration()
         }
 
+        if let cacheTelemetry {
+            cacheTelemetry.apply(
+                to: builder,
+                context: runtime.runControl.runtime.environmentSnapshot.context
+            )
+        }
+
         return builder.build()
     }
 
@@ -525,9 +661,10 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         }
     }
 
-    private func runWithForkRecovery(input: String) async throws -> HiveRunOutcome<HiveAgents.Schema> {
+    private func runWithForkRecovery(input: String) async throws -> ForkRecoveryOutcome {
         var sourceThreadID = threadID
         var forkAttempts = 0
+        var cacheTelemetry = HiveCacheTelemetry()
         let maxForkRetries = runtime.runControl.runtime.environmentSnapshot.context.maxForkRetries
 
         let startRequest = HiveAgentsRunStartRequest(
@@ -539,10 +676,14 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         await cancellation.track(handle)
 
         while true {
-            let (result, tracking) = await awaitOutcomeWithRecoveryTracking(handle)
+            let (result, tracking) = await awaitOutcomeWithRecoveryTracking(
+                handle,
+                threadID: sourceThreadID
+            )
+            cacheTelemetry.merge(tracking.cacheTelemetry)
             switch result {
             case let .success(outcome):
-                return outcome
+                return ForkRecoveryOutcome(outcome: outcome, cacheTelemetry: cacheTelemetry)
 
             case let .failure(error):
                 let hasCheckpointStore = runtime.runControl.runtime.environmentSnapshot.checkpointStore != nil
@@ -579,17 +720,25 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
     }
 
     private func awaitOutcomeWithRecoveryTracking(
-        _ handle: HiveRunHandle<HiveAgents.Schema>
+        _ handle: HiveRunHandle<HiveAgents.Schema>,
+        threadID: HiveThreadID
     ) async -> (Result<HiveRunOutcome<HiveAgents.Schema>, any Error>, ForkRecoveryTracking) {
         let trackingTask = Task { () -> ForkRecoveryTracking in
             var tracking = ForkRecoveryTracking()
             do {
                 for try await event in handle.events {
+                    tracking.cacheTelemetry.record(event)
                     switch event.kind {
                     case let .checkpointSaved(checkpointID):
                         tracking.latestCheckpoint = checkpointID
+                        if let snapshot = try? await runtime.runControl.runtime.getState(threadID: threadID),
+                           snapshot.nextNodes.contains(HiveAgents.NodeID.toolExecute) {
+                            tracking.checkpointBeforeTool = checkpointID
+                        }
                     case .toolInvocationStarted:
-                        tracking.checkpointBeforeTool = tracking.latestCheckpoint
+                        if tracking.checkpointBeforeTool == nil {
+                            tracking.checkpointBeforeTool = tracking.latestCheckpoint
+                        }
                     case let .toolInvocationFinished(_, success):
                         if !success {
                             tracking.sawToolFailure = true
@@ -653,4 +802,91 @@ private struct ForkRecoveryTracking: Sendable {
     var latestCheckpoint: HiveCheckpointID?
     var checkpointBeforeTool: HiveCheckpointID?
     var sawToolFailure: Bool = false
+    var cacheTelemetry = HiveCacheTelemetry()
+}
+
+private struct ForkRecoveryOutcome: Sendable {
+    let outcome: HiveRunOutcome<HiveAgents.Schema>
+    let cacheTelemetry: HiveCacheTelemetry
+}
+
+private struct HiveCacheTelemetry: Sendable {
+    private(set) var modelTaskStarts = 0
+    private(set) var modelMisses = 0
+    private(set) var preModelTaskStarts = 0
+    private(set) var preModelMisses = 0
+    private(set) var modelMissKeys: Set<String> = []
+    private(set) var preModelMissKeys: Set<String> = []
+
+    mutating func record(_ event: HiveEvent) {
+        switch event.kind {
+        case let .taskStarted(node, _):
+            if node == HiveAgents.NodeID.model {
+                modelTaskStarts += 1
+            } else if node == HiveAgents.NodeID.preModel {
+                preModelTaskStarts += 1
+            }
+        case .modelInvocationStarted:
+            modelMisses += 1
+        case let .customDebug(name):
+            switch name {
+            case "swarm.cache.model.miss":
+                if let key = event.metadata["cacheKey"], !key.isEmpty {
+                    modelMissKeys.insert(key)
+                }
+            case "swarm.cache.preModel.miss":
+                preModelMisses += 1
+                if let key = event.metadata["cacheKey"], !key.isEmpty {
+                    preModelMissKeys.insert(key)
+                }
+            default:
+                break
+            }
+        default:
+            break
+        }
+    }
+
+    mutating func merge(_ other: HiveCacheTelemetry) {
+        modelTaskStarts += other.modelTaskStarts
+        modelMisses += other.modelMisses
+        preModelTaskStarts += other.preModelTaskStarts
+        preModelMisses += other.preModelMisses
+        modelMissKeys.formUnion(other.modelMissKeys)
+        preModelMissKeys.formUnion(other.preModelMissKeys)
+    }
+
+    func apply(to builder: AgentResult.Builder, context: HiveAgentsContext) {
+        let modelHits = max(0, modelTaskStarts - modelMisses)
+        let preModelHits = max(0, preModelTaskStarts - preModelMisses)
+
+        _ = builder.setMetadata("hive.cache.model.enabled", .bool(context.modelNodeCachePolicy != nil))
+        _ = builder.setMetadata("hive.cache.model.task_starts", .int(modelTaskStarts))
+        _ = builder.setMetadata("hive.cache.model.misses", .int(modelMisses))
+        _ = builder.setMetadata("hive.cache.model.hits", .int(modelHits))
+        _ = builder.setMetadata("hive.cache.model.unique_miss_keys", .int(modelMissKeys.count))
+        if let estimate = evictionEstimate(
+            uniqueMissCount: modelMissKeys.count,
+            maxEntries: context.modelNodeCachePolicy?.maxEntries
+        ) {
+            _ = builder.setMetadata("hive.cache.model.evictions_estimate", .int(estimate))
+        }
+
+        _ = builder.setMetadata("hive.cache.preModel.enabled", .bool(context.compactionCachePolicy != nil))
+        _ = builder.setMetadata("hive.cache.preModel.task_starts", .int(preModelTaskStarts))
+        _ = builder.setMetadata("hive.cache.preModel.misses", .int(preModelMisses))
+        _ = builder.setMetadata("hive.cache.preModel.hits", .int(preModelHits))
+        _ = builder.setMetadata("hive.cache.preModel.unique_miss_keys", .int(preModelMissKeys.count))
+        if let estimate = evictionEstimate(
+            uniqueMissCount: preModelMissKeys.count,
+            maxEntries: context.compactionCachePolicy?.maxEntries
+        ) {
+            _ = builder.setMetadata("hive.cache.preModel.evictions_estimate", .int(estimate))
+        }
+    }
+
+    private func evictionEstimate(uniqueMissCount: Int, maxEntries: Int?) -> Int? {
+        guard let maxEntries else { return nil }
+        return max(0, uniqueMissCount - maxEntries)
+    }
 }
