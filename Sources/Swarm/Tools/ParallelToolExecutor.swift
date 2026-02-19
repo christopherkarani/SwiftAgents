@@ -262,8 +262,8 @@ public actor ParallelToolExecutor {
         // Apply error strategy
         switch errorStrategy {
         case .failFast:
-            // Handled above with true cancellation
-            fatalError("Unreachable: failFast handled above")
+            // Handled above with true cancellation.
+            break
 
         case .collectErrors:
             // Collect all errors and throw composite error

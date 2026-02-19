@@ -293,13 +293,7 @@ public extension MCPResponse {
     ///
     /// - Note: This method cannot fail as it guarantees valid inputs.
     static func success(id: String, result: SendableValue) -> MCPResponse {
-        // Safe: we guarantee exactly one of result/error is set
-        do {
-            return try MCPResponse(id: id, result: result, error: nil)
-        } catch {
-            // This should never happen given our invariants, but handle gracefully
-            fatalError("MCPResponse.success: unexpected validation failure - \(error)")
-        }
+        MCPResponse(uncheckedId: id, result: result, error: nil)
     }
 
     /// Creates an error response with the given error object.
@@ -311,13 +305,19 @@ public extension MCPResponse {
     ///
     /// - Note: This method cannot fail as it guarantees valid inputs.
     static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
-        // Safe: we guarantee exactly one of result/error is set
-        do {
-            return try MCPResponse(id: id, result: nil, error: error)
-        } catch {
-            // This should never happen given our invariants, but handle gracefully
-            fatalError("MCPResponse.failure: unexpected validation failure - \(error)")
-        }
+        MCPResponse(uncheckedId: id, result: nil, error: error)
+    }
+}
+
+// MARK: - MCPResponse Private Helpers
+
+private extension MCPResponse {
+    init(uncheckedId id: String, result: SendableValue?, error: MCPErrorObject?) {
+        assert((result != nil) != (error != nil), "MCPResponse must have exactly one of result or error set.")
+        self.jsonrpc = "2.0"
+        self.id = id
+        self.result = result
+        self.error = error
     }
 }
 

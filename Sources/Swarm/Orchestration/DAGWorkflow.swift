@@ -120,6 +120,7 @@ public struct DAGBuilder {
 public struct DAG: OrchestrationStep, Sendable {
     /// The nodes comprising this DAG.
     public let nodes: [DAGNode]
+    private let validationError: DAGValidationError?
 
     /// Creates a new DAG workflow from a builder closure.
     ///
@@ -130,21 +131,22 @@ public struct DAG: OrchestrationStep, Sendable {
     /// - Parameter content: A builder closure producing DAG nodes.
     public init(@DAGBuilder _ content: () -> [DAGNode]) {
         let builtNodes = content()
-        DAG.validate(builtNodes)
         self.nodes = builtNodes
+        self.validationError = DAG.validate(builtNodes)
     }
 
     /// Internal initializer for testing with pre-validated nodes.
     init(validatedNodes: [DAGNode]) {
         self.nodes = validatedNodes
+        self.validationError = nil
     }
 
     // MARK: - Validation
 
     /// Validates that the DAG has no missing dependencies and no cycles.
-    private static func validate(_ nodes: [DAGNode]) {
+    private static func validate(_ nodes: [DAGNode]) -> DAGValidationError? {
         guard !nodes.isEmpty else {
-            preconditionFailure("DAG must contain at least one node.")
+            return .emptyGraph
         }
 
         let nodeNames = Set(nodes.map(\.name))
@@ -153,9 +155,10 @@ public struct DAG: OrchestrationStep, Sendable {
         for node in nodes {
             for dep in node.dependencies {
                 if !nodeNames.contains(dep) {
-                    preconditionFailure(
-                        "DAG node '\(node.name)' depends on unknown node '\(dep)'. "
-                        + "Available nodes: \(nodeNames.sorted().joined(separator: ", "))"
+                    return .missingDependency(
+                        node: node.name,
+                        dependency: dep,
+                        available: nodeNames.sorted()
                     )
                 }
             }
@@ -166,10 +169,10 @@ public struct DAG: OrchestrationStep, Sendable {
         if sorted.count != nodes.count {
             let sortedNames = Set(sorted.map(\.name))
             let cycleNodes = nodes.filter { !sortedNames.contains($0.name) }.map(\.name)
-            preconditionFailure(
-                "Cycle detected in DAG involving nodes: \(cycleNodes.joined(separator: ", "))"
-            )
+            return .cycleDetected(nodes: cycleNodes)
         }
+
+        return nil
     }
 
     // MARK: - Topological Sort (Kahn's Algorithm)
@@ -212,8 +215,8 @@ public struct DAG: OrchestrationStep, Sendable {
     // MARK: - Execution
 
     public func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
-        guard !nodes.isEmpty else {
-            return AgentResult(output: input)
+        if let validationError {
+            throw validationError
         }
 
         let startTime = ContinuousClock.now
@@ -297,9 +300,20 @@ public struct DAG: OrchestrationStep, Sendable {
         let criticalPathDuration = await computeCriticalPathDuration(sorted: sorted, state: state)
         allMetadata["dag.critical_path_duration"] = .double(criticalPathDuration)
 
-        // Output is from the last node(s) in topological order
-        let lastNodeName = sorted.last?.name ?? ""
-        let finalOutput = allResults[lastNodeName]?.output ?? input
+        // Output is from the sink node(s) (nodes with no downstream edges) in topological order.
+        let sinkNames = sorted
+            .map(\.name)
+            .filter { downstreamMap[$0, default: []].isEmpty }
+        let sinkOutputs = sinkNames.compactMap { allResults[$0]?.output }
+        let finalOutput: String
+        switch sinkOutputs.count {
+        case 0:
+            finalOutput = input
+        case 1:
+            finalOutput = sinkOutputs[0]
+        default:
+            finalOutput = sinkOutputs.joined(separator: "\n")
+        }
 
         return AgentResult(
             output: finalOutput,
@@ -359,6 +373,27 @@ public struct DAG: OrchestrationStep, Sendable {
         }
 
         return longestPath.values.max() ?? 0
+    }
+}
+
+// MARK: - DAGValidationError
+
+public enum DAGValidationError: Error, Sendable, Equatable {
+    case emptyGraph
+    case missingDependency(node: String, dependency: String, available: [String])
+    case cycleDetected(nodes: [String])
+}
+
+extension DAGValidationError: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .emptyGraph:
+            return "DAG must contain at least one node."
+        case let .missingDependency(node, dependency, available):
+            return "DAG node '\(node)' depends on unknown node '\(dependency)'. Available nodes: \(available.joined(separator: ", "))"
+        case let .cycleDetected(nodes):
+            return "Cycle detected in DAG involving nodes: \(nodes.joined(separator: ", "))"
+        }
     }
 }
 
