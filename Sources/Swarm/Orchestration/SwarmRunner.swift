@@ -127,6 +127,7 @@ public enum SwarmError: Error, Sendable {
     case missingInferenceProvider(agentName: String)
     case handoffTargetMissing(toolName: String)
     case invalidToolArguments(toolName: String, reason: String)
+    case incompleteToolCallStream(index: Int, reason: String)
 }
 
 // MARK: - SwarmRunner
@@ -289,10 +290,22 @@ public actor SwarmRunner {
         func completedCalls() throws -> [InferenceResponse.ParsedToolCall] {
             try toolCalls
                 .sorted { $0.key < $1.key }
-                .compactMap { _, call -> InferenceResponse.ParsedToolCall? in
-                    guard let id = call.id, let name = call.name else { return nil }
+                .compactMap { index, call -> InferenceResponse.ParsedToolCall? in
+                    guard let name = call.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !name.isEmpty else {
+                        throw SwarmError.incompleteToolCallStream(
+                            index: index,
+                            reason: "Missing tool name for streamed tool call."
+                        )
+                    }
+
+                    let trimmedId = call.id?.trimmingCharacters(in: .whitespacesAndNewlines)
                     let arguments = try SwarmRunner.parseToolArguments(call.arguments, toolName: name)
-                    return InferenceResponse.ParsedToolCall(id: id, name: name, arguments: arguments)
+                    return InferenceResponse.ParsedToolCall(
+                        id: trimmedId?.isEmpty == true ? nil : trimmedId,
+                        name: name,
+                        arguments: arguments
+                    )
                 }
         }
     }
@@ -537,6 +550,10 @@ public actor SwarmRunner {
         _ jsonString: String,
         toolName: String
     ) throws -> [String: SendableValue] {
+        let trimmed = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return [:]
+        }
         guard let data = jsonString.data(using: .utf8) else {
             throw SwarmError.invalidToolArguments(
                 toolName: toolName,
