@@ -130,16 +130,45 @@ public struct MCPResourceContent: Sendable, Codable, Equatable {
     ///   - mimeType: The optional MIME type of the content. Default: nil
     ///   - text: The text content, if available. Default: nil
     ///   - blob: The Base64-encoded binary content, if available. Default: nil
+    /// - Throws: `MCPError.invalidRequest` when both `text` and `blob` are set,
+    ///   or when both are `nil`.
     public init(
         uri: String,
         mimeType: String? = nil,
         text: String? = nil,
         blob: String? = nil
-    ) {
+    ) throws {
+        guard (text == nil) != (blob == nil) else {
+            throw MCPError.invalidRequest("MCPResourceContent requires exactly one of text or blob.")
+        }
         self.uri = uri
         self.mimeType = mimeType
         self.text = text
         self.blob = blob
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        uri = try container.decode(String.self, forKey: .uri)
+        mimeType = try container.decodeIfPresent(String.self, forKey: .mimeType)
+        text = try container.decodeIfPresent(String.self, forKey: .text)
+        blob = try container.decodeIfPresent(String.self, forKey: .blob)
+
+        guard (text == nil) != (blob == nil) else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: container.codingPath,
+                    debugDescription: "MCPResourceContent requires exactly one of text or blob."
+                )
+            )
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case uri
+        case mimeType
+        case text
+        case blob
     }
 }
 

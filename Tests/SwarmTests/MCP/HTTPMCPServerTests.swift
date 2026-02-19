@@ -14,7 +14,7 @@ struct HTTPMCPServerInitializationTests {
     @Test("Server initializes with correct properties")
     func serverInit() async throws {
         let url = URL(string: "https://mcp.example.com/api")!
-        let server = HTTPMCPServer(
+        let server = try HTTPMCPServer(
             url: url,
             name: "test-server",
             apiKey: "sk-test-key",
@@ -29,7 +29,7 @@ struct HTTPMCPServerInitializationTests {
     @Test("Server uses default timeout of 30.0 seconds")
     func defaultTimeout() async throws {
         let url = URL(string: "https://mcp.example.com/api")!
-        let server = HTTPMCPServer(url: url, name: "timeout-test")
+        let server = try HTTPMCPServer(url: url, name: "timeout-test")
 
         // Verify default timeout by checking capabilities before init returns empty
         // The timeout is internal, but we can verify server creation succeeds
@@ -40,7 +40,7 @@ struct HTTPMCPServerInitializationTests {
     @Test("Server uses default maxRetries of 3")
     func defaultMaxRetries() async throws {
         let url = URL(string: "https://mcp.example.com/api")!
-        let server = HTTPMCPServer(url: url, name: "retries-test")
+        let server = try HTTPMCPServer(url: url, name: "retries-test")
 
         // maxRetries is internal, verify server creation with defaults succeeds
         let name = await server.name
@@ -55,7 +55,7 @@ struct HTTPMCPServerCapabilitiesTests {
     @Test("Capabilities returns empty MCPCapabilities before initialization")
     func capabilitiesBeforeInit() async throws {
         let url = URL(string: "https://mcp.example.com/api")!
-        let server = HTTPMCPServer(url: url, name: "capabilities-test")
+        let server = try HTTPMCPServer(url: url, name: "capabilities-test")
 
         let capabilities = await server.capabilities
 
@@ -73,7 +73,7 @@ struct HTTPMCPServerCapabilitiesTests {
         // This test documents the expected behavior: after initialize() is called,
         // capabilities should return the cached value from the server response.
         let url = URL(string: "https://mcp.example.com/api")!
-        let server = HTTPMCPServer(url: url, name: "cached-capabilities-test")
+        let server = try HTTPMCPServer(url: url, name: "cached-capabilities-test")
 
         // Before init, capabilities are empty
         let beforeInit = await server.capabilities
@@ -91,7 +91,7 @@ struct HTTPMCPServerNameTests {
     @Test("Server returns correct name property")
     func serverName() async throws {
         let url = URL(string: "https://api.example.com/mcp")!
-        let server = HTTPMCPServer(url: url, name: "my-custom-server")
+        let server = try HTTPMCPServer(url: url, name: "my-custom-server")
 
         let name = await server.name
         #expect(name == "my-custom-server")
@@ -100,7 +100,7 @@ struct HTTPMCPServerNameTests {
     @Test("Server preserves name with special characters")
     func serverNameSpecialCharacters() async throws {
         let url = URL(string: "https://api.example.com/mcp")!
-        let server = HTTPMCPServer(url: url, name: "server-with_special.chars:123")
+        let server = try HTTPMCPServer(url: url, name: "server-with_special.chars:123")
 
         let name = await server.name
         #expect(name == "server-with_special.chars:123")
@@ -109,9 +109,20 @@ struct HTTPMCPServerNameTests {
     @Test("Server preserves empty name")
     func serverEmptyName() async throws {
         let url = URL(string: "https://api.example.com/mcp")!
-        let server = HTTPMCPServer(url: url, name: "")
+        let server = try HTTPMCPServer(url: url, name: "")
 
         let name = await server.name
         #expect(name.isEmpty)
+    }
+}
+
+@Suite("HTTPMCPServer Validation Tests")
+struct HTTPMCPServerValidationTests {
+    @Test("Server throws when API key is configured for non-HTTPS URL")
+    func apiKeyRequiresHTTPS() async {
+        let url = URL(string: "http://mcp.example.com/api")!
+        await #expect(throws: MCPError.self) {
+            _ = try HTTPMCPServer(url: url, name: "insecure-server", apiKey: "sk-test-key")
+        }
     }
 }

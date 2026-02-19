@@ -123,14 +123,12 @@ public struct DAG: OrchestrationStep, Sendable {
 
     /// Creates a new DAG workflow from a builder closure.
     ///
-    /// Validates the graph structure at construction time. A `preconditionFailure`
-    /// is triggered if the graph contains cycles or references missing dependencies,
-    /// since these represent programming errors.
+    /// Validates the graph structure at construction time.
     ///
     /// - Parameter content: A builder closure producing DAG nodes.
-    public init(@DAGBuilder _ content: () -> [DAGNode]) {
+    public init(@DAGBuilder _ content: () -> [DAGNode]) throws {
         let builtNodes = content()
-        DAG.validate(builtNodes)
+        try DAG.validate(builtNodes)
         self.nodes = builtNodes
     }
 
@@ -142,9 +140,9 @@ public struct DAG: OrchestrationStep, Sendable {
     // MARK: - Validation
 
     /// Validates that the DAG has no missing dependencies and no cycles.
-    private static func validate(_ nodes: [DAGNode]) {
+    private static func validate(_ nodes: [DAGNode]) throws {
         guard !nodes.isEmpty else {
-            preconditionFailure("DAG must contain at least one node.")
+            throw OrchestrationError.invalidWorkflow(reason: "DAG must contain at least one node.")
         }
 
         let nodeNames = Set(nodes.map(\.name))
@@ -153,7 +151,7 @@ public struct DAG: OrchestrationStep, Sendable {
         for node in nodes {
             for dep in node.dependencies {
                 if !nodeNames.contains(dep) {
-                    preconditionFailure(
+                    throw OrchestrationError.invalidWorkflow(reason:
                         "DAG node '\(node.name)' depends on unknown node '\(dep)'. "
                         + "Available nodes: \(nodeNames.sorted().joined(separator: ", "))"
                     )
@@ -166,7 +164,7 @@ public struct DAG: OrchestrationStep, Sendable {
         if sorted.count != nodes.count {
             let sortedNames = Set(sorted.map(\.name))
             let cycleNodes = nodes.filter { !sortedNames.contains($0.name) }.map(\.name)
-            preconditionFailure(
+            throw OrchestrationError.invalidWorkflow(reason:
                 "Cycle detected in DAG involving nodes: \(cycleNodes.joined(separator: ", "))"
             )
         }

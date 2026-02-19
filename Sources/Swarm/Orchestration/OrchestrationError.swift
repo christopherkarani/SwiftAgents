@@ -33,6 +33,9 @@ public enum OrchestrationError: Error, Sendable, Equatable {
     /// Route condition is invalid or cannot be evaluated.
     case invalidRouteCondition(reason: String)
 
+    /// Workflow structure is invalid (for example empty graphs or cyclic dependencies).
+    case invalidWorkflow(reason: String)
+
     // MARK: - Parallel Execution Errors
 
     /// Merge strategy failed to combine parallel agent results.
@@ -73,6 +76,8 @@ extension OrchestrationError: LocalizedError {
             return "Routing decision failed: \(reason)"
         case let .invalidRouteCondition(reason):
             return "Invalid route condition: \(reason)"
+        case let .invalidWorkflow(reason):
+            return "Invalid workflow: \(reason)"
         case let .mergeStrategyFailed(reason):
             return "Merge strategy failed: \(reason)"
         case let .allAgentsFailed(errors):
@@ -107,6 +112,8 @@ extension OrchestrationError: CustomDebugStringConvertible {
             return "OrchestrationError.routingFailed(reason: \(reason))"
         case let .invalidRouteCondition(reason):
             return "OrchestrationError.invalidRouteCondition(reason: \(reason))"
+        case let .invalidWorkflow(reason):
+            return "OrchestrationError.invalidWorkflow(reason: \(reason))"
         case let .mergeStrategyFailed(reason):
             return "OrchestrationError.mergeStrategyFailed(reason: \(reason))"
         case let .allAgentsFailed(errors):

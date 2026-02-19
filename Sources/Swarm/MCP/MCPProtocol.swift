@@ -80,15 +80,18 @@ public struct MCPRequest: Sendable, Codable, Equatable {
     ///   - method: The name of the method to invoke. Must be non-empty.
     ///   - params: Optional parameters for the method. Defaults to `nil`.
     ///
-    /// - Precondition: `id` must be non-empty.
-    /// - Precondition: `method` must be non-empty.
+    /// - Throws: `MCPError.invalidRequest` when `id` or `method` is empty.
     public init(
         id: String = UUID().uuidString,
         method: String,
         params: [String: SendableValue]? = nil
-    ) {
-        precondition(!id.isEmpty, "MCPRequest: id cannot be empty per JSON-RPC 2.0 specification")
-        precondition(!method.isEmpty, "MCPRequest: method cannot be empty")
+    ) throws {
+        guard !id.isEmpty else {
+            throw MCPError.invalidRequest("MCPRequest: id cannot be empty per JSON-RPC 2.0 specification")
+        }
+        guard !method.isEmpty else {
+            throw MCPError.invalidRequest("MCPRequest: method cannot be empty")
+        }
 
         jsonrpc = "2.0"
         self.id = id
@@ -224,6 +227,9 @@ public struct MCPResponse: Sendable, Codable, Equatable {
         result: SendableValue? = nil,
         error: MCPErrorObject? = nil
     ) throws {
+        guard !id.isEmpty else {
+            throw MCPError.invalidRequest("MCPResponse: id cannot be empty")
+        }
         guard (result == nil) != (error == nil) else {
             throw MCPError.invalidRequest(
                 "MCPResponse must have exactly one of result or error set, not both or neither"
@@ -242,6 +248,14 @@ public struct MCPResponse: Sendable, Codable, Equatable {
 
         let jsonrpc = try container.decode(String.self, forKey: .jsonrpc)
         let id = try container.decode(String.self, forKey: .id)
+        guard !id.isEmpty else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: [CodingKeys.id],
+                    debugDescription: "Response ID cannot be empty"
+                )
+            )
+        }
         let result = try container.decodeIfPresent(SendableValue.self, forKey: .result)
         let error = try container.decodeIfPresent(MCPErrorObject.self, forKey: .error)
 
@@ -291,15 +305,9 @@ public extension MCPResponse {
     ///   - result: The result value to include in the response.
     /// - Returns: An MCPResponse with the result set and error as `nil`.
     ///
-    /// - Note: This method cannot fail as it guarantees valid inputs.
-    static func success(id: String, result: SendableValue) -> MCPResponse {
-        // Safe: we guarantee exactly one of result/error is set
-        do {
-            return try MCPResponse(id: id, result: result, error: nil)
-        } catch {
-            // This should never happen given our invariants, but handle gracefully
-            fatalError("MCPResponse.success: unexpected validation failure - \(error)")
-        }
+    /// - Throws: `MCPError.invalidRequest` if response invariants are violated.
+    static func success(id: String, result: SendableValue) throws -> MCPResponse {
+        try MCPResponse(id: id, result: result, error: nil)
     }
 
     /// Creates an error response with the given error object.
@@ -309,15 +317,9 @@ public extension MCPResponse {
     ///   - error: The error object describing what went wrong.
     /// - Returns: An MCPResponse with the error set and result as `nil`.
     ///
-    /// - Note: This method cannot fail as it guarantees valid inputs.
-    static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
-        // Safe: we guarantee exactly one of result/error is set
-        do {
-            return try MCPResponse(id: id, result: nil, error: error)
-        } catch {
-            // This should never happen given our invariants, but handle gracefully
-            fatalError("MCPResponse.failure: unexpected validation failure - \(error)")
-        }
+    /// - Throws: `MCPError.invalidRequest` if response invariants are violated.
+    static func failure(id: String, error: MCPErrorObject) throws -> MCPResponse {
+        try MCPResponse(id: id, result: nil, error: error)
     }
 }
 
