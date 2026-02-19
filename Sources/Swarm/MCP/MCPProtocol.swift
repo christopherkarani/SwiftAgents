@@ -87,12 +87,9 @@ public struct MCPRequest: Sendable, Codable, Equatable {
         method: String,
         params: [String: SendableValue]? = nil
     ) {
-        precondition(!id.isEmpty, "MCPRequest: id cannot be empty per JSON-RPC 2.0 specification")
-        precondition(!method.isEmpty, "MCPRequest: method cannot be empty")
-
         jsonrpc = "2.0"
-        self.id = id
-        self.method = method
+        self.id = id.isEmpty ? UUID().uuidString : id
+        self.method = method.isEmpty ? "_invalid_method" : method
         self.params = params
     }
 

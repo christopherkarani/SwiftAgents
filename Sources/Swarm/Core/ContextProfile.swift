@@ -175,30 +175,28 @@ public struct ContextProfile: Sendable, Equatable {
         summaryCadenceTurns: Int,
         summaryTriggerUtilization: Double
     ) {
-        precondition(maxContextTokens > 0, "maxContextTokens must be positive")
-        precondition((0.0 ... 1.0).contains(workingTokenRatio), "workingTokenRatio must be 0.0-1.0")
-        precondition((0.0 ... 1.0).contains(memoryTokenRatio), "memoryTokenRatio must be 0.0-1.0")
-        precondition((0.0 ... 1.0).contains(toolIOTokenRatio), "toolIOTokenRatio must be 0.0-1.0")
-        precondition((0.0 ... 1.0).contains(summaryTokenRatio), "summaryTokenRatio must be 0.0-1.0")
-        let ratioSum = workingTokenRatio + memoryTokenRatio + toolIOTokenRatio
-        precondition(abs(ratioSum - 1.0) < 0.0001, "Context ratios must sum to 1.0")
-        precondition(maxToolOutputTokens > 0, "maxToolOutputTokens must be positive")
-        precondition(maxRetrievedItems > 0, "maxRetrievedItems must be positive")
-        precondition(maxRetrievedItemTokens > 0, "maxRetrievedItemTokens must be positive")
-        precondition(summaryCadenceTurns > 0, "summaryCadenceTurns must be positive")
-        precondition((0.0 ... 1.0).contains(summaryTriggerUtilization), "summaryTriggerUtilization must be 0.0-1.0")
+        let safeWorking = Self.clampUnitInterval(workingTokenRatio)
+        let safeMemory = Self.clampUnitInterval(memoryTokenRatio)
+        let safeToolIO = Self.clampUnitInterval(toolIOTokenRatio)
+        let normalizedRatios = Self.normalizeContextRatios(
+            working: safeWorking,
+            memory: safeMemory,
+            toolIO: safeToolIO
+        )
+        let safeSummary = Self.clampUnitInterval(summaryTokenRatio)
+        let safeSummaryTrigger = Self.clampUnitInterval(summaryTriggerUtilization)
 
         self.preset = preset
-        self.maxContextTokens = maxContextTokens
-        self.workingTokenRatio = workingTokenRatio
-        self.memoryTokenRatio = memoryTokenRatio
-        self.toolIOTokenRatio = toolIOTokenRatio
-        self.summaryTokenRatio = summaryTokenRatio
-        self.maxToolOutputTokens = maxToolOutputTokens
-        self.maxRetrievedItems = maxRetrievedItems
-        self.maxRetrievedItemTokens = maxRetrievedItemTokens
-        self.summaryCadenceTurns = summaryCadenceTurns
-        self.summaryTriggerUtilization = summaryTriggerUtilization
+        self.maxContextTokens = max(1, maxContextTokens)
+        self.workingTokenRatio = normalizedRatios.working
+        self.memoryTokenRatio = normalizedRatios.memory
+        self.toolIOTokenRatio = normalizedRatios.toolIO
+        self.summaryTokenRatio = safeSummary
+        self.maxToolOutputTokens = max(1, maxToolOutputTokens)
+        self.maxRetrievedItems = max(1, maxRetrievedItems)
+        self.maxRetrievedItemTokens = max(1, maxRetrievedItemTokens)
+        self.summaryCadenceTurns = max(1, summaryCadenceTurns)
+        self.summaryTriggerUtilization = safeSummaryTrigger
     }
 
     // MARK: Derived Budgets
@@ -227,6 +225,29 @@ public struct ContextProfile: Sendable, Equatable {
     /// Maximum tokens reserved for summaries within memory.
     public var summaryTokenLimit: Int {
         Int(Double(budget.memoryTokens) * summaryTokenRatio)
+    }
+
+    // MARK: Private
+
+    private static func clampUnitInterval(_ value: Double) -> Double {
+        if !value.isFinite {
+            return 0.0
+        }
+        if value < 0 {
+            return 0.0
+        }
+        if value > 1 {
+            return 1.0
+        }
+        return value
+    }
+
+    private static func normalizeContextRatios(working: Double, memory: Double, toolIO: Double) -> (working: Double, memory: Double, toolIO: Double) {
+        let sum = working + memory + toolIO
+        if sum <= .ulpOfOne {
+            return (0.55, 0.30, 0.15)
+        }
+        return (working / sum, memory / sum, toolIO / sum)
     }
 }
 

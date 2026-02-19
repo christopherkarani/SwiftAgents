@@ -123,6 +123,18 @@ struct RetryModifierTests {
         #expect(result.metadata["retry.attempts"]?.intValue == 3)
         #expect(result.metadata["retry.succeeded"]?.boolValue == true)
     }
+
+    @Test("Invalid maxAttempts is coerced to a single attempt without crashing")
+    func retryCoercesInvalidAttempts() async throws {
+        let counter = FlakeyStep.CallCounter()
+        let step = FlakeyStep(failCount: 0, callCounter: counter)
+            .retry(maxAttempts: 0, delay: .milliseconds(10))
+
+        let result = try await step.execute("safe", context: makeTestContext())
+        #expect(result.output == "success:safe")
+        #expect(counter.count == 1)
+        #expect(result.metadata["retry.attempts"]?.intValue == 1)
+    }
 }
 
 // MARK: - TimeoutModifier Tests

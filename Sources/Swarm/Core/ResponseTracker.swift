@@ -150,12 +150,12 @@ public actor ResponseTracker {
     /// let unlimitedTracker = ResponseTracker(maxSessions: nil)
     /// ```
     public init(maxHistorySize: Int = 100, maxSessions: Int? = 1000) {
-        precondition(maxHistorySize > 0, "maxHistorySize must be greater than 0")
-        if let maxSessions {
-            precondition(maxSessions > 0, "maxSessions must be greater than 0 when not nil")
+        self.maxHistorySize = max(1, maxHistorySize)
+        self.maxSessions = if let maxSessions {
+            max(1, maxSessions)
+        } else {
+            nil
         }
-        self.maxHistorySize = maxHistorySize
-        self.maxSessions = maxSessions
     }
 
     // MARK: - Recording
@@ -185,8 +185,8 @@ public actor ResponseTracker {
     /// print(count)  // 3
     /// ```
     public func recordResponse(_ response: AgentResponse, sessionId: String) {
-        precondition(!sessionId.isEmpty, "ResponseTracker: sessionId cannot be empty")
-        precondition(!response.responseId.isEmpty, "ResponseTracker: response.responseId cannot be empty")
+        guard !sessionId.isEmpty else { return }
+        guard !response.responseId.isEmpty else { return }
 
         var history = responseHistory[sessionId] ?? []
         history.append(response)

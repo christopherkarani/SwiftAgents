@@ -44,12 +44,15 @@ extension LanguageModelSession: InferenceProvider {
 
     public func generateWithToolCalls(
         prompt: String,
-        tools _: [ToolSchema],
+        tools: [ToolSchema],
         options _: InferenceOptions
     ) async throws -> InferenceResponse {
-        // TODO: Implement native tool calling for FoundationModels
-        // Foundation Models on-device may support function calling in future releases.
-        // For now, fall back to text generation without tool calls.
+        guard tools.isEmpty else {
+            throw AgentError.generationFailed(
+                reason: "FoundationModels provider does not support tool calling yet"
+            )
+        }
+
         let response = try await self.respond(to: prompt)
 
         return InferenceResponse(

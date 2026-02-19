@@ -123,9 +123,9 @@ public struct RetryModifier: StepModifier {
     public let backoffMultiplier: Double
 
     public init(maxAttempts: Int, initialDelay: Duration = .seconds(1), backoffMultiplier: Double = 2.0) {
-        self.maxAttempts = maxAttempts
+        self.maxAttempts = max(1, maxAttempts)
         self.initialDelay = initialDelay
-        self.backoffMultiplier = backoffMultiplier
+        self.backoffMultiplier = (!backoffMultiplier.isFinite || backoffMultiplier <= 0) ? 1.0 : backoffMultiplier
     }
 
     public func body(content: OrchestrationStep, input: String, context: OrchestrationStepContext) async throws -> AgentResult {
@@ -159,7 +159,7 @@ public struct RetryModifier: StepModifier {
             }
         }
 
-        throw lastError!
+        throw lastError ?? AgentError.internalError(reason: "Retry failed without capturing an underlying error")
     }
 }
 

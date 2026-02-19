@@ -56,6 +56,15 @@ struct MCPRequestTests {
         // would be needed. The internal API works correctly; this test verifies
         // the Swift-level API behavior.
     }
+
+    @Test("request with empty id and method is sanitized")
+    func requestSanitizesEmptyFields() {
+        let request = MCPRequest(id: "", method: "")
+
+        #expect(!request.id.isEmpty)
+        #expect(request.method == "_invalid_method")
+        #expect(request.jsonrpc == "2.0")
+    }
 }
 
 // MARK: - MCPResponseTests

@@ -87,12 +87,19 @@ public struct InferencePolicy: Sendable, Equatable {
         tokenBudget: Int? = nil,
         networkState: NetworkState = .online
     ) {
+        let sanitizedTokenBudget: Int?
         if let tokenBudget {
-            precondition(tokenBudget > 0, "tokenBudget must be positive")
+            if tokenBudget <= 0 {
+                sanitizedTokenBudget = nil
+            } else {
+                sanitizedTokenBudget = tokenBudget
+            }
+        } else {
+            sanitizedTokenBudget = nil
         }
         self.latencyTier = latencyTier
         self.privacyRequired = privacyRequired
-        self.tokenBudget = tokenBudget
+        self.tokenBudget = sanitizedTokenBudget
         self.networkState = networkState
     }
 }
@@ -320,14 +327,10 @@ public struct AgentConfiguration: Sendable, Equatable {
         autoPreviousResponseId: Bool = false,
         defaultTracingEnabled: Bool = true
     ) {
-        precondition(maxIterations > 0, "maxIterations must be positive")
-        precondition(timeout > .zero, "timeout must be positive")
-        precondition((0.0 ... 2.0).contains(temperature), "temperature must be 0.0-2.0")
-
         self.name = name
-        self.maxIterations = maxIterations
-        self.timeout = timeout
-        self.temperature = temperature
+        self.maxIterations = max(1, maxIterations)
+        self.timeout = timeout > .zero ? timeout : .seconds(60)
+        self.temperature = (temperature.isFinite && (0.0 ... 2.0).contains(temperature)) ? temperature : 1.0
         self.maxTokens = maxTokens
         self.stopSequences = stopSequences
         self.modelSettings = modelSettings
