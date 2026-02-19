@@ -175,8 +175,23 @@ public extension AgentRuntime {
     ) async throws -> AgentResponse {
         let result = try await run(input, session: session, hooks: hooks)
 
-        // Create lookup dictionary for O(1) access instead of O(n²)
-        let toolCallsById = Dictionary(uniqueKeysWithValues: result.toolCalls.map { ($0.id, $0) })
+        // Create lookup dictionary for O(1) access instead of O(n²),
+        // while guarding against duplicate tool call IDs.
+        var toolCallsById: [UUID: ToolCall] = [:]
+        var duplicateCallIds: [UUID] = []
+        toolCallsById.reserveCapacity(result.toolCalls.count)
+
+        for call in result.toolCalls {
+            if toolCallsById[call.id] == nil {
+                toolCallsById[call.id] = call
+            } else {
+                duplicateCallIds.append(call.id)
+            }
+        }
+        if !duplicateCallIds.isEmpty {
+            let ids = duplicateCallIds.map { $0.uuidString }.joined(separator: ", ")
+            Log.agents.warning("Duplicate tool call IDs detected in AgentResult: \(ids)")
+        }
 
         // Convert ToolResults to ToolCallRecords
         let toolCallRecords: [ToolCallRecord] = result.toolResults.compactMap { toolResult in

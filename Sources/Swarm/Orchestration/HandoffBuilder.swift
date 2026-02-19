@@ -324,6 +324,12 @@ public func handoff<A: AgentLoopDefinition>(
 public struct AnyHandoffConfiguration: Sendable {
     /// The target agent (type-erased).
     public let targetAgent: any AgentRuntime
+    /// Stable identifier for reference-type agents (nil for value types).
+    public let targetIdentity: ObjectIdentifier?
+    /// Cached agent name for matching/value-type disambiguation.
+    public let targetName: String
+    /// Cached agent type name for matching/value-type disambiguation.
+    public let targetTypeName: String
 
     /// Custom tool name for this handoff.
     public let toolNameOverride: String?
@@ -350,6 +356,9 @@ public struct AnyHandoffConfiguration: Sendable {
     /// - Parameter configuration: The typed configuration to wrap.
     public init(_ configuration: HandoffConfiguration<some AgentRuntime>) {
         targetAgent = configuration.targetAgent
+        targetIdentity = AnyHandoffConfiguration.referenceIdentity(for: configuration.targetAgent)
+        targetName = configuration.targetAgent.name
+        targetTypeName = String(describing: type(of: configuration.targetAgent))
         toolNameOverride = configuration.toolNameOverride
         toolDescription = configuration.toolDescription
         onHandoff = configuration.onHandoff
@@ -378,6 +387,9 @@ public struct AnyHandoffConfiguration: Sendable {
         nestHandoffHistory: Bool = false
     ) {
         self.targetAgent = targetAgent
+        targetIdentity = AnyHandoffConfiguration.referenceIdentity(for: targetAgent)
+        targetName = targetAgent.name
+        targetTypeName = String(describing: type(of: targetAgent))
         self.toolNameOverride = toolNameOverride
         self.toolDescription = toolDescription
         self.onHandoff = onHandoff
@@ -406,6 +418,33 @@ public extension AnyHandoffConfiguration {
         }
         let typeName = String(describing: type(of: targetAgent))
         return "Hand off execution to \(typeName)"
+    }
+
+    /// Returns true if this configuration targets the provided agent instance.
+    func matches(targetAgent: any AgentRuntime) -> Bool {
+        if let targetIdentity,
+           let candidateIdentity = AnyHandoffConfiguration.referenceIdentity(for: targetAgent),
+           targetIdentity == candidateIdentity {
+            return true
+        }
+
+        let candidateName = targetAgent.name
+        if !targetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !candidateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return targetName == candidateName &&
+                targetTypeName == String(describing: type(of: targetAgent))
+        }
+
+        return targetTypeName == String(describing: type(of: targetAgent))
+    }
+}
+
+private extension AnyHandoffConfiguration {
+    static func referenceIdentity(for agent: any AgentRuntime) -> ObjectIdentifier? {
+        guard type(of: agent) is AnyObject.Type else {
+            return nil
+        }
+        return ObjectIdentifier(agent as AnyObject)
     }
 }
 

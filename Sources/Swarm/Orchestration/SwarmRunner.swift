@@ -126,6 +126,8 @@ public enum SwarmError: Error, Sendable {
     case agentNotFound(name: String)
     case missingInferenceProvider(agentName: String)
     case handoffTargetMissing(toolName: String)
+    case duplicateHandoffToolName(toolName: String)
+    case incompleteToolCall(index: Int, reason: String)
     case invalidToolArguments(toolName: String, reason: String)
 }
 
@@ -289,8 +291,13 @@ public actor SwarmRunner {
         func completedCalls() throws -> [InferenceResponse.ParsedToolCall] {
             try toolCalls
                 .sorted { $0.key < $1.key }
-                .compactMap { _, call -> InferenceResponse.ParsedToolCall? in
-                    guard let id = call.id, let name = call.name else { return nil }
+                .map { index, call -> InferenceResponse.ParsedToolCall in
+                    guard let id = call.id, !id.isEmpty else {
+                        throw SwarmError.incompleteToolCall(index: index, reason: "Missing tool call id")
+                    }
+                    guard let name = call.name, !name.isEmpty else {
+                        throw SwarmError.incompleteToolCall(index: index, reason: "Missing tool call name")
+                    }
                     let arguments = try SwarmRunner.parseToolArguments(call.arguments, toolName: name)
                     return InferenceResponse.ParsedToolCall(id: id, name: name, arguments: arguments)
                 }
@@ -304,7 +311,7 @@ public actor SwarmRunner {
         history: inout [MemoryMessage],
         continuation: AsyncThrowingStream<SwarmStreamChunk, Error>.Continuation
     ) async throws -> (String, [InferenceResponse.ParsedToolCall]?) {
-        let toolSchemas = buildToolSchemas(for: profile)
+        let toolSchemas = try buildToolSchemas(for: profile)
         let prompt = buildPrompt(with: history, instructions: profile.instructions)
         let options = profile.configuration.inferenceOptions
         let provider = profile.inferenceProvider
@@ -379,7 +386,7 @@ public actor SwarmRunner {
     ) async throws -> ToolExecutionResult {
         var messages: [MemoryMessage] = []
         var contextUpdates: [String: SendableValue] = [:]
-        let handoffs = buildHandoffEntries(for: activeProfile)
+        let handoffs = try buildHandoffEntries(for: activeProfile)
         let registry = ToolRegistry(tools: activeProfile.tools)
         let toolEngine = ToolExecutionEngine()
         let builder = AgentResult.Builder()
@@ -472,9 +479,9 @@ public actor SwarmRunner {
         return updated
     }
 
-    private func buildToolSchemas(for profile: SwarmAgentProfile) -> [ToolSchema] {
+    private func buildToolSchemas(for profile: SwarmAgentProfile) throws -> [ToolSchema] {
         let toolSchemas = profile.tools.map { $0.schema }
-        let handoffSchemas = buildHandoffEntries(for: profile).values.map { entry in
+        let handoffSchemas = try buildHandoffEntries(for: profile).values.map { entry in
             ToolSchema(
                 name: entry.config.effectiveToolName,
                 description: entry.config.effectiveToolDescription,
@@ -490,13 +497,17 @@ public actor SwarmRunner {
         return toolSchemas + handoffSchemas
     }
 
-    private func buildHandoffEntries(for profile: SwarmAgentProfile) -> [String: HandoffEntry] {
+    private func buildHandoffEntries(for profile: SwarmAgentProfile) throws -> [String: HandoffEntry] {
         var entries: [String: HandoffEntry] = [:]
         for config in profile.handoffs {
             let targetName = SwarmAgentProfile.displayName(for: config.targetAgent)
             guard let target = profilesByName[targetName] else { continue }
             let entry = HandoffEntry(config: config, target: target)
-            entries[config.effectiveToolName] = entry
+            let toolName = config.effectiveToolName
+            if entries[toolName] != nil {
+                throw SwarmError.duplicateHandoffToolName(toolName: toolName)
+            }
+            entries[toolName] = entry
         }
         return entries
     }
