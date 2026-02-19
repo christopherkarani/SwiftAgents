@@ -273,6 +273,20 @@ public struct MCPResponse: Sendable, Codable, Equatable {
 
     // MARK: Private
 
+    /// Internal initializer for validated response construction.
+    /// Callers must ensure exactly one of result or error is set.
+    private init(
+        validatedJsonrpc jsonrpc: String,
+        id: String,
+        result: SendableValue?,
+        error: MCPErrorObject?
+    ) {
+        self.jsonrpc = jsonrpc
+        self.id = id
+        self.result = result
+        self.error = error
+    }
+
     private enum CodingKeys: String, CodingKey {
         case jsonrpc
         case id
@@ -293,7 +307,12 @@ public extension MCPResponse {
     ///
     /// - Note: This method cannot fail as it guarantees valid inputs.
     static func success(id: String, result: SendableValue) -> MCPResponse {
-        MCPResponse(uncheckedId: id, result: result, error: nil)
+        MCPResponse(
+            validatedJsonrpc: "2.0",
+            id: id,
+            result: result,
+            error: nil
+        )
     }
 
     /// Creates an error response with the given error object.
@@ -305,19 +324,12 @@ public extension MCPResponse {
     ///
     /// - Note: This method cannot fail as it guarantees valid inputs.
     static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
-        MCPResponse(uncheckedId: id, result: nil, error: error)
-    }
-}
-
-// MARK: - MCPResponse Private Helpers
-
-private extension MCPResponse {
-    init(uncheckedId id: String, result: SendableValue?, error: MCPErrorObject?) {
-        precondition((result != nil) != (error != nil), "MCPResponse must have exactly one of result or error set.")
-        self.jsonrpc = "2.0"
-        self.id = id
-        self.result = result
-        self.error = error
+        MCPResponse(
+            validatedJsonrpc: "2.0",
+            id: id,
+            result: nil,
+            error: error
+        )
     }
 }
 

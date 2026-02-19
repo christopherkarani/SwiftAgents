@@ -112,6 +112,26 @@ enum OrchestrationHiveEngine {
     ) async throws -> AgentResult {
         let startTime = ContinuousClock.now
 
+        if steps.isEmpty {
+            let duration = ContinuousClock.now - startTime
+            return AgentResult(
+                output: input,
+                toolCalls: [],
+                toolResults: [],
+                iterationCount: 0,
+                duration: duration,
+                tokenUsage: nil,
+                metadata: [
+                    "orchestration.engine": .string("hive"),
+                    "orchestration.total_steps": .int(0),
+                    "orchestration.total_duration": .double(
+                        Double(duration.components.seconds) +
+                            Double(duration.components.attoseconds) / 1e18
+                    )
+                ]
+            )
+        }
+
         let context = AgentContext(input: input)
         let stepContext = OrchestrationStepContext(
             agentContext: context,
@@ -278,7 +298,9 @@ enum OrchestrationHiveEngine {
     }
 
     private static func makeGraph(steps: [OrchestrationStep]) throws -> CompiledHiveGraph<Schema> {
-        precondition(!steps.isEmpty)
+        guard !steps.isEmpty else {
+            throw OrchestrationError.invalidWorkflow(reason: "Hive orchestration requires at least one step.")
+        }
 
         let nodeIDs = steps.indices.map { HiveNodeID("orchestration.step_\($0)") }
 

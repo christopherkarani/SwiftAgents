@@ -261,10 +261,6 @@ public actor ParallelToolExecutor {
 
         // Apply error strategy
         switch errorStrategy {
-        case .failFast:
-            // Handled above with true cancellation.
-            break
-
         case .collectErrors:
             // Collect all errors and throw composite error
             let errors = results.compactMap(\.error)
@@ -278,6 +274,10 @@ public actor ParallelToolExecutor {
 
         case .continueOnError:
             // Return results as-is with failures included
+            break
+
+        case .failFast:
+            // Handled above with true cancellation; fall back to results if logic changes.
             break
         }
 
