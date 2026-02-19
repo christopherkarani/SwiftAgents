@@ -143,8 +143,32 @@ public struct DAG: OrchestrationStep, Sendable {
 
     /// Validates that the DAG has no missing dependencies and no cycles.
     private static func validate(_ nodes: [DAGNode]) {
+        do {
+            try validateNodes(nodes)
+        } catch {
+            preconditionFailure("Invalid DAG: \(error)")
+        }
+    }
+
+    /// Validates DAG structure without triggering a precondition failure.
+    static func validateNodes(_ nodes: [DAGNode]) throws {
         guard !nodes.isEmpty else {
-            preconditionFailure("DAG must contain at least one node.")
+            throw DAGValidationError.emptyNodes
+        }
+
+        for (index, node) in nodes.enumerated() {
+            if node.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                throw DAGValidationError.emptyName(index: index)
+            }
+        }
+
+        var nameCounts: [String: Int] = [:]
+        for name in nodes.map(\.name) {
+            nameCounts[name, default: 0] += 1
+        }
+        let duplicates = nameCounts.filter { $0.value > 1 }.map(\.key).sorted()
+        if !duplicates.isEmpty {
+            throw DAGValidationError.duplicateNames(duplicates)
         }
 
         let nodeNames = Set(nodes.map(\.name))
@@ -153,9 +177,10 @@ public struct DAG: OrchestrationStep, Sendable {
         for node in nodes {
             for dep in node.dependencies {
                 if !nodeNames.contains(dep) {
-                    preconditionFailure(
-                        "DAG node '\(node.name)' depends on unknown node '\(dep)'. "
-                        + "Available nodes: \(nodeNames.sorted().joined(separator: ", "))"
+                    throw DAGValidationError.missingDependency(
+                        node: node.name,
+                        dependency: dep,
+                        available: Array(nodeNames).sorted()
                     )
                 }
             }
@@ -166,9 +191,7 @@ public struct DAG: OrchestrationStep, Sendable {
         if sorted.count != nodes.count {
             let sortedNames = Set(sorted.map(\.name))
             let cycleNodes = nodes.filter { !sortedNames.contains($0.name) }.map(\.name)
-            preconditionFailure(
-                "Cycle detected in DAG involving nodes: \(cycleNodes.joined(separator: ", "))"
-            )
+            throw DAGValidationError.cycle(cycleNodes.sorted())
         }
     }
 
@@ -297,9 +320,17 @@ public struct DAG: OrchestrationStep, Sendable {
         let criticalPathDuration = await computeCriticalPathDuration(sorted: sorted, state: state)
         allMetadata["dag.critical_path_duration"] = .double(criticalPathDuration)
 
-        // Output is from the last node(s) in topological order
-        let lastNodeName = sorted.last?.name ?? ""
-        let finalOutput = allResults[lastNodeName]?.output ?? input
+        // Output is collected from terminal nodes (no downstream dependencies).
+        let terminalNodes = sorted.filter { downstreamMap[$0.name, default: []].isEmpty }
+        let terminalOutputs = terminalNodes.compactMap { allResults[$0.name]?.output }
+        let finalOutput: String
+        if terminalOutputs.isEmpty {
+            finalOutput = input
+        } else if terminalOutputs.count == 1 {
+            finalOutput = terminalOutputs[0]
+        } else {
+            finalOutput = terminalOutputs.joined(separator: "\n")
+        }
 
         return AgentResult(
             output: finalOutput,
@@ -359,6 +390,31 @@ public struct DAG: OrchestrationStep, Sendable {
         }
 
         return longestPath.values.max() ?? 0
+    }
+}
+
+// MARK: - DAGValidationError
+
+enum DAGValidationError: Error, Equatable, CustomStringConvertible {
+    case emptyNodes
+    case emptyName(index: Int)
+    case duplicateNames([String])
+    case missingDependency(node: String, dependency: String, available: [String])
+    case cycle([String])
+
+    var description: String {
+        switch self {
+        case .emptyNodes:
+            return "DAG must contain at least one node."
+        case let .emptyName(index):
+            return "DAG node at index \(index) has an empty name."
+        case let .duplicateNames(names):
+            return "DAG node names must be unique. Duplicates: \(names.joined(separator: ", "))"
+        case let .missingDependency(node, dependency, available):
+            return "DAG node '\(node)' depends on unknown node '\(dependency)'. Available nodes: \(available.joined(separator: ", "))"
+        case let .cycle(nodes):
+            return "Cycle detected in DAG involving nodes: \(nodes.joined(separator: ", "))"
+        }
     }
 }
 
