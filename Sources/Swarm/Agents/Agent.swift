@@ -238,6 +238,15 @@ public actor Agent: AgentRuntime {
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+        return try await hiveRun(input, session: session, hooks: hooks)
+    }
+
+    /// Internal execution logic for the tool-calling agent.
+    ///
+    /// Contains the full run body that was previously in `run()`. Called by
+    /// `hiveNodeBody(input:context:)` so that Hive wraps the agent's logic
+    /// as an execution substrate without changing the internal behavior.
+    private func _executeDirect(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
@@ -1274,5 +1283,21 @@ public extension Agent {
             guardrailRunnerConfiguration: guardrailRunnerConfiguration,
             handoffs: handoffs
         )
+    }
+}
+
+// MARK: - HiveAdaptable
+
+extension Agent: HiveAdaptable {
+    /// Wraps the agent's internal execution for Hive node execution.
+    ///
+    /// Delegates to `_executeDirect()` and converts the result into the
+    /// `(output, accumulator)` tuple expected by the Hive single-node graph.
+    public func hiveNodeBody(
+        input: String,
+        context: AgentHiveContext
+    ) async throws -> (output: String, accumulator: AgentResultAccumulator) {
+        let result = try await _executeDirect(input, session: context.session, hooks: context.hooks)
+        return (result.output, AgentResultAccumulator(from: result))
     }
 }

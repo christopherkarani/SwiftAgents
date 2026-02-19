@@ -3,14 +3,83 @@
 //
 // Hive-backed orchestration executor.
 
-#if canImport(HiveCore)
-
 import Dispatch
 import Foundation
 import HiveCore
 import Logging
 
 enum OrchestrationHiveEngine {
+    struct GraphMetrics: Sendable, Equatable {
+        let nodeCount: Int
+        let maxParallelism: Int
+    }
+
+    struct CompiledGraph {
+        let graph: CompiledHiveGraph<Schema>
+        let metrics: GraphMetrics
+    }
+
+    struct ParallelBranchResult: Codable, Sendable, Equatable {
+        let groupID: String
+        let branchIndex: Int
+        let branchName: String
+        let output: String?
+        let toolCalls: [ToolCall]
+        let toolResults: [ToolResult]
+        let iterationCount: Int
+        let metadata: [String: SendableValue]
+        let error: String?
+
+        var isSuccess: Bool { error == nil }
+
+        static func success(
+            groupID: String,
+            branchIndex: Int,
+            branchName: String,
+            result: AgentResult
+        ) -> ParallelBranchResult {
+            ParallelBranchResult(
+                groupID: groupID,
+                branchIndex: branchIndex,
+                branchName: branchName,
+                output: result.output,
+                toolCalls: result.toolCalls,
+                toolResults: result.toolResults,
+                iterationCount: result.iterationCount,
+                metadata: result.metadata,
+                error: nil
+            )
+        }
+
+        static func failure(
+            groupID: String,
+            branchIndex: Int,
+            branchName: String,
+            error: String
+        ) -> ParallelBranchResult {
+            ParallelBranchResult(
+                groupID: groupID,
+                branchIndex: branchIndex,
+                branchName: branchName,
+                output: nil,
+                toolCalls: [],
+                toolResults: [],
+                iterationCount: 0,
+                metadata: [:],
+                error: error
+            )
+        }
+    }
+
+    struct ParallelBranchResultsAccumulator {
+        static func reduce(
+            current: [ParallelBranchResult],
+            update: [ParallelBranchResult]
+        ) throws -> [ParallelBranchResult] {
+            current + update
+        }
+    }
+
     struct Accumulator: Codable, Sendable, Equatable {
         var toolCalls: [ToolCall]
         var toolResults: [ToolResult]
@@ -50,11 +119,14 @@ enum OrchestrationHiveEngine {
     enum Schema: HiveSchema {
         typealias Context = OrchestrationStepContext
         typealias Input = String
-        typealias InterruptPayload = String
-        typealias ResumePayload = String
+        typealias InterruptPayload = OrchestrationInterrupt
+        typealias ResumePayload = OrchestrationResume
 
         static let currentInputKey = HiveChannelKey<Self, String>(HiveChannelID("currentInput"))
         static let accumulatorKey = HiveChannelKey<Self, Accumulator>(HiveChannelID("accumulator"))
+        static let parallelBranchResultsKey = HiveChannelKey<Self, [ParallelBranchResult]>(
+            HiveChannelID("parallelBranchResults")
+        )
 
         static var channelSpecs: [AnyHiveChannelSpec<Self>] {
             [
@@ -63,7 +135,7 @@ enum OrchestrationHiveEngine {
                         key: currentInputKey,
                         scope: .global,
                         reducer: .lastWriteWins(),
-                        updatePolicy: .single,
+                        updatePolicy: .multi,
                         initial: { "" },
                         codec: HiveAnyCodec(JSONCodec<String>()),
                         persistence: .checkpointed
@@ -74,9 +146,20 @@ enum OrchestrationHiveEngine {
                         key: accumulatorKey,
                         scope: .global,
                         reducer: HiveReducer(Accumulator.reduce),
-                        updatePolicy: .single,
+                        updatePolicy: .multi,
                         initial: { Accumulator() },
                         codec: HiveAnyCodec(JSONCodec<Accumulator>()),
+                        persistence: .checkpointed
+                    )
+                ),
+                AnyHiveChannelSpec(
+                    HiveChannelSpec(
+                        key: parallelBranchResultsKey,
+                        scope: .global,
+                        reducer: HiveReducer(ParallelBranchResultsAccumulator.reduce),
+                        updatePolicy: .multi,
+                        initial: { [] },
+                        codec: HiveAnyCodec(JSONCodec<[ParallelBranchResult]>()),
                         persistence: .checkpointed
                     )
                 )
@@ -86,7 +169,8 @@ enum OrchestrationHiveEngine {
         static func inputWrites(_ input: String, inputContext _: HiveInputContext) throws -> [AnyHiveWrite<Self>] {
             [
                 AnyHiveWrite(currentInputKey, input),
-                AnyHiveWrite(accumulatorKey, Accumulator())
+                AnyHiveWrite(accumulatorKey, Accumulator()),
+                AnyHiveWrite(parallelBranchResultsKey, [])
             ]
         }
     }
@@ -123,7 +207,7 @@ enum OrchestrationHiveEngine {
         )
         await context.recordExecution(agentName: orchestratorName)
 
-        let graph = try makeGraph(steps: steps)
+        let compiledGraph = try makeGraph(steps: steps, stepContext: stepContext)
         let environment = HiveEnvironment<Schema>(
             context: stepContext,
             clock: SwarmHiveClock(),
@@ -135,11 +219,11 @@ enum OrchestrationHiveEngine {
             checkpointStore: checkpointStore
         )
 
-        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: compiledGraph.graph, environment: environment)
         let threadID = HiveThreadID(UUID().uuidString)
 
         let options = makeRunOptions(
-            stepCount: steps.count,
+            graphMetrics: compiledGraph.metrics,
             checkpointPolicy: checkpointPolicy,
             override: hiveRunOptionsOverride
         )
@@ -195,6 +279,10 @@ enum OrchestrationHiveEngine {
             var metadata = accumulator.metadata
             metadata["orchestration.engine"] = .string("hive")
             metadata["orchestration.total_steps"] = .int(steps.count)
+            metadata["orchestration.graph.node_count"] = .int(compiledGraph.metrics.nodeCount)
+            metadata["orchestration.graph.max_parallelism"] = .int(compiledGraph.metrics.maxParallelism)
+            metadata["orchestration.run.max_steps"] = .int(options.maxSteps)
+            metadata["orchestration.run.max_concurrent_tasks"] = .int(options.maxConcurrentTasks)
             metadata["orchestration.total_duration"] = .double(
                 Double(duration.components.seconds) +
                     Double(duration.components.attoseconds) / 1e18
@@ -222,17 +310,17 @@ enum OrchestrationHiveEngine {
     }
 
     private static func makeRunOptions(
-        stepCount: Int,
+        graphMetrics: GraphMetrics,
         checkpointPolicy: HiveCheckpointPolicy,
         override optionsOverride: SwarmHiveRunOptionsOverride?
     ) -> HiveRunOptions {
         let defaultOptions = HiveRunOptions(
-            maxSteps: stepCount,
-            maxConcurrentTasks: 1,
+            maxSteps: max(1, graphMetrics.nodeCount),
+            maxConcurrentTasks: max(1, graphMetrics.maxParallelism),
             checkpointPolicy: checkpointPolicy,
             debugPayloads: false,
             deterministicTokenStreaming: false,
-            eventBufferCapacity: max(64, stepCount * 8)
+            eventBufferCapacity: max(64, graphMetrics.nodeCount * 8)
         )
 
         guard let optionsOverride else {
@@ -277,50 +365,50 @@ enum OrchestrationHiveEngine {
         )
     }
 
-    private static func makeGraph(steps: [OrchestrationStep]) throws -> CompiledHiveGraph<Schema> {
+    private static func makeGraph(
+        steps: [OrchestrationStep],
+        stepContext: OrchestrationStepContext
+    ) throws -> CompiledGraph {
         precondition(!steps.isEmpty)
 
-        let nodeIDs = steps.indices.map { HiveNodeID("orchestration.step_\($0)") }
+        let startNodeIDs = entryNodeIDs(for: steps[0], nodePrefix: "step_0")
 
-        var builder = HiveGraphBuilder<Schema>(start: [nodeIDs[0]])
+        var builder = HiveGraphBuilder<Schema>(start: startNodeIDs)
+        var previousExitNodes: [HiveNodeID] = []
+        var totalNodeCount = 0
+        var maxParallelism = 1
 
         for (index, step) in steps.enumerated() {
-            let nodeID = nodeIDs[index]
-            builder.addNode(nodeID) { input in
-                let stepContext = input.context
-                let currentInput = try input.store.get(Schema.currentInputKey)
-                let result = try await step.execute(currentInput, context: stepContext)
-
-                var metadataUpdate: [String: SendableValue] = [:]
-                for (key, value) in result.metadata {
-                    metadataUpdate[key] = value
-                    metadataUpdate["orchestration.step_\(index).\(key)"] = value
-                }
-
-                let delta = Accumulator(
-                    toolCalls: result.toolCalls,
-                    toolResults: result.toolResults,
-                    iterationCount: result.iterationCount,
-                    metadata: metadataUpdate
-                )
-
-                await stepContext.agentContext.setPreviousOutput(result)
-
-                return HiveNodeOutput(
-                    writes: [
-                        AnyHiveWrite(Schema.currentInputKey, result.output),
-                        AnyHiveWrite(Schema.accumulatorKey, delta)
-                    ]
-                )
-            }
+            let fragment = compileTopLevelStep(
+                step,
+                into: &builder,
+                stepContext: stepContext,
+                nodePrefix: "step_\(index)",
+                orchestrationStepPrefix: "orchestration.step_\(index)"
+            )
 
             if index > 0 {
-                builder.addEdge(from: nodeIDs[index - 1], to: nodeID)
+                for exitNode in previousExitNodes {
+                    for entryNode in fragment.entryNodes {
+                        builder.addEdge(from: exitNode, to: entryNode)
+                    }
+                }
             }
+
+            previousExitNodes = fragment.exitNodes
+            totalNodeCount += fragment.nodeCount
+            maxParallelism = max(maxParallelism, fragment.maxParallelism)
         }
 
+        maxParallelism = max(maxParallelism, declaredMaxParallelism(in: steps))
         builder.setOutputProjection(.channels([Schema.currentInputKey.id, Schema.accumulatorKey.id]))
-        return try builder.compile()
+        return CompiledGraph(
+            graph: try builder.compile(),
+            metrics: GraphMetrics(
+                nodeCount: totalNodeCount,
+                maxParallelism: maxParallelism
+            )
+        )
     }
 
     private static func extractResult(
@@ -359,7 +447,7 @@ enum OrchestrationHiveEngine {
     }
 }
 
-private struct SwarmHiveClock: HiveClock {
+struct SwarmHiveClock: HiveClock {
     func nowNanoseconds() -> UInt64 {
         DispatchTime.now().uptimeNanoseconds
     }
@@ -369,7 +457,7 @@ private struct SwarmHiveClock: HiveClock {
     }
 }
 
-private struct SwarmHiveLogger: HiveLogger {
+struct SwarmHiveLogger: HiveLogger {
     private let logger: Logger
 
     init(logger: Logger = Log.orchestration) {
@@ -399,7 +487,7 @@ private struct SwarmHiveLogger: HiveLogger {
 }
 
 /// Deterministic JSON codec for Hive checkpointing within the Swarm target.
-private struct JSONCodec<Value: Codable & Sendable>: HiveCodec {
+struct JSONCodec<Value: Codable & Sendable>: HiveCodec {
     let id: String
 
     init() {
@@ -416,5 +504,3 @@ private struct JSONCodec<Value: Codable & Sendable>: HiveCodec {
         try JSONDecoder().decode(Value.self, from: data)
     }
 }
-
-#endif

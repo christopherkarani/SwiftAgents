@@ -245,6 +245,60 @@ struct OrchestrationTests {
         }
     }
 
+    @Test("Orchestration DAG uses compiled graph node count for Hive maxSteps")
+    func orchestrationDAGUsesCompiledGraphNodeCountForMaxSteps() async throws {
+        let workflow = Orchestration {
+            DAG {
+                DAGNode("left", step: Transform { "\($0)L" })
+                DAGNode("right", step: Transform { "\($0)R" })
+                DAGNode("join", step: Transform { "\($0)|J" })
+                    .dependsOn("left", "right")
+            }
+        }
+
+        let result = try await workflow.run("x")
+
+        #expect(result.output.contains("xL"))
+        #expect(result.output.contains("xR"))
+        #expect(result.output.contains("|J"))
+        #expect(result.metadata["orchestration.graph.node_count"]?.intValue == 3)
+        #expect(result.metadata["orchestration.run.max_steps"]?.intValue == 3)
+    }
+
+    @Test("Orchestration DAG derives Hive concurrency from graph parallelism")
+    func orchestrationDAGDerivesHiveConcurrencyFromGraphParallelism() async throws {
+        let workflow = Orchestration {
+            DAG {
+                DAGNode("left", step: Transform { "\($0)L" })
+                DAGNode("right", step: Transform { "\($0)R" })
+                DAGNode("join", step: Transform { "\($0)|J" })
+                    .dependsOn("left", "right")
+            }
+        }
+
+        let result = try await workflow.run("x")
+
+        #expect(result.metadata["orchestration.graph.max_parallelism"]?.intValue == 2)
+        #expect(result.metadata["orchestration.run.max_concurrent_tasks"]?.intValue == 2)
+
+        let serializedWorkflow = Orchestration(
+            configuration: AgentConfiguration(
+                hiveRunOptionsOverride: SwarmHiveRunOptionsOverride(maxConcurrentTasks: 1)
+            )
+        ) {
+            DAG {
+                DAGNode("left", step: Transform { "\($0)L" })
+                DAGNode("right", step: Transform { "\($0)R" })
+                DAGNode("join", step: Transform { "\($0)|J" })
+                    .dependsOn("left", "right")
+            }
+        }
+
+        let serializedResult = try await serializedWorkflow.run("x")
+        #expect(serializedResult.metadata["orchestration.graph.max_parallelism"]?.intValue == 2)
+        #expect(serializedResult.metadata["orchestration.run.max_concurrent_tasks"]?.intValue == 1)
+    }
+
     @Test("Orchestration inferencePolicy maps to Hive inference hints")
     func orchestrationInferencePolicyMapsToHiveHints() {
         let policy = InferencePolicy(

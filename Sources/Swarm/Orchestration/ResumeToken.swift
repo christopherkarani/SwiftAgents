@@ -4,6 +4,7 @@
 // A non-copyable token that represents a suspended orchestration point.
 
 import Foundation
+import HiveCore
 
 // MARK: - ResumeToken
 
@@ -37,6 +38,12 @@ public struct ResumeToken: ~Copyable, Sendable {
     private let capturedStep: OrchestrationStep
     private let capturedContext: OrchestrationStepContext
 
+    /// The Hive interrupt ID for resuming an interrupted Hive orchestration.
+    public let hiveInterruptID: HiveInterruptID?
+
+    /// The Hive thread ID of the interrupted run.
+    public let hiveThreadID: HiveThreadID?
+
     /// Creates a new resume token for a suspended orchestration.
     ///
     /// - Parameters:
@@ -45,18 +52,24 @@ public struct ResumeToken: ~Copyable, Sendable {
     ///   - capturedInput: The input at the point of suspension.
     ///   - capturedStep: The step to execute on resumption.
     ///   - capturedContext: The orchestration context at the point of suspension.
+    ///   - hiveInterruptID: Optional Hive interrupt ID for Hive-native resume.
+    ///   - hiveThreadID: Optional Hive thread ID for Hive-native resume.
     public init(
         orchestrationID: UUID = UUID(),
         suspensionPoint: String,
         capturedInput: String,
         capturedStep: OrchestrationStep,
-        capturedContext: OrchestrationStepContext
+        capturedContext: OrchestrationStepContext,
+        hiveInterruptID: HiveInterruptID? = nil,
+        hiveThreadID: HiveThreadID? = nil
     ) {
         self.orchestrationID = orchestrationID
         self.suspensionPoint = suspensionPoint
         self.capturedInput = capturedInput
         self.capturedStep = capturedStep
         self.capturedContext = capturedContext
+        self.hiveInterruptID = hiveInterruptID
+        self.hiveThreadID = hiveThreadID
     }
 
     /// Resumes the suspended orchestration with new input.

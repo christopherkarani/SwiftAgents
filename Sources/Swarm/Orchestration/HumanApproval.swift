@@ -38,7 +38,7 @@ public struct ApprovalRequest: Sendable {
 // MARK: - ApprovalResponse
 
 /// Human's response to an approval request.
-public enum ApprovalResponse: Sendable {
+public enum ApprovalResponse: Codable, Sendable {
     /// Approved — workflow continues with current input.
     case approved
 
@@ -47,6 +47,16 @@ public enum ApprovalResponse: Sendable {
 
     /// Modified — workflow continues with the provided new input.
     case modified(newInput: String)
+}
+
+/// Typed interrupt payload for orchestration runs.
+public enum OrchestrationInterrupt: Codable, Sendable {
+    case humanApprovalRequired(prompt: String, currentOutput: String)
+}
+
+/// Typed resume payload for orchestration runs.
+public enum OrchestrationResume: Codable, Sendable {
+    case humanApproval(response: ApprovalResponse)
 }
 
 // MARK: - AutoApproveHandler

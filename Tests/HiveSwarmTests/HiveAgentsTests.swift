@@ -140,6 +140,82 @@ struct HiveAgentsTests {
         }
     }
 
+    @Test("HiveAgentsRuntime init: wires checkpointStore for approval policy")
+    func hiveAgentsRuntimeInit_wiresCheckpointStore_forApprovalPolicy() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .always)
+        let checkpointStore = InMemoryCheckpointStore<HiveAgents.Schema>()
+
+        let hiveRuntime = try HiveAgentsRuntime(
+            graph: graph,
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(
+                    id: "m1",
+                    role: .assistant,
+                    content: "",
+                    toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
+                )))
+            ])),
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
+            checkpointStore: AnyHiveCheckpointStore(checkpointStore)
+        )
+
+        let handle = try await hiveRuntime.runControl.start(
+            .init(
+                threadID: HiveThreadID("runtime-init-with-store"),
+                input: "Hello",
+                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
+            )
+        )
+        let outcome = try await handle.outcome.value
+        guard case .interrupted = outcome else {
+            Issue.record("Expected interrupted outcome for approval-required tool call.")
+            return
+        }
+    }
+
+    @Test("HiveAgentsRuntime init: missing checkpointStore fails approval preflight")
+    func hiveAgentsRuntimeInit_missingCheckpointStore_failsApprovalPreflight() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .always)
+
+        let hiveRuntime = try HiveAgentsRuntime(
+            graph: graph,
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(
+                    id: "m1",
+                    role: .assistant,
+                    content: "",
+                    toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
+                )))
+            ])),
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42"))
+        )
+
+        let thrown = await #expect(throws: (any Error).self) {
+            _ = try await hiveRuntime.runControl.start(
+                .init(
+                    threadID: HiveThreadID("runtime-init-without-store"),
+                    input: "Hello",
+                    options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
+                )
+            )
+        }
+        let runtimeError = try #require(thrown as? HiveRuntimeError)
+        switch runtimeError {
+        case .checkpointStoreMissing:
+            break
+        default:
+            Issue.record("Expected checkpointStoreMissing, got \(runtimeError)")
+        }
+    }
+
     @Test("Tool approval: interrupt + resume executes tools (runtime-driven)")
     func toolApproval_interruptAndResume_executesTool() async throws {
         let graph = try HiveAgents.makeToolUsingChatAgent()

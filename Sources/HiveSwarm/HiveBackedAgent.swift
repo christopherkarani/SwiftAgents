@@ -142,6 +142,27 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         }
     }
 
+    /// Resumes a previously interrupted run with a tool approval decision.
+    /// - Parameters:
+    ///   - interruptID: The interrupt ID received from the interrupted run.
+    ///   - decision: The approval decision to submit.
+    /// - Returns: The final `AgentResult` after resuming.
+    public func resume(
+        interruptID: HiveInterruptID,
+        decision: HiveAgents.ToolApprovalDecision,
+        options: HiveRunOptions? = nil
+    ) async throws -> AgentResult {
+        let resumeRequest = HiveAgentsRunResumeRequest(
+            threadID: threadID,
+            interruptID: interruptID,
+            payload: .toolApproval(decision: decision),
+            options: options ?? runOptions
+        )
+        let handle = try await runtime.runControl.resume(resumeRequest)
+        let outcome = try await handle.outcome.value
+        return try buildResult(from: outcome)
+    }
+
     /// Streams the agent's execution, mapping Hive events to Swarm `AgentEvent`.
     ///
     /// Unlike `run()`, this method consumes the Hive event stream (`handle.events`)
@@ -269,7 +290,16 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
     // MARK: - Private Methods
 
     /// Extracts an `AgentResult` from a `HiveRunOutcome`.
-    private func buildResult(
+    func buildResult(
+        from outcome: HiveRunOutcome<HiveAgents.Schema>
+    ) throws -> AgentResult {
+        let builder = AgentResult.Builder()
+        _ = builder.start()
+        return try buildResult(from: outcome, builder: builder)
+    }
+
+    /// Extracts an `AgentResult` from a `HiveRunOutcome`.
+    func buildResult(
         from outcome: HiveRunOutcome<HiveAgents.Schema>,
         builder: AgentResult.Builder
     ) throws -> AgentResult {

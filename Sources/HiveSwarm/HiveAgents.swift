@@ -104,6 +104,35 @@ public struct HiveAgentsRuntime: Sendable {
     public init(runControl: HiveAgentsRunController) {
         self.runControl = runControl
     }
+
+    /// Constructs a runtime from graph + environment dependencies.
+    ///
+    /// This initializer centralizes `HiveEnvironment` creation so checkpoint-store
+    /// wiring lives with runtime construction (not adapter call sites).
+    public init(
+        graph: CompiledHiveGraph<HiveAgents.Schema>,
+        context: HiveAgentsContext,
+        clock: any HiveClock,
+        logger: any HiveLogger,
+        model: AnyHiveModelClient? = nil,
+        modelRouter: (any HiveModelRouter)? = nil,
+        inferenceHints: HiveInferenceHints? = nil,
+        tools: AnyHiveToolRegistry? = nil,
+        checkpointStore: AnyHiveCheckpointStore<HiveAgents.Schema>? = nil
+    ) throws {
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: clock,
+            logger: logger,
+            model: model,
+            modelRouter: modelRouter,
+            inferenceHints: inferenceHints,
+            tools: tools,
+            checkpointStore: checkpointStore
+        )
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        runControl = HiveAgentsRunController(runtime: runtime)
+    }
 }
 
 public struct HiveAgentsRunStartRequest: Sendable {
