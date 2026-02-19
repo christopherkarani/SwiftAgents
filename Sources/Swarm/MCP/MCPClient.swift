@@ -188,21 +188,58 @@ public actor MCPClient {
             // Clear the cache
             toolCache.removeAll()
 
-            // Collect tools from all servers
-            for (_, server) in servers {
+            // Collect tools from all servers first so we can resolve name collisions.
+            var discoveredTools: [DiscoveredTool] = []
+            for serverName in servers.keys.sorted() {
+                guard let server = servers[serverName] else {
+                    continue
+                }
+
                 let capabilities = await server.capabilities
                 guard capabilities.tools else {
                     continue
                 }
 
                 let toolSchemas = try await server.listTools()
-                for definition in toolSchemas {
-                    let bridgedTool = MCPBridgedTool(
-                        schema: definition,
-                        server: server
+                for definition in toolSchemas.sorted(by: { $0.name < $1.name }) {
+                    discoveredTools.append(
+                        DiscoveredTool(
+                            serverName: serverName,
+                            schema: definition,
+                            server: server
+                        )
                     )
-                    toolCache[bridgedTool.name] = bridgedTool
                 }
+            }
+
+            // Detect cross-server base-name collisions.
+            var baseNameCounts: [String: Int] = [:]
+            for tool in discoveredTools {
+                baseNameCounts[tool.schema.name, default: 0] += 1
+            }
+
+            // Build deterministic, unique client-visible names.
+            var usedNames: Set<String> = []
+            for discovered in discoveredTools {
+                let baseName = discovered.schema.name
+                let hasCollision = (baseNameCounts[baseName] ?? 0) > 1
+                let preferredName = hasCollision
+                    ? "\(discovered.serverName).\(baseName)"
+                    : baseName
+                let visibleName = reserveUniqueToolName(
+                    preferred: preferredName,
+                    serverName: discovered.serverName,
+                    baseName: baseName,
+                    usedNames: &usedNames
+                )
+
+                let bridgedTool = MCPBridgedTool(
+                    schema: discovered.schema,
+                    server: discovered.server,
+                    displayName: visibleName,
+                    serverToolName: baseName
+                )
+                toolCache[visibleName] = bridgedTool
             }
 
             // Mark cache as valid
@@ -418,7 +455,8 @@ public actor MCPClient {
     ///
     /// - Parameter uri: The URI of the resource to read.
     /// - Returns: The content of the resource.
-    /// - Throws: `MCPError.invalidParams` if the resource is not found on any server.
+    /// - Throws: `MCPError.invalidParams` only when all attempted servers report not-found.
+    ///           Preserves non-not-found server errors and aggregates multiple failures.
     ///
     /// ## Example
     /// ```swift
@@ -428,22 +466,61 @@ public actor MCPClient {
     /// }
     /// ```
     public func readResource(uri: String) async throws -> MCPResourceContent {
-        for (_, server) in servers {
+        var notFoundServers: [String] = []
+        var nonNotFoundFailures: [(serverName: String, error: Error)] = []
+        var attemptedServers: [String] = []
+
+        for serverName in servers.keys.sorted() {
+            guard let server = servers[serverName] else {
+                continue
+            }
+
             let capabilities = await server.capabilities
             guard capabilities.resources else {
                 continue
             }
+            attemptedServers.append(serverName)
 
             do {
                 let content = try await server.readResource(uri: uri)
                 return content
             } catch {
-                // Try next server
-                continue
+                if isResourceNotFound(error) {
+                    notFoundServers.append(serverName)
+                } else {
+                    nonNotFoundFailures.append((serverName: serverName, error: error))
+                }
             }
         }
 
-        throw MCPError.invalidParams("Resource not found: \(uri)")
+        if attemptedServers.isEmpty {
+            throw MCPError.methodNotFound("resources/read - no connected server supports resources")
+        }
+
+        if nonNotFoundFailures.isEmpty {
+            // Every attempted server reported not-found.
+            throw MCPError.invalidParams("Resource not found: \(uri)")
+        }
+
+        if nonNotFoundFailures.count == 1, let singleFailure = nonNotFoundFailures.first {
+            // Preserve original semantics for a single concrete failure.
+            throw singleFailure.error
+        }
+
+        let errorDetails = nonNotFoundFailures.map { failure in
+            "\(failure.serverName): \(failure.error.localizedDescription)"
+        }
+        throw MCPError(
+            code: MCPError.internalErrorCode,
+            message: "Failed to read resource '\(uri)' from \(nonNotFoundFailures.count) server(s)",
+            data: .dictionary([
+                "uri": .string(uri),
+                "attemptedServers": .array(attemptedServers.map { .string($0) }),
+                "notFoundServers": .array(notFoundServers.map { .string($0) }),
+                "failedServers": .array(nonNotFoundFailures.map { .string($0.serverName) }),
+                "details": .array(errorDetails.map { .string($0) })
+            ])
+        )
     }
 
     /// Closes all server connections and clears all state.
@@ -523,7 +600,7 @@ public actor MCPClient {
     /// Registry of connected MCP servers, keyed by server name.
     private var servers: [String: any MCPServer] = [:]
 
-    /// Cache of tools from all connected servers, keyed by tool name.
+    /// Cache of tools from all connected servers, keyed by client-visible tool name.
     private var toolCache: [String: any AnyJSONTool] = [:]
 
     /// Whether the tool cache is currently valid.
@@ -584,5 +661,48 @@ public actor MCPClient {
         resourceCacheTimestamp = Date()
 
         return Array(resourceCache.values)
+    }
+
+    private struct DiscoveredTool {
+        let serverName: String
+        let schema: ToolSchema
+        let server: any MCPServer
+    }
+
+    private func reserveUniqueToolName(
+        preferred: String,
+        serverName: String,
+        baseName: String,
+        usedNames: inout Set<String>
+    ) -> String {
+        if usedNames.insert(preferred).inserted {
+            return preferred
+        }
+
+        var suffix = 2
+        while true {
+            let candidate = "\(serverName).\(baseName)#\(suffix)"
+            if usedNames.insert(candidate).inserted {
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
+    private func isResourceNotFound(_ error: Error) -> Bool {
+        guard let mcpError = error as? MCPError else {
+            return false
+        }
+
+        if mcpError.code == MCPError.methodNotFoundCode {
+            return true
+        }
+
+        if mcpError.code == MCPError.invalidParamsCode {
+            let message = mcpError.message.lowercased()
+            return message.contains("not found") || message.contains("does not exist")
+        }
+
+        return false
     }
 }

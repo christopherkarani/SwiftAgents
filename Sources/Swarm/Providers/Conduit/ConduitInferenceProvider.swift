@@ -138,6 +138,10 @@ public struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: Inferen
             updated = updated.maxTokens(maxTokens)
         }
 
+        if let seed = options.seed {
+            updated = updated.seed(UInt64(bitPattern: Int64(seed)))
+        }
+
         if let topP = options.topP {
             updated = updated.topP(Float(topP))
         }
@@ -156,6 +160,10 @@ public struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: Inferen
 
         if !options.stopSequences.isEmpty {
             updated = updated.stopSequences(options.stopSequences)
+        }
+
+        if let parallelToolCalls = options.parallelToolCalls {
+            updated = updated.parallelToolCalls(parallelToolCalls)
         }
 
         return updated

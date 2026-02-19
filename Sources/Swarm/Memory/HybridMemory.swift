@@ -214,48 +214,92 @@ public actor HybridMemory: Memory {
     /// Number of summarizations performed.
     private var summarizationCount: Int = 0
 
+    /// Whether a summarization pass is currently running.
+    private var isUpdatingSummary: Bool = false
+
     // MARK: - Private Methods
 
     private func updateLongTermSummary() async {
-        let messagesToSummarize = pendingMessages
-        pendingMessages.removeAll()
+        guard !isUpdatingSummary else { return }
+        guard !pendingMessages.isEmpty else { return }
 
-        guard !messagesToSummarize.isEmpty else { return }
+        isUpdatingSummary = true
+        defer { isUpdatingSummary = false }
 
-        let newContent = messagesToSummarize.map(\.formattedContent).joined(separator: "\n")
+        while !pendingMessages.isEmpty {
+            let messagesToSummarize = pendingMessages
+            let newContent = messagesToSummarize.map(\.formattedContent).joined(separator: "\n")
 
-        let textToSummarize: String = if longTermSummary.isEmpty {
-            newContent
-        } else {
-            """
-            Existing summary:
-            \(longTermSummary)
+            let textToSummarize: String = if longTermSummary.isEmpty {
+                newContent
+            } else {
+                """
+                Existing summary:
+                \(longTermSummary)
 
-            New conversation:
-            \(newContent)
-            """
+                New conversation:
+                \(newContent)
+                """
+            }
+
+            let didPreserve = await preservePendingMessages(
+                textToSummarize: textToSummarize,
+                newContent: newContent
+            )
+
+            guard didPreserve else { break }
+
+            removePending(messagesToSummarize)
         }
+    }
 
-        do {
-            if await summarizer.isAvailable {
+    private func preservePendingMessages(
+        textToSummarize: String,
+        newContent: String
+    ) async -> Bool {
+        if await summarizer.isAvailable {
+            do {
                 longTermSummary = try await summarizer.summarize(
                     textToSummarize,
                     maxTokens: configuration.longTermSummaryTokens
                 )
                 summarizationCount += 1
+                return true
+            } catch {
+                Log.memory.warning("HybridMemory: summarizer failed, using fallback preservation: \(error.localizedDescription)")
             }
-        } catch {
-            // Keep existing summary on failure, add truncated new content
-            if let truncated = try? await TruncatingSummarizer.shared.summarize(
-                newContent,
-                maxTokens: configuration.longTermSummaryTokens / 2
-            ) {
-                if longTermSummary.isEmpty {
-                    longTermSummary = truncated
-                } else {
-                    longTermSummary = "\(longTermSummary)\n\n[Additional context]: \(truncated)"
-                }
-            }
+        }
+
+        return await preserveWithFallback(newContent: newContent)
+    }
+
+    private func preserveWithFallback(newContent: String) async -> Bool {
+        let fallbackTokenLimit = max(1, configuration.longTermSummaryTokens / 2)
+        guard let truncated = try? await TruncatingSummarizer.shared.summarize(
+            newContent,
+            maxTokens: fallbackTokenLimit
+        ) else {
+            return false
+        }
+
+        let trimmed = truncated.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return false
+        }
+
+        if longTermSummary.isEmpty {
+            longTermSummary = trimmed
+        } else {
+            longTermSummary = "\(longTermSummary)\n\n[Additional context]: \(trimmed)"
+        }
+        summarizationCount += 1
+        return true
+    }
+
+    private func removePending(_ processed: [MemoryMessage]) {
+        let processedIDs = Set(processed.map(\.id))
+        pendingMessages.removeAll { message in
+            processedIDs.contains(message.id)
         }
     }
 }

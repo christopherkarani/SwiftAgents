@@ -72,6 +72,72 @@ struct ConduitInferenceProviderOptionsMappingTests {
         #expect(config?.topK == 40)
     }
 
+    @Test("Applies seed and parallelToolCalls to Conduit GenerateConfig")
+    func appliesSeedAndParallelToolCalls() async throws {
+        struct MockModelID: Conduit.ModelIdentifying {
+            let rawValue: String
+            var displayName: String { rawValue }
+            var provider: Conduit.ProviderType { .openAI }
+            var description: String { rawValue }
+            init(_ rawValue: String) { self.rawValue = rawValue }
+        }
+
+        struct CapturingTextGenerator: Conduit.TextGenerator {
+            typealias ModelID = MockModelID
+
+            let box: ConfigBox
+
+            func generate(_ prompt: String, model _: ModelID, config: Conduit.GenerateConfig) async throws -> String {
+                box.lastPromptConfig = config
+                return ""
+            }
+
+            func generate(
+                messages _: [Conduit.Message],
+                model _: ModelID,
+                config _: Conduit.GenerateConfig
+            ) async throws -> Conduit.GenerationResult {
+                Conduit.GenerationResult(
+                    text: "",
+                    tokenCount: 0,
+                    generationTime: 0,
+                    tokensPerSecond: 0,
+                    finishReason: .stop
+                )
+            }
+
+            func stream(_ prompt: String, model _: ModelID, config: Conduit.GenerateConfig) -> AsyncThrowingStream<String, Error> {
+                box.lastPromptConfig = config
+                return StreamHelper.makeTrackedStream { continuation in
+                    continuation.finish()
+                }
+            }
+
+            func streamWithMetadata(
+                messages _: [Conduit.Message],
+                model _: ModelID,
+                config _: Conduit.GenerateConfig
+            ) -> AsyncThrowingStream<Conduit.GenerationChunk, Error> {
+                StreamHelper.makeTrackedStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+
+        let box = ConfigBox()
+        let provider = CapturingTextGenerator(box: box)
+        let bridge = ConduitInferenceProvider(provider: provider, model: MockModelID("mock"))
+
+        _ = try await bridge.generate(
+            prompt: "hi",
+            options: InferenceOptions(seed: 42, parallelToolCalls: false)
+        )
+
+        let config = box.lastPromptConfig
+        #expect(config?.seed == 42)
+        #expect(config?.parallelToolCalls == false)
+    }
+
     @Test("Does not apply toolChoice when tools are empty (generateWithToolCalls)")
     func doesNotApplyToolChoiceWhenNoTools_generate() async throws {
         struct MockModelID: Conduit.ModelIdentifying {
