@@ -84,17 +84,16 @@ struct HiveAgentsTests {
         let store = try requireFullStore(outcome: outcome)
         let messages = try store.get(HiveAgents.Schema.messagesKey)
         let llmInput = try store.get(HiveAgents.Schema.llmInputMessagesKey)
+        let tokenCount = try store.get(HiveAgents.Schema.tokenCountKey)
 
         // Canonical messages must contain history + inputWrites user message.
         #expect(messages.count == history.count + 1)
         #expect(messages.prefix(history.count).map(\.id) == history.map(\.id))
         #expect(messages.prefix(history.count).map(\.content) == history.map(\.content))
 
-        // llmInputMessages must be derived (non-nil) when over budget.
-        let trimmed = try #require(llmInput)
-        #expect(trimmed.count <= messages.count)
-        #expect(trimmed.count == 3)
-        #expect(trimmed.map(\.content) == ["U2", "A2", "Hello"])
+        // llmInputMessages is ephemeral and auto-resets after commit.
+        #expect(llmInput == nil)
+        #expect(tokenCount == messages.count)
     }
 
     @Test("Tool approval: requires checkpoint store (facade preflight)")

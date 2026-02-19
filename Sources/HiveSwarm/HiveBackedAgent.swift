@@ -9,6 +9,28 @@ import Swarm
 
 // MARK: - HiveBackedAgent
 
+/// Public snapshot of Hive-backed agent execution state.
+///
+/// This intentionally avoids exposing Hive-internal runtime types.
+public struct AgentStateSnapshot: Sendable {
+    public let messages: [HiveChatMessage]
+    public let activeNodes: [String]
+    public let stepIndex: Int
+    public let isInterrupted: Bool
+
+    public init(
+        messages: [HiveChatMessage],
+        activeNodes: [String],
+        stepIndex: Int,
+        isInterrupted: Bool
+    ) {
+        self.messages = messages
+        self.activeNodes = activeNodes
+        self.stepIndex = stepIndex
+        self.isInterrupted = isInterrupted
+    }
+}
+
 /// Bridges a Hive-native agent graph into Swarm's `AgentRuntime` protocol.
 ///
 /// This allows `HiveAgentsRuntime` (which uses Hive's deterministic graph engine
@@ -118,16 +140,7 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         await hooks?.onAgentStart(context: nil, agent: self, input: input)
 
         do {
-            let request = HiveAgentsRunStartRequest(
-                threadID: threadID,
-                input: input,
-                options: runOptions
-            )
-
-            let handle = try await runtime.runControl.start(request)
-            await cancellation.track(handle)
-
-            let outcome = try await handle.outcome.value
+            let outcome = try await runWithForkRecovery(input: input)
             let result = try buildResult(from: outcome, builder: resultBuilder)
 
             await hooks?.onAgentEnd(context: nil, agent: self, result: result)
@@ -161,6 +174,42 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         let handle = try await runtime.runControl.resume(resumeRequest)
         let outcome = try await handle.outcome.value
         return try buildResult(from: outcome)
+    }
+
+    /// Forks a new run from a historical checkpoint into a new thread.
+    public func forkFrom(
+        checkpointID: HiveCheckpointID,
+        into newThreadID: HiveThreadID
+    ) async -> HiveRunHandle<HiveAgents.Schema> {
+        await runtime.runControl.runtime.fork(
+            threadID: threadID,
+            fromCheckpointID: checkpointID,
+            into: newThreadID,
+            options: runOptions
+        )
+    }
+
+    /// Returns the current runtime state for this thread, if available.
+    ///
+    /// When the thread is in-memory, the snapshot reflects live state.
+    /// When state was restored from checkpoints, `isInterrupted` is inferred
+    /// from checkpoint presence plus an empty next frontier.
+    public func currentState() async throws -> AgentStateSnapshot? {
+        guard let snapshot = try await runtime.runControl.runtime.getState(threadID: threadID) else {
+            return nil
+        }
+
+        let messages = try snapshot.store.get(HiveAgents.Schema.messagesKey)
+        let pendingToolCalls = try snapshot.store.get(HiveAgents.Schema.pendingToolCallsKey)
+        let activeNodes = snapshot.nextNodes.map(\.rawValue)
+        let isWaitingOnToolApproval = !pendingToolCalls.isEmpty &&
+            (snapshot.nextNodes.contains(HiveAgents.NodeID.toolExecute) || snapshot.nextNodes.isEmpty)
+        return AgentStateSnapshot(
+            messages: messages,
+            activeNodes: activeNodes,
+            stepIndex: snapshot.stepIndex,
+            isInterrupted: isWaitingOnToolApproval
+        )
     }
 
     /// Streams the agent's execution, mapping Hive events to Swarm `AgentEvent`.
@@ -475,6 +524,106 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
             return .internalError(reason: "Hive runtime error: \(error)")
         }
     }
+
+    private func runWithForkRecovery(input: String) async throws -> HiveRunOutcome<HiveAgents.Schema> {
+        var sourceThreadID = threadID
+        var forkAttempts = 0
+        let maxForkRetries = runtime.runControl.runtime.environmentSnapshot.context.maxForkRetries
+
+        let startRequest = HiveAgentsRunStartRequest(
+            threadID: sourceThreadID,
+            input: input,
+            options: runOptions
+        )
+        var handle = try await runtime.runControl.start(startRequest)
+        await cancellation.track(handle)
+
+        while true {
+            let (result, tracking) = await awaitOutcomeWithRecoveryTracking(handle)
+            switch result {
+            case let .success(outcome):
+                return outcome
+
+            case let .failure(error):
+                let hasCheckpointStore = runtime.runControl.runtime.environmentSnapshot.checkpointStore != nil
+                guard hasCheckpointStore else {
+                    if maxForkRetries > 0 {
+                        Log.agents.warning("Fork recovery skipped: checkpoint store is not configured.")
+                    }
+                    throw error
+                }
+
+                guard forkAttempts < maxForkRetries else {
+                    throw error
+                }
+
+                guard tracking.sawToolFailure,
+                      let checkpointID = tracking.checkpointBeforeTool else {
+                    throw error
+                }
+
+                forkAttempts += 1
+                let forkThreadID = HiveThreadID("\(threadID.rawValue):fork:\(forkAttempts):\(UUID().uuidString)")
+                let forkHandle = await runtime.runControl.runtime.fork(
+                    threadID: sourceThreadID,
+                    fromCheckpointID: checkpointID,
+                    into: forkThreadID,
+                    options: runOptions
+                )
+                await cancellation.track(forkHandle)
+
+                sourceThreadID = forkThreadID
+                handle = forkHandle
+            }
+        }
+    }
+
+    private func awaitOutcomeWithRecoveryTracking(
+        _ handle: HiveRunHandle<HiveAgents.Schema>
+    ) async -> (Result<HiveRunOutcome<HiveAgents.Schema>, any Error>, ForkRecoveryTracking) {
+        let trackingTask = Task { () -> ForkRecoveryTracking in
+            var tracking = ForkRecoveryTracking()
+            do {
+                for try await event in handle.events {
+                    switch event.kind {
+                    case let .checkpointSaved(checkpointID):
+                        tracking.latestCheckpoint = checkpointID
+                    case .toolInvocationStarted:
+                        tracking.checkpointBeforeTool = tracking.latestCheckpoint
+                    case let .toolInvocationFinished(_, success):
+                        if !success {
+                            tracking.sawToolFailure = true
+                        }
+                    default:
+                        break
+                    }
+                }
+            } catch {
+                // Ignore event stream errors; outcome is authoritative.
+            }
+            return tracking
+        }
+
+        do {
+            let outcome = try await handle.outcome.value
+            let tracking = await trackingTask.value
+            return (.success(outcome), tracking)
+        } catch {
+            let tracking = await trackingTask.value
+            return (.failure(error), tracking)
+        }
+    }
+}
+
+extension HiveBackedAgent: AgentStateInspectable {
+    public func currentExecutionSnapshot() async throws -> AgentExecutionSnapshot? {
+        guard let state = try await currentState() else { return nil }
+        return AgentExecutionSnapshot(
+            activeNodes: state.activeNodes,
+            stepIndex: state.stepIndex,
+            isInterrupted: state.isInterrupted
+        )
+    }
 }
 
 // MARK: - CancellationController
@@ -498,4 +647,10 @@ private actor CancellationController {
         currentHandle?.outcome.cancel()
         currentHandle = nil
     }
+}
+
+private struct ForkRecoveryTracking: Sendable {
+    var latestCheckpoint: HiveCheckpointID?
+    var checkpointBeforeTool: HiveCheckpointID?
+    var sawToolFailure: Bool = false
 }

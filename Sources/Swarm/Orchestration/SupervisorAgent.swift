@@ -544,6 +544,7 @@ public actor SupervisorAgent: AgentRuntime {
     public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         let builder = AgentResult.Builder()
         builder.start()
+        var dispatchedAgent: (any AgentRuntime)?
 
         do {
             // Get agent descriptions for routing
@@ -591,11 +592,17 @@ public actor SupervisorAgent: AgentRuntime {
             }
 
             // Execute the selected agent with potentially modified input
+            dispatchedAgent = selectedEntry.agent
             let result = try await selectedEntry.agent.run(effectiveInput, session: session, hooks: hooks)
 
             // Update context with result
             if let context {
                 await context.setPreviousOutput(result)
+            }
+
+            if await isSubAgentInterrupted(selectedEntry.agent) {
+                builder.setMetadata("subagent_interrupted", .bool(true))
+                builder.setMetadata("subagent_state", .string("awaiting_resume"))
             }
 
             // Build and return final result
@@ -606,6 +613,9 @@ public actor SupervisorAgent: AgentRuntime {
             )
 
         } catch {
+            if let dispatchedAgent, await isSubAgentInterrupted(dispatchedAgent) {
+                throw error
+            }
             return try await handleRoutingError(
                 error,
                 input: input,
@@ -656,6 +666,7 @@ public actor SupervisorAgent: AgentRuntime {
                 return finalResult
             }
 
+            var dispatchedAgent: (any AgentRuntime)?
             do {
                 let builder = AgentResult.Builder()
                 builder.start()
@@ -717,6 +728,7 @@ public actor SupervisorAgent: AgentRuntime {
                     await hooks?.onHandoff(context: context, fromAgent: actor, toAgent: selectedEntry.agent)
                 }
 
+                dispatchedAgent = selectedEntry.agent
                 let subResult = try await forwardStream(
                     toAgentName: selectedEntry.name,
                     agent: selectedEntry.agent,
@@ -727,6 +739,11 @@ public actor SupervisorAgent: AgentRuntime {
                     await context.setPreviousOutput(subResult)
                 }
 
+                if await actor.isSubAgentInterrupted(selectedEntry.agent) {
+                    builder.setMetadata("subagent_interrupted", .bool(true))
+                    builder.setMetadata("subagent_state", .string("awaiting_resume"))
+                }
+
                 let result = await actor.buildResultFromExecution(
                     decision: decision,
                     subAgentResult: subResult,
@@ -735,6 +752,12 @@ public actor SupervisorAgent: AgentRuntime {
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch {
+                if let dispatchedAgent, await actor.isSubAgentInterrupted(dispatchedAgent) {
+                    let agentError = (error as? AgentError) ?? AgentError.internalError(reason: error.localizedDescription)
+                    continuation.yield(.failed(error: agentError))
+                    continuation.finish(throwing: agentError)
+                    return
+                }
                 do {
                     if let fallback = actor.fallbackAgent {
                         let fallbackName = fallback.configuration.name.isEmpty ? String(describing: type(of: fallback)) : fallback.configuration.name
@@ -891,6 +914,23 @@ public actor SupervisorAgent: AgentRuntime {
         }
 
         return effectiveInput
+    }
+
+    /// Checks whether a sub-agent is currently interrupted and awaiting resume input.
+    private func isSubAgentInterrupted(_ agent: any AgentRuntime) async -> Bool {
+        guard let inspectable = agent as? any AgentStateInspectable else {
+            return false
+        }
+        do {
+            let snapshot = try await inspectable.currentExecutionSnapshot()
+            return snapshot?.isInterrupted ?? false
+        } catch {
+            Log.orchestration.debug(
+                "Failed to inspect sub-agent state.",
+                metadata: ["error": .string(error.localizedDescription)]
+            )
+            return false
+        }
     }
 
     /// Builds the final result from a successful sub-agent execution.

@@ -26,14 +26,29 @@ public enum HiveAgents {
     }
 
     public static func makeToolUsingChatAgent(
+        context: HiveAgentsContext? = nil,
         preModel: HiveNode<Schema>? = nil,
         postModel: HiveNode<Schema>? = nil
     ) throws -> CompiledHiveGraph<Schema> {
         let nodeIDs = NodeID.all
+        let modelCachePolicy: HiveCachePolicy<Schema>?
+        let compactionCachePolicy: HiveCachePolicy<Schema>?
+        if let context {
+            modelCachePolicy = context.modelNodeCachePolicy
+            compactionCachePolicy = context.compactionCachePolicy
+        } else {
+            modelCachePolicy = HiveAgentsContext.defaultModelNodeCachePolicy
+            compactionCachePolicy = HiveAgentsContext.defaultCompactionCachePolicy
+        }
 
         var builder = HiveGraphBuilder<Schema>(start: [nodeIDs.preModel])
-        builder.addNode(nodeIDs.preModel, preModel ?? Self.builtInPreModel())
-        builder.addNode(nodeIDs.model, Self.modelNode())
+        builder.addNode(
+            nodeIDs.preModel,
+            options: .deferred,
+            cachePolicy: compactionCachePolicy,
+            preModel ?? Self.builtInPreModel()
+        )
+        builder.addNode(nodeIDs.model, cachePolicy: modelCachePolicy, Self.modelNode())
         builder.addNode(nodeIDs.tools, Self.toolsNode())
         builder.addNode(nodeIDs.toolExecute, Self.toolExecuteNode())
 
@@ -77,24 +92,41 @@ public struct HiveCompactionPolicy: Sendable {
 }
 
 public struct HiveAgentsContext: Sendable {
+    public static var defaultModelNodeCachePolicy: HiveCachePolicy<HiveAgents.Schema>? {
+        .lru(maxEntries: 64)
+    }
+
+    public static var defaultCompactionCachePolicy: HiveCachePolicy<HiveAgents.Schema>? {
+        .channels(HiveChannelID("messages"), maxEntries: 32)
+    }
+
     public let modelName: String
     public let toolApprovalPolicy: HiveAgentsToolApprovalPolicy
     public let compactionPolicy: HiveCompactionPolicy?
     public let tokenizer: (any HiveTokenizer)?
     public let retryPolicy: HiveRetryPolicy?
+    public let modelNodeCachePolicy: HiveCachePolicy<HiveAgents.Schema>?
+    public let compactionCachePolicy: HiveCachePolicy<HiveAgents.Schema>?
+    public let maxForkRetries: Int
 
     public init(
         modelName: String,
         toolApprovalPolicy: HiveAgentsToolApprovalPolicy,
         compactionPolicy: HiveCompactionPolicy? = nil,
         tokenizer: (any HiveTokenizer)? = nil,
-        retryPolicy: HiveRetryPolicy? = nil
+        retryPolicy: HiveRetryPolicy? = nil,
+        modelNodeCachePolicy: HiveCachePolicy<HiveAgents.Schema>? = HiveAgentsContext.defaultModelNodeCachePolicy,
+        compactionCachePolicy: HiveCachePolicy<HiveAgents.Schema>? = HiveAgentsContext.defaultCompactionCachePolicy,
+        maxForkRetries: Int = 2
     ) {
         self.modelName = modelName
         self.toolApprovalPolicy = toolApprovalPolicy
         self.compactionPolicy = compactionPolicy
         self.tokenizer = tokenizer
         self.retryPolicy = retryPolicy
+        self.modelNodeCachePolicy = modelNodeCachePolicy
+        self.compactionCachePolicy = compactionCachePolicy
+        self.maxForkRetries = max(0, maxForkRetries)
     }
 }
 
@@ -226,6 +258,7 @@ public extension HiveAgents {
         public static let pendingToolCallsKey = HiveChannelKey<Self, [HiveToolCall]>(HiveChannelID("pendingToolCalls"))
         public static let finalAnswerKey = HiveChannelKey<Self, String?>(HiveChannelID("finalAnswer"))
         public static let llmInputMessagesKey = HiveChannelKey<Self, [HiveChatMessage]?>(HiveChannelID("llmInputMessages"))
+        public static let tokenCountKey = HiveChannelKey<Self, Int>(HiveChannelID("tokenCount"))
 
         public static var channelSpecs: [AnyHiveChannelSpec<Self>] {
             [
@@ -270,7 +303,18 @@ public extension HiveAgents {
                         updatePolicy: .single,
                         initial: { Optional<[HiveChatMessage]>.none },
                         codec: HiveAnyCodec(HiveCodableJSONCodec<[HiveChatMessage]?>()),
-                        persistence: .checkpointed
+                        persistence: .ephemeral // ephemeral: auto-resets after commit
+                    )
+                ),
+                AnyHiveChannelSpec(
+                    HiveChannelSpec(
+                        key: tokenCountKey,
+                        scope: .global,
+                        reducer: .sum(),
+                        updatePolicy: .multi,
+                        initial: { 0 },
+                        codec: HiveAnyCodec(HiveCodableJSONCodec<Int>()),
+                        persistence: .untracked
                     )
                 )
             ]
@@ -290,7 +334,8 @@ public extension HiveAgents {
             )
             return [
                 AnyHiveWrite(messagesKey, [message]),
-                AnyHiveWrite(finalAnswerKey, Optional<String>.none)
+                AnyHiveWrite(finalAnswerKey, Optional<String>.none),
+                AnyHiveWrite(tokenCountKey, 0)
             ]
         }
     }
@@ -425,10 +470,10 @@ extension HiveAgents {
     private static func builtInPreModel() -> HiveNode<Schema> {
         { input in
             let messages = try input.store.get(Schema.messagesKey)
-            _ = try input.store.get(Schema.llmInputMessagesKey)
+            let accumulatedTokenCount = try input.store.get(Schema.tokenCountKey)
 
             guard let policy = input.context.compactionPolicy else {
-                return HiveNodeOutput(writes: [AnyHiveWrite(Schema.llmInputMessagesKey, Optional<[HiveChatMessage]>.none)])
+                return HiveNodeOutput(next: .useGraphEdges)
             }
 
             guard policy.maxTokens >= 1, policy.preserveLastMessages >= 0 else {
@@ -439,8 +484,21 @@ extension HiveAgents {
                 throw HiveRuntimeError.invalidRunOptions("Compaction policy requires a tokenizer.")
             }
 
-            if tokenizer.countTokens(messages) <= policy.maxTokens {
-                return HiveNodeOutput(writes: [AnyHiveWrite(Schema.llmInputMessagesKey, Optional<[HiveChatMessage]>.none)])
+            let tokenCount: Int
+            var writes: [AnyHiveWrite<Schema>] = []
+            if accumulatedTokenCount == 0, !messages.isEmpty {
+                let recomputed = tokenizer.countTokens(messages)
+                tokenCount = recomputed
+                writes.append(AnyHiveWrite(Schema.tokenCountKey, recomputed))
+            } else {
+                tokenCount = accumulatedTokenCount
+            }
+
+            if tokenCount <= policy.maxTokens {
+                if writes.isEmpty {
+                    return HiveNodeOutput(next: .useGraphEdges)
+                }
+                return HiveNodeOutput(writes: writes)
             }
 
             let trimmed = compactMessages(
@@ -449,7 +507,8 @@ extension HiveAgents {
                 tokenizer: tokenizer
             )
 
-            return HiveNodeOutput(writes: [AnyHiveWrite(Schema.llmInputMessagesKey, Optional(trimmed))])
+            writes.append(AnyHiveWrite(Schema.llmInputMessagesKey, Optional(trimmed)))
+            return HiveNodeOutput(writes: writes)
         }
     }
 
@@ -525,9 +584,11 @@ extension HiveAgents {
 
             var writes: [AnyHiveWrite<Schema>] = [
                 AnyHiveWrite(Schema.messagesKey, [deterministicAssistant]),
-                AnyHiveWrite(Schema.pendingToolCallsKey, deterministicAssistant.toolCalls),
-                AnyHiveWrite(Schema.llmInputMessagesKey, Optional<[HiveChatMessage]>.none)
+                AnyHiveWrite(Schema.pendingToolCallsKey, deterministicAssistant.toolCalls)
             ]
+            if let delta = tokenDeltaForMessages([deterministicAssistant], tokenizer: input.context.tokenizer) {
+                writes.append(AnyHiveWrite(Schema.tokenCountKey, delta))
+            }
 
             if deterministicAssistant.toolCalls.isEmpty {
                 writes.append(AnyHiveWrite(Schema.finalAnswerKey, Optional(deterministicAssistant.content)))
@@ -557,10 +618,18 @@ extension HiveAgents {
                     switch resume {
                     case let .toolApproval(decision):
                         if decision == .rejected {
-                            return rejectedOutput(taskID: input.run.taskID, calls: calls)
+                            return rejectedOutput(
+                                taskID: input.run.taskID,
+                                calls: calls,
+                                tokenizer: input.context.tokenizer
+                            )
                         }
                         if decision == .cancelled {
-                            return cancelledOutput(taskID: input.run.taskID, calls: calls)
+                            return cancelledOutput(
+                                taskID: input.run.taskID,
+                                calls: calls,
+                                tokenizer: input.context.tokenizer
+                            )
                         }
                     }
                 } else {
@@ -575,7 +644,8 @@ extension HiveAgents {
 
     private static func rejectedOutput(
         taskID: HiveTaskID,
-        calls _: [HiveToolCall]
+        calls _: [HiveToolCall],
+        tokenizer: (any HiveTokenizer)?
     ) -> HiveNodeOutput<Schema> {
         let systemMessage = HiveChatMessage(
             id: MessageID.system(taskID: taskID),
@@ -585,18 +655,24 @@ extension HiveAgents {
             op: nil
         )
 
+        var writes: [AnyHiveWrite<Schema>] = [
+            AnyHiveWrite(Schema.pendingToolCallsKey, []),
+            AnyHiveWrite(Schema.messagesKey, [systemMessage])
+        ]
+        if let delta = tokenDeltaForMessages([systemMessage], tokenizer: tokenizer) {
+            writes.append(AnyHiveWrite(Schema.tokenCountKey, delta))
+        }
+
         return HiveNodeOutput(
-            writes: [
-                AnyHiveWrite(Schema.pendingToolCallsKey, []),
-                AnyHiveWrite(Schema.messagesKey, [systemMessage])
-            ],
+            writes: writes,
             next: .nodes([NodeID.model])
         )
     }
 
     private static func cancelledOutput(
         taskID: HiveTaskID,
-        calls: [HiveToolCall]
+        calls: [HiveToolCall],
+        tokenizer: (any HiveTokenizer)?
     ) -> HiveNodeOutput<Schema> {
         let systemMessage = HiveChatMessage(
             id: MessageID.system(taskID: taskID),
@@ -617,11 +693,17 @@ extension HiveAgents {
             )
         }
 
+        let allMessages = [systemMessage] + toolMessages
+        var writes: [AnyHiveWrite<Schema>] = [
+            AnyHiveWrite(Schema.pendingToolCallsKey, []),
+            AnyHiveWrite(Schema.messagesKey, allMessages)
+        ]
+        if let delta = tokenDeltaForMessages(allMessages, tokenizer: tokenizer) {
+            writes.append(AnyHiveWrite(Schema.tokenCountKey, delta))
+        }
+
         return HiveNodeOutput(
-            writes: [
-                AnyHiveWrite(Schema.pendingToolCallsKey, []),
-                AnyHiveWrite(Schema.messagesKey, [systemMessage] + toolMessages)
-            ],
+            writes: writes,
             next: .nodes([NodeID.model])
         )
     }
@@ -638,9 +720,17 @@ extension HiveAgents {
                     case .approved:
                         break
                     case .rejected:
-                        return rejectedOutput(taskID: input.run.taskID, calls: calls)
+                        return rejectedOutput(
+                            taskID: input.run.taskID,
+                            calls: calls,
+                            tokenizer: input.context.tokenizer
+                        )
                     case .cancelled:
-                        return cancelledOutput(taskID: input.run.taskID, calls: calls)
+                        return cancelledOutput(
+                            taskID: input.run.taskID,
+                            calls: calls,
+                            tokenizer: input.context.tokenizer
+                        )
                     }
                 }
             }
@@ -683,14 +773,28 @@ extension HiveAgents {
                 }
             }
 
+            var writes: [AnyHiveWrite<Schema>] = [
+                AnyHiveWrite(Schema.pendingToolCallsKey, []),
+                AnyHiveWrite(Schema.messagesKey, toolMessages)
+            ]
+            if let delta = tokenDeltaForMessages(toolMessages, tokenizer: input.context.tokenizer) {
+                writes.append(AnyHiveWrite(Schema.tokenCountKey, delta))
+            }
+
             return HiveNodeOutput(
-                writes: [
-                    AnyHiveWrite(Schema.pendingToolCallsKey, []),
-                    AnyHiveWrite(Schema.messagesKey, toolMessages)
-                ],
+                writes: writes,
                 next: .nodes([NodeID.model])
             )
         }
+    }
+
+    private static func tokenDeltaForMessages(
+        _ messages: [HiveChatMessage],
+        tokenizer: (any HiveTokenizer)?
+    ) -> Int? {
+        guard let tokenizer else { return nil }
+        guard messages.isEmpty == false else { return nil }
+        return tokenizer.countTokens(messages)
     }
 
     /// Executes an operation with retry according to the given `HiveRetryPolicy`.
