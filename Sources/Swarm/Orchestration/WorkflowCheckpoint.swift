@@ -17,6 +17,9 @@ public enum WorkflowCheckpointPolicy: Sendable, Equatable {
 
     /// Checkpoint after every N steps.
     case everyNSteps(Int)
+
+    /// Checkpoint only when an interruption is raised.
+    case onInterrupt
 }
 
 // MARK: - WorkflowCheckpointState
@@ -80,14 +83,62 @@ public struct WorkflowResumeHandle: Sendable {
     /// Why the workflow was interrupted.
     public let interruptReason: WorkflowInterruptReason
 
+    /// Runtime thread identifier required for Hive resume.
+    public let threadID: String
+
+    /// Interrupt identifier required for Hive resume.
+    public let interruptID: String
+
+    /// Checkpoint identifier persisted by Hive at interruption time.
+    public let checkpointID: String
+
+    /// Suggested resume payload for callers that do not need custom decisions.
+    public let suggestedResumePayload: String?
+
+    /// Raw interrupt payload emitted by Hive.
+    public let interruptPayload: String
+
     public init(
         workflowID: String,
         checkpoint: WorkflowCheckpointState,
-        interruptReason: WorkflowInterruptReason
+        interruptReason: WorkflowInterruptReason,
+        threadID: String,
+        interruptID: String,
+        checkpointID: String,
+        suggestedResumePayload: String? = nil,
+        interruptPayload: String = ""
     ) {
         self.workflowID = workflowID
         self.checkpoint = checkpoint
         self.interruptReason = interruptReason
+        self.threadID = threadID
+        self.interruptID = interruptID
+        self.checkpointID = checkpointID
+        self.suggestedResumePayload = suggestedResumePayload
+        self.interruptPayload = interruptPayload
+    }
+}
+
+/// Result of a workflow execution attempt.
+public enum WorkflowExecutionOutcome: Sendable {
+    /// Workflow finished normally with a final agent result.
+    case completed(AgentResult)
+
+    /// Workflow paused for an interruption and can be resumed with the handle.
+    case interrupted(WorkflowResumeHandle)
+}
+
+public extension WorkflowInterruptReason {
+    /// Human-readable message for diagnostics and error propagation.
+    var message: String {
+        switch self {
+        case let .humanApprovalRequired(prompt):
+            "Human approval required: \(prompt)"
+        case .externalInterrupt:
+            "Workflow interrupted by external signal."
+        case .timeout:
+            "Workflow timed out."
+        }
     }
 }
 

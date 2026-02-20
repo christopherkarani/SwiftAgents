@@ -1,0 +1,6 @@
+scenario,routing,handoff,failure_class,tool_args,output_correct
+routing_suite_parity,1,,,,
+handoff_suite_parity,,1,,,
+failure_class_suite_parity,,,1,,
+tool_args_suite_parity,,,,1,
+output_correct_suite_parity,,,,,1

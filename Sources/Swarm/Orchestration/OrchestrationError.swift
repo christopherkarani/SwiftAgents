@@ -49,11 +49,17 @@ public enum OrchestrationError: Error, Sendable, Equatable {
     /// Workflow was interrupted (e.g. by an `Interrupt` step).
     case workflowInterrupted(reason: String)
 
+    /// User-configurable orchestration graph failed validation.
+    case invalidGraph(OrchestrationValidationError)
+
     /// Human approval request timed out.
     case humanApprovalTimeout(prompt: String)
 
     /// Human approval was rejected.
     case humanApprovalRejected(prompt: String, reason: String)
+
+    /// Workflow definition is invalid or cannot be executed.
+    case invalidWorkflow(reason: String)
 }
 
 // MARK: LocalizedError
@@ -82,10 +88,14 @@ extension OrchestrationError: LocalizedError {
             return "Hive runtime unavailable: \(reason)"
         case let .workflowInterrupted(reason):
             return "Workflow interrupted: \(reason)"
+        case let .invalidGraph(validationError):
+            return "Invalid orchestration graph: \(validationError.localizedDescription)"
         case let .humanApprovalTimeout(prompt):
             return "Human approval timed out for: \(prompt)"
         case let .humanApprovalRejected(prompt, reason):
             return "Human approval rejected for '\(prompt)': \(reason)"
+        case let .invalidWorkflow(reason):
+            return "Invalid workflow: \(reason)"
         }
     }
 }
@@ -115,10 +125,14 @@ extension OrchestrationError: CustomDebugStringConvertible {
             return "OrchestrationError.hiveRuntimeUnavailable(reason: \(reason))"
         case let .workflowInterrupted(reason):
             return "OrchestrationError.workflowInterrupted(reason: \(reason))"
+        case let .invalidGraph(validationError):
+            return "OrchestrationError.invalidGraph(\(validationError))"
         case let .humanApprovalTimeout(prompt):
             return "OrchestrationError.humanApprovalTimeout(prompt: \(prompt))"
         case let .humanApprovalRejected(prompt, reason):
             return "OrchestrationError.humanApprovalRejected(prompt: \(prompt), reason: \(reason))"
+        case let .invalidWorkflow(reason):
+            return "OrchestrationError.invalidWorkflow(reason: \(reason))"
         }
     }
 }

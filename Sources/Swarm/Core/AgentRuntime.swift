@@ -333,6 +333,21 @@ public struct InferenceOptions: Sendable, Equatable {
     /// Providers that do not support tool choice may ignore this value.
     public var toolChoice: ToolChoice?
 
+    /// Random seed for reproducible generation where supported by the provider.
+    public var seed: Int?
+
+    /// Whether parallel tool calls are allowed where supported by the provider.
+    public var parallelToolCalls: Bool?
+
+    /// Truncation strategy for oversized prompts where supported by the provider.
+    public var truncation: TruncationStrategy?
+
+    /// Verbosity preference where supported by the provider.
+    public var verbosity: Verbosity?
+
+    /// Provider-specific key/value options that should pass through untouched.
+    public var providerSettings: [String: SendableValue]?
+
     /// Creates inference options.
     /// - Parameters:
     ///   - temperature: Generation temperature. Default: 1.0
@@ -343,6 +358,11 @@ public struct InferenceOptions: Sendable, Equatable {
     ///   - presencePenalty: Presence penalty. Default: nil
     ///   - frequencyPenalty: Frequency penalty. Default: nil
     ///   - toolChoice: Tool choice control. Default: nil
+    ///   - seed: Deterministic seed. Default: nil
+    ///   - parallelToolCalls: Allow parallel tool calls. Default: nil
+    ///   - truncation: Truncation strategy. Default: nil
+    ///   - verbosity: Verbosity preference. Default: nil
+    ///   - providerSettings: Provider-specific pass-through settings. Default: nil
     public init(
         temperature: Double = 1.0,
         maxTokens: Int? = nil,
@@ -351,7 +371,12 @@ public struct InferenceOptions: Sendable, Equatable {
         topK: Int? = nil,
         presencePenalty: Double? = nil,
         frequencyPenalty: Double? = nil,
-        toolChoice: ToolChoice? = nil
+        toolChoice: ToolChoice? = nil,
+        seed: Int? = nil,
+        parallelToolCalls: Bool? = nil,
+        truncation: TruncationStrategy? = nil,
+        verbosity: Verbosity? = nil,
+        providerSettings: [String: SendableValue]? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -361,6 +386,11 @@ public struct InferenceOptions: Sendable, Equatable {
         self.presencePenalty = presencePenalty
         self.frequencyPenalty = frequencyPenalty
         self.toolChoice = toolChoice
+        self.seed = seed
+        self.parallelToolCalls = parallelToolCalls
+        self.truncation = truncation
+        self.verbosity = verbosity
+        self.providerSettings = providerSettings
     }
 
     // MARK: - Special Builder Methods

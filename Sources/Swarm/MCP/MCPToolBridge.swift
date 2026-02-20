@@ -124,11 +124,29 @@ struct MCPBridgedTool: AnyJSONTool, Sendable {
     /// The MCP server to delegate execution to.
     let server: any MCPServer
 
+    /// Optional display name used when this tool must be disambiguated.
+    let displayNameOverride: String?
+
+    /// Original server-side tool name used for execution calls.
+    let serverToolName: String
+
+    init(
+        schema: ToolSchema,
+        server: any MCPServer,
+        displayName: String? = nil,
+        serverToolName: String? = nil
+    ) {
+        self.schema = schema
+        self.server = server
+        displayNameOverride = displayName
+        self.serverToolName = serverToolName ?? schema.name
+    }
+
     // MARK: - Tool Protocol
 
     /// The unique name of the tool.
     var name: String {
-        schema.name
+        displayNameOverride ?? schema.name
     }
 
     /// A description of what the tool does.
@@ -149,6 +167,6 @@ struct MCPBridgedTool: AnyJSONTool, Sendable {
     ///           `MCPError.invalidParams` if the arguments are invalid.
     ///           `MCPError.internalError` if execution fails.
     public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
-        try await server.callTool(name: name, arguments: arguments)
+        try await server.callTool(name: serverToolName, arguments: arguments)
     }
 }

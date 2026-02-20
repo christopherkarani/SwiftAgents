@@ -487,6 +487,35 @@ public actor ParallelGroup: AgentRuntime {
     /// - Throws: `OrchestrationError.allAgentsFailed` if all agents fail,
     ///           or rethrows the first agent error if `shouldContinueOnError` is false.
     public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+        let runID = UUID()
+        let task = Task { [self] in
+            try await runInternal(input, session: session, hooks: hooks)
+        }
+        currentExecutionTask = task
+        currentExecutionID = runID
+        defer {
+            if currentExecutionID == runID {
+                currentExecutionTask = nil
+                currentExecutionID = nil
+            }
+        }
+
+        do {
+            return try await withTaskCancellationHandler(
+                operation: {
+                    try await task.value
+                },
+                onCancel: {
+                    task.cancel()
+                }
+            )
+        } catch is CancellationError {
+            task.cancel()
+            throw AgentError.cancelled
+        }
+    }
+
+    private func runInternal(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !agents.isEmpty else {
             throw OrchestrationError.noAgentsConfigured
         }
@@ -611,6 +640,9 @@ public actor ParallelGroup: AgentRuntime {
             } catch let error as AgentError {
                 continuation.yield(.failed(error: error))
                 continuation.finish(throwing: error)
+            } catch is CancellationError {
+                continuation.yield(.failed(error: .cancelled))
+                continuation.finish(throwing: AgentError.cancelled)
             } catch {
                 let agentError = AgentError.internalError(reason: error.localizedDescription)
                 continuation.yield(.failed(error: agentError))
@@ -625,6 +657,15 @@ public actor ParallelGroup: AgentRuntime {
     /// cancellation for this to take effect.
     public func cancel() async {
         isCancelled = true
+        currentExecutionTask?.cancel()
+
+        await withTaskGroup(of: Void.self) { group in
+            for (_, agent) in agents {
+                group.addTask {
+                    await agent.cancel()
+                }
+            }
+        }
     }
 
     // MARK: Private
@@ -643,6 +684,10 @@ public actor ParallelGroup: AgentRuntime {
 
     /// Whether the execution has been cancelled.
     private var isCancelled: Bool = false
+
+    /// Currently active run task for prompt cancellation propagation.
+    private var currentExecutionTask: Task<AgentResult, Error>?
+    private var currentExecutionID: UUID?
 
     /// Optional shared context for orchestration.
     private var context: AgentContext?

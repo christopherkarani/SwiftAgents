@@ -601,6 +601,54 @@ struct AgentRouterStreamingTests {
     }
 }
 
+// MARK: - AgentRouterHandoffIdentityTests
+
+@Suite("AgentRouter - Handoff Identity Matching")
+struct AgentRouterHandoffIdentityTests {
+    @Test("Handoff input filter uses matching runtime instance when agents share a type")
+    func handoffUsesRuntimeIdentityForSameTypeAgents() async throws {
+        let first = TestAgent(name: "first", responsePrefix: "First")
+        let second = TestAgent(name: "second", responsePrefix: "Second")
+
+        let firstConfig = AnyHandoffConfiguration(handoff(
+            to: first,
+            inputFilter: { data in
+                var updated = data
+                updated = HandoffInputData(
+                    sourceAgentName: data.sourceAgentName,
+                    targetAgentName: data.targetAgentName,
+                    input: "first-filter::\(data.input)",
+                    context: data.context,
+                    metadata: data.metadata
+                )
+                return updated
+            }
+        ))
+        let secondConfig = AnyHandoffConfiguration(handoff(
+            to: second,
+            inputFilter: { data in
+                var updated = data
+                updated = HandoffInputData(
+                    sourceAgentName: data.sourceAgentName,
+                    targetAgentName: data.targetAgentName,
+                    input: "second-filter::\(data.input)",
+                    context: data.context,
+                    metadata: data.metadata
+                )
+                return updated
+            }
+        ))
+
+        let router = AgentRouter(
+            routes: [Route(condition: .always, agent: second, name: "SecondRoute")],
+            handoffs: [firstConfig, secondConfig]
+        )
+
+        let result = try await router.run("hello")
+        #expect(result.output == "Second: second-filter::hello")
+    }
+}
+
 // MARK: - AgentRouterDescriptionTests
 
 @Suite("AgentRouter - Description")

@@ -45,18 +45,20 @@ extension LanguageModelSession: InferenceProvider {
     public func generateWithToolCalls(
         prompt: String,
         tools: [ToolSchema],
-        options _: InferenceOptions
+        options: InferenceOptions
     ) async throws -> InferenceResponse {
-        guard tools.isEmpty else {
+        // FoundationModels currently does not expose stable tool-calling in this bridge.
+        // Throw explicitly when tools are requested to avoid silent capability degradation.
+        if !tools.isEmpty {
             throw AgentError.generationFailed(
-                reason: "FoundationModels provider does not support tool calling yet"
+                reason: "FoundationModels LanguageModelSession tool calling is not supported yet."
             )
         }
 
-        let response = try await self.respond(to: prompt)
+        let response = try await generate(prompt: prompt, options: options)
 
         return InferenceResponse(
-            content: response.content,
+            content: response,
             toolCalls: [],
             finishReason: .completed
         )
