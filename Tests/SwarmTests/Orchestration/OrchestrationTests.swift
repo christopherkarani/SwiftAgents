@@ -265,7 +265,7 @@ struct OrchestrationTests {
 #if canImport(HiveCore)
     @Test("Hive engine returns input for empty steps")
     func hiveEngineReturnsInputForEmptySteps() async throws {
-        let result = try await OrchestrationHiveEngine.execute(
+        let outcome = try await OrchestrationHiveEngine.execute(
             steps: [],
             input: "input",
             session: nil,
@@ -278,6 +278,11 @@ struct OrchestrationTests {
             onIterationStart: nil,
             onIterationEnd: nil
         )
+
+        guard case let .completed(result) = outcome else {
+            Issue.record("Expected completed outcome for empty workflow.")
+            return
+        }
 
         #expect(result.output == "input")
         #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")

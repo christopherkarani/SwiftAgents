@@ -124,18 +124,20 @@ enum OrchestrationHiveEngine {
         // unchanged with zero iterations. This is intentional passthrough behaviour.
         if steps.isEmpty {
             let duration = ContinuousClock.now - startTime
-            return AgentResult(
-                output: input,
-                toolCalls: [],
-                toolResults: [],
-                iterationCount: 0,
-                duration: duration,
-                tokenUsage: nil,
-                metadata: [
-                    "orchestration.engine": .string("hive"),
-                    "orchestration.total_steps": .int(0),
-                    "orchestration.total_duration": .double(durationAsDouble(duration))
-                ]
+            return .completed(
+                AgentResult(
+                    output: input,
+                    toolCalls: [],
+                    toolResults: [],
+                    iterationCount: 0,
+                    duration: duration,
+                    tokenUsage: nil,
+                    metadata: [
+                        "orchestration.engine": .string("hive"),
+                        "orchestration.total_steps": .int(0),
+                        "orchestration.total_duration": .double(durationAsDouble(duration))
+                    ]
+                )
             )
         }
 
