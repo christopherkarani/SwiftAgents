@@ -87,10 +87,14 @@ public struct HiveCompactionPolicy: Sendable {
     public let preserveLastMessages: Int
 
     public init(maxTokens: Int, preserveLastMessages: Int) {
-        precondition(maxTokens >= 1, "maxTokens must be >= 1")
-        precondition(preserveLastMessages >= 0, "preserveLastMessages must be >= 0")
-        self.maxTokens = maxTokens
-        self.preserveLastMessages = preserveLastMessages
+        if maxTokens < 1 {
+            Log.agents.warning("HiveCompactionPolicy: maxTokens must be >= 1, got \(maxTokens). Clamping to 1.")
+        }
+        if preserveLastMessages < 0 {
+            Log.agents.warning("HiveCompactionPolicy: preserveLastMessages must be >= 0, got \(preserveLastMessages). Clamping to 0.")
+        }
+        self.maxTokens = max(1, maxTokens)
+        self.preserveLastMessages = max(0, preserveLastMessages)
     }
 }
 
@@ -553,9 +557,9 @@ extension HiveAgents {
             }
 
             if approvalRequired {
-            // Defense-in-depth: toolsNode handles approval flow, but if graph edges
-            // are reconfigured, this ensures rejected/cancelled decisions are honored.
-            if let resume = input.run.resume?.payload {
+                // Defense-in-depth: toolsNode handles approval flow, but if graph edges
+                // are reconfigured, this ensures rejected/cancelled decisions are honored.
+                if let resume = input.run.resume?.payload {
                     switch resume {
                     case let .toolApproval(decision):
                         if decision == .rejected {
@@ -763,14 +767,16 @@ extension HiveAgents {
 }
 
 /// Typed constants for HiveChatRole to avoid raw string comparisons.
-private extension HiveChatRole {
+/// Declared as internal so they can be shared across the HiveSwarm module
+/// without duplicating the definitions in each file.
+extension HiveChatRole {
     static let system = Self(rawValue: "system")
     static let tool = Self(rawValue: "tool")
     static let assistant = Self(rawValue: "assistant")
 }
 
 /// Deterministic sorting utilities to ensure reproducible message ordering.
-enum HiveDeterministicSort {
+private enum HiveDeterministicSort {
     static func byName(_ lhs: HiveToolDefinition, _ rhs: HiveToolDefinition) -> Bool {
         lhs.name.utf8.lexicographicallyPrecedes(rhs.name.utf8)
     }

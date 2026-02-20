@@ -445,8 +445,5 @@ private actor CancellationController {
     }
 }
 
-private extension HiveChatRole {
-    static let system = Self(rawValue: "system")
-    static let tool = Self(rawValue: "tool")
-    static let assistant = Self(rawValue: "assistant")
-}
+// HiveChatRole typed constants are defined in HiveAgents.swift (internal)
+// and shared across the HiveSwarm module.

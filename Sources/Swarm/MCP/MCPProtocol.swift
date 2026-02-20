@@ -92,9 +92,15 @@ public struct MCPRequest: Sendable, Codable, Equatable {
         method: String,
         params: [String: SendableValue]? = nil
     ) {
-        // Validate inputs - use empty strings as fallback instead of crashing
-        // This prevents crashes in production while maintaining JSON-RPC compliance
+        // Validate id — generate a fresh UUID if caller passed empty string.
         let validatedId = id.isEmpty ? UUID().uuidString : id
+
+        // Validate method — empty method produces an invalid JSON-RPC 2.0 request.
+        // Assert in debug builds to catch programming errors early; warn in release.
+        assert(!method.isEmpty, "MCPRequest: method must be non-empty per JSON-RPC 2.0")
+        if method.isEmpty {
+            Log.agents.warning("MCPRequest: method was empty; defaulting to 'unknown'. This produces an invalid JSON-RPC 2.0 request.")
+        }
         let validatedMethod = method.isEmpty ? "unknown" : method
 
         jsonrpc = "2.0"
@@ -298,10 +304,12 @@ public extension MCPResponse {
     ///   - result: The result value to include in the response.
     /// - Returns: An MCPResponse with the result set and error as `nil`.
     static func success(id: String, result: SendableValue) -> MCPResponse {
-        // Safe: we guarantee exactly one of result/error is set
-        // Force try is acceptable here because we control the invariants (result non-nil, error nil)
-        // swiftlint:disable:next force_try
-        try! MCPResponse(id: id, result: result, error: nil)
+        // We control the invariants: result is non-nil, error is nil — init will not throw.
+        do {
+            return try MCPResponse(id: id, result: result, error: nil)
+        } catch {
+            fatalError("MCPResponse.success invariant violated — result was nil or error was set: \(error)")
+        }
     }
 
     /// Creates an error response with the given error object.
@@ -311,10 +319,12 @@ public extension MCPResponse {
     ///   - error: The error object describing what went wrong.
     /// - Returns: An MCPResponse with the error set and result as `nil`.
     static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
-        // Safe: we guarantee exactly one of result/error is set
-        // Force try is acceptable here because we control the invariants (result nil, error non-nil)
-        // swiftlint:disable:next force_try
-        try! MCPResponse(id: id, result: nil, error: error)
+        // We control the invariants: error is non-nil, result is nil — init will not throw.
+        do {
+            return try MCPResponse(id: id, result: nil, error: error)
+        } catch let initError {
+            fatalError("MCPResponse.failure invariant violated — result was set or error was nil: \(initError)")
+        }
     }
 }
 

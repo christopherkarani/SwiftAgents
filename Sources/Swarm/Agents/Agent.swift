@@ -74,18 +74,6 @@ public actor Agent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
-    /// Creates a new Agent.
-    /// - Parameters:
-    ///   - tools: Tools available to the agent. Default: []
-    ///   - instructions: System instructions defining agent behavior. Default: ""
-    ///   - configuration: Agent configuration settings. Default: .default
-    ///   - memory: Optional memory system. Default: nil
-    ///   - inferenceProvider: Optional custom inference provider. Default: nil
-    ///   - tracer: Optional tracer for observability. Default: nil
-    ///   - inputGuardrails: Input validation guardrails. Default: []
-    ///   - outputGuardrails: Output validation guardrails. Default: []
-    ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
-    ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
     /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init(
         tools: [any AnyJSONTool] = [],
@@ -144,18 +132,6 @@ public actor Agent: AgentRuntime {
         )
     }
 
-    /// Creates a new Agent with typed tools.
-    /// - Parameters:
-    ///   - tools: Typed tools available to the agent. Default: []
-    ///   - instructions: System instructions defining agent behavior. Default: ""
-    ///   - configuration: Agent configuration settings. Default: .default
-    ///   - memory: Optional memory system. Default: nil
-    ///   - inferenceProvider: Optional custom inference provider. Default: nil
-    ///   - tracer: Optional tracer for observability. Default: nil
-    ///   - inputGuardrails: Input validation guardrails. Default: []
-    ///   - outputGuardrails: Output validation guardrails. Default: []
-    ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
-    ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
     /// Creates a new Agent with typed tools.
     /// - Parameters:
     ///   - tools: Typed tools available to the agent. Default: []
