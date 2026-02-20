@@ -262,6 +262,28 @@ struct OrchestrationTests {
         #expect(result.metadata["orchestration.step_1.second_only"]?.boolValue == true)
     }
 
+#if canImport(HiveCore)
+    @Test("Hive engine returns input for empty steps")
+    func hiveEngineReturnsInputForEmptySteps() async throws {
+        let result = try await OrchestrationHiveEngine.execute(
+            steps: [],
+            input: "input",
+            session: nil,
+            hooks: nil,
+            orchestrator: nil,
+            orchestratorName: "test",
+            handoffs: [],
+            inferencePolicy: nil,
+            hiveRunOptionsOverride: nil,
+            onIterationStart: nil,
+            onIterationEnd: nil
+        )
+
+        #expect(result.output == "input")
+        #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
+        #expect(result.metadata["orchestration.total_steps"]?.intValue == 0)
+    }
+#endif
 
     @Test("Orchestration records engine metadata")
     func orchestrationRecordsEngineMetadata() async throws {

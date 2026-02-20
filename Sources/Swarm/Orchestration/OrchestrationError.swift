@@ -57,6 +57,9 @@ public enum OrchestrationError: Error, Sendable, Equatable {
 
     /// Human approval was rejected.
     case humanApprovalRejected(prompt: String, reason: String)
+
+    /// Workflow definition is invalid or cannot be executed.
+    case invalidWorkflow(reason: String)
 }
 
 // MARK: LocalizedError
@@ -91,6 +94,8 @@ extension OrchestrationError: LocalizedError {
             return "Human approval timed out for: \(prompt)"
         case let .humanApprovalRejected(prompt, reason):
             return "Human approval rejected for '\(prompt)': \(reason)"
+        case let .invalidWorkflow(reason):
+            return "Invalid workflow: \(reason)"
         }
     }
 }
@@ -126,6 +131,8 @@ extension OrchestrationError: CustomDebugStringConvertible {
             return "OrchestrationError.humanApprovalTimeout(prompt: \(prompt))"
         case let .humanApprovalRejected(prompt, reason):
             return "OrchestrationError.humanApprovalRejected(prompt: \(prompt), reason: \(reason))"
+        case let .invalidWorkflow(reason):
+            return "OrchestrationError.invalidWorkflow(reason: \(reason))"
         }
     }
 }
