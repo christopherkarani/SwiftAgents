@@ -117,6 +117,34 @@ struct HybridMemoryTests {
         #expect(await memory.summary == "Long-term summary content")
     }
 
+    @Test("Does not lose pending messages when summarizer is unavailable")
+    func preservesPendingMessagesWhenSummarizerUnavailable() async {
+        let mockSummarizer = MockSummarizer(isAvailable: false)
+
+        let config = HybridMemory.Configuration(
+            shortTermMaxMessages: 10,
+            summarizationThreshold: 20
+        )
+        let memory = HybridMemory(
+            configuration: config,
+            summarizer: mockSummarizer
+        )
+
+        for i in 1...20 {
+            await memory.add(.user("Unavailable message \(i)"))
+        }
+
+        let diagnostics = await memory.diagnostics()
+        #expect(diagnostics.pendingMessages > 0 || diagnostics.hasSummary)
+
+        if !diagnostics.hasSummary {
+            await mockSummarizer.stub(available: true)
+            await mockSummarizer.stub(result: "Recovered summary")
+            await memory.forceSummarize()
+            #expect(await memory.summary == "Recovered summary")
+        }
+    }
+
     // MARK: - Context Retrieval Tests
 
     @Test("Context includes recent messages without summary")

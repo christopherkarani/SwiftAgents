@@ -51,7 +51,7 @@ import HiveCore
 ///
 /// Example:
 /// ```swift
-/// Orchestration(configuration: .init(runtimeMode: .hive)) {
+/// Orchestration {
 ///     Sequential {
 ///         preprocessAgent
 ///         HiveStep { input in

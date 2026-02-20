@@ -395,9 +395,11 @@ public actor PlanAndExecuteAgent: AgentRuntime {
 
             // Store in memory (for AI context) if available
             if let mem = activeMemory {
-                // Add session history to memory
-                for msg in sessionHistory {
-                    await mem.add(msg)
+                // Seed session history only once for a fresh memory instance.
+                if session != nil, await mem.isEmpty, !sessionHistory.isEmpty {
+                    for msg in sessionHistory {
+                        await mem.add(msg)
+                    }
                 }
                 await mem.add(userMessage)
             }

@@ -183,8 +183,9 @@ public actor SwarmRunner {
         executeTools: Bool = true
     ) -> AsyncThrowingStream<SwarmStreamChunk, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let producer = Task {
                 do {
+                    try Task.checkCancellation()
                     guard var activeProfile = profilesByName[agentName] else {
                         throw SwarmError.agentNotFound(name: agentName)
                     }
@@ -201,6 +202,7 @@ public actor SwarmRunner {
                         history: &history,
                         continuation: continuation
                     )
+                    try Task.checkCancellation()
 
                     if !content.isEmpty {
                         history.append(.assistant(content))
@@ -213,6 +215,7 @@ public actor SwarmRunner {
                             history: &history,
                             context: swarmContext
                         )
+                        try Task.checkCancellation()
 
                         if !toolResult.messages.isEmpty {
                             history.append(contentsOf: toolResult.messages)
@@ -225,6 +228,7 @@ public actor SwarmRunner {
                             history: &history,
                             continuation: continuation
                         )
+                        try Task.checkCancellation()
 
                         if !finalContent.isEmpty {
                             history.append(.assistant(finalContent))
@@ -240,9 +244,15 @@ public actor SwarmRunner {
                     )
                     continuation.yield(SwarmStreamChunk(response: response, agentName: activeProfile.name))
                     continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish(throwing: AgentError.cancelled)
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+
+            continuation.onTermination = { @Sendable _ in
+                producer.cancel()
             }
         }
     }
@@ -319,6 +329,7 @@ public actor SwarmRunner {
                     tools: toolSchemas,
                     options: options
                 ) {
+                    try Task.checkCancellation()
                     switch event {
                     case let .textDelta(text):
                         content += text
@@ -344,6 +355,7 @@ public actor SwarmRunner {
             if toolSchemas.isEmpty {
                 var content = ""
                 for try await token in provider.stream(prompt: prompt, options: options) {
+                    try Task.checkCancellation()
                     content += token
                     continuation.yield(SwarmStreamChunk(content: token, agentName: profile.name))
                 }
@@ -353,6 +365,7 @@ public actor SwarmRunner {
 
         // Non-streaming fallback.
         if toolSchemas.isEmpty {
+            try Task.checkCancellation()
             let content = try await provider.generate(prompt: prompt, options: options)
             if !content.isEmpty {
                 continuation.yield(SwarmStreamChunk(content: content, agentName: profile.name))
@@ -360,6 +373,7 @@ public actor SwarmRunner {
             return (content, nil)
         }
 
+        try Task.checkCancellation()
         let response = try await provider.generateWithToolCalls(
             prompt: prompt,
             tools: toolSchemas,
@@ -385,6 +399,7 @@ public actor SwarmRunner {
         let builder = AgentResult.Builder()
 
         for toolCall in toolCalls {
+            try Task.checkCancellation()
             if let handoff = handoffs[toolCall.name] {
                 if let isEnabled = handoff.config.isEnabled {
                     let enabled = await isEnabled(context, handoff.config.targetAgent)

@@ -64,6 +64,41 @@ struct FailingAgent: AgentRuntime {
     func cancel() async {}
 }
 
+final class InstanceEchoAgent: AgentRuntime, @unchecked Sendable {
+    let id: String
+    let tools: [any AnyJSONTool] = []
+    let instructions: String
+    let configuration: AgentConfiguration
+
+    init(id: String) {
+        self.id = id
+        instructions = "Instance echo \(id)"
+        configuration = AgentConfiguration(name: id)
+    }
+
+    func run(
+        _ input: String,
+        session _: (any Session)? = nil,
+        hooks _: (any RunHooks)? = nil
+    ) async throws -> AgentResult {
+        AgentResult(output: "\(id)|\(input)")
+    }
+
+    nonisolated func stream(
+        _ input: String,
+        session _: (any Session)? = nil,
+        hooks _: (any RunHooks)? = nil
+    ) -> AsyncThrowingStream<AgentEvent, Error> {
+        StreamHelper.makeTrackedStream { [self] continuation in
+            continuation.yield(.started(input: input))
+            continuation.yield(.completed(result: AgentResult(output: "\(id)|\(input)")))
+            continuation.finish()
+        }
+    }
+
+    func cancel() async {}
+}
+
 // MARK: - Test Steps
 
 struct ContextWriteStep: OrchestrationStep {
@@ -135,6 +170,48 @@ struct OrchestrationTests {
 
         let result = try await workflow.run("hello")
         #expect(result.output == "filtered: hello")
+    }
+
+    @Test("Handoff configuration matches target agent by runtime identity in orchestration context")
+    func handoffConfigurationMatchesRuntimeIdentity() async throws {
+        let first = InstanceEchoAgent(id: "first")
+        let second = InstanceEchoAgent(id: "second")
+
+        let firstConfig = AnyHandoffConfiguration(handoff(
+            to: first,
+            inputFilter: { data in
+                var updated = data
+                updated = HandoffInputData(
+                    sourceAgentName: data.sourceAgentName,
+                    targetAgentName: data.targetAgentName,
+                    input: "first-filter::\(data.input)",
+                    context: data.context,
+                    metadata: data.metadata
+                )
+                return updated
+            }
+        ))
+        let secondConfig = AnyHandoffConfiguration(handoff(
+            to: second,
+            inputFilter: { data in
+                var updated = data
+                updated = HandoffInputData(
+                    sourceAgentName: data.sourceAgentName,
+                    targetAgentName: data.targetAgentName,
+                    input: "second-filter::\(data.input)",
+                    context: data.context,
+                    metadata: data.metadata
+                )
+                return updated
+            }
+        ))
+
+        let workflow = Orchestration(handoffs: [firstConfig, secondConfig]) {
+            second
+        }
+
+        let result = try await workflow.run("hello")
+        #expect(result.output == "second|second-filter::hello")
     }
 
     @Test("Parallel continues on partial failure by default")
@@ -218,23 +295,9 @@ struct OrchestrationTests {
         #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
     }
 
-    @Test("Orchestration runtimeMode.swift remains source-compatible and executes on Hive")
-    func orchestrationRuntimeModeSwiftExecutesOnHive() async throws {
-        let workflow = Orchestration(
-            configuration: AgentConfiguration(runtimeMode: .swift)
-        ) {
-            Transform { $0 }
-        }
-
-        let result = try await workflow.run("ping")
-        #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
-    }
-
-    @Test("Orchestration runtimeMode.requireHive executes on Hive")
-    func orchestrationRuntimeModeRequireHiveExecutesOnHive() async throws {
-        let workflow = Orchestration(
-            configuration: AgentConfiguration(runtimeMode: .requireHive)
-        ) {
+    @Test("Orchestration executes on Hive runtime")
+    func orchestrationExecutesOnHiveRuntime() async throws {
+        let workflow = Orchestration {
             Transform { $0 }
         }
 
@@ -246,7 +309,6 @@ struct OrchestrationTests {
     func orchestrationHiveRunOptionsOverridePassesThrough() async throws {
         let workflow = Orchestration(
             configuration: AgentConfiguration(
-                runtimeMode: .hive,
                 hiveRunOptionsOverride: .init(maxSteps: 1)
             )
         ) {
