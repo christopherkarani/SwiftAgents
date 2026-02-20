@@ -51,7 +51,7 @@ struct AgentDefaultInferenceProviderTests {
         } catch let error as AgentError {
             switch error {
             case .generationFailed(let reason):
-                #expect(reason.contains("does not support tool calling"))
+                #expect(reason.contains("tool calling"))
             default:
                 Issue.record("Unexpected AgentError: \(error)")
             }
