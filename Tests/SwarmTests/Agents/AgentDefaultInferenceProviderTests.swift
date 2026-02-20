@@ -26,5 +26,37 @@ struct AgentDefaultInferenceProviderTests {
             Issue.record("Unexpected error: \(error)")
         }
     }
-}
 
+    @Test("Foundation Models provider fails fast when tool calls are requested")
+    func foundationModelsProviderRejectsToolCalls() async {
+        guard let provider = DefaultInferenceProviderFactory.makeFoundationModelsProviderIfAvailable() else {
+            return
+        }
+
+        let tools = [
+            ToolSchema(
+                name: "weather",
+                description: "weather lookup",
+                parameters: []
+            ),
+        ]
+
+        do {
+            _ = try await provider.generateWithToolCalls(
+                prompt: "Check weather",
+                tools: tools,
+                options: .default
+            )
+            Issue.record("Expected unsupported tool-call error for Foundation Models")
+        } catch let error as AgentError {
+            switch error {
+            case .generationFailed(let reason):
+                #expect(reason.contains("tool calling"))
+            default:
+                Issue.record("Unexpected AgentError: \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+}
