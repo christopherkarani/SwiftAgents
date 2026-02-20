@@ -512,6 +512,78 @@ struct SupervisorAgentFallbackTests {
     }
 }
 
+// MARK: - SupervisorAgentHandoffIdentityTests
+
+@Suite("SupervisorAgent Handoff Identity Tests")
+struct SupervisorAgentHandoffIdentityTests {
+    private struct FixedRoutingStrategy: RoutingStrategy, Sendable {
+        let selectedAgentName: String
+
+        func selectAgent(
+            for _: String,
+            from _: [AgentDescription],
+            context _: AgentContext?
+        ) async throws -> RoutingDecision {
+            RoutingDecision(selectedAgentName: selectedAgentName, confidence: 1.0)
+        }
+    }
+
+    @Test("Handoff input filter uses matching runtime instance when agents share a type")
+    func handoffUsesRuntimeIdentityForSameTypeAgents() async throws {
+        let first = MockSupervisorTestAgent(name: "first")
+        let second = MockSupervisorTestAgent(name: "second")
+
+        let firstConfig = AnyHandoffConfiguration(handoff(
+            to: first,
+            inputFilter: { data in
+                var updated = data
+                updated = HandoffInputData(
+                    sourceAgentName: data.sourceAgentName,
+                    targetAgentName: data.targetAgentName,
+                    input: "first-filter::\(data.input)",
+                    context: data.context,
+                    metadata: data.metadata
+                )
+                return updated
+            }
+        ))
+        let secondConfig = AnyHandoffConfiguration(handoff(
+            to: second,
+            inputFilter: { data in
+                var updated = data
+                updated = HandoffInputData(
+                    sourceAgentName: data.sourceAgentName,
+                    targetAgentName: data.targetAgentName,
+                    input: "second-filter::\(data.input)",
+                    context: data.context,
+                    metadata: data.metadata
+                )
+                return updated
+            }
+        ))
+
+        let supervisor = SupervisorAgent(
+            agents: [
+                (
+                    name: "first",
+                    agent: first,
+                    description: AgentDescription(name: "first", description: "First")
+                ),
+                (
+                    name: "second",
+                    agent: second,
+                    description: AgentDescription(name: "second", description: "Second")
+                )
+            ],
+            routingStrategy: FixedRoutingStrategy(selectedAgentName: "second"),
+            handoffs: [firstConfig, secondConfig]
+        )
+
+        let result = try await supervisor.run("hello")
+        #expect(result.output == "Response from second: second-filter::hello")
+    }
+}
+
 // MARK: - SupervisorAgentStreamingTests
 
 @Suite("SupervisorAgent Streaming Tests")

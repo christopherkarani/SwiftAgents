@@ -5,7 +5,6 @@
 
 import Foundation
 import Testing
-@testable import HiveSwarm
 @testable import Swarm
 
 @Suite("RetryPolicyBridge — Swarm to Hive mapping")

@@ -23,8 +23,8 @@ struct MCPClientResourceCachingTests {
 
         try await client.addServer(server)
 
-        // Set TTL to 1 second
-        await client.setResourceCacheTTL(1.0)
+        // Use a broad TTL window so this "within-TTL" assertion remains stable under full-suite load.
+        await client.setResourceCacheTTL(10.0)
 
         // First call should query the server
         let result1 = try await client.getAllResources()

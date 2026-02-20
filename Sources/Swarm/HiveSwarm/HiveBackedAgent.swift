@@ -5,7 +5,6 @@
 
 import Foundation
 import HiveCore
-import Swarm
 
 // MARK: - HiveBackedAgent
 

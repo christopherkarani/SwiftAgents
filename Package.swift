@@ -5,10 +5,6 @@ import Foundation
 
 let includeDemo = ProcessInfo.processInfo.environment["SWARM_INCLUDE_DEMO"] == "1"
 
-// Hive integration target is enabled by default for migration/cutover branches.
-// Set SWARM_INCLUDE_HIVE=0 to opt out explicitly.
-let includeHiveIntegration = ProcessInfo.processInfo.environment["SWARM_INCLUDE_HIVE"] != "0"
-
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let useLocalDependencies = ProcessInfo.processInfo.environment["SWARM_USE_LOCAL_DEPS"] == "1"
 
@@ -16,10 +12,6 @@ var packageProducts: [Product] = [
     .library(name: "Swarm", targets: ["Swarm"]),
     .library(name: "SwarmMCP", targets: ["SwarmMCP"]),
 ]
-
-if includeHiveIntegration {
-    packageProducts.append(.library(name: "HiveSwarm", targets: ["HiveSwarm"]))
-}
 
 if includeDemo {
     packageProducts.append(.executable(name: "SwarmDemo", targets: ["SwarmDemo"]))
@@ -126,30 +118,15 @@ var packageTargets: [Target] = [
     )
 ]
 
-if includeHiveIntegration {
-    packageTargets.append(
-        .target(
-            name: "HiveSwarm",
-            dependencies: [
-                "Swarm",
-                .product(name: "HiveCore", package: "Hive")
-            ],
-            swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency")
-            ]
-        )
-    )
-
     packageTargets.append(
         .testTarget(
             name: "HiveSwarmTests",
-            dependencies: ["HiveSwarm"],
+            dependencies: ["Swarm"],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]
         )
     )
-}
 
 if includeDemo {
     packageTargets.append(
