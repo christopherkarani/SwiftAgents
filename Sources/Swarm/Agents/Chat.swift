@@ -83,6 +83,7 @@ public actor ChatAgent: AgentRuntime {
         await tracing.traceStart(input: input)
 
         await hooks?.onAgentStart(context: nil, agent: self, input: input)
+        var iterationStarted = false
 
         do {
             let runner = GuardrailRunner(hooks: hooks)
@@ -97,21 +98,30 @@ public actor ChatAgent: AgentRuntime {
 
             // Store session history + user message in memory (if configured)
             if let mem = activeMemory {
-                for msg in sessionHistory {
-                    await mem.add(msg)
+                // Seed session history only once for a fresh memory instance.
+                if session != nil, await mem.isEmpty, !sessionHistory.isEmpty {
+                    for msg in sessionHistory {
+                        await mem.add(msg)
+                    }
                 }
                 await mem.add(.user(input))
             }
 
             // Retrieve memory context (RAG / summarization) if available
-            let tokenLimit = configuration.contextProfile.memoryTokenLimit
+            let tokenLimit = configuration.effectiveContextProfile.memoryTokenLimit
             let memoryContext: String = if let mem = activeMemory {
                 await mem.context(for: input, tokenLimit: tokenLimit)
             } else {
                 ""
             }
 
-            let prompt = buildPrompt(input: input, sessionHistory: sessionHistory, memoryContext: memoryContext)
+            let prompt = PromptEnvelope.enforce(
+                prompt: buildPrompt(input: input, sessionHistory: sessionHistory, memoryContext: memoryContext),
+                profile: configuration.effectiveContextProfile
+            )
+
+            await hooks?.onIterationStart(context: nil, agent: self, number: 1)
+            iterationStarted = true
 
             await hooks?.onLLMStart(
                 context: nil,
@@ -139,6 +149,9 @@ public actor ChatAgent: AgentRuntime {
                 await mem.add(.assistant(output))
             }
 
+            await hooks?.onIterationEnd(context: nil, agent: self, number: 1)
+            iterationStarted = false
+
             let duration = ContinuousClock.now - startTime
             let result = AgentResult(
                 output: output,
@@ -148,6 +161,7 @@ public actor ChatAgent: AgentRuntime {
                 duration: duration,
                 tokenUsage: nil,
                 metadata: [
+                    RuntimeMetadata.runtimeEngineKey: .string(RuntimeMetadata.hiveRuntimeEngineName),
                     "chat.duration": .double(
                         Double(duration.components.seconds) +
                             Double(duration.components.attoseconds) / 1e18
@@ -159,6 +173,10 @@ public actor ChatAgent: AgentRuntime {
             await hooks?.onAgentEnd(context: nil, agent: self, result: result)
             return result
         } catch {
+            // Keep iteration lifecycle paired when failures happen after iteration starts.
+            if iterationStarted {
+                await hooks?.onIterationEnd(context: nil, agent: self, number: 1)
+            }
             await hooks?.onError(context: nil, agent: self, error: error)
             await tracing.traceError(error)
             throw error

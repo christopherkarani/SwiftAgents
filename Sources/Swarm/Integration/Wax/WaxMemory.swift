@@ -56,9 +56,12 @@ public actor WaxMemory: Memory, MemoryPromptDescriptor, MemorySessionLifecycle {
             effectiveConfiguration.orchestratorConfig.enableVectorSearch = false
         }
 
-        self.orchestrator = try await MemoryOrchestrator(
+        self.url = url
+        self.embedder = embedder
+        messages = (try? await Self.loadPersistedMessages(from: url)) ?? []
+        self.orchestrator = try await Self.makeOrchestrator(
             at: url,
-            config: effectiveConfiguration.orchestratorConfig,
+            configuration: effectiveConfiguration,
             embedder: embedder
         )
         self.configuration = effectiveConfiguration
@@ -67,8 +70,6 @@ public actor WaxMemory: Memory, MemoryPromptDescriptor, MemorySessionLifecycle {
     }
 
     public func add(_ message: MemoryMessage) async {
-        messages.append(message)
-
         var metadata = message.metadata
         metadata["role"] = message.role.rawValue
         metadata["timestamp"] = isoFormatter.string(from: message.timestamp)
@@ -76,6 +77,7 @@ public actor WaxMemory: Memory, MemoryPromptDescriptor, MemorySessionLifecycle {
 
         do {
             try await orchestrator.remember(message.content, metadata: metadata)
+            messages.append(message)
         } catch {
             Log.memory.error("WaxMemory: Failed to ingest message: \(error.localizedDescription)")
         }
@@ -96,25 +98,115 @@ public actor WaxMemory: Memory, MemoryPromptDescriptor, MemorySessionLifecycle {
     }
 
     public func clear() async {
-        messages.removeAll()
+        do {
+            try await orchestrator.close()
+            try await Self.recreateStore(at: url)
+            orchestrator = try await Self.makeOrchestrator(
+                at: url,
+                configuration: configuration,
+                embedder: embedder
+            )
+            if sessionIsActive {
+                _ = await orchestrator.startSession()
+            }
+            messages.removeAll()
+        } catch {
+            Log.memory.error("WaxMemory: Failed to clear persisted state: \(error.localizedDescription)")
+            messages = (try? await Self.loadPersistedMessages(from: url)) ?? []
+        }
     }
 
     // MARK: - MemorySessionLifecycle
 
     public func beginMemorySession() async {
+        sessionIsActive = true
         _ = await orchestrator.startSession()
     }
 
     public func endMemorySession() async {
+        sessionIsActive = false
         await orchestrator.endSession()
     }
 
     // MARK: Private
 
-    private let orchestrator: MemoryOrchestrator
+    private var orchestrator: MemoryOrchestrator
     private let configuration: Configuration
+    private let url: URL
+    private let embedder: (any WaxVectorSearch.EmbeddingProvider)?
+    private var sessionIsActive = false
     private var messages: [MemoryMessage] = []
     private let isoFormatter = ISO8601DateFormatter()
+
+    private static func makeOrchestrator(
+        at url: URL,
+        configuration: Configuration,
+        embedder: (any WaxVectorSearch.EmbeddingProvider)?
+    ) async throws -> MemoryOrchestrator {
+        try await MemoryOrchestrator(
+            at: url,
+            config: configuration.orchestratorConfig,
+            embedder: embedder
+        )
+    }
+
+    private static func recreateStore(at url: URL) async throws {
+        let wax = try await Wax.create(at: url)
+        try await wax.close()
+    }
+
+    private static func loadPersistedMessages(from url: URL) async throws -> [MemoryMessage] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+
+        let wax = try await Wax.open(at: url)
+        do {
+            let allMetas = await wax.frameMetas()
+                .filter { $0.role == .document && $0.status == .active }
+                .sorted { lhs, rhs in
+                    if lhs.timestamp == rhs.timestamp {
+                        return lhs.id < rhs.id
+                    }
+                    return lhs.timestamp < rhs.timestamp
+                }
+
+            let frameIds = allMetas.map(\.id)
+            let contentsByID = try await wax.frameContents(frameIds: frameIds)
+            let formatter = ISO8601DateFormatter()
+
+            var restored: [MemoryMessage] = []
+            restored.reserveCapacity(allMetas.count)
+
+            for meta in allMetas {
+                guard let payload = contentsByID[meta.id],
+                      let content = String(data: payload, encoding: .utf8)
+                else {
+                    continue
+                }
+
+                let metadata = meta.metadata?.entries ?? [:]
+                let role = metadata["role"].flatMap(MemoryMessage.Role.init(rawValue:)) ?? .user
+                let timestamp = metadata["timestamp"].flatMap(formatter.date(from:))
+                    ?? Date(timeIntervalSince1970: TimeInterval(meta.timestamp) / 1000)
+                let id = metadata["message_id"].flatMap(UUID.init(uuidString:)) ?? UUID()
+
+                restored.append(
+                    MemoryMessage(
+                        id: id,
+                        role: role,
+                        content: content,
+                        timestamp: timestamp,
+                        metadata: metadata
+                    )
+                )
+            }
+
+            try await wax.close()
+            return restored
+        } catch {
+            try? await wax.close()
+            throw error
+        }
+    }
 
     private func formatRAGContext(_ rag: RAGContext, tokenLimit: Int) -> String {
         guard tokenLimit > 0 else { return "" }

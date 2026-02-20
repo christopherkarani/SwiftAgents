@@ -5,7 +5,6 @@
 
 import Foundation
 import Testing
-@testable import HiveSwarm
 @testable import Swarm
 
 @Suite("Model Router Wiring")
@@ -98,7 +97,7 @@ struct ModelRouterTests {
 
         let step = TransformStep { input in "transformed: \(input)" }
 
-        let result = try await OrchestrationHiveEngine.execute(
+        let outcome = try await OrchestrationHiveEngine.execute(
             steps: [step],
             input: "Hello",
             threadID: HiveThreadID("orchestration-router-test"),
@@ -115,7 +114,12 @@ struct ModelRouterTests {
             onHiveEvent: nil
         )
 
-        #expect(result.output == "transformed: Hello")
+        switch outcome {
+        case .completed(let result):
+            #expect(result.output == "transformed: Hello")
+        case .interrupted:
+            Issue.record("Expected completed orchestration outcome.")
+        }
     }
 
     // MARK: - HiveBackedAgent with Model Router
