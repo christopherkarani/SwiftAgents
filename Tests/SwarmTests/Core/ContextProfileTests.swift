@@ -75,6 +75,40 @@ struct ContextProfileBudgetTests {
         #expect(budget.toolIOTokens == 600)
         #expect(profile.summaryTokenLimit == 400)
     }
+
+    @Test("Invalid values are normalized to non-crashing safe values")
+    func invalidValuesAreNormalized() {
+        let profile = ContextProfile(
+            preset: .balanced,
+            maxContextTokens: 0,
+            workingTokenRatio: 2.0,
+            memoryTokenRatio: -1.0,
+            toolIOTokenRatio: 0.0,
+            summaryTokenRatio: 2.0,
+            maxToolOutputTokens: 0,
+            maxRetrievedItems: 0,
+            maxRetrievedItemTokens: 0,
+            summaryCadenceTurns: 0,
+            summaryTriggerUtilization: -1.0
+        )
+
+        let ratioSum = profile.workingTokenRatio + profile.memoryTokenRatio + profile.toolIOTokenRatio
+        #expect(abs(ratioSum - 1.0) < 0.0001)
+        #expect(profile.maxContextTokens == 1)
+        #expect(profile.maxToolOutputTokens == 1)
+        #expect(profile.maxRetrievedItems == 1)
+        #expect(profile.maxRetrievedItemTokens == 1)
+        #expect(profile.summaryCadenceTurns == 1)
+        #expect(profile.summaryTokenRatio == 1.0)
+        #expect(profile.summaryTriggerUtilization == 0.0)
+
+        // Minimum ratio floor ensures all budgets remain usable after clamping
+        // extreme inputs. Even with workingRatio=2.0 and memoryRatio=-1.0, no
+        // ratio should collapse to zero, preventing broken callers.
+        #expect(profile.workingTokenRatio > 0)
+        #expect(profile.memoryTokenRatio > 0)
+        #expect(profile.toolIOTokenRatio > 0)
+    }
 }
 
 @Suite("ContextProfile Platform Defaults")

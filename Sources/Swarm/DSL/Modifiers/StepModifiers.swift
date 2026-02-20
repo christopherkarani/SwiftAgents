@@ -123,9 +123,15 @@ public struct RetryModifier: StepModifier {
     public let backoffMultiplier: Double
 
     public init(maxAttempts: Int, initialDelay: Duration = .seconds(1), backoffMultiplier: Double = 2.0) {
-        self.maxAttempts = maxAttempts
+        if maxAttempts < 1 {
+            Log.orchestration.warning("RetryModifier: maxAttempts \(maxAttempts) must be >= 1; using 1")
+        }
+        if !backoffMultiplier.isFinite || backoffMultiplier <= 0 {
+            Log.orchestration.warning("RetryModifier: backoffMultiplier \(backoffMultiplier) is invalid; using 1.0")
+        }
+        self.maxAttempts = max(1, maxAttempts)
         self.initialDelay = initialDelay
-        self.backoffMultiplier = backoffMultiplier
+        self.backoffMultiplier = (!backoffMultiplier.isFinite || backoffMultiplier <= 0) ? 1.0 : backoffMultiplier
     }
 
     public func body(content: OrchestrationStep, input: String, context: OrchestrationStepContext) async throws -> AgentResult {
@@ -159,8 +165,12 @@ public struct RetryModifier: StepModifier {
             }
         }
 
+        // maxAttempts is always >= 1 (clamped in init), so the loop above
+        // always executes at least once. If it exits here, lastError is guaranteed
+        // to be set. The nil branch below is a logic-bug guard, not a runtime path.
         guard let error = lastError else {
-            throw AgentError.internalError(reason: "RetryModifier: maxAttempts reached but no error captured")
+            assertionFailure("RetryModifier exhausted attempts without capturing an error — this is a logic bug")
+            throw AgentError.internalError(reason: "Retry exhausted")
         }
         throw error
     }
