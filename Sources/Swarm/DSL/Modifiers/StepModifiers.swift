@@ -129,6 +129,10 @@ public struct RetryModifier: StepModifier {
     }
 
     public func body(content: OrchestrationStep, input: String, context: OrchestrationStepContext) async throws -> AgentResult {
+        guard maxAttempts > 0 else {
+            throw AgentError.invalidInput(reason: "Retry maxAttempts must be greater than 0")
+        }
+
         var lastError: (any Error)?
         var currentDelay = initialDelay
 

@@ -81,6 +81,21 @@ private func makeTestContext() -> OrchestrationStepContext {
 
 @Suite("RetryModifier Tests")
 struct RetryModifierTests {
+    @Test("Rejects non-positive maxAttempts")
+    func retryRejectsInvalidAttempts() async {
+        let step = AlwaysFailStep()
+            .retry(maxAttempts: 0, delay: .milliseconds(10))
+
+        do {
+            _ = try await step.execute("input", context: makeTestContext())
+            Issue.record("Expected invalidInput error for maxAttempts <= 0")
+        } catch let error as AgentError {
+            #expect(error == .invalidInput(reason: "Retry maxAttempts must be greater than 0"))
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+    }
+
     @Test("Retries on failure up to maxAttempts then throws")
     func retryExhaustsAttempts() async throws {
         let step = AlwaysFailStep()
