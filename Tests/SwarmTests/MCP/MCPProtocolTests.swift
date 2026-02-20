@@ -110,6 +110,38 @@ struct MCPResponseTests {
         #expect(response.error?.message == "Method not found")
     }
 
+    @Test("response rejects invalid jsonrpc version")
+    func responseRejectsInvalidJsonrpc() throws {
+        let jsonString = """
+        {
+            "jsonrpc": "1.0",
+            "id": "resp-3",
+            "result": { "string": { "_0": "ok" } }
+        }
+        """
+        let data = jsonString.data(using: .utf8)!
+
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(MCPResponse.self, from: data)
+        }
+    }
+
+    @Test("response rejects empty id")
+    func responseRejectsEmptyId() throws {
+        let jsonString = """
+        {
+            "jsonrpc": "2.0",
+            "id": "",
+            "result": { "string": { "_0": "ok" } }
+        }
+        """
+        let data = jsonString.data(using: .utf8)!
+
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(MCPResponse.self, from: data)
+        }
+    }
+
     @Test("success factory creates valid response")
     func successFactory() {
         let response = MCPResponse.success(id: "success-1", result: .string("done"))

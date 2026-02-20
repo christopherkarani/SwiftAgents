@@ -116,6 +116,28 @@ struct ModelRouterTests {
         #expect(result.output == "transformed: Hello")
     }
 
+    @Test("OrchestrationHiveEngine throws when steps are empty")
+    func orchestrationHiveEngine_throwsWhenStepsEmpty() async throws {
+        do {
+            _ = try await OrchestrationHiveEngine.execute(
+                steps: [],
+                input: "Hello",
+                session: nil,
+                hooks: nil,
+                orchestrator: nil,
+                orchestratorName: "test-orchestrator",
+                handoffs: [],
+                inferencePolicy: nil,
+                hiveRunOptionsOverride: nil,
+                onIterationStart: nil,
+                onIterationEnd: nil
+            )
+            Issue.record("Expected OrchestrationError.noStepsConfigured")
+        } catch let error as OrchestrationError {
+            #expect(error == .noStepsConfigured)
+        }
+    }
+
     // MARK: - HiveBackedAgent with Model Router
 
     @Test("HiveBackedAgent works when environment has modelRouter but no direct model")

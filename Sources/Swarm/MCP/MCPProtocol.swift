@@ -224,6 +224,12 @@ public struct MCPResponse: Sendable, Codable, Equatable {
         result: SendableValue? = nil,
         error: MCPErrorObject? = nil
     ) throws {
+        guard jsonrpc == "2.0" else {
+            throw MCPError.invalidRequest("Invalid JSON-RPC version: expected '2.0', got '\(jsonrpc)'")
+        }
+        guard !id.isEmpty else {
+            throw MCPError.invalidRequest("MCPResponse: id cannot be empty per JSON-RPC 2.0 specification")
+        }
         guard (result == nil) != (error == nil) else {
             throw MCPError.invalidRequest(
                 "MCPResponse must have exactly one of result or error set, not both or neither"
@@ -241,7 +247,23 @@ public struct MCPResponse: Sendable, Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
         let jsonrpc = try container.decode(String.self, forKey: .jsonrpc)
+        guard jsonrpc == "2.0" else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: [CodingKeys.jsonrpc],
+                    debugDescription: "Invalid JSON-RPC version: expected '2.0', got '\(jsonrpc)'"
+                )
+            )
+        }
         let id = try container.decode(String.self, forKey: .id)
+        guard !id.isEmpty else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: [CodingKeys.id],
+                    debugDescription: "Response ID cannot be empty"
+                )
+            )
+        }
         let result = try container.decodeIfPresent(SendableValue.self, forKey: .result)
         let error = try container.decodeIfPresent(MCPErrorObject.self, forKey: .error)
 
@@ -257,10 +279,12 @@ public struct MCPResponse: Sendable, Codable, Equatable {
 
         // Use private initializer that bypasses the throwing check
         // since we've already validated above
-        self.jsonrpc = jsonrpc
-        self.id = id
-        self.result = result
-        self.error = error
+        self = MCPResponse(
+            uncheckedJsonrpc: jsonrpc,
+            id: id,
+            result: result,
+            error: error
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -279,6 +303,18 @@ public struct MCPResponse: Sendable, Codable, Equatable {
         case result
         case error
     }
+
+    private init(
+        uncheckedJsonrpc: String,
+        id: String,
+        result: SendableValue?,
+        error: MCPErrorObject?
+    ) {
+        self.jsonrpc = uncheckedJsonrpc
+        self.id = id
+        self.result = result
+        self.error = error
+    }
 }
 
 // MARK: - MCPResponse Factory Methods
@@ -293,13 +329,7 @@ public extension MCPResponse {
     ///
     /// - Note: This method cannot fail as it guarantees valid inputs.
     static func success(id: String, result: SendableValue) -> MCPResponse {
-        // Safe: we guarantee exactly one of result/error is set
-        do {
-            return try MCPResponse(id: id, result: result, error: nil)
-        } catch {
-            // This should never happen given our invariants, but handle gracefully
-            fatalError("MCPResponse.success: unexpected validation failure - \(error)")
-        }
+        MCPResponse(uncheckedJsonrpc: "2.0", id: id, result: result, error: nil)
     }
 
     /// Creates an error response with the given error object.
@@ -311,13 +341,7 @@ public extension MCPResponse {
     ///
     /// - Note: This method cannot fail as it guarantees valid inputs.
     static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
-        // Safe: we guarantee exactly one of result/error is set
-        do {
-            return try MCPResponse(id: id, result: nil, error: error)
-        } catch {
-            // This should never happen given our invariants, but handle gracefully
-            fatalError("MCPResponse.failure: unexpected validation failure - \(error)")
-        }
+        MCPResponse(uncheckedJsonrpc: "2.0", id: id, result: nil, error: error)
     }
 }
 

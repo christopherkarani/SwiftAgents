@@ -278,7 +278,9 @@ enum OrchestrationHiveEngine {
     }
 
     private static func makeGraph(steps: [OrchestrationStep]) throws -> CompiledHiveGraph<Schema> {
-        precondition(!steps.isEmpty)
+        guard !steps.isEmpty else {
+            throw OrchestrationError.noStepsConfigured
+        }
 
         let nodeIDs = steps.indices.map { HiveNodeID("orchestration.step_\($0)") }
 
