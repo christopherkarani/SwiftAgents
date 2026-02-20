@@ -17,6 +17,9 @@ public enum OrchestrationError: Error, Sendable, Equatable {
     /// No agents are configured in the orchestrator.
     case noAgentsConfigured
 
+    /// No steps are configured in the orchestration workflow.
+    case noStepsConfigured
+
     // MARK: - Handoff Errors
 
     /// Agent handoff failed between source and target agents.
@@ -65,6 +68,8 @@ extension OrchestrationError: LocalizedError {
             return "Agent not found: \(name)"
         case .noAgentsConfigured:
             return "No agents configured in orchestrator"
+        case .noStepsConfigured:
+            return "No steps configured in orchestration workflow"
         case let .handoffFailed(source, target, reason):
             return "Handoff failed from '\(source)' to '\(target)': \(reason)"
         case let .handoffSkipped(from, to, reason):
@@ -99,6 +104,8 @@ extension OrchestrationError: CustomDebugStringConvertible {
             return "OrchestrationError.agentNotFound(name: \(name))"
         case .noAgentsConfigured:
             return "OrchestrationError.noAgentsConfigured"
+        case .noStepsConfigured:
+            return "OrchestrationError.noStepsConfigured"
         case let .handoffFailed(source, target, reason):
             return "OrchestrationError.handoffFailed(source: \(source), target: \(target), reason: \(reason))"
         case let .handoffSkipped(from, to, reason):

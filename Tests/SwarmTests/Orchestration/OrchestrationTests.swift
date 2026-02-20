@@ -98,6 +98,39 @@ struct MetadataStep: OrchestrationStep {
     }
 }
 
+@Suite("OrchestrationHiveEngine Validation")
+struct OrchestrationHiveEngineValidationTests {
+    @Test("Hive engine rejects empty step lists")
+    func hiveEngineRejectsEmptySteps() async {
+        do {
+            _ = try await OrchestrationHiveEngine.execute(
+                steps: [],
+                input: "input",
+                session: nil,
+                hooks: nil,
+                orchestrator: nil,
+                orchestratorName: "test-orchestrator",
+                handoffs: [],
+                inferencePolicy: nil,
+                hiveRunOptionsOverride: nil,
+                checkpointPolicy: .disabled,
+                checkpointStore: nil,
+                modelClient: nil,
+                modelRouter: nil,
+                toolRegistry: nil,
+                inferenceHints: nil,
+                onIterationStart: nil,
+                onIterationEnd: nil
+            )
+            Issue.record("Expected noStepsConfigured error for empty steps")
+        } catch let error as OrchestrationError {
+            #expect(error == .noStepsConfigured)
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+    }
+}
+
 @Suite("Orchestration Tests")
 struct OrchestrationTests {
     @Test("Shared context persists across steps")
