@@ -276,12 +276,15 @@ public struct MCPResponse: Sendable, Codable, Equatable {
     /// Internal initializer for validated response construction.
     /// Callers must ensure exactly one of result or error is set.
     private init(
-        validatedJsonrpc jsonrpc: String,
         id: String,
         result: SendableValue?,
         error: MCPErrorObject?
     ) {
-        self.jsonrpc = jsonrpc
+        assert(
+            (result == nil) != (error == nil),
+            "MCPResponse invariant violated: exactly one of result/error must be set"
+        )
+        self.jsonrpc = "2.0"
         self.id = id
         self.result = result
         self.error = error
@@ -308,7 +311,6 @@ public extension MCPResponse {
     /// - Note: This method cannot fail as it guarantees valid inputs.
     static func success(id: String, result: SendableValue) -> MCPResponse {
         MCPResponse(
-            validatedJsonrpc: "2.0",
             id: id,
             result: result,
             error: nil
@@ -325,7 +327,6 @@ public extension MCPResponse {
     /// - Note: This method cannot fail as it guarantees valid inputs.
     static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
         MCPResponse(
-            validatedJsonrpc: "2.0",
             id: id,
             result: nil,
             error: error

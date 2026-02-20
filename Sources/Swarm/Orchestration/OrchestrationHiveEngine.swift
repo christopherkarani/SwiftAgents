@@ -120,6 +120,8 @@ enum OrchestrationHiveEngine {
     ) async throws -> WorkflowExecutionOutcome {
         let startTime = ContinuousClock.now
 
+        // An empty steps array is a valid no-op workflow: the input is passed through
+        // unchanged with zero iterations. This is intentional passthrough behaviour.
         if steps.isEmpty {
             let duration = ContinuousClock.now - startTime
             return AgentResult(
@@ -132,10 +134,7 @@ enum OrchestrationHiveEngine {
                 metadata: [
                     "orchestration.engine": .string("hive"),
                     "orchestration.total_steps": .int(0),
-                    "orchestration.total_duration": .double(
-                        Double(duration.components.seconds) +
-                            Double(duration.components.attoseconds) / 1e18
-                    )
+                    "orchestration.total_duration": .double(durationAsDouble(duration))
                 ]
             )
         }
@@ -233,10 +232,7 @@ enum OrchestrationHiveEngine {
             var metadata = accumulator.metadata
             metadata["orchestration.engine"] = .string("hive")
             metadata["orchestration.total_steps"] = .int(steps.count)
-            metadata["orchestration.total_duration"] = .double(
-                Double(duration.components.seconds) +
-                    Double(duration.components.attoseconds) / 1e18
-            )
+            metadata["orchestration.total_duration"] = .double(durationAsDouble(duration))
 
             return .completed(
                 AgentResult(
@@ -415,9 +411,9 @@ enum OrchestrationHiveEngine {
     }
 
     private static func makeGraph(steps: [OrchestrationStep]) throws -> CompiledHiveGraph<Schema> {
-        guard !steps.isEmpty else {
-            throw OrchestrationError.invalidWorkflow(reason: "Hive orchestration requires at least one step.")
-        }
+        // execute() guarantees steps is non-empty before calling makeGraph().
+        // The assert catches future regressions where this invariant is violated.
+        assert(!steps.isEmpty, "makeGraph called with empty steps — caller must ensure non-empty steps")
 
         let nodeIDs = steps.indices.map { HiveNodeID("orchestration.step_\($0)") }
 
@@ -491,6 +487,14 @@ enum OrchestrationHiveEngine {
 
         builder.setOutputProjection(.channels([Schema.currentInputKey.id, Schema.accumulatorKey.id]))
         return try builder.compile()
+    }
+
+    /// Converts a `Duration` value to a `Double` representing seconds.
+    ///
+    /// Centralises the seconds + attoseconds calculation to avoid repeating
+    /// the fragile `/ 1e18` constant at multiple call sites.
+    private static func durationAsDouble(_ duration: Duration) -> Double {
+        Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
     }
 
     private static func shouldResumeFromInterruption(_ payload: String?) -> Bool {
