@@ -557,9 +557,9 @@ extension HiveAgents {
             }
 
             if approvalRequired {
-            // Defense-in-depth: toolsNode handles approval flow, but if graph edges
-            // are reconfigured, this ensures rejected/cancelled decisions are honored.
-            if let resume = input.run.resume?.payload {
+                // Defense-in-depth: toolsNode handles approval flow, but if graph edges
+                // are reconfigured, this ensures rejected/cancelled decisions are honored.
+                if let resume = input.run.resume?.payload {
                     switch resume {
                     case let .toolApproval(decision):
                         if decision == .rejected {
@@ -767,14 +767,16 @@ extension HiveAgents {
 }
 
 /// Typed constants for HiveChatRole to avoid raw string comparisons.
-private extension HiveChatRole {
+/// Declared as internal so they can be shared across the HiveSwarm module
+/// without duplicating the definitions in each file.
+extension HiveChatRole {
     static let system = Self(rawValue: "system")
     static let tool = Self(rawValue: "tool")
     static let assistant = Self(rawValue: "assistant")
 }
 
 /// Deterministic sorting utilities to ensure reproducible message ordering.
-enum HiveDeterministicSort {
+private enum HiveDeterministicSort {
     static func byName(_ lhs: HiveToolDefinition, _ rhs: HiveToolDefinition) -> Bool {
         lhs.name.utf8.lexicographicallyPrecedes(rhs.name.utf8)
     }
