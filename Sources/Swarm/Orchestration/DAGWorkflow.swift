@@ -121,32 +121,41 @@ public struct DAG: OrchestrationStep, Sendable {
     /// The nodes comprising this DAG.
     public let nodes: [DAGNode]
     private let validationError: DAGValidationError?
+    /// Topologically sorted nodes, cached at init time to avoid recomputing on every execute() call.
+    private let sortedNodes: [DAGNode]
 
     /// Creates a new DAG workflow from a builder closure.
     ///
-    /// Validates the graph structure at construction time. A `preconditionFailure`
-    /// is triggered if the graph contains cycles or references missing dependencies,
-    /// since these represent programming errors.
+    /// Validates the graph structure at construction time. If the graph contains
+    /// cycles or references missing dependencies, the error is stored and thrown
+    /// when ``execute(_:context:)`` is first called, allowing callers to handle
+    /// misconfigured DAGs gracefully.
     ///
     /// - Parameter content: A builder closure producing DAG nodes.
     public init(@DAGBuilder _ content: () -> [DAGNode]) {
         let builtNodes = content()
         self.nodes = builtNodes
-        self.validationError = DAG.validate(builtNodes)
+        let (error, sorted) = DAG.validate(builtNodes)
+        self.validationError = error
+        self.sortedNodes = sorted
     }
 
     /// Internal initializer for testing with pre-validated nodes.
     init(validatedNodes: [DAGNode]) {
         self.nodes = validatedNodes
         self.validationError = nil
+        self.sortedNodes = DAG.topologicalSort(validatedNodes)
     }
 
     // MARK: - Validation
 
     /// Validates that the DAG has no missing dependencies and no cycles.
-    private static func validate(_ nodes: [DAGNode]) -> DAGValidationError? {
+    ///
+    /// Returns a tuple of the validation error (if any) and the topologically sorted nodes.
+    /// The sorted nodes are only populated when there is no error.
+    private static func validate(_ nodes: [DAGNode]) -> (error: DAGValidationError?, sorted: [DAGNode]) {
         guard !nodes.isEmpty else {
-            return .emptyGraph
+            return (.emptyGraph, [])
         }
 
         let nodeNames = Set(nodes.map(\.name))
@@ -155,24 +164,27 @@ public struct DAG: OrchestrationStep, Sendable {
         for node in nodes {
             for dep in node.dependencies {
                 if !nodeNames.contains(dep) {
-                    return .missingDependency(
-                        node: node.name,
-                        dependency: dep,
-                        available: nodeNames.sorted()
+                    return (
+                        .missingDependency(
+                            node: node.name,
+                            dependency: dep,
+                            available: nodeNames.sorted()
+                        ),
+                        []
                     )
                 }
             }
         }
 
-        // Detect cycles via topological sort
+        // Detect cycles via topological sort; reuse the sorted result on success.
         let sorted = topologicalSort(nodes)
         if sorted.count != nodes.count {
             let sortedNames = Set(sorted.map(\.name))
             let cycleNodes = nodes.filter { !sortedNames.contains($0.name) }.map(\.name)
-            return .cycleDetected(nodes: cycleNodes)
+            return (.cycleDetected(nodes: cycleNodes), [])
         }
 
-        return nil
+        return (nil, sorted)
     }
 
     // MARK: - Topological Sort (Kahn's Algorithm)
@@ -221,7 +233,7 @@ public struct DAG: OrchestrationStep, Sendable {
 
         let startTime = ContinuousClock.now
 
-        let sorted = DAG.topologicalSort(nodes)
+        let sorted = sortedNodes
         let state = DAGExecutionState()
 
         // Build adjacency: node name -> downstream node names
@@ -395,6 +407,10 @@ extension DAGValidationError: CustomStringConvertible {
             return "Cycle detected in DAG involving nodes: \(nodes.joined(separator: ", "))"
         }
     }
+}
+
+extension DAGValidationError: LocalizedError {
+    public var errorDescription: String? { description }
 }
 
 // MARK: - DAGExecutionState

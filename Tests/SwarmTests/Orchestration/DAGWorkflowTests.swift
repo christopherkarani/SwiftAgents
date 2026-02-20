@@ -89,6 +89,8 @@ struct DAGWorkflowTests {
         }
 
         let result = try await dag.execute("input", hooks: nil)
-        #expect(result.output == "B\nC")
+        // b and c are peer sink nodes; assert on set membership to avoid order dependency.
+        let outputs = Set(result.output.components(separatedBy: "\n"))
+        #expect(outputs == Set(["B", "C"]))
     }
 }

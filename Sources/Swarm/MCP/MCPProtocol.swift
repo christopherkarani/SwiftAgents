@@ -313,7 +313,7 @@ public extension MCPResponse {
 
 private extension MCPResponse {
     init(uncheckedId id: String, result: SendableValue?, error: MCPErrorObject?) {
-        assert((result != nil) != (error != nil), "MCPResponse must have exactly one of result or error set.")
+        precondition((result != nil) != (error != nil), "MCPResponse must have exactly one of result or error set.")
         self.jsonrpc = "2.0"
         self.id = id
         self.result = result
