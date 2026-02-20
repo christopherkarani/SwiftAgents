@@ -4,6 +4,7 @@
 // Profiles and budgets for managing on-device context allocation.
 
 import Foundation
+import Logging
 
 // MARK: - ContextProfile
 
@@ -317,13 +318,28 @@ public struct ContextProfile: Sendable, Equatable {
         let safeWorking = Self.clampUnitInterval(workingTokenRatio)
         let safeMemory = Self.clampUnitInterval(memoryTokenRatio)
         let safeToolIO = Self.clampUnitInterval(toolIOTokenRatio)
+        if safeWorking != workingTokenRatio {
+            Log.agents.warning("ContextProfile: workingTokenRatio \(workingTokenRatio) out of [0,1]; clamped to \(safeWorking)")
+        }
+        if safeMemory != memoryTokenRatio {
+            Log.agents.warning("ContextProfile: memoryTokenRatio \(memoryTokenRatio) out of [0,1]; clamped to \(safeMemory)")
+        }
+        if safeToolIO != toolIOTokenRatio {
+            Log.agents.warning("ContextProfile: toolIOTokenRatio \(toolIOTokenRatio) out of [0,1]; clamped to \(safeToolIO)")
+        }
         let normalizedRatios = Self.normalizeContextRatios(
             working: safeWorking,
             memory: safeMemory,
             toolIO: safeToolIO
         )
         let safeSummary = Self.clampUnitInterval(summaryTokenRatio)
+        if safeSummary != summaryTokenRatio {
+            Log.agents.warning("ContextProfile: summaryTokenRatio \(summaryTokenRatio) out of [0,1]; clamped to \(safeSummary)")
+        }
         let safeSummaryTrigger = Self.clampUnitInterval(summaryTriggerUtilization)
+        if safeSummaryTrigger != summaryTriggerUtilization {
+            Log.agents.warning("ContextProfile: summaryTriggerUtilization \(summaryTriggerUtilization) out of [0,1]; clamped to \(safeSummaryTrigger)")
+        }
 
         self.preset = preset
         self.maxContextTokens = max(1, maxContextTokens)
@@ -412,12 +428,24 @@ public struct ContextProfile: Sendable, Equatable {
         return value
     }
 
+    /// Minimum ratio floor applied to each context bucket before normalization.
+    ///
+    /// Prevents degenerate configurations where one or more budgets collapse to
+    /// zero tokens, which can break callers that consume those budgets (e.g., memory
+    /// retrieval, tool I/O). Each ratio is guaranteed to be at least this value
+    /// after normalization.
+    private static let minimumContextRatio: Double = 0.05
+
     private static func normalizeContextRatios(working: Double, memory: Double, toolIO: Double) -> (working: Double, memory: Double, toolIO: Double) {
-        let sum = working + memory + toolIO
+        // Apply a minimum floor so no budget collapses to zero tokens.
+        let w = max(minimumContextRatio, working)
+        let m = max(minimumContextRatio, memory)
+        let t = max(minimumContextRatio, toolIO)
+        let sum = w + m + t
         if sum <= .ulpOfOne {
             return (0.55, 0.30, 0.15)
         }
-        return (working / sum, memory / sum, toolIO / sum)
+        return (w / sum, m / sum, t / sum)
     }
 }
 

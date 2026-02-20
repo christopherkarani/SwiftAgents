@@ -81,15 +81,17 @@ public struct MCPRequest: Sendable, Codable, Equatable {
     ///   - params: Optional parameters for the method. Defaults to `nil`.
     ///
     /// - Precondition: `id` must be non-empty.
-    /// - Precondition: `method` must be non-empty.
+    /// - Precondition: `method` must be non-empty. Passing an empty method is always
+    ///   a programmer error; the framework does not silently substitute a sentinel value.
     public init(
         id: String = UUID().uuidString,
         method: String,
         params: [String: SendableValue]? = nil
     ) {
+        precondition(!method.isEmpty, "MCPRequest method must not be empty")
         jsonrpc = "2.0"
         self.id = id.isEmpty ? UUID().uuidString : id
-        self.method = method.isEmpty ? "_invalid_method" : method
+        self.method = method
         self.params = params
     }
 

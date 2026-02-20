@@ -4,6 +4,7 @@
 // Tracks agent responses for conversation continuation with bounded storage.
 
 import Foundation
+import Logging
 
 // MARK: - SessionMetadata
 
@@ -150,6 +151,12 @@ public actor ResponseTracker {
     /// let unlimitedTracker = ResponseTracker(maxSessions: nil)
     /// ```
     public init(maxHistorySize: Int = 100, maxSessions: Int? = 1000) {
+        if maxHistorySize < 1 {
+            Log.agents.warning("ResponseTracker: maxHistorySize \(maxHistorySize) must be >= 1; using 1")
+        }
+        if let maxSessions, maxSessions < 1 {
+            Log.agents.warning("ResponseTracker: maxSessions \(maxSessions) must be >= 1; using 1")
+        }
         self.maxHistorySize = max(1, maxHistorySize)
         self.maxSessions = if let maxSessions {
             max(1, maxSessions)

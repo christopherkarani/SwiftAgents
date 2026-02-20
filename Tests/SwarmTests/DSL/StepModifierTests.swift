@@ -135,6 +135,30 @@ struct RetryModifierTests {
         #expect(counter.count == 1)
         #expect(result.metadata["retry.attempts"]?.intValue == 1)
     }
+
+    @Test("backoffMultiplier of zero is coerced to 1.0")
+    func retryCoercesZeroBackoffMultiplier() {
+        let modifier = RetryModifier(maxAttempts: 1, initialDelay: .milliseconds(10), backoffMultiplier: 0.0)
+        #expect(modifier.backoffMultiplier == 1.0)
+    }
+
+    @Test("backoffMultiplier of NaN is coerced to 1.0")
+    func retryCoercesNaNBackoffMultiplier() {
+        let modifier = RetryModifier(maxAttempts: 1, initialDelay: .milliseconds(10), backoffMultiplier: .nan)
+        #expect(modifier.backoffMultiplier == 1.0)
+    }
+
+    @Test("backoffMultiplier of negative value is coerced to 1.0")
+    func retryCoercesNegativeBackoffMultiplier() {
+        let modifier = RetryModifier(maxAttempts: 1, initialDelay: .milliseconds(10), backoffMultiplier: -1.0)
+        #expect(modifier.backoffMultiplier == 1.0)
+    }
+
+    @Test("backoffMultiplier of negative infinity is coerced to 1.0")
+    func retryCoercesNegativeInfinityBackoffMultiplier() {
+        let modifier = RetryModifier(maxAttempts: 1, initialDelay: .milliseconds(10), backoffMultiplier: -.infinity)
+        #expect(modifier.backoffMultiplier == 1.0)
+    }
 }
 
 // MARK: - TimeoutModifier Tests

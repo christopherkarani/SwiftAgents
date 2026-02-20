@@ -57,12 +57,15 @@ struct MCPRequestTests {
         // the Swift-level API behavior.
     }
 
-    @Test("request with empty id and method is sanitized")
-    func requestSanitizesEmptyFields() {
-        let request = MCPRequest(id: "", method: "")
+    @Test("request with empty id is given a UUID fallback")
+    func requestSanitizesEmptyId() {
+        // Only the id is sanitized at runtime; an empty method is a programmer
+        // error enforced via precondition (not testable without process isolation).
+        let request = MCPRequest(id: "", method: "tools/list")
 
         #expect(!request.id.isEmpty)
-        #expect(request.method == "_invalid_method")
+        #expect(UUID(uuidString: request.id) != nil)
+        #expect(request.method == "tools/list")
         #expect(request.jsonrpc == "2.0")
     }
 }

@@ -4,6 +4,7 @@
 // Runtime configuration settings for agent execution.
 
 import Foundation
+import Logging
 
 /// Context envelope mode used by agent prompt construction.
 public enum ContextMode: Sendable, Equatable {
@@ -80,19 +81,12 @@ public struct InferencePolicy: Sendable, Equatable {
         tokenBudget: Int? = nil,
         networkState: NetworkState = .online
     ) {
-        let sanitizedTokenBudget: Int?
-        if let tokenBudget {
-            if tokenBudget <= 0 {
-                sanitizedTokenBudget = nil
-            } else {
-                sanitizedTokenBudget = tokenBudget
-            }
-        } else {
-            sanitizedTokenBudget = nil
+        if let tokenBudget, tokenBudget <= 0 {
+            Log.agents.warning("InferencePolicy: tokenBudget \(tokenBudget) must be > 0; dropping value")
         }
         self.latencyTier = latencyTier
         self.privacyRequired = privacyRequired
-        self.tokenBudget = sanitizedTokenBudget
+        self.tokenBudget = tokenBudget.flatMap { $0 > 0 ? $0 : nil }
         self.networkState = networkState
     }
 }
@@ -315,6 +309,15 @@ public struct AgentConfiguration: Sendable, Equatable {
         autoPreviousResponseId: Bool = false,
         defaultTracingEnabled: Bool = true
     ) {
+        if maxIterations < 1 {
+            Log.agents.warning("AgentConfiguration: maxIterations \(maxIterations) must be >= 1; using 1")
+        }
+        if timeout <= .zero {
+            Log.agents.warning("AgentConfiguration: timeout must be positive; using default 60 seconds")
+        }
+        if !temperature.isFinite || !(0.0 ... 2.0).contains(temperature) {
+            Log.agents.warning("AgentConfiguration: temperature \(temperature) out of [0.0, 2.0]; using default 1.0")
+        }
         self.name = name
         self.maxIterations = max(1, maxIterations)
         self.timeout = timeout > .zero ? timeout : .seconds(60)

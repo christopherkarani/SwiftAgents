@@ -101,6 +101,13 @@ struct ContextProfileBudgetTests {
         #expect(profile.summaryCadenceTurns == 1)
         #expect(profile.summaryTokenRatio == 1.0)
         #expect(profile.summaryTriggerUtilization == 0.0)
+
+        // Minimum ratio floor ensures all budgets remain usable after clamping
+        // extreme inputs. Even with workingRatio=2.0 and memoryRatio=-1.0, no
+        // ratio should collapse to zero, preventing broken callers.
+        #expect(profile.workingTokenRatio > 0)
+        #expect(profile.memoryTokenRatio > 0)
+        #expect(profile.toolIOTokenRatio > 0)
     }
 }
 
