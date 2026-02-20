@@ -520,6 +520,7 @@ public actor AgentRouter: AgentRuntime {
     /// - Returns: The result from the selected agent.
     /// - Throws: `OrchestrationError.routingFailed` if no route matches and no fallback exists.
     public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+        let sourceName = handoffDisplayName(for: self)
         if isCancelled {
             throw AgentError.cancelled
         }
@@ -550,52 +551,22 @@ public actor AgentRouter: AgentRuntime {
         var effectiveInput = input
         let routeName = route.name ?? String(describing: type(of: route.agent))
 
-        if let config = findHandoffConfiguration(for: route.agent) {
-            // Check isEnabled callback
-            if let isEnabled = config.isEnabled {
-                let enabled = await isEnabled(routingContext, route.agent)
-                if !enabled {
-                    throw OrchestrationError.handoffSkipped(
-                        from: "AgentRouter",
-                        to: routeName,
-                        reason: "Handoff disabled by isEnabled callback"
-                    )
-                }
-            }
-
-            // Create HandoffInputData for callbacks
-            var inputData = HandoffInputData(
-                sourceAgentName: "AgentRouter",
-                targetAgentName: routeName,
-                input: input,
-                context: [:],
-                metadata: [:]
-            )
-
-            // Apply inputFilter if present
-            if let inputFilter = config.inputFilter {
-                inputData = inputFilter(inputData)
-                effectiveInput = inputData.input
-            }
-
-            // Call onHandoff callback if present
-            if let onHandoff = config.onHandoff {
-                do {
-                    try await onHandoff(routingContext, inputData)
-                } catch {
-                    // Log callback errors but don't fail the handoff
-                    Log.orchestration.warning(
-                        "onHandoff callback failed for AgentRouter -> \(routeName): \(error.localizedDescription)"
-                    )
-                }
-            }
-        }
+        let applied = try await applyResolvedHandoffConfiguration(
+            sourceAgentName: sourceName,
+            to: route.agent,
+            targetName: routeName,
+            input: input,
+            handoffs: _handoffs,
+            context: routingContext
+        )
+        effectiveInput = applied.effectiveInput
 
         // Notify hooks of handoff to matched route's agent
         await hooks?.onHandoff(context: routingContext, fromAgent: self, toAgent: route.agent)
 
         // Execute the matched route's agent with potentially modified input
-        let result = try await route.agent.run(effectiveInput, session: session, hooks: hooks)
+        let rawResult = try await route.agent.run(effectiveInput, session: session, hooks: hooks)
+        let result = applyHandoffMetadata(applied.metadata, to: rawResult)
 
         // Add routing metadata
         let duration = ContinuousClock.now - startTime
@@ -625,7 +596,7 @@ public actor AgentRouter: AgentRuntime {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
 
-            let routerName = actor.configuration.name.isEmpty ? "AgentRouter" : actor.configuration.name
+            let routerName = handoffDisplayName(for: actor)
 
             func forwardStream(
                 toAgentName: String,
@@ -692,49 +663,24 @@ public actor AgentRouter: AgentRuntime {
                 var effectiveInput = input
                 let routeName = route.name ?? String(describing: type(of: route.agent))
 
-                if let config = await actor.findHandoffConfiguration(for: route.agent) {
-                    if let isEnabled = config.isEnabled {
-                        let enabled = await isEnabled(routingContext, route.agent)
-                        if !enabled {
-                            throw OrchestrationError.handoffSkipped(
-                                from: "AgentRouter",
-                                to: routeName,
-                                reason: "Handoff disabled by isEnabled callback"
-                            )
-                        }
-                    }
-
-                    var inputData = HandoffInputData(
-                        sourceAgentName: "AgentRouter",
-                        targetAgentName: routeName,
-                        input: input,
-                        context: [:],
-                        metadata: [:]
-                    )
-
-                    if let inputFilter = config.inputFilter {
-                        inputData = inputFilter(inputData)
-                        effectiveInput = inputData.input
-                    }
-
-                    if let onHandoff = config.onHandoff {
-                        do {
-                            try await onHandoff(routingContext, inputData)
-                        } catch {
-                            Log.orchestration.warning(
-                                "onHandoff callback failed for AgentRouter -> \(routeName): \(error.localizedDescription)"
-                            )
-                        }
-                    }
-                }
+                let applied = try await applyResolvedHandoffConfiguration(
+                    sourceAgentName: routerName,
+                    to: route.agent,
+                    targetName: routeName,
+                    input: input,
+                    handoffs: actor._handoffs,
+                    context: routingContext
+                )
+                effectiveInput = applied.effectiveInput
 
                 await hooks?.onHandoff(context: routingContext, fromAgent: actor, toAgent: route.agent)
 
-                let agentResult = try await forwardStream(
-                    toAgentName: routeName,
-                    agent: route.agent,
-                    input: effectiveInput
-                )
+        let rawAgentResult = try await forwardStream(
+            toAgentName: routeName,
+            agent: route.agent,
+            input: effectiveInput
+        )
+        let agentResult = applyHandoffMetadata(applied.metadata, to: rawAgentResult)
 
                 let duration = ContinuousClock.now - startTime
                 var metadata = agentResult.metadata
@@ -795,18 +741,6 @@ public actor AgentRouter: AgentRuntime {
         return nil
     }
 
-    /// Finds a handoff configuration for the given target agent.
-    ///
-    /// - Parameter targetAgent: The agent to find configuration for.
-    /// - Returns: The matching handoff configuration, or nil if none found.
-    private func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
-        _handoffs.first { config in
-            // Match by type - compare the target agent's type
-            let configTargetType = type(of: config.targetAgent)
-            let currentType = type(of: targetAgent)
-            return configTargetType == currentType
-        }
-    }
 }
 
 // MARK: CustomStringConvertible

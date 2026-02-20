@@ -7,7 +7,15 @@ import Foundation
 import HiveCore
 
 extension OrchestrationHiveEngine {
-    static func entryNodeIDs(for step: OrchestrationStep, nodePrefix: String) -> [HiveNodeID] {
+    static func entryNodeIDs(for step: OrchestrationStep, nodePrefix: String) throws -> [HiveNodeID] {
+        if step is Generate || step is Relay {
+            let typeName = String(describing: type(of: step))
+            throw OrchestrationError.unsupportedOrchestrationStep(
+                typeName: typeName,
+                reason: "Legacy generate/relay constructs are not supported in Hive-only mode."
+            )
+        }
+
         if let dag = step as? DAG {
             let dagNodeIDs = Dictionary(
                 uniqueKeysWithValues: dag.nodes.map { ($0.name, HiveNodeID("\(nodePrefix).dag.\($0.name)")) }
@@ -23,11 +31,143 @@ extension OrchestrationHiveEngine {
             return [HiveNodeID("\(nodePrefix).router.eval")]
         }
 
+        if step is Loop {
+            return [HiveNodeID("\(nodePrefix).loop.cond")]
+        }
+
+        if step is RepeatWhile {
+            return [HiveNodeID("\(nodePrefix).repeatwhile.cond")]
+        }
+
         if let approval = step as? HumanApproval, approval.handler == nil {
             return [HiveNodeID("\(nodePrefix).human_approval")]
         }
 
-        return [HiveNodeID("orchestration.\(nodePrefix)")]
+        if step is AgentStep {
+            return [HiveNodeID("\(nodePrefix).agent")]
+        }
+
+        if let sequential = step as? Sequential {
+            let nested = sequential.steps
+            guard let first = nested.first else {
+                return [HiveNodeID("\(nodePrefix).empty")]
+            }
+            return try entryNodeIDs(for: first, nodePrefix: "\(nodePrefix).step_0")
+        }
+
+        if let group = step as? OrchestrationGroup {
+            guard let first = group.steps.first else {
+                return [HiveNodeID("\(nodePrefix).empty")]
+            }
+            return try entryNodeIDs(for: first, nodePrefix: "\(nodePrefix).step_0")
+        }
+
+        if step is Transform {
+            return [HiveNodeID("\(nodePrefix).transform")]
+        }
+
+        return [HiveNodeID("\(nodePrefix).step")]
+    }
+
+    static func ensureHiveSupportedStep(_ step: OrchestrationStep, feature: String) throws -> OrchestrationStep {
+        if step is Generate || step is Relay {
+            throw OrchestrationError.unsupportedOrchestrationStep(
+                typeName: String(describing: type(of: step)),
+                reason: "\(feature) is not supported in Hive-only mode."
+            )
+        }
+
+        return step
+    }
+
+    static func compileGenericStep(
+        _ step: OrchestrationStep,
+        into builder: inout HiveGraphBuilder<Schema>,
+        stepContext _: OrchestrationStepContext,
+        nodePrefix: String,
+        orchestrationStepPrefix: String,
+        nodeSuffix: String
+    ) throws -> CompiledStepFragment {
+        let _ = try ensureHiveSupportedStep(step, feature: "Step")
+        let nodeID = HiveNodeID("\(nodePrefix).\(nodeSuffix)")
+
+        builder.addNode(nodeID) { input in
+            let currentInput = try input.store.get(Schema.currentInputKey)
+            let result = try await step.execute(currentInput, context: input.context)
+
+            var metadata = result.metadata
+            metadata = metadataWithOrchestrationNamespace(
+                base: metadata,
+                prefix: orchestrationStepPrefix
+            )
+
+            let delta = Accumulator(
+                toolCalls: result.toolCalls,
+                toolResults: result.toolResults,
+                iterationCount: result.iterationCount,
+                metadata: metadata
+            )
+
+            await input.context.agentContext.setPreviousOutput(result)
+            return HiveNodeOutput(
+                writes: [
+                    AnyHiveWrite(Schema.currentInputKey, result.output),
+                    AnyHiveWrite(Schema.accumulatorKey, delta),
+                ]
+            )
+        }
+
+        return CompiledStepFragment(
+            entryNodes: [nodeID],
+            exitNodes: [nodeID],
+            nodeCount: 1,
+            maxParallelism: 1
+        )
+    }
+
+    static func compileSequential(
+        _ steps: [OrchestrationStep],
+        into builder: inout HiveGraphBuilder<Schema>,
+        stepContext: OrchestrationStepContext,
+        nodePrefix: String,
+        orchestrationStepPrefix: String
+    ) throws -> CompiledStepFragment {
+        guard !steps.isEmpty else {
+            return CompiledStepFragment(
+                entryNodes: [HiveNodeID("\(nodePrefix).empty")],
+                exitNodes: [HiveNodeID("\(nodePrefix).empty")],
+                nodeCount: 1,
+                maxParallelism: 1
+            )
+        }
+
+        var accumulatedFragments: [CompiledStepFragment] = []
+        for (index, step) in steps.enumerated() {
+            let fragment = try compileTopLevelStep(
+                step,
+                into: &builder,
+                stepContext: stepContext,
+                nodePrefix: "\(nodePrefix).step_\(index)",
+                orchestrationStepPrefix: "\(orchestrationStepPrefix).step_\(index)"
+            )
+
+            if let previous = accumulatedFragments.last {
+                for exitNode in previous.exitNodes {
+                    for entryNode in fragment.entryNodes {
+                        builder.addEdge(from: exitNode, to: entryNode)
+                    }
+                }
+            }
+
+            accumulatedFragments.append(fragment)
+        }
+
+        return CompiledStepFragment(
+            entryNodes: accumulatedFragments.first?.entryNodes ?? [HiveNodeID("\(nodePrefix).empty")],
+            exitNodes: accumulatedFragments.last?.exitNodes ?? [HiveNodeID("\(nodePrefix).empty")],
+            nodeCount: accumulatedFragments.reduce(0) { $0 + $1.nodeCount },
+            maxParallelism: accumulatedFragments.map(\.maxParallelism).max() ?? 1
+        )
     }
 
     static func compileTopLevelStep(
@@ -36,9 +176,11 @@ extension OrchestrationHiveEngine {
         stepContext: OrchestrationStepContext,
         nodePrefix: String,
         orchestrationStepPrefix: String
-    ) -> CompiledStepFragment {
+    ) throws -> CompiledStepFragment {
+        let _ = try ensureHiveSupportedStep(step, feature: "Step")
+
         if let dag = step as? DAG {
-            return compileDAG(
+            return try compileDAG(
                 dag,
                 into: &builder,
                 stepContext: stepContext,
@@ -57,10 +199,28 @@ extension OrchestrationHiveEngine {
         }
 
         if let router = step as? Router {
-            return compileRouter(
+            return try compileRouter(
                 router,
                 into: &builder,
                 stepContext: stepContext,
+                nodePrefix: nodePrefix,
+                orchestrationStepPrefix: orchestrationStepPrefix
+            )
+        }
+
+        if let loop = step as? Loop {
+            return try compileLoop(
+                loop,
+                into: &builder,
+                nodePrefix: nodePrefix,
+                orchestrationStepPrefix: orchestrationStepPrefix
+            )
+        }
+
+        if let repeatWhile = step as? RepeatWhile {
+            return try compileRepeatWhile(
+                repeatWhile,
+                into: &builder,
                 nodePrefix: nodePrefix,
                 orchestrationStepPrefix: orchestrationStepPrefix
             )
@@ -76,30 +236,131 @@ extension OrchestrationHiveEngine {
             )
         }
 
-        return compileFallbackStep(
+        if let sequential = step as? Sequential {
+            return try compileSequential(
+                sequential.steps,
+                into: &builder,
+                stepContext: stepContext,
+                nodePrefix: nodePrefix,
+                orchestrationStepPrefix: orchestrationStepPrefix
+            )
+        }
+
+        if let group = step as? OrchestrationGroup {
+            return try compileSequential(
+                group.steps,
+                into: &builder,
+                stepContext: stepContext,
+                nodePrefix: nodePrefix,
+                orchestrationStepPrefix: orchestrationStepPrefix
+            )
+        }
+
+        if step is AgentStep || step is Transform {
+            return try compileGenericStep(
+                step,
+                into: &builder,
+                stepContext: stepContext,
+                nodePrefix: nodePrefix,
+                orchestrationStepPrefix: orchestrationStepPrefix,
+                nodeSuffix: step is AgentStep ? "agent" : "transform"
+            )
+        }
+
+        return try compileGenericStep(
             step,
             into: &builder,
             stepContext: stepContext,
             nodePrefix: nodePrefix,
-            orchestrationStepPrefix: orchestrationStepPrefix
+            orchestrationStepPrefix: orchestrationStepPrefix,
+            nodeSuffix: "step"
         )
     }
 
-    static func compileFallbackStep(
-        _ step: OrchestrationStep,
+    static func compileLoop(
+        _ loop: Loop,
         into builder: inout HiveGraphBuilder<Schema>,
-        stepContext _: OrchestrationStepContext,
         nodePrefix: String,
         orchestrationStepPrefix: String
-    ) -> CompiledStepFragment {
-        let nodeID = HiveNodeID("orchestration.\(nodePrefix)")
-        builder.addNode(nodeID) { input in
+    ) throws -> CompiledStepFragment {
+        let loopStep = try ensureHiveSupportedStep(loop.body, feature: "Loop body")
+        let condID = HiveNodeID("\(nodePrefix).loop.cond")
+        let bodyID = HiveNodeID("\(nodePrefix).loop.body")
+        let countChannel = OrchestrationChannel<Int>("orchestration.loop.\(nodePrefix).count", default: 0)
+        let startChannel = OrchestrationChannel<Int>("orchestration.loop.\(nodePrefix).start_ns", default: 0)
+
+        builder.addNode(condID) { input in
             let currentInput = try input.store.get(Schema.currentInputKey)
-            let result = try await step.execute(currentInput, context: input.context)
-            let metadataUpdate = metadataWithOrchestrationNamespace(
-                base: result.metadata,
+            let count = try await input.context.get(countChannel)
+            let startedAt = try await input.context.get(startChannel)
+
+            let shouldContinue: Bool
+            switch loop.condition {
+            case .maxIterations(let n):
+                shouldContinue = count < max(0, n)
+            case .until(let predicate):
+                if count >= 1000 {
+                    shouldContinue = false
+                } else {
+                    shouldContinue = !(await predicate(currentInput))
+                }
+            case .whileTrue(let predicate):
+                if count >= 1000 {
+                    shouldContinue = false
+                } else {
+                    shouldContinue = await predicate(currentInput)
+                }
+            }
+
+            if shouldContinue {
+                if count == 0, startedAt == 0 {
+                    try await input.context.set(
+                        startChannel,
+                        Int(truncatingIfNeeded: input.environment.clock.nowNanoseconds())
+                    )
+                }
+                return HiveNodeOutput(next: .nodes([bodyID]))
+            }
+
+            let durationNs: Int
+            if startedAt > 0 {
+                let now = Int(truncatingIfNeeded: input.environment.clock.nowNanoseconds())
+                durationNs = max(0, now - startedAt)
+            } else {
+                durationNs = 0
+            }
+            var metadata: [String: SendableValue] = [
+                "loop.iteration_count": .int(count),
+                "loop.duration": .double(Double(durationNs) / 1_000_000_000),
+            ]
+            metadata = metadataWithOrchestrationNamespace(
+                base: metadata,
                 prefix: orchestrationStepPrefix
             )
+            return HiveNodeOutput(
+                writes: [
+                    AnyHiveWrite(Schema.accumulatorKey, Accumulator(metadata: metadata)),
+                ],
+                next: .useGraphEdges
+            )
+        }
+
+        builder.addNode(bodyID) { input in
+            let currentInput = try input.store.get(Schema.currentInputKey)
+            let count = try await input.context.get(countChannel)
+            let result = try await loopStep.execute(currentInput, context: input.context)
+            try await input.context.set(countChannel, count + 1)
+
+            var iterationMetadata: [String: SendableValue] = [:]
+            for (key, value) in result.metadata {
+                iterationMetadata["loop.iter_\(count).\(key)"] = value
+            }
+            let metadataUpdate = metadataWithOrchestrationNamespace(
+                base: iterationMetadata,
+                prefix: orchestrationStepPrefix
+            )
+
+            await input.context.agentContext.setPreviousOutput(result)
 
             let delta = Accumulator(
                 toolCalls: result.toolCalls,
@@ -107,8 +368,6 @@ extension OrchestrationHiveEngine {
                 iterationCount: result.iterationCount,
                 metadata: metadataUpdate
             )
-
-            await input.context.agentContext.setPreviousOutput(result)
 
             return HiveNodeOutput(
                 writes: [
@@ -118,10 +377,112 @@ extension OrchestrationHiveEngine {
             )
         }
 
+        builder.addEdge(from: bodyID, to: condID)
+
         return CompiledStepFragment(
-            entryNodes: [nodeID],
-            exitNodes: [nodeID],
-            nodeCount: 1,
+            entryNodes: [condID],
+            exitNodes: [condID],
+            nodeCount: 2,
+            maxParallelism: 1
+        )
+    }
+
+    static func compileRepeatWhile(
+        _ repeatWhile: RepeatWhile,
+        into builder: inout HiveGraphBuilder<Schema>,
+        nodePrefix: String,
+        orchestrationStepPrefix: String
+    ) throws -> CompiledStepFragment {
+        let repeatWhileStep = try ensureHiveSupportedStep(repeatWhile.body, feature: "RepeatWhile body")
+        let condID = HiveNodeID("\(nodePrefix).repeatwhile.cond")
+        let bodyID = HiveNodeID("\(nodePrefix).repeatwhile.body")
+        let countChannel = OrchestrationChannel<Int>("orchestration.repeatwhile.\(nodePrefix).count", default: 0)
+        let startChannel = OrchestrationChannel<Int>("orchestration.repeatwhile.\(nodePrefix).start_ns", default: 0)
+
+        builder.addNode(condID) { input in
+            let currentInput = try input.store.get(Schema.currentInputKey)
+            let count = try await input.context.get(countChannel)
+            let startedAt = try await input.context.get(startChannel)
+
+            let canContinueByCount = count < repeatWhile.maxIterations
+            let shouldContinueByCondition = canContinueByCount
+                ? try await repeatWhile.condition(currentInput)
+                : false
+            let shouldContinue = canContinueByCount && shouldContinueByCondition
+
+            if shouldContinue {
+                if count == 0, startedAt == 0 {
+                    try await input.context.set(
+                        startChannel,
+                        Int(truncatingIfNeeded: input.environment.clock.nowNanoseconds())
+                    )
+                }
+                return HiveNodeOutput(next: .nodes([bodyID]))
+            }
+
+            let durationNs: Int
+            if startedAt > 0 {
+                let now = Int(truncatingIfNeeded: input.environment.clock.nowNanoseconds())
+                durationNs = max(0, now - startedAt)
+            } else {
+                durationNs = 0
+            }
+            let terminatedBy = count >= repeatWhile.maxIterations ? "maxIterations" : "condition"
+            var metadata: [String: SendableValue] = [
+                "repeatwhile.iteration_count": .int(count),
+                "repeatwhile.terminated_by": .string(terminatedBy),
+                "repeatwhile.duration": .double(Double(durationNs) / 1_000_000_000),
+            ]
+            metadata = metadataWithOrchestrationNamespace(
+                base: metadata,
+                prefix: orchestrationStepPrefix
+            )
+            return HiveNodeOutput(
+                writes: [
+                    AnyHiveWrite(Schema.accumulatorKey, Accumulator(metadata: metadata)),
+                ],
+                next: .useGraphEdges
+            )
+        }
+
+        builder.addNode(bodyID) { input in
+            let currentInput = try input.store.get(Schema.currentInputKey)
+            let count = try await input.context.get(countChannel)
+            let result = try await repeatWhileStep.execute(currentInput, context: input.context)
+            try await input.context.set(countChannel, count + 1)
+
+            var iterationMetadata: [String: SendableValue] = [:]
+            for (key, value) in result.metadata {
+                iterationMetadata["repeatwhile.iter_\(count)_\(key)"] = value
+            }
+            let metadataUpdate = metadataWithOrchestrationNamespace(
+                base: iterationMetadata,
+                prefix: orchestrationStepPrefix
+            )
+
+            await input.context.agentContext.setPreviousOutput(result)
+
+            let delta = Accumulator(
+                toolCalls: result.toolCalls,
+                toolResults: result.toolResults,
+                iterationCount: result.iterationCount,
+                metadata: metadataUpdate
+            )
+
+            return HiveNodeOutput(
+                writes: [
+                    AnyHiveWrite(Schema.currentInputKey, result.output),
+                    AnyHiveWrite(Schema.accumulatorKey, delta),
+                ]
+            )
+        }
+
+        builder.addEdge(from: bodyID, to: condID)
+
+        return CompiledStepFragment(
+            entryNodes: [condID],
+            exitNodes: [condID],
+            nodeCount: 2,
             maxParallelism: 1
         )
     }
@@ -163,11 +524,12 @@ extension OrchestrationHiveEngine {
                 do {
                     await input.context.agentContext.recordExecution(agentName: name)
 
-                    let effectiveInput = try await input.context.applyHandoffConfiguration(
+                    let appliedHandoff = try await input.context.applyHandoffConfigurationWithMetadata(
                         for: agent,
                         input: currentInput,
                         targetName: name
                     )
+                    let effectiveInput = appliedHandoff.effectiveInput
 
                     if let orchestrator = input.context.orchestrator {
                         await input.context.hooks?.onHandoff(
@@ -182,11 +544,15 @@ extension OrchestrationHiveEngine {
                         session: input.context.session,
                         hooks: input.context.hooks
                     )
+                    let mergedResult = applyHandoffMetadata(
+                        appliedHandoff.metadata,
+                        to: result
+                    )
                     let branch = ParallelBranchResult.success(
                         groupID: groupID,
                         branchIndex: index,
                         branchName: name,
-                        result: result
+                        result: mergedResult
                     )
                     return HiveNodeOutput(
                         writes: [
@@ -322,19 +688,25 @@ extension OrchestrationHiveEngine {
         stepContext: OrchestrationStepContext,
         nodePrefix: String,
         orchestrationStepPrefix: String
-    ) -> CompiledStepFragment {
+    ) throws -> CompiledStepFragment {
         let evalID = HiveNodeID("\(nodePrefix).router.eval")
         let convergeID = HiveNodeID("\(nodePrefix).router.converge")
         let fallbackStep = router.fallback
         let startKey = "orchestration.router.\(nodePrefix).start_ns"
         let routeKey = "orchestration.router.\(nodePrefix).matched_route"
-
-        let routeNodes = router.routes.enumerated().map { index, route in
-            (
+        let routeSteps = try router.routes.enumerated().map { index, route in
+            try (
                 route: route,
                 index: index,
-                nodeID: HiveNodeID("\(nodePrefix).router.route.\(index)")
+                nodeID: HiveNodeID("\(nodePrefix).router.route.\(index)"),
+                routeStep: ensureHiveSupportedStep(route.step, feature: "Router route")
             )
+        }
+
+        let fallbackRouteStep: OrchestrationStep? = if let fallbackStep {
+            try ensureHiveSupportedStep(fallbackStep, feature: "Router fallback")
+        } else {
+            nil
         }
         let fallbackNodeID = fallbackStep.map { _ in HiveNodeID("\(nodePrefix).router.fallback") }
 
@@ -342,7 +714,7 @@ extension OrchestrationHiveEngine {
             let currentInput = try input.store.get(Schema.currentInputKey)
             let startNs = Int(truncatingIfNeeded: input.environment.clock.nowNanoseconds())
 
-            for routeNode in routeNodes {
+            for routeNode in routeSteps {
                 if await routeNode.route.condition.matches(input: currentInput, context: input.context.agentContext) {
                     let routeName = resolvedRouteName(
                         for: routeNode.route,
@@ -381,10 +753,10 @@ extension OrchestrationHiveEngine {
             )
         }
 
-        for routeNode in routeNodes {
+        for routeNode in routeSteps {
             builder.addNode(routeNode.nodeID) { input in
                 let currentInput = try input.store.get(Schema.currentInputKey)
-                let result = try await routeNode.route.step.execute(currentInput, context: input.context)
+                let result = try await routeNode.routeStep.execute(currentInput, context: input.context)
                 var metadata = result.metadata
                 metadata = metadataWithOrchestrationNamespace(
                     base: metadata,
@@ -410,7 +782,7 @@ extension OrchestrationHiveEngine {
         if let fallbackStep, let fallbackNodeID {
             builder.addNode(fallbackNodeID) { input in
                 let currentInput = try input.store.get(Schema.currentInputKey)
-                let result = try await fallbackStep.execute(currentInput, context: input.context)
+                let result = try await fallbackRouteStep!.execute(currentInput, context: input.context)
                 var metadata = result.metadata
                 metadata = metadataWithOrchestrationNamespace(
                     base: metadata,
@@ -459,7 +831,7 @@ extension OrchestrationHiveEngine {
             )
         }
 
-        let branchCount = routeNodes.count + (fallbackNodeID == nil ? 0 : 1)
+        let branchCount = routeSteps.count + (fallbackNodeID == nil ? 0 : 1)
         return CompiledStepFragment(
             entryNodes: [evalID],
             exitNodes: [convergeID],
@@ -533,6 +905,9 @@ extension OrchestrationHiveEngine {
     ) -> [String: SendableValue] {
         var merged = base
         for (key, value) in base {
+            guard !key.hasPrefix("\(prefix).") else {
+                continue
+            }
             merged["\(prefix).\(key)"] = value
         }
         return merged
@@ -564,6 +939,62 @@ extension OrchestrationHiveEngine {
             return max(1, dagMaxParallelism(dag.nodes))
         }
         return 1
+    }
+
+    static func recommendedMaxSteps(for step: OrchestrationStep) -> Int {
+        if let dag = step as? DAG {
+            return max(1, dag.nodes.count + 1)
+        }
+        if let parallel = step as? Parallel, !parallel.items.isEmpty {
+            // dispatch -> branches -> merge
+            return 3
+        }
+        if step is Router {
+            // eval -> selected route/fallback -> converge
+            return 3
+        }
+        if let sequential = step as? Sequential {
+            return max(1, sequential.steps.reduce(0, recommendedMaxStepsAdd))
+        }
+        if let group = step as? OrchestrationGroup {
+            return max(1, group.steps.reduce(0, recommendedMaxStepsAdd))
+        }
+        if let loop = step as? Loop {
+            return loopRecommendedMaxSteps(for: loop.condition)
+        }
+        if let repeatWhile = step as? RepeatWhile {
+            return boundedLoopMaxSteps(forIterations: repeatWhile.maxIterations)
+        }
+        return 1
+    }
+
+    private static func recommendedMaxStepsAdd(_ running: Int, _ next: OrchestrationStep) -> Int {
+        let nextBudget = recommendedMaxSteps(for: next)
+        if running >= Int.max || nextBudget >= Int.max {
+            return Int.max
+        }
+        if running > Int.max - nextBudget {
+            return Int.max
+        }
+        return running + nextBudget
+    }
+
+    private static func loopRecommendedMaxSteps(for condition: Loop.Condition) -> Int {
+        switch condition {
+        case .maxIterations(let iterations):
+            return boundedLoopMaxSteps(forIterations: iterations)
+        case .until, .whileTrue:
+            // Mirrors Loop.swift safety cap for predicate-driven loops.
+            return boundedLoopMaxSteps(forIterations: 1000)
+        }
+    }
+
+    private static func boundedLoopMaxSteps(forIterations rawIterations: Int) -> Int {
+        let iterations = max(0, rawIterations)
+        if iterations > (Int.max - 1) / 2 {
+            return Int.max
+        }
+        return (iterations * 2) + 1
     }
 
     static func resolvedRouteName(

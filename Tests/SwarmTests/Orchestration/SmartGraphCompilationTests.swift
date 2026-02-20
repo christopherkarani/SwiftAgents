@@ -125,6 +125,23 @@ struct AccumulatorTests {
         #expect(merged.metadata["b"]?.stringValue == "new")
         #expect(merged.metadata["c"]?.intValue == 2)
     }
+
+    @Test("Metadata namespacing avoids double-prefixing already-namespaced keys")
+    func metadataNamespacingAvoidsDoublePrefixingAlreadyNamespacedKeys() {
+        let metadata = [
+            "orchestration.step_0.orchestrated": .string("already"),
+            "loop.iteration_count": .int(3),
+        ]
+        let result = OrchestrationHiveEngine.metadataWithOrchestrationNamespace(
+            base: metadata,
+            prefix: "orchestration.step_0"
+        )
+
+        #expect(result["orchestration.step_0.orchestrated"]?.stringValue == "already")
+        #expect(result["orchestration.step_0.loop.iteration_count"]?.intValue == 3)
+        #expect(result["orchestration.step_0.orchestration.step_0.orchestrated"] == nil)
+        #expect(result["loop.iteration_count"]?.intValue == 3)
+    }
 }
 
 // MARK: - Graph Compilation Integration Tests
@@ -242,6 +259,24 @@ struct SmartGraphCompilationIntegrationTests {
         #expect(result.output.contains("PROCESSED: HELLO"))
         #expect(result.output.contains("prefix:processed: hello"))
         #expect(result.metadata["orchestration.step_0.step_1_parallel.agent_count"]?.intValue == 2)
+    }
+
+    @Test("Sequential composition with Loop does not under-budget maxSteps")
+    func sequentialWithLoopUsesAdequateLoopBudget() async throws {
+        let workflow = Orchestration(
+            configuration: AgentConfiguration(runtimeMode: .hive)
+        ) {
+            Sequential {
+                Loop(.maxIterations(3)) {
+                    Transform { $0 + "!" }
+                }
+            }
+        }
+
+        let result = try await workflow.run("go")
+
+        #expect(result.output == "go!!!")
+        #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
     }
 
     @Test("maxConcurrentTasks override still respected when set")

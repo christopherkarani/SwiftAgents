@@ -238,6 +238,9 @@ public actor Agent: AgentRuntime {
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+        if configuration.runtimeMode == .swift {
+            return try await _executeDirect(input, session: session, hooks: hooks)
+        }
         return try await hiveRun(input, session: session, hooks: hooks)
     }
 
@@ -300,9 +303,11 @@ public actor Agent: AgentRuntime {
             }
 
             // Execute the tool calling loop with session context
+            let context = AgentContext(input: input)
             let output = try await executeToolCallingLoop(
                 input: input,
                 sessionHistory: sessionHistory,
+                context: context,
                 resultBuilder: resultBuilder,
                 hooks: hooks,
                 tracing: tracing
@@ -442,6 +447,7 @@ public actor Agent: AgentRuntime {
     private func executeToolCallingLoop(
         input: String,
         sessionHistory: [MemoryMessage] = [],
+        context: AgentContext,
         resultBuilder: AgentResult.Builder,
         hooks: (any RunHooks)? = nil,
         tracing: TracingHelper? = nil
@@ -515,6 +521,7 @@ public actor Agent: AgentRuntime {
                 let handoffResult = try await processToolCallsWithHandoffs(
                     response: response,
                     conversationHistory: &conversationHistory,
+                    context: context,
                     resultBuilder: resultBuilder,
                     hooks: hooks,
                     tracing: tracing
@@ -703,6 +710,7 @@ public actor Agent: AgentRuntime {
     private func processToolCallsWithHandoffs(
         response: InferenceResponse,
         conversationHistory: inout [ConversationMessage],
+        context: AgentContext,
         resultBuilder: AgentResult.Builder,
         hooks: (any RunHooks)?,
         tracing: TracingHelper?
@@ -719,6 +727,7 @@ public actor Agent: AgentRuntime {
             if let handoffConfig = handoffMap[parsedCall.name] {
                 let reason = parsedCall.arguments["reason"]?.stringValue ?? ""
                 let targetAgent = handoffConfig.targetAgent
+                let sourceName = handoffDisplayName(for: self)
 
                 let handoffStart = ContinuousClock.now
                 let spanId = await tracing?.traceToolCall(name: parsedCall.name, arguments: parsedCall.arguments)
@@ -734,7 +743,23 @@ public actor Agent: AgentRuntime {
                     reason.isEmpty ? "Continue the conversation" : reason
                 }
 
-                let result = try await targetAgent.run(handoffInput, session: nil, hooks: hooks)
+                let handoffContextSnapshot = await context.snapshot
+                let applied = try await applyResolvedHandoffConfiguration(
+                    sourceAgentName: sourceName,
+                    to: targetAgent,
+                    targetName: handoffDisplayName(for: targetAgent),
+                    input: handoffInput,
+                    handoffs: _handoffs,
+                    context: context,
+                    inputContextSnapshot: handoffContextSnapshot
+                )
+
+                let rawResult = try await targetAgent.run(
+                    applied.effectiveInput,
+                    session: nil,
+                    hooks: hooks
+                )
+                let result = applyHandoffMetadata(applied.metadata, to: rawResult)
 
                 if let spanId {
                     let handoffDuration = ContinuousClock.now - handoffStart

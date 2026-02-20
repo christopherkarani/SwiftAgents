@@ -386,39 +386,27 @@ public actor SwarmRunner {
 
         for toolCall in toolCalls {
             if let handoff = handoffs[toolCall.name] {
-                if let isEnabled = handoff.config.isEnabled {
-                    let enabled = await isEnabled(context, handoff.config.targetAgent)
-                    if !enabled {
-                        throw OrchestrationError.handoffSkipped(
-                            from: activeProfile.name,
-                            to: handoff.target.name,
-                            reason: "Handoff disabled by isEnabled callback"
-                        )
-                    }
-                }
-
-                let inputData = HandoffInputData(
-                    sourceAgentName: activeProfile.name,
-                    targetAgentName: handoff.target.name,
-                    input: history.last(where: { $0.role == .user })?.content ?? "",
-                    context: await context.snapshot,
-                    metadata: [:]
-                )
-
+                let handoffInput = history.last(where: { $0.role == .user })?.content ?? ""
                 await context.set("handoff_source", value: .string(activeProfile.name))
                 await context.set("handoff_target", value: .string(handoff.target.name))
                 await context.recordExecution(agentName: handoff.target.name)
 
-                let filteredInput = await applyHandoffConfiguration(
-                    handoff: handoff,
-                    inputData: inputData,
-                    context: context,
-                    updates: &contextUpdates
+                let applied = try await applyResolvedHandoffConfiguration(
+                    sourceAgentName: activeProfile.name,
+                    to: handoff.config.targetAgent,
+                    targetName: handoff.target.name,
+                    input: handoffInput,
+                    handoffs: [handoff.config],
+                    context: context
                 )
 
+                for (key, value) in applied.metadata {
+                    contextUpdates[key] = value
+                }
+
                 activeProfile = handoff.target
-                if !filteredInput.input.isEmpty {
-                    contextUpdates["handoff_input"] = .string(filteredInput.input)
+                if !applied.effectiveInput.isEmpty {
+                    contextUpdates["handoff_input"] = .string(applied.effectiveInput)
                 }
 
                 messages.append(.tool("handoff_to_\(handoff.target.name)", toolName: toolCall.name))
@@ -499,38 +487,6 @@ public actor SwarmRunner {
             entries[config.effectiveToolName] = entry
         }
         return entries
-    }
-
-    private func applyHandoffConfiguration(
-        handoff: HandoffEntry,
-        inputData: HandoffInputData,
-        context: AgentContext,
-        updates: inout [String: SendableValue]
-    ) async -> HandoffInputData {
-        var inputData = inputData
-
-        if let inputFilter = handoff.config.inputFilter {
-            inputData = inputFilter(inputData)
-        }
-
-        if let onHandoff = handoff.config.onHandoff {
-            do {
-                try await onHandoff(context, inputData)
-            } catch {
-                Log.orchestration.warning(
-                    "Swarm onHandoff callback failed for \(inputData.sourceAgentName) -> \(inputData.targetAgentName): \(error.localizedDescription)"
-                )
-            }
-        }
-
-        if !inputData.metadata.isEmpty {
-            for (key, value) in inputData.metadata {
-                updates[key] = value
-                await context.set(key, value: value)
-            }
-        }
-
-        return inputData
     }
 
     private static func parseToolArguments(

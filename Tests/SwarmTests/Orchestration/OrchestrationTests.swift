@@ -196,16 +196,43 @@ struct OrchestrationTests {
         #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
     }
 
-    @Test("Orchestration runtimeMode.swift remains source-compatible and executes on Hive")
-    func orchestrationRuntimeModeSwiftExecutesOnHive() async throws {
+    @Test("Orchestration runtimeMode.swift is not supported for orchestration")
+    func orchestrationRuntimeModeSwiftIsNotSupported() async {
         let workflow = Orchestration(
             configuration: AgentConfiguration(runtimeMode: .swift)
         ) {
             Transform { $0 }
         }
 
-        let result = try await workflow.run("ping")
-        #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
+        do {
+            _ = try await workflow.run("ping")
+            Issue.record("Expected .swift orchestration mode to fail fast.")
+        } catch let error as OrchestrationError {
+            #expect(error == .unsupportedOrchestrationRuntimeMode(.swift))
+        } catch {
+            Issue.record("Expected OrchestrationError.unsupportedOrchestrationRuntimeMode(.swift), got \(error)")
+        }
+    }
+
+    @Test("Unsupported orchestration steps are rejected in Hive mode")
+    func unsupportedOrchestrationStepIsRejected() async {
+        let workflow = Orchestration {
+            Generate()
+        }
+
+        do {
+            _ = try await workflow.run("ping")
+            Issue.record("Expected unsupported step to fail in Hive mode.")
+        } catch let error as OrchestrationError {
+            if case let .unsupportedOrchestrationStep(typeName: typeName, reason: reason) = error {
+                #expect(typeName == "Generate")
+                #expect(reason.contains("Legacy"))
+            } else {
+                Issue.record("Expected unsupported step error, got \(error)")
+            }
+        } catch {
+            Issue.record("Expected OrchestrationError.unsupportedOrchestrationStep, got \(error)")
+        }
     }
 
     @Test("Orchestration runtimeMode.requireHive executes on Hive")
@@ -218,6 +245,38 @@ struct OrchestrationTests {
 
         let result = try await workflow.run("ping")
         #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
+    }
+
+    @Test("Loop zero-iteration duration is zero in Hive runtime")
+    func loopZeroIterationDurationIsZero() async throws {
+        let workflow = Orchestration(
+            configuration: AgentConfiguration(runtimeMode: .hive)
+        ) {
+            Loop(.maxIterations(0)) {
+                Transform { $0 + "!" }
+            }
+        }
+
+        let result = try await workflow.run("ping")
+        #expect(result.output == "ping")
+        #expect(result.metadata["orchestration.step_0.loop.iteration_count"]?.intValue == 0)
+        #expect(result.metadata["orchestration.step_0.loop.duration"]?.doubleValue == 0)
+    }
+
+    @Test("RepeatWhile zero-iteration duration is zero in Hive runtime")
+    func repeatWhileZeroIterationDurationIsZero() async throws {
+        let workflow = Orchestration(
+            configuration: AgentConfiguration(runtimeMode: .hive)
+        ) {
+            RepeatWhile(maxIterations: 5, condition: { _ in false }) {
+                Transform { $0 + "!" }
+            }
+        }
+
+        let result = try await workflow.run("ping")
+        #expect(result.output == "ping")
+        #expect(result.metadata["orchestration.step_0.repeatwhile.iteration_count"]?.intValue == 0)
+        #expect(result.metadata["orchestration.step_0.repeatwhile.duration"]?.doubleValue == 0)
     }
 
     @Test("Orchestration Hive run options override is passed through")

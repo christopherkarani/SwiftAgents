@@ -10,8 +10,12 @@ import Foundation
 /// Runtime execution mode for orchestration.
 public enum SwarmRuntimeMode: Sendable, Equatable {
     /// Legacy mode selector retained for source compatibility.
-    ///
-    /// Orchestration execution always uses the Hive runtime.
+    /// Executes orchestration and agents directly in Swift without Hive graph wrapping.
+    @available(
+        *,
+        deprecated,
+        message: "Orchestration no longer supports direct Swift execution; use .hive or .requireHive."
+    )
     case swift
 
     /// Execute orchestration using the Hive runtime.
@@ -180,7 +184,7 @@ public struct AgentConfiguration: Sendable, Equatable {
 
     /// Runtime mode for orchestration execution.
     ///
-    /// This value is retained for source compatibility. Execution always uses Hive.
+    /// `.hive` uses graph-backed execution.
     /// Default: `.hive`.
     public var runtimeMode: SwarmRuntimeMode
 

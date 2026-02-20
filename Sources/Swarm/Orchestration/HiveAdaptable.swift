@@ -78,7 +78,9 @@ public extension HiveAdaptable {
         return try await SingleNodeGraphBuilder.execute(
             graph: graph,
             input: input,
-            context: context
+            context: context,
+            maxSteps: max(1, configuration.maxIterations),
+            runOptionsOverride: configuration.hiveRunOptionsOverride
         )
     }
 }

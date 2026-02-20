@@ -30,7 +30,7 @@ extension OrchestrationHiveEngine {
         into builder: inout HiveGraphBuilder<Schema>,
         stepContext: OrchestrationStepContext,
         nodePrefix: String
-    ) -> CompiledStepFragment {
+    ) throws -> CompiledStepFragment {
         let nodes = dag.nodes
         let nodeIDs = Dictionary(
             uniqueKeysWithValues: nodes.map { ($0.name, HiveNodeID("\(nodePrefix).dag.\($0.name)")) }
@@ -41,6 +41,7 @@ extension OrchestrationHiveEngine {
             let step = dagNode.step
             let deps = dagNode.dependencies
             let depIDs = deps.compactMap { nodeIDs[$0] }
+            let dagStep = try ensureHiveSupportedStep(step, feature: "DAG node '\(dagNode.name)'")
 
             builder.addNode(nodeID) { input in
                 let currentInput = try input.store.get(Schema.currentInputKey)
@@ -57,7 +58,7 @@ extension OrchestrationHiveEngine {
                     nodeInput = depOutputs.isEmpty ? currentInput : depOutputs.joined(separator: "\n")
                 }
 
-                let result = try await step.execute(nodeInput, context: stepContext)
+                let result = try await dagStep.execute(nodeInput, context: input.context)
 
                 var metadataUpdate: [String: SendableValue] = result.metadata
                 metadataUpdate["orchestration.dag.output.\(nodePrefix).\(dagNode.name)"] = .string(result.output)
@@ -69,7 +70,7 @@ extension OrchestrationHiveEngine {
                     metadata: metadataUpdate
                 )
 
-                await stepContext.agentContext.setPreviousOutput(result)
+                await input.context.agentContext.setPreviousOutput(result)
 
                 return HiveNodeOutput(
                     writes: [

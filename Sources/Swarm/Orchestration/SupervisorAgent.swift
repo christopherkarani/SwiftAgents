@@ -601,12 +601,15 @@ public actor SupervisorAgent: AgentRuntime {
             }
 
             // Apply handoff configuration and get effective input
-            let effectiveInput = try await applyHandoffConfiguration(
-                for: selectedEntry.agent,
-                name: selectedEntry.name,
+            let applied = try await applyResolvedHandoffConfiguration(
+                sourceAgentName: handoffDisplayName(for: self),
+                to: selectedEntry.agent,
+                targetName: selectedEntry.name,
                 input: input,
-                context: context
+                handoffs: _handoffs,
+                context: context ?? AgentContext(input: input)
             )
+            let effectiveInput = applied.effectiveInput
 
             // Notify hooks of handoff to selected agent
             if let context {
@@ -617,7 +620,8 @@ public actor SupervisorAgent: AgentRuntime {
             dispatchedAgent = selectedEntry.agent
             dispatchedAgentName = selectedEntry.name
             dispatchedInput = effectiveInput
-            let result = try await selectedEntry.agent.run(effectiveInput, session: session, hooks: hooks)
+            let rawResult = try await selectedEntry.agent.run(effectiveInput, session: session, hooks: hooks)
+            let result = applyHandoffMetadata(applied.metadata, to: rawResult)
 
             // Update context with result
             if let context {
@@ -630,11 +634,11 @@ public actor SupervisorAgent: AgentRuntime {
             }
 
             // Build and return final result
-            return buildResultFromExecution(
-                decision: decision,
-                subAgentResult: result,
-                builder: builder
-            )
+                return buildResultFromExecution(
+                    decision: decision,
+                    subAgentResult: result,
+                    builder: builder
+                )
 
         } catch {
             if let dispatchedAgent, await isSubAgentInterrupted(dispatchedAgent) {
@@ -755,23 +759,27 @@ public actor SupervisorAgent: AgentRuntime {
                     await context.recordExecution(agentName: decision.selectedAgentName)
                 }
 
-                let effectiveInput = try await actor.applyHandoffConfiguration(
-                    for: selectedEntry.agent,
-                    name: selectedEntry.name,
+                let applied = try await applyResolvedHandoffConfiguration(
+                    sourceAgentName: handoffDisplayName(for: actor),
+                    to: selectedEntry.agent,
+                    targetName: selectedEntry.name,
                     input: input,
-                    context: context
+                    handoffs: actor._handoffs,
+                    context: context ?? AgentContext(input: input)
                 )
+                let effectiveInput = applied.effectiveInput
 
                 if let context {
                     await hooks?.onHandoff(context: context, fromAgent: actor, toAgent: selectedEntry.agent)
                 }
 
                 dispatchedAgent = selectedEntry.agent
-                let subResult = try await forwardStream(
+                let rawSubResult = try await forwardStream(
                     toAgentName: selectedEntry.name,
                     agent: selectedEntry.agent,
                     input: effectiveInput
                 )
+                let subResult = applyHandoffMetadata(applied.metadata, to: rawSubResult)
 
                 if let context {
                     await context.setPreviousOutput(subResult)
@@ -904,69 +912,6 @@ public actor SupervisorAgent: AgentRuntime {
     private let _handoffs: [AnyHandoffConfiguration]
 
     // MARK: - Run Helper Methods
-
-    /// Applies handoff configuration for the target agent.
-    /// - Parameters:
-    ///   - targetAgent: The agent to hand off to.
-    ///   - name: The name of the target agent.
-    ///   - input: The original input.
-    ///   - context: The agent context.
-    /// - Returns: The effective input after applying handoff configuration.
-    /// - Throws: `OrchestrationError` if handoff is disabled.
-    private func applyHandoffConfiguration(
-        for targetAgent: any AgentRuntime,
-        name: String,
-        input: String,
-        context: AgentContext?
-    ) async throws -> String {
-        var effectiveInput = input
-        let handoffContext = context ?? AgentContext(input: input)
-
-        guard let config = findHandoffConfiguration(for: targetAgent) else {
-            return effectiveInput
-        }
-
-        // Check isEnabled callback
-        if let isEnabled = config.isEnabled {
-            let enabled = await isEnabled(handoffContext, targetAgent)
-            if !enabled {
-                throw OrchestrationError.handoffSkipped(
-                    from: "SupervisorAgent",
-                    to: name,
-                    reason: "Handoff disabled by isEnabled callback"
-                )
-            }
-        }
-
-        // Create HandoffInputData for callbacks
-        var inputData = HandoffInputData(
-            sourceAgentName: "SupervisorAgent",
-            targetAgentName: name,
-            input: input,
-            context: [:],
-            metadata: [:]
-        )
-
-        // Apply inputFilter if present
-        if let inputFilter = config.inputFilter {
-            inputData = inputFilter(inputData)
-            effectiveInput = inputData.input
-        }
-
-        // Call onHandoff callback if present
-        if let onHandoff = config.onHandoff {
-            do {
-                try await onHandoff(handoffContext, inputData)
-            } catch {
-                // Log callback errors but don't fail the handoff
-                Log.orchestration.warning(
-                    "onHandoff callback failed for SupervisorAgent -> \(name): \(error.localizedDescription)"
-                )
-            }
-        }
-
-        return effectiveInput
-    }
 
     /// Checks whether a sub-agent is currently interrupted and awaiting resume input.
     private func isSubAgentInterrupted(_ agent: any AgentRuntime) async -> Bool {
@@ -1358,18 +1303,6 @@ public actor SupervisorAgent: AgentRuntime {
 
     // MARK: - Private Methods
 
-    /// Finds a handoff configuration for the given target agent.
-    ///
-    /// - Parameter targetAgent: The agent to find configuration for.
-    /// - Returns: The matching handoff configuration, or nil if none found.
-    private func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
-        _handoffs.first { config in
-            // Match by type - compare the target agent's type
-            let configTargetType = type(of: config.targetAgent)
-            let currentType = type(of: targetAgent)
-            return configTargetType == currentType
-        }
-    }
 }
 
 // MARK: - RoutingDecision + CustomStringConvertible

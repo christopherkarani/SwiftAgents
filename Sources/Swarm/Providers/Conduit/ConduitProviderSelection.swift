@@ -12,7 +12,10 @@ public enum ConduitProviderSelection: Sendable, InferenceProvider {
     case provider(any InferenceProvider)
 
     /// Creates a Conduit-backed Anthropic provider.
-    public static func anthropic(apiKey: String, model: String) -> ConduitProviderSelection {
+    public static func anthropic(
+        apiKey: String,
+        model: String = "claude-sonnet-4-5-20250929"
+    ) -> ConduitProviderSelection {
         let provider = AnthropicProvider(apiKey: apiKey)
         let modelID = AnthropicModelID(model)
         let bridge = ConduitInferenceProvider(provider: provider, model: modelID)
@@ -20,7 +23,10 @@ public enum ConduitProviderSelection: Sendable, InferenceProvider {
     }
 
     /// Creates a Conduit-backed OpenAI provider.
-    public static func openAI(apiKey: String, model: String) -> ConduitProviderSelection {
+    public static func openAI(
+        apiKey: String,
+        model: String = "gpt-4o"
+    ) -> ConduitProviderSelection {
         let configuration = OpenAIConfiguration.openAI(apiKey: apiKey)
         let provider = OpenAIProvider(configuration: configuration)
         let modelID = OpenAIModelID(model)

@@ -12,6 +12,7 @@ enum OrchestrationHiveEngine {
     struct GraphMetrics: Sendable, Equatable {
         let nodeCount: Int
         let maxParallelism: Int
+        let recommendedMaxSteps: Int
     }
 
     struct CompiledGraph {
@@ -178,6 +179,7 @@ enum OrchestrationHiveEngine {
     static func execute(
         steps: [OrchestrationStep],
         input: String,
+        threadID: HiveThreadID,
         session: (any Session)?,
         hooks: (any RunHooks)?,
         orchestrator: (any AgentRuntime)?,
@@ -192,7 +194,8 @@ enum OrchestrationHiveEngine {
         toolRegistry: AnyHiveToolRegistry? = nil,
         inferenceHints: HiveInferenceHints? = nil,
         onIterationStart: (@Sendable (Int) -> Void)?,
-        onIterationEnd: (@Sendable (Int) -> Void)?
+        onIterationEnd: (@Sendable (Int) -> Void)?,
+        onHiveEvent: (@Sendable (HiveEvent) -> Void)?
     ) async throws -> AgentResult {
         let startTime = ContinuousClock.now
 
@@ -203,7 +206,8 @@ enum OrchestrationHiveEngine {
             hooks: hooks,
             orchestrator: orchestrator,
             orchestratorName: orchestratorName,
-            handoffs: handoffs
+            handoffs: handoffs,
+            channels: ChannelBagStorage()
         )
         await context.recordExecution(agentName: orchestratorName)
 
@@ -220,7 +224,6 @@ enum OrchestrationHiveEngine {
         )
 
         let runtime = try HiveRuntime(graph: compiledGraph.graph, environment: environment)
-        let threadID = HiveThreadID(UUID().uuidString)
 
         let options = makeRunOptions(
             graphMetrics: compiledGraph.metrics,
@@ -229,9 +232,288 @@ enum OrchestrationHiveEngine {
         )
 
         let handle = await runtime.run(threadID: threadID, input: input, options: options)
+        let (outcome, eventError) = try await awaitOutcome(
+            handle,
+            onIterationStart: onIterationStart,
+            onIterationEnd: onIterationEnd,
+            onHiveEvent: onHiveEvent
+        )
+        if let eventError {
+            Log.orchestration.error(
+                "Hive orchestration event stream terminated with error.",
+                metadata: ["error": .string(eventError)]
+            )
+        }
+
+        switch outcome {
+        case .finished(let output, _):
+            let result = try extractResult(output)
+            let currentInput = result.currentInput
+            let accumulator = result.accumulator
+
+            let duration = ContinuousClock.now - startTime
+            var metadata = accumulator.metadata
+            metadata["orchestration.engine"] = .string("hive")
+            metadata["orchestration.total_steps"] = .int(steps.count)
+            metadata["orchestration.graph.node_count"] = .int(compiledGraph.metrics.nodeCount)
+            metadata["orchestration.graph.max_parallelism"] = .int(compiledGraph.metrics.maxParallelism)
+            metadata["orchestration.run.max_steps"] = .int(options.maxSteps)
+            metadata["orchestration.run.max_concurrent_tasks"] = .int(options.maxConcurrentTasks)
+            metadata["orchestration.run.thread_id"] = .string(threadID.rawValue)
+            metadata["orchestration.total_duration"] = .double(
+                Double(duration.components.seconds) +
+                    Double(duration.components.attoseconds) / 1e18
+            )
+
+            return AgentResult(
+                output: currentInput,
+                toolCalls: accumulator.toolCalls,
+                toolResults: accumulator.toolResults,
+                iterationCount: accumulator.iterationCount,
+                duration: duration,
+                tokenUsage: nil,
+                metadata: metadata
+            )
+
+        case .cancelled:
+            throw AgentError.cancelled
+
+        case .outOfSteps(let maxSteps, _, _):
+            throw AgentError.internalError(reason: "Hive orchestration exceeded maxSteps=\(maxSteps).")
+
+        case .interrupted(let interruption):
+            throw OrchestrationError.workflowInterrupted(reason: interruptionReason(interruption))
+        }
+    }
+
+    static func executeInterruptible(
+        steps: [OrchestrationStep],
+        input: String,
+        threadID: HiveThreadID,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        orchestrator: (any AgentRuntime)?,
+        orchestratorName: String,
+        handoffs: [AnyHandoffConfiguration],
+        inferencePolicy: InferencePolicy?,
+        hiveRunOptionsOverride: SwarmHiveRunOptionsOverride?,
+        checkpointPolicy: HiveCheckpointPolicy = .disabled,
+        checkpointStore: AnyHiveCheckpointStore<Schema>? = nil,
+        modelClient: AnyHiveModelClient? = nil,
+        modelRouter: (any HiveModelRouter)? = nil,
+        toolRegistry: AnyHiveToolRegistry? = nil,
+        inferenceHints: HiveInferenceHints? = nil,
+        onIterationStart: (@Sendable (Int) -> Void)?,
+        onIterationEnd: (@Sendable (Int) -> Void)?
+    ) async throws -> OrchestrationRunOutcome {
+        let startTime = ContinuousClock.now
+
+        let context = AgentContext(input: input)
+        let stepContext = OrchestrationStepContext(
+            agentContext: context,
+            session: session,
+            hooks: hooks,
+            orchestrator: orchestrator,
+            orchestratorName: orchestratorName,
+            handoffs: handoffs,
+            channels: ChannelBagStorage()
+        )
+        await context.recordExecution(agentName: orchestratorName)
+
+        let compiledGraph = try makeGraph(steps: steps, stepContext: stepContext)
+        let environment = HiveEnvironment<Schema>(
+            context: stepContext,
+            clock: SwarmHiveClock(),
+            logger: SwarmHiveLogger(),
+            model: modelClient,
+            modelRouter: modelRouter,
+            inferenceHints: inferenceHints ?? makeInferenceHints(from: inferencePolicy),
+            tools: toolRegistry,
+            checkpointStore: checkpointStore
+        )
+
+        let runtime = try HiveRuntime(graph: compiledGraph.graph, environment: environment)
+        let options = makeRunOptions(
+            graphMetrics: compiledGraph.metrics,
+            checkpointPolicy: checkpointPolicy,
+            override: hiveRunOptionsOverride
+        )
+
+        let handle = await runtime.run(threadID: threadID, input: input, options: options)
+        let (outcome, eventError) = try await awaitOutcome(
+            handle,
+            onIterationStart: onIterationStart,
+            onIterationEnd: onIterationEnd,
+            onHiveEvent: nil
+        )
+        if let eventError {
+            Log.orchestration.error(
+                "Hive orchestration event stream terminated with error.",
+                metadata: ["error": .string(eventError)]
+            )
+        }
+
+        switch outcome {
+        case .interrupted(let interruption):
+            let reason = interruptionReason(interruption)
+            let resumeToken = ResumeToken(
+                suspensionPoint: reason,
+                capturedInput: input,
+                capturedStep: OrchestrationGroup(steps: steps),
+                capturedContext: stepContext,
+                hiveInterruptID: interruption.interrupt.id,
+                hiveThreadID: threadID,
+                hiveStringResumer: { input in
+                    let response = approvalResponse(from: input)
+                    return try await resumeWithApproval(
+                        runtime: runtime,
+                        threadID: threadID,
+                        interruptID: interruption.interrupt.id,
+                        response: response,
+                        options: options,
+                        steps: steps,
+                        graphMetrics: compiledGraph.metrics,
+                        startTime: startTime
+                    )
+                },
+                hiveApprovalResumer: { response in
+                    try await resumeWithApproval(
+                        runtime: runtime,
+                        threadID: threadID,
+                        interruptID: interruption.interrupt.id,
+                        response: response,
+                        options: options,
+                        steps: steps,
+                        graphMetrics: compiledGraph.metrics,
+                        startTime: startTime
+                    )
+                },
+                hiveStateProvider: {
+                    guard let snapshot = try await runtime.getState(threadID: threadID) else { return nil }
+                    return AgentExecutionSnapshot(
+                        activeNodes: snapshot.nextNodes.map(\.rawValue),
+                        stepIndex: snapshot.stepIndex,
+                        isInterrupted: true
+                    )
+                }
+            )
+            return .interrupted(resumeToken)
+
+        case .finished, .cancelled, .outOfSteps:
+            let result = try terminalResult(
+                outcome: outcome,
+                steps: steps,
+                graphMetrics: compiledGraph.metrics,
+                runOptions: options,
+                threadID: threadID,
+                startTime: startTime
+            )
+            return .completed(result)
+        }
+    }
+
+    private static func resumeWithApproval(
+        runtime: HiveRuntime<Schema>,
+        threadID: HiveThreadID,
+        interruptID: HiveInterruptID,
+        response: ApprovalResponse,
+        options: HiveRunOptions,
+        steps: [OrchestrationStep],
+        graphMetrics: GraphMetrics,
+        startTime: ContinuousClock.Instant
+    ) async throws -> AgentResult {
+        let handle = await runtime.resume(
+            threadID: threadID,
+            interruptID: interruptID,
+            payload: .humanApproval(response: response),
+            options: options
+        )
+        let (outcome, eventError) = try await awaitOutcome(
+            handle,
+            onIterationStart: nil,
+            onIterationEnd: nil,
+            onHiveEvent: nil
+        )
+        if let eventError {
+            Log.orchestration.error(
+                "Hive orchestration resume stream terminated with error.",
+                metadata: ["error": .string(eventError)]
+            )
+        }
+        switch outcome {
+        case .interrupted(let interruption):
+            throw OrchestrationError.workflowInterrupted(reason: interruptionReason(interruption))
+        case .finished, .cancelled, .outOfSteps:
+            return try terminalResult(
+                outcome: outcome,
+                steps: steps,
+                graphMetrics: graphMetrics,
+                runOptions: options,
+                threadID: threadID,
+                startTime: startTime
+            )
+        }
+    }
+
+    private static func terminalResult(
+        outcome: HiveRunOutcome<Schema>,
+        steps: [OrchestrationStep],
+        graphMetrics: GraphMetrics,
+        runOptions: HiveRunOptions,
+        threadID: HiveThreadID,
+        startTime: ContinuousClock.Instant
+    ) throws -> AgentResult {
+        switch outcome {
+        case .finished(let output, _):
+            let result = try extractResult(output)
+            let currentInput = result.currentInput
+            let accumulator = result.accumulator
+
+            let duration = ContinuousClock.now - startTime
+            var metadata = accumulator.metadata
+            metadata["orchestration.engine"] = .string("hive")
+            metadata["orchestration.total_steps"] = .int(steps.count)
+            metadata["orchestration.graph.node_count"] = .int(graphMetrics.nodeCount)
+            metadata["orchestration.graph.max_parallelism"] = .int(graphMetrics.maxParallelism)
+            metadata["orchestration.run.max_steps"] = .int(runOptions.maxSteps)
+            metadata["orchestration.run.max_concurrent_tasks"] = .int(runOptions.maxConcurrentTasks)
+            metadata["orchestration.run.thread_id"] = .string(threadID.rawValue)
+            metadata["orchestration.total_duration"] = .double(
+                Double(duration.components.seconds) +
+                    Double(duration.components.attoseconds) / 1e18
+            )
+
+            return AgentResult(
+                output: currentInput,
+                toolCalls: accumulator.toolCalls,
+                toolResults: accumulator.toolResults,
+                iterationCount: accumulator.iterationCount,
+                duration: duration,
+                tokenUsage: nil,
+                metadata: metadata
+            )
+
+        case .cancelled:
+            throw AgentError.cancelled
+
+        case .outOfSteps(let maxSteps, _, _):
+            throw AgentError.internalError(reason: "Hive orchestration exceeded maxSteps=\(maxSteps).")
+
+        case .interrupted(let interruption):
+            throw OrchestrationError.workflowInterrupted(reason: interruptionReason(interruption))
+        }
+    }
+
+    private static func awaitOutcome(
+        _ handle: HiveRunHandle<Schema>,
+        onIterationStart: (@Sendable (Int) -> Void)?,
+        onIterationEnd: (@Sendable (Int) -> Void)?,
+        onHiveEvent: (@Sendable (HiveEvent) -> Void)?
+    ) async throws -> (HiveRunOutcome<Schema>, String?) {
         let eventsTask = Task<String?, Never> {
             do {
                 for try await event in handle.events {
+                    onHiveEvent?(event)
                     switch event.kind {
                     case .stepStarted(let stepIndex, _):
                         onIterationStart?(stepIndex + 1)
@@ -262,51 +544,31 @@ enum OrchestrationHiveEngine {
         }
 
         let eventError = await eventsTask.value
-        if let eventError {
-            Log.orchestration.error(
-                "Hive orchestration event stream terminated with error.",
-                metadata: ["error": .string(eventError)]
-            )
+        return (outcome, eventError)
+    }
+
+    private static func interruptionReason(_ interruption: HiveInterruption<Schema>) -> String {
+        switch interruption.interrupt.payload {
+        case .humanApprovalRequired(let prompt, _):
+            return "human_approval_required:\(prompt)"
         }
+    }
 
-        switch outcome {
-        case .finished(let output, _):
-            let result = try extractResult(output)
-            let currentInput = result.currentInput
-            let accumulator = result.accumulator
+    private static func approvalResponse(from input: String) -> ApprovalResponse {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
 
-            let duration = ContinuousClock.now - startTime
-            var metadata = accumulator.metadata
-            metadata["orchestration.engine"] = .string("hive")
-            metadata["orchestration.total_steps"] = .int(steps.count)
-            metadata["orchestration.graph.node_count"] = .int(compiledGraph.metrics.nodeCount)
-            metadata["orchestration.graph.max_parallelism"] = .int(compiledGraph.metrics.maxParallelism)
-            metadata["orchestration.run.max_steps"] = .int(options.maxSteps)
-            metadata["orchestration.run.max_concurrent_tasks"] = .int(options.maxConcurrentTasks)
-            metadata["orchestration.total_duration"] = .double(
-                Double(duration.components.seconds) +
-                    Double(duration.components.attoseconds) / 1e18
-            )
-
-            return AgentResult(
-                output: currentInput,
-                toolCalls: accumulator.toolCalls,
-                toolResults: accumulator.toolResults,
-                iterationCount: accumulator.iterationCount,
-                duration: duration,
-                tokenUsage: nil,
-                metadata: metadata
-            )
-
-        case .cancelled:
-            throw AgentError.cancelled
-
-        case .outOfSteps(let maxSteps, _, _):
-            throw AgentError.internalError(reason: "Hive orchestration exceeded maxSteps=\(maxSteps).")
-
-        case .interrupted:
-            throw AgentError.internalError(reason: "Hive orchestration interrupted unexpectedly.")
+        if lower == "approved" || lower == "approve" {
+            return .approved
         }
+        if lower == "rejected" || lower == "reject" {
+            return .rejected(reason: "Rejected by operator.")
+        }
+        if lower.hasPrefix("rejected:"), let index = trimmed.firstIndex(of: ":") {
+            let reason = trimmed[trimmed.index(after: index)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            return .rejected(reason: reason.isEmpty ? "Rejected by operator." : reason)
+        }
+        return .modified(newInput: input)
     }
 
     private static func makeRunOptions(
@@ -315,7 +577,7 @@ enum OrchestrationHiveEngine {
         override optionsOverride: SwarmHiveRunOptionsOverride?
     ) -> HiveRunOptions {
         let defaultOptions = HiveRunOptions(
-            maxSteps: max(1, graphMetrics.nodeCount),
+            maxSteps: max(1, graphMetrics.recommendedMaxSteps),
             maxConcurrentTasks: max(1, graphMetrics.maxParallelism),
             checkpointPolicy: checkpointPolicy,
             debugPayloads: false,
@@ -371,15 +633,16 @@ enum OrchestrationHiveEngine {
     ) throws -> CompiledGraph {
         precondition(!steps.isEmpty)
 
-        let startNodeIDs = entryNodeIDs(for: steps[0], nodePrefix: "step_0")
+        let startNodeIDs = try entryNodeIDs(for: steps[0], nodePrefix: "step_0")
 
         var builder = HiveGraphBuilder<Schema>(start: startNodeIDs)
         var previousExitNodes: [HiveNodeID] = []
         var totalNodeCount = 0
         var maxParallelism = 1
+        var maxStepBudget = 0
 
         for (index, step) in steps.enumerated() {
-            let fragment = compileTopLevelStep(
+            let fragment = try compileTopLevelStep(
                 step,
                 into: &builder,
                 stepContext: stepContext,
@@ -398,6 +661,12 @@ enum OrchestrationHiveEngine {
             previousExitNodes = fragment.exitNodes
             totalNodeCount += fragment.nodeCount
             maxParallelism = max(maxParallelism, fragment.maxParallelism)
+            let budgetForStep = recommendedMaxSteps(for: step)
+            if maxStepBudget > Int.max - budgetForStep {
+                maxStepBudget = Int.max
+            } else {
+                maxStepBudget += budgetForStep
+            }
         }
 
         maxParallelism = max(maxParallelism, declaredMaxParallelism(in: steps))
@@ -406,7 +675,8 @@ enum OrchestrationHiveEngine {
             graph: try builder.compile(),
             metrics: GraphMetrics(
                 nodeCount: totalNodeCount,
-                maxParallelism: maxParallelism
+                maxParallelism: maxParallelism,
+                recommendedMaxSteps: maxStepBudget
             )
         )
     }

@@ -184,11 +184,12 @@ public struct LoopAgentStep<A: AgentLoopDefinition>: OrchestrationStep {
 
         await context.agentContext.recordExecution(agentName: agentName)
 
-        let effectiveInput = try await context.applyHandoffConfiguration(
+        let applied = try await context.applyHandoffConfigurationWithMetadata(
             for: runtime,
             input: input,
             targetName: agentName
         )
+        let effectiveInput = applied.effectiveInput
 
         if let orchestrator = context.orchestrator {
             await context.hooks?.onHandoff(
@@ -199,8 +200,9 @@ public struct LoopAgentStep<A: AgentLoopDefinition>: OrchestrationStep {
         }
 
         let result = try await runtime.executeInOrchestration(effectiveInput, parent: context)
-        await context.agentContext.setPreviousOutput(result)
-        return result
+        let mergedResult = applyHandoffMetadata(applied.metadata, to: result)
+        await context.agentContext.setPreviousOutput(mergedResult)
+        return mergedResult
     }
 }
 

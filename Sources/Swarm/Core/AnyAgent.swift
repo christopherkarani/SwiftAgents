@@ -135,6 +135,7 @@ private protocol AnyAgentBox: Sendable {
     func run(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) async throws -> AgentResult
     func stream(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error>
     func cancel() async
+    func currentExecutionSnapshot() async throws -> AgentExecutionSnapshot?
 }
 
 // MARK: - AgentBox
@@ -197,7 +198,20 @@ private final class AgentBox<A: AgentRuntime>: AnyAgentBox, @unchecked Sendable 
         await agent.cancel()
     }
 
+    func currentExecutionSnapshot() async throws -> AgentExecutionSnapshot? {
+        guard let inspectable = agent as? any AgentStateInspectable else {
+            return nil
+        }
+        return try await inspectable.currentExecutionSnapshot()
+    }
+
     // MARK: Private
 
     private let agent: A
+}
+
+extension AnyAgent: AgentStateInspectable {
+    public func currentExecutionSnapshot() async throws -> AgentExecutionSnapshot? {
+        try await box.currentExecutionSnapshot()
+    }
 }

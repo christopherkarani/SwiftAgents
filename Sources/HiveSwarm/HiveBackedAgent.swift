@@ -111,9 +111,6 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
     /// The current cancellation task handle (actor-isolated for safe mutation).
     private let cancellation: CancellationController
 
-    /// Optional model router for model-aware runtime initialization.
-    private let modelRouter: (any HiveModelRouter)?
-
     // MARK: - AgentRuntime Properties
 
     nonisolated public let tools: [any AnyJSONTool]
@@ -139,13 +136,11 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         instructions: String = "",
         threadID: HiveThreadID = HiveThreadID(UUID().uuidString),
         runOptions: HiveRunOptions = HiveRunOptions(maxSteps: 20, checkpointPolicy: .disabled),
-        modelRouter: (any HiveModelRouter)? = nil,
         configuration: AgentConfiguration? = nil
     ) {
         self.runtime = runtime
         self.threadID = threadID
         self.runOptions = runOptions
-        self.modelRouter = modelRouter
         self.instructions = instructions
         self.cancellation = CancellationController()
         tools = []
@@ -153,6 +148,30 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         var config = configuration ?? .default
         config.name = name
         self.configuration = config
+    }
+
+    /// Backward-compatible initializer retained for source compatibility.
+    ///
+    /// `modelRouter` is configured on `HiveAgentsRuntime` and is ignored here.
+    @available(*, deprecated, message: "Configure modelRouter on HiveAgentsRuntime/HiveEnvironment; this parameter is ignored.")
+    public init(
+        runtime: HiveAgentsRuntime,
+        name: String,
+        instructions: String = "",
+        threadID: HiveThreadID = HiveThreadID(UUID().uuidString),
+        runOptions: HiveRunOptions = HiveRunOptions(maxSteps: 20, checkpointPolicy: .disabled),
+        modelRouter: (any HiveModelRouter)?,
+        configuration: AgentConfiguration? = nil
+    ) {
+        _ = modelRouter
+        self.init(
+            runtime: runtime,
+            name: name,
+            instructions: instructions,
+            threadID: threadID,
+            runOptions: runOptions,
+            configuration: configuration
+        )
     }
 
     // MARK: - AgentRuntime Methods

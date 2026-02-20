@@ -59,6 +59,8 @@ enum SingleNodeGraphBuilder {
     ///   - graph: The compiled Hive graph to run.
     ///   - input: The string input to the agent.
     ///   - context: Session and hooks context for the run.
+    ///   - maxSteps: Maximum Hive steps for this run. Defaults to `1`.
+    ///   - runOptionsOverride: Optional Hive run options overrides.
     ///   - checkpointPolicy: Checkpoint save policy (used only when `checkpointStore` is provided).
     ///   - checkpointStore: Optional checkpoint store to enable runtime checkpoint persistence.
     ///   - threadID: Optional thread identifier. Defaults to a new UUID thread.
@@ -67,6 +69,8 @@ enum SingleNodeGraphBuilder {
         graph: CompiledHiveGraph<AgentHiveSchema>,
         input: String,
         context: AgentHiveContext,
+        maxSteps: Int = 1,
+        runOptionsOverride: SwarmHiveRunOptionsOverride? = nil,
         checkpointPolicy: HiveCheckpointPolicy = .disabled,
         checkpointStore: AnyHiveCheckpointStore<AgentHiveSchema>? = nil,
         threadID: HiveThreadID? = nil
@@ -83,9 +87,18 @@ enum SingleNodeGraphBuilder {
 
         let runtime = try HiveRuntime(graph: graph, environment: environment)
 
-        let options = HiveRunOptions(
-            maxSteps: 1,
+        let defaultOptions = HiveRunOptions(
+            maxSteps: max(1, maxSteps),
             checkpointPolicy: checkpointStore != nil ? checkpointPolicy : .disabled
+        )
+        let options = HiveRunOptions(
+            maxSteps: runOptionsOverride?.maxSteps ?? defaultOptions.maxSteps,
+            maxConcurrentTasks: runOptionsOverride?.maxConcurrentTasks ?? defaultOptions.maxConcurrentTasks,
+            checkpointPolicy: defaultOptions.checkpointPolicy,
+            debugPayloads: runOptionsOverride?.debugPayloads ?? defaultOptions.debugPayloads,
+            deterministicTokenStreaming: runOptionsOverride?.deterministicTokenStreaming ?? defaultOptions.deterministicTokenStreaming,
+            eventBufferCapacity: runOptionsOverride?.eventBufferCapacity ?? defaultOptions.eventBufferCapacity,
+            outputProjectionOverride: defaultOptions.outputProjectionOverride
         )
 
         let handle = await runtime.run(threadID: resolvedThreadID, input: input, options: options)
