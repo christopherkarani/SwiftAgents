@@ -25,6 +25,3 @@ public struct Generate: OrchestrationStep {
         return try await orchestrator._generate(input, session: context.session, hooks: context.hooks)
     }
 }
-
-@available(*, deprecated, renamed: "Generate")
-public typealias Respond = Generate
