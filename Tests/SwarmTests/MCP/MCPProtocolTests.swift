@@ -131,6 +131,36 @@ struct MCPResponseTests {
         #expect(response.error?.code == -32600)
         #expect(response.error?.message == "Invalid request")
     }
+
+    @Test("response rejects invalid jsonrpc")
+    func responseRejectsInvalidJSONRPC() throws {
+        let jsonString = """
+        {
+            "jsonrpc": "1.0",
+            "id": "resp-3",
+            "result": "ok"
+        }
+        """
+        let data = jsonString.data(using: .utf8)!
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(MCPResponse.self, from: data)
+        }
+    }
+
+    @Test("response rejects empty id")
+    func responseRejectsEmptyId() throws {
+        let jsonString = """
+        {
+            "jsonrpc": "2.0",
+            "id": "",
+            "result": "ok"
+        }
+        """
+        let data = jsonString.data(using: .utf8)!
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(MCPResponse.self, from: data)
+        }
+    }
 }
 
 // MARK: - MCPErrorTests

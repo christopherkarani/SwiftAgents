@@ -297,13 +297,22 @@ public actor SwarmRunner {
         }
 
         func completedCalls() throws -> [InferenceResponse.ParsedToolCall] {
-            try toolCalls
-                .sorted { $0.key < $1.key }
-                .compactMap { _, call -> InferenceResponse.ParsedToolCall? in
-                    guard let id = call.id, let name = call.name else { return nil }
-                    let arguments = try SwarmRunner.parseToolArguments(call.arguments, toolName: name)
-                    return InferenceResponse.ParsedToolCall(id: id, name: name, arguments: arguments)
+            var parsed: [InferenceResponse.ParsedToolCall] = []
+            for (_, call) in toolCalls.sorted(by: { $0.key < $1.key }) {
+                let hasPayload = call.id != nil || call.name != nil || !call.arguments.isEmpty
+                guard let id = call.id, let name = call.name else {
+                    if hasPayload {
+                        throw SwarmError.invalidToolArguments(
+                            toolName: call.name ?? "<missing-name>",
+                            reason: "Tool call incomplete: missing id or name"
+                        )
+                    }
+                    continue
                 }
+                let arguments = try SwarmRunner.parseToolArguments(call.arguments, toolName: name)
+                parsed.append(InferenceResponse.ParsedToolCall(id: id, name: name, arguments: arguments))
+            }
+            return parsed
         }
     }
 
@@ -446,7 +455,7 @@ public actor SwarmRunner {
                 providerCallId: toolCall.id,
                 registry: registry,
                 agent: DummyAgent(profile: activeProfile),
-                context: nil,
+                context: context,
                 resultBuilder: builder,
                 hooks: nil,
                 tracing: nil,
@@ -552,7 +561,12 @@ public actor SwarmRunner {
         _ jsonString: String,
         toolName: String
     ) throws -> [String: SendableValue] {
-        guard let data = jsonString.data(using: .utf8) else {
+        let trimmed = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return [:]
+        }
+
+        guard let data = trimmed.data(using: .utf8) else {
             throw SwarmError.invalidToolArguments(
                 toolName: toolName,
                 reason: "Failed to convert arguments to UTF-8"

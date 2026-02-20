@@ -526,16 +526,6 @@ public actor SequentialChain: AgentRuntime {
 
     // MARK: - Private Methods
 
-    /// Finds a handoff configuration for the given target agent.
-    ///
-    /// - Parameter targetAgent: The agent to find configuration for.
-    /// - Returns: The matching handoff configuration, or nil if none found.
-    private func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
-        _handoffs.first { config in
-            areSameRuntime(config.targetAgent, targetAgent)
-        }
-    }
-
     private func setContext(_ context: AgentContext?) {
         self.context = context
     }

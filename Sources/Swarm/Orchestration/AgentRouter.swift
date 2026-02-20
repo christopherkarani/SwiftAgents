@@ -795,15 +795,6 @@ public actor AgentRouter: AgentRuntime {
         return nil
     }
 
-    /// Finds a handoff configuration for the given target agent.
-    ///
-    /// - Parameter targetAgent: The agent to find configuration for.
-    /// - Returns: The matching handoff configuration, or nil if none found.
-    private func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
-        _handoffs.first { config in
-            areSameRuntime(config.targetAgent, targetAgent)
-        }
-    }
 }
 
 // MARK: CustomStringConvertible

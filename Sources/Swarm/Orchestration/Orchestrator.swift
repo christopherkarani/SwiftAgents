@@ -24,9 +24,7 @@ public extension OrchestratorProtocol {
 
     /// Finds a handoff configuration for the given target agent.
     func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
-        handoffs.first { config in
-            areSameRuntime(config.targetAgent, targetAgent)
-        }
+        handoffs.handoffConfiguration(for: targetAgent)
     }
 }
 
