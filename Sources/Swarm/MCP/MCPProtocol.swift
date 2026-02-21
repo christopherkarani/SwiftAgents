@@ -296,12 +296,13 @@ public struct MCPResponse: Sendable, Codable, Equatable {
     // MARK: Private
 
     /// Internal initializer for validated response construction.
-    /// Callers must ensure exactly one of result or error is set.
+    /// Callers must ensure id is non-empty and exactly one of result or error is set.
     private init(
         id: String,
         result: SendableValue?,
         error: MCPErrorObject?
     ) {
+        precondition(!id.isEmpty, "MCPResponse: id cannot be empty")
         assert(
             (result == nil) != (error == nil),
             "MCPResponse invariant violated: exactly one of result/error must be set"
@@ -330,7 +331,9 @@ public extension MCPResponse {
     ///   - result: The result value to include in the response.
     /// - Returns: An MCPResponse with the result set and error as `nil`.
     ///
-    /// - Note: This method cannot fail as it guarantees valid inputs.
+    /// - Precondition: `id` must be non-empty. Passing an empty string is a
+    ///   programming error and will terminate the process in both debug and
+    ///   release builds via `precondition`.
     static func success(id: String, result: SendableValue) -> MCPResponse {
         precondition(!id.isEmpty, "MCPResponse.success requires a non-empty id")
         MCPResponse(
@@ -347,7 +350,9 @@ public extension MCPResponse {
     ///   - error: The error object describing what went wrong.
     /// - Returns: An MCPResponse with the error set and result as `nil`.
     ///
-    /// - Note: This method cannot fail as it guarantees valid inputs.
+    /// - Precondition: `id` must be non-empty. Passing an empty string is a
+    ///   programming error and will terminate the process in both debug and
+    ///   release builds via `precondition`.
     static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
         precondition(!id.isEmpty, "MCPResponse.failure requires a non-empty id")
         MCPResponse(

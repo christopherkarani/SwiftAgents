@@ -299,6 +299,11 @@ public actor SwarmRunner {
         func completedCalls() throws -> [InferenceResponse.ParsedToolCall] {
             var parsed: [InferenceResponse.ParsedToolCall] = []
             for (_, call) in toolCalls.sorted(by: { $0.key < $1.key }) {
+                // Behavioral note: Previously, incomplete calls were silently dropped via
+                // compactMap. Now, deltas with any payload (id, name, or arguments) but
+                // missing required fields are surfaced as errors rather than silently
+                // skipped. Index-only streaming artifacts with no payload are still
+                // silently skipped (continue below).
                 let hasPayload = call.id != nil || call.name != nil || !call.arguments.isEmpty
                 guard let id = call.id, let name = call.name else {
                     if hasPayload {

@@ -78,6 +78,40 @@ struct SwarmRunnerTests {
         }))
     }
 
+    @Test("initial context is preserved in response after tool execution")
+    func initialContextPreservedThroughToolExecution() async throws {
+        // Regression guard: prior to the context bug fix, `handleToolCalls` was
+        // called with `context: nil`. This test verifies that initial context
+        // values set via `run(context:)` flow into the swarm and appear in the
+        // final SwarmResponse, confirming AgentContext is correctly threaded
+        // through tool dispatch.
+        let provider = ScriptedSwarmToolCallProvider(scripts: [
+            [
+                .toolCallDelta(index: 0, id: "call_ctx", name: "mock_tool", arguments: ""),
+                .done,
+            ],
+            [
+                .textDelta("done"),
+                .done,
+            ],
+        ])
+        let agent = SwarmRunnerToolCallAgent(
+            name: "ctx-agent",
+            provider: provider,
+            tools: [MockTool(name: "mock_tool")]
+        )
+        let runner = try SwarmRunner(agents: [agent])
+
+        let initialContext: [String: SendableValue] = ["session_id": .string("test-abc")]
+        let response = try await runner.run(
+            agentName: "ctx-agent",
+            messages: [.user("hello")],
+            context: initialContext
+        )
+
+        #expect(response.context["session_id"] == .string("test-abc"))
+    }
+
     @Test("runStream throws on incomplete tool call")
     func runStreamThrowsOnIncompleteToolCall() async throws {
         let provider = ScriptedSwarmToolCallProvider(scripts: [
