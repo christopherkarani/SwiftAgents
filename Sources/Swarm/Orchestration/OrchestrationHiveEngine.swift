@@ -3,18 +3,82 @@
 //
 // Hive-backed orchestration executor.
 
-#if canImport(HiveCore)
-
 import Dispatch
 import Foundation
 import HiveCore
 import Logging
 
 enum OrchestrationHiveEngine {
-    struct ResumeRequest: Sendable {
-        let workflowID: String
-        let interruptID: String
-        let payload: String
+    struct GraphMetrics: Sendable, Equatable {
+        let nodeCount: Int
+        let maxParallelism: Int
+        let recommendedMaxSteps: Int
+    }
+
+    struct CompiledGraph {
+        let graph: CompiledHiveGraph<Schema>
+        let metrics: GraphMetrics
+    }
+
+    struct ParallelBranchResult: Codable, Sendable, Equatable {
+        let groupID: String
+        let branchIndex: Int
+        let branchName: String
+        let output: String?
+        let toolCalls: [ToolCall]
+        let toolResults: [ToolResult]
+        let iterationCount: Int
+        let metadata: [String: SendableValue]
+        let error: String?
+
+        var isSuccess: Bool { error == nil }
+
+        static func success(
+            groupID: String,
+            branchIndex: Int,
+            branchName: String,
+            result: AgentResult
+        ) -> ParallelBranchResult {
+            ParallelBranchResult(
+                groupID: groupID,
+                branchIndex: branchIndex,
+                branchName: branchName,
+                output: result.output,
+                toolCalls: result.toolCalls,
+                toolResults: result.toolResults,
+                iterationCount: result.iterationCount,
+                metadata: result.metadata,
+                error: nil
+            )
+        }
+
+        static func failure(
+            groupID: String,
+            branchIndex: Int,
+            branchName: String,
+            error: String
+        ) -> ParallelBranchResult {
+            ParallelBranchResult(
+                groupID: groupID,
+                branchIndex: branchIndex,
+                branchName: branchName,
+                output: nil,
+                toolCalls: [],
+                toolResults: [],
+                iterationCount: 0,
+                metadata: [:],
+                error: error
+            )
+        }
+    }
+
+    struct ParallelBranchResultsAccumulator {
+        static func reduce(
+            current: [ParallelBranchResult],
+            update: [ParallelBranchResult]
+        ) throws -> [ParallelBranchResult] {
+            current + update
+        }
     }
 
     struct Accumulator: Codable, Sendable, Equatable {
@@ -56,11 +120,14 @@ enum OrchestrationHiveEngine {
     enum Schema: HiveSchema {
         typealias Context = OrchestrationStepContext
         typealias Input = String
-        typealias InterruptPayload = String
-        typealias ResumePayload = String
+        typealias InterruptPayload = OrchestrationInterrupt
+        typealias ResumePayload = OrchestrationResume
 
         static let currentInputKey = HiveChannelKey<Self, String>(HiveChannelID("currentInput"))
         static let accumulatorKey = HiveChannelKey<Self, Accumulator>(HiveChannelID("accumulator"))
+        static let parallelBranchResultsKey = HiveChannelKey<Self, [ParallelBranchResult]>(
+            HiveChannelID("parallelBranchResults")
+        )
 
         static var channelSpecs: [AnyHiveChannelSpec<Self>] {
             [
@@ -69,7 +136,7 @@ enum OrchestrationHiveEngine {
                         key: currentInputKey,
                         scope: .global,
                         reducer: .lastWriteWins(),
-                        updatePolicy: .single,
+                        updatePolicy: .multi,
                         initial: { "" },
                         codec: HiveAnyCodec(JSONCodec<String>()),
                         persistence: .checkpointed
@@ -80,9 +147,20 @@ enum OrchestrationHiveEngine {
                         key: accumulatorKey,
                         scope: .global,
                         reducer: HiveReducer(Accumulator.reduce),
-                        updatePolicy: .single,
+                        updatePolicy: .multi,
                         initial: { Accumulator() },
                         codec: HiveAnyCodec(JSONCodec<Accumulator>()),
+                        persistence: .checkpointed
+                    )
+                ),
+                AnyHiveChannelSpec(
+                    HiveChannelSpec(
+                        key: parallelBranchResultsKey,
+                        scope: .global,
+                        reducer: HiveReducer(ParallelBranchResultsAccumulator.reduce),
+                        updatePolicy: .multi,
+                        initial: { [] },
+                        codec: HiveAnyCodec(JSONCodec<[ParallelBranchResult]>()),
                         persistence: .checkpointed
                     )
                 )
@@ -92,7 +170,8 @@ enum OrchestrationHiveEngine {
         static func inputWrites(_ input: String, inputContext _: HiveInputContext) throws -> [AnyHiveWrite<Self>] {
             [
                 AnyHiveWrite(currentInputKey, input),
-                AnyHiveWrite(accumulatorKey, Accumulator())
+                AnyHiveWrite(accumulatorKey, Accumulator()),
+                AnyHiveWrite(parallelBranchResultsKey, [])
             ]
         }
     }
@@ -100,6 +179,7 @@ enum OrchestrationHiveEngine {
     static func execute(
         steps: [OrchestrationStep],
         input: String,
+        threadID: HiveThreadID,
         session: (any Session)?,
         hooks: (any RunHooks)?,
         orchestrator: (any AgentRuntime)?,
@@ -113,33 +193,11 @@ enum OrchestrationHiveEngine {
         modelRouter: (any HiveModelRouter)? = nil,
         toolRegistry: AnyHiveToolRegistry? = nil,
         inferenceHints: HiveInferenceHints? = nil,
-        workflowID: String = UUID().uuidString,
-        resumeRequest: ResumeRequest? = nil,
         onIterationStart: (@Sendable (Int) -> Void)?,
-        onIterationEnd: (@Sendable (Int) -> Void)?
-    ) async throws -> WorkflowExecutionOutcome {
+        onIterationEnd: (@Sendable (Int) -> Void)?,
+        onHiveEvent: (@Sendable (HiveEvent) -> Void)?
+    ) async throws -> AgentResult {
         let startTime = ContinuousClock.now
-
-        // An empty steps array is a valid no-op workflow: the input is passed through
-        // unchanged with zero iterations. This is intentional passthrough behaviour.
-        if steps.isEmpty {
-            let duration = ContinuousClock.now - startTime
-            return .completed(
-                AgentResult(
-                    output: input,
-                    toolCalls: [],
-                    toolResults: [],
-                    iterationCount: 0,
-                    duration: duration,
-                    tokenUsage: nil,
-                    metadata: [
-                        "orchestration.engine": .string("hive"),
-                        "orchestration.total_steps": .int(0),
-                        "orchestration.total_duration": .double(durationAsDouble(duration))
-                    ]
-                )
-            )
-        }
 
         let context = AgentContext(input: input)
         let stepContext = OrchestrationStepContext(
@@ -148,11 +206,12 @@ enum OrchestrationHiveEngine {
             hooks: hooks,
             orchestrator: orchestrator,
             orchestratorName: orchestratorName,
-            handoffs: handoffs
+            handoffs: handoffs,
+            channels: ChannelBagStorage()
         )
         await context.recordExecution(agentName: orchestratorName)
 
-        let graph = try makeGraph(steps: steps)
+        let compiledGraph = try makeGraph(steps: steps, stepContext: stepContext)
         let environment = HiveEnvironment<Schema>(
             context: stepContext,
             clock: SwarmHiveClock(),
@@ -164,29 +223,297 @@ enum OrchestrationHiveEngine {
             checkpointStore: checkpointStore
         )
 
-        let runtime = try HiveRuntime(graph: graph, environment: environment)
-        let threadID = HiveThreadID(resumeRequest?.workflowID ?? workflowID)
+        let runtime = try HiveRuntime(graph: compiledGraph.graph, environment: environment)
 
         let options = makeRunOptions(
-            stepCount: steps.count,
+            graphMetrics: compiledGraph.metrics,
             checkpointPolicy: checkpointPolicy,
             override: hiveRunOptionsOverride
         )
 
-        let handle: HiveRunHandle<Schema>
-        if let resumeRequest {
-            handle = await runtime.resume(
-                threadID: threadID,
-                interruptID: HiveInterruptID(resumeRequest.interruptID),
-                payload: resumeRequest.payload,
-                options: options
+        let handle = await runtime.run(threadID: threadID, input: input, options: options)
+        let (outcome, eventError) = try await awaitOutcome(
+            handle,
+            onIterationStart: onIterationStart,
+            onIterationEnd: onIterationEnd,
+            onHiveEvent: onHiveEvent
+        )
+        if let eventError {
+            Log.orchestration.error(
+                "Hive orchestration event stream terminated with error.",
+                metadata: ["error": .string(eventError)]
             )
-        } else {
-            handle = await runtime.run(threadID: threadID, input: input, options: options)
         }
+
+        switch outcome {
+        case .finished(let output, _):
+            let result = try extractResult(output)
+            let currentInput = result.currentInput
+            let accumulator = result.accumulator
+
+            let duration = ContinuousClock.now - startTime
+            var metadata = accumulator.metadata
+            metadata["orchestration.engine"] = .string("hive")
+            metadata["orchestration.total_steps"] = .int(steps.count)
+            metadata["orchestration.graph.node_count"] = .int(compiledGraph.metrics.nodeCount)
+            metadata["orchestration.graph.max_parallelism"] = .int(compiledGraph.metrics.maxParallelism)
+            metadata["orchestration.run.max_steps"] = .int(options.maxSteps)
+            metadata["orchestration.run.max_concurrent_tasks"] = .int(options.maxConcurrentTasks)
+            metadata["orchestration.run.thread_id"] = .string(threadID.rawValue)
+            metadata["orchestration.total_duration"] = .double(
+                Double(duration.components.seconds) +
+                    Double(duration.components.attoseconds) / 1e18
+            )
+
+            return AgentResult(
+                output: currentInput,
+                toolCalls: accumulator.toolCalls,
+                toolResults: accumulator.toolResults,
+                iterationCount: accumulator.iterationCount,
+                duration: duration,
+                tokenUsage: nil,
+                metadata: metadata
+            )
+
+        case .cancelled:
+            throw AgentError.cancelled
+
+        case .outOfSteps(let maxSteps, _, _):
+            throw AgentError.internalError(reason: "Hive orchestration exceeded maxSteps=\(maxSteps).")
+
+        case .interrupted(let interruption):
+            throw OrchestrationError.workflowInterrupted(reason: interruptionReason(interruption))
+        }
+    }
+
+    static func executeInterruptible(
+        steps: [OrchestrationStep],
+        input: String,
+        threadID: HiveThreadID,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        orchestrator: (any AgentRuntime)?,
+        orchestratorName: String,
+        handoffs: [AnyHandoffConfiguration],
+        inferencePolicy: InferencePolicy?,
+        hiveRunOptionsOverride: SwarmHiveRunOptionsOverride?,
+        checkpointPolicy: HiveCheckpointPolicy = .disabled,
+        checkpointStore: AnyHiveCheckpointStore<Schema>? = nil,
+        modelClient: AnyHiveModelClient? = nil,
+        modelRouter: (any HiveModelRouter)? = nil,
+        toolRegistry: AnyHiveToolRegistry? = nil,
+        inferenceHints: HiveInferenceHints? = nil,
+        onIterationStart: (@Sendable (Int) -> Void)?,
+        onIterationEnd: (@Sendable (Int) -> Void)?
+    ) async throws -> OrchestrationRunOutcome {
+        let startTime = ContinuousClock.now
+
+        let context = AgentContext(input: input)
+        let stepContext = OrchestrationStepContext(
+            agentContext: context,
+            session: session,
+            hooks: hooks,
+            orchestrator: orchestrator,
+            orchestratorName: orchestratorName,
+            handoffs: handoffs,
+            channels: ChannelBagStorage()
+        )
+        await context.recordExecution(agentName: orchestratorName)
+
+        let compiledGraph = try makeGraph(steps: steps, stepContext: stepContext)
+        let environment = HiveEnvironment<Schema>(
+            context: stepContext,
+            clock: SwarmHiveClock(),
+            logger: SwarmHiveLogger(),
+            model: modelClient,
+            modelRouter: modelRouter,
+            inferenceHints: inferenceHints ?? makeInferenceHints(from: inferencePolicy),
+            tools: toolRegistry,
+            checkpointStore: checkpointStore
+        )
+
+        let runtime = try HiveRuntime(graph: compiledGraph.graph, environment: environment)
+        let options = makeRunOptions(
+            graphMetrics: compiledGraph.metrics,
+            checkpointPolicy: checkpointPolicy,
+            override: hiveRunOptionsOverride
+        )
+
+        let handle = await runtime.run(threadID: threadID, input: input, options: options)
+        let (outcome, eventError) = try await awaitOutcome(
+            handle,
+            onIterationStart: onIterationStart,
+            onIterationEnd: onIterationEnd,
+            onHiveEvent: nil
+        )
+        if let eventError {
+            Log.orchestration.error(
+                "Hive orchestration event stream terminated with error.",
+                metadata: ["error": .string(eventError)]
+            )
+        }
+
+        switch outcome {
+        case .interrupted(let interruption):
+            let reason = interruptionReason(interruption)
+            let resumeToken = ResumeToken(
+                suspensionPoint: reason,
+                capturedInput: input,
+                capturedStep: OrchestrationGroup(steps: steps),
+                capturedContext: stepContext,
+                hiveInterruptID: interruption.interrupt.id,
+                hiveThreadID: threadID,
+                hiveStringResumer: { input in
+                    let response = approvalResponse(from: input)
+                    return try await resumeWithApproval(
+                        runtime: runtime,
+                        threadID: threadID,
+                        interruptID: interruption.interrupt.id,
+                        response: response,
+                        options: options,
+                        steps: steps,
+                        graphMetrics: compiledGraph.metrics,
+                        startTime: startTime
+                    )
+                },
+                hiveApprovalResumer: { response in
+                    try await resumeWithApproval(
+                        runtime: runtime,
+                        threadID: threadID,
+                        interruptID: interruption.interrupt.id,
+                        response: response,
+                        options: options,
+                        steps: steps,
+                        graphMetrics: compiledGraph.metrics,
+                        startTime: startTime
+                    )
+                },
+                hiveStateProvider: {
+                    guard let snapshot = try await runtime.getState(threadID: threadID) else { return nil }
+                    return AgentExecutionSnapshot(
+                        activeNodes: snapshot.nextNodes.map(\.rawValue),
+                        stepIndex: snapshot.stepIndex,
+                        isInterrupted: true
+                    )
+                }
+            )
+            return .interrupted(resumeToken)
+
+        case .finished, .cancelled, .outOfSteps:
+            let result = try terminalResult(
+                outcome: outcome,
+                steps: steps,
+                graphMetrics: compiledGraph.metrics,
+                runOptions: options,
+                threadID: threadID,
+                startTime: startTime
+            )
+            return .completed(result)
+        }
+    }
+
+    private static func resumeWithApproval(
+        runtime: HiveRuntime<Schema>,
+        threadID: HiveThreadID,
+        interruptID: HiveInterruptID,
+        response: ApprovalResponse,
+        options: HiveRunOptions,
+        steps: [OrchestrationStep],
+        graphMetrics: GraphMetrics,
+        startTime: ContinuousClock.Instant
+    ) async throws -> AgentResult {
+        let handle = await runtime.resume(
+            threadID: threadID,
+            interruptID: interruptID,
+            payload: .humanApproval(response: response),
+            options: options
+        )
+        let (outcome, eventError) = try await awaitOutcome(
+            handle,
+            onIterationStart: nil,
+            onIterationEnd: nil,
+            onHiveEvent: nil
+        )
+        if let eventError {
+            Log.orchestration.error(
+                "Hive orchestration resume stream terminated with error.",
+                metadata: ["error": .string(eventError)]
+            )
+        }
+        switch outcome {
+        case .interrupted(let interruption):
+            throw OrchestrationError.workflowInterrupted(reason: interruptionReason(interruption))
+        case .finished, .cancelled, .outOfSteps:
+            return try terminalResult(
+                outcome: outcome,
+                steps: steps,
+                graphMetrics: graphMetrics,
+                runOptions: options,
+                threadID: threadID,
+                startTime: startTime
+            )
+        }
+    }
+
+    private static func terminalResult(
+        outcome: HiveRunOutcome<Schema>,
+        steps: [OrchestrationStep],
+        graphMetrics: GraphMetrics,
+        runOptions: HiveRunOptions,
+        threadID: HiveThreadID,
+        startTime: ContinuousClock.Instant
+    ) throws -> AgentResult {
+        switch outcome {
+        case .finished(let output, _):
+            let result = try extractResult(output)
+            let currentInput = result.currentInput
+            let accumulator = result.accumulator
+
+            let duration = ContinuousClock.now - startTime
+            var metadata = accumulator.metadata
+            metadata["orchestration.engine"] = .string("hive")
+            metadata["orchestration.total_steps"] = .int(steps.count)
+            metadata["orchestration.graph.node_count"] = .int(graphMetrics.nodeCount)
+            metadata["orchestration.graph.max_parallelism"] = .int(graphMetrics.maxParallelism)
+            metadata["orchestration.run.max_steps"] = .int(runOptions.maxSteps)
+            metadata["orchestration.run.max_concurrent_tasks"] = .int(runOptions.maxConcurrentTasks)
+            metadata["orchestration.run.thread_id"] = .string(threadID.rawValue)
+            metadata["orchestration.total_duration"] = .double(
+                Double(duration.components.seconds) +
+                    Double(duration.components.attoseconds) / 1e18
+            )
+
+            return AgentResult(
+                output: currentInput,
+                toolCalls: accumulator.toolCalls,
+                toolResults: accumulator.toolResults,
+                iterationCount: accumulator.iterationCount,
+                duration: duration,
+                tokenUsage: nil,
+                metadata: metadata
+            )
+
+        case .cancelled:
+            throw AgentError.cancelled
+
+        case .outOfSteps(let maxSteps, _, _):
+            throw AgentError.internalError(reason: "Hive orchestration exceeded maxSteps=\(maxSteps).")
+
+        case .interrupted(let interruption):
+            throw OrchestrationError.workflowInterrupted(reason: interruptionReason(interruption))
+        }
+    }
+
+    private static func awaitOutcome(
+        _ handle: HiveRunHandle<Schema>,
+        onIterationStart: (@Sendable (Int) -> Void)?,
+        onIterationEnd: (@Sendable (Int) -> Void)?,
+        onHiveEvent: (@Sendable (HiveEvent) -> Void)?
+    ) async throws -> (HiveRunOutcome<Schema>, String?) {
         let eventsTask = Task<String?, Never> {
             do {
                 for try await event in handle.events {
+                    onHiveEvent?(event)
                     switch event.kind {
                     case .stepStarted(let stepIndex, _):
                         onIterationStart?(stepIndex + 1)
@@ -217,157 +544,45 @@ enum OrchestrationHiveEngine {
         }
 
         let eventError = await eventsTask.value
-        if let eventError {
-            Log.orchestration.error(
-                "Hive orchestration event stream terminated with error.",
-                metadata: ["error": .string(eventError)]
-            )
-        }
+        return (outcome, eventError)
+    }
 
-        switch outcome {
-        case .finished(let output, _):
-            let result = try extractResult(output)
-            let currentInput = result.currentInput
-            let accumulator = result.accumulator
-
-            let duration = ContinuousClock.now - startTime
-            var metadata = accumulator.metadata
-            metadata["orchestration.engine"] = .string("hive")
-            metadata["orchestration.total_steps"] = .int(steps.count)
-            metadata["orchestration.total_duration"] = .double(durationAsDouble(duration))
-
-            return .completed(
-                AgentResult(
-                    output: currentInput,
-                    toolCalls: accumulator.toolCalls,
-                    toolResults: accumulator.toolResults,
-                    iterationCount: accumulator.iterationCount,
-                    duration: duration,
-                    tokenUsage: nil,
-                    metadata: metadata
-                )
-            )
-
-        case .cancelled:
-            throw AgentError.cancelled
-
-        case .outOfSteps(let maxSteps, _, _):
-            throw AgentError.internalError(reason: "Hive orchestration exceeded maxSteps=\(maxSteps).")
-
-        case .interrupted(let interruption):
-            let handle = try await buildWorkflowResumeHandle(
-                interruption: interruption,
-                threadID: threadID,
-                fallbackInput: input,
-                checkpointStore: checkpointStore
-            )
-            return .interrupted(handle)
+    private static func interruptionReason(_ interruption: HiveInterruption<Schema>) -> String {
+        switch interruption.interrupt.payload {
+        case .humanApprovalRequired(let prompt, _):
+            return "human_approval_required:\(prompt)"
         }
     }
 
-    static func makeHiveCheckpointPolicy(_ policy: WorkflowCheckpointPolicy) -> HiveCheckpointPolicy {
-        switch policy {
-        case .disabled:
-            .disabled
-        case .everyStep:
-            .everyStep
-        case let .everyNSteps(value):
-            .every(steps: max(1, value))
-        case .onInterrupt:
-            .onInterrupt
+    private static func approvalResponse(from input: String) -> ApprovalResponse {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+
+        if lower == "approved" || lower == "approve" {
+            return .approved
         }
-    }
-
-    static func makeDefaultCheckpointStore() -> AnyHiveCheckpointStore<Schema> {
-        AnyHiveCheckpointStore(InMemoryCheckpointStore<Schema>())
-    }
-
-    private static func buildWorkflowResumeHandle(
-        interruption: HiveInterruption<Schema>,
-        threadID: HiveThreadID,
-        fallbackInput: String,
-        checkpointStore: AnyHiveCheckpointStore<Schema>?
-    ) async throws -> WorkflowResumeHandle {
-        let checkpointState = await makeCheckpointState(
-            interruption: interruption,
-            threadID: threadID,
-            fallbackInput: fallbackInput,
-            checkpointStore: checkpointStore
-        )
-
-        let reason = interruptReason(from: interruption.interrupt.payload)
-        return WorkflowResumeHandle(
-            workflowID: threadID.rawValue,
-            checkpoint: checkpointState,
-            interruptReason: reason,
-            threadID: threadID.rawValue,
-            interruptID: interruption.interrupt.id.rawValue,
-            checkpointID: interruption.checkpointID.rawValue,
-            suggestedResumePayload: "approved",
-            interruptPayload: interruption.interrupt.payload
-        )
-    }
-
-    private static func makeCheckpointState(
-        interruption: HiveInterruption<Schema>,
-        threadID: HiveThreadID,
-        fallbackInput: String,
-        checkpointStore: AnyHiveCheckpointStore<Schema>?
-    ) async -> WorkflowCheckpointState {
-        var stepIndex = 0
-        var intermediateOutput = fallbackInput
-
-        if let checkpointStore,
-           let checkpoint = try? await checkpointStore.loadCheckpoint(threadID: threadID, id: interruption.checkpointID)
-        {
-            stepIndex = checkpoint.stepIndex
-            if let value = decodeCurrentInput(from: checkpoint) {
-                intermediateOutput = value
-            }
+        if lower == "rejected" || lower == "reject" {
+            return .rejected(reason: "Rejected by operator.")
         }
-
-        let metadata: [String: SendableValue] = [
-            "hive.thread_id": .string(threadID.rawValue),
-            "hive.interrupt_id": .string(interruption.interrupt.id.rawValue),
-            "hive.checkpoint_id": .string(interruption.checkpointID.rawValue),
-        ]
-
-        return WorkflowCheckpointState(
-            workflowID: threadID.rawValue,
-            stepIndex: stepIndex,
-            intermediateOutput: intermediateOutput,
-            metadata: metadata,
-            timestamp: Date()
-        )
-    }
-
-    private static func decodeCurrentInput(from checkpoint: HiveCheckpoint<Schema>) -> String? {
-        guard let payload = checkpoint.globalDataByChannelID[Schema.currentInputKey.id.rawValue] else {
-            return nil
+        if lower.hasPrefix("rejected:"), let index = trimmed.firstIndex(of: ":") {
+            let reason = trimmed[trimmed.index(after: index)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            return .rejected(reason: reason.isEmpty ? "Rejected by operator." : reason)
         }
-        return try? JSONDecoder().decode(String.self, from: payload)
-    }
-
-    private static func interruptReason(from payload: String) -> WorkflowInterruptReason {
-        let prefix = "human-approval-required:"
-        if payload.hasPrefix(prefix) {
-            return .humanApprovalRequired(prompt: String(payload.dropFirst(prefix.count)))
-        }
-        return .externalInterrupt
+        return .modified(newInput: input)
     }
 
     private static func makeRunOptions(
-        stepCount: Int,
+        graphMetrics: GraphMetrics,
         checkpointPolicy: HiveCheckpointPolicy,
         override optionsOverride: SwarmHiveRunOptionsOverride?
     ) -> HiveRunOptions {
         let defaultOptions = HiveRunOptions(
-            maxSteps: stepCount,
-            maxConcurrentTasks: 1,
+            maxSteps: max(1, graphMetrics.recommendedMaxSteps),
+            maxConcurrentTasks: max(1, graphMetrics.maxParallelism),
             checkpointPolicy: checkpointPolicy,
             debugPayloads: false,
             deterministicTokenStreaming: false,
-            eventBufferCapacity: max(64, stepCount * 8)
+            eventBufferCapacity: max(64, graphMetrics.nodeCount * 8)
         )
 
         guard let optionsOverride else {
@@ -412,145 +627,57 @@ enum OrchestrationHiveEngine {
         )
     }
 
-    private static func makeGraph(steps: [OrchestrationStep]) throws -> CompiledHiveGraph<Schema> {
-        // execute() guarantees steps is non-empty before calling makeGraph().
-        // The assert catches future regressions where this invariant is violated.
-        assert(!steps.isEmpty, "makeGraph called with empty steps — caller must ensure non-empty steps")
+    private static func makeGraph(
+        steps: [OrchestrationStep],
+        stepContext: OrchestrationStepContext
+    ) throws -> CompiledGraph {
+        precondition(!steps.isEmpty)
 
-        let nodeIDs = steps.indices.map { HiveNodeID("orchestration.step_\($0)") }
+        let startNodeIDs = try entryNodeIDs(for: steps[0], nodePrefix: "step_0")
 
-        var builder = HiveGraphBuilder<Schema>(start: [nodeIDs[0]])
+        var builder = HiveGraphBuilder<Schema>(start: startNodeIDs)
+        var previousExitNodes: [HiveNodeID] = []
+        var totalNodeCount = 0
+        var maxParallelism = 1
+        var maxStepBudget = 0
 
         for (index, step) in steps.enumerated() {
-            let nodeID = nodeIDs[index]
-            builder.addNode(nodeID) { input in
-                let stepContext = input.context
-                let currentInput = try input.store.get(Schema.currentInputKey)
-                let result: AgentResult
-                if let approvalStep = step as? HumanApproval, approvalStep.handler == nil {
-                    if let resumePayload = input.run.resume?.payload {
-                        result = try synthesizeApprovalResumeResult(
-                            step: approvalStep,
-                            currentInput: currentInput,
-                            payload: resumePayload
-                        )
-                    } else {
-                        return HiveNodeOutput(
-                            interrupt: HiveInterruptRequest(
-                                payload: "human-approval-required:\(approvalStep.prompt)"
-                            )
-                        )
-                    }
-                } else {
-                    do {
-                        result = try await step.execute(currentInput, context: stepContext)
-                    } catch let error as OrchestrationError {
-                        if case let .workflowInterrupted(reason) = error {
-                            if shouldResumeFromInterruption(input.run.resume?.payload) {
-                                result = AgentResult(output: currentInput)
-                            } else {
-                                return HiveNodeOutput(
-                                    interrupt: HiveInterruptRequest(payload: reason)
-                                )
-                            }
-                        } else {
-                            throw error
-                        }
-                    }
-                }
-
-                var metadataUpdate: [String: SendableValue] = [:]
-                for (key, value) in result.metadata {
-                    metadataUpdate[key] = value
-                    metadataUpdate["orchestration.step_\(index).\(key)"] = value
-                }
-
-                let delta = Accumulator(
-                    toolCalls: result.toolCalls,
-                    toolResults: result.toolResults,
-                    iterationCount: result.iterationCount,
-                    metadata: metadataUpdate
-                )
-
-                await stepContext.agentContext.setPreviousOutput(result)
-
-                return HiveNodeOutput(
-                    writes: [
-                        AnyHiveWrite(Schema.currentInputKey, result.output),
-                        AnyHiveWrite(Schema.accumulatorKey, delta)
-                    ]
-                )
-            }
+            let fragment = try compileTopLevelStep(
+                step,
+                into: &builder,
+                stepContext: stepContext,
+                nodePrefix: "step_\(index)",
+                orchestrationStepPrefix: "orchestration.step_\(index)"
+            )
 
             if index > 0 {
-                builder.addEdge(from: nodeIDs[index - 1], to: nodeID)
+                for exitNode in previousExitNodes {
+                    for entryNode in fragment.entryNodes {
+                        builder.addEdge(from: exitNode, to: entryNode)
+                    }
+                }
+            }
+
+            previousExitNodes = fragment.exitNodes
+            totalNodeCount += fragment.nodeCount
+            maxParallelism = max(maxParallelism, fragment.maxParallelism)
+            let budgetForStep = recommendedMaxSteps(for: step)
+            if maxStepBudget > Int.max - budgetForStep {
+                maxStepBudget = Int.max
+            } else {
+                maxStepBudget += budgetForStep
             }
         }
 
+        maxParallelism = max(maxParallelism, declaredMaxParallelism(in: steps))
         builder.setOutputProjection(.channels([Schema.currentInputKey.id, Schema.accumulatorKey.id]))
-        return try builder.compile()
-    }
-
-    /// Converts a `Duration` value to a `Double` representing seconds.
-    ///
-    /// Centralises the seconds + attoseconds calculation to avoid repeating
-    /// the fragile `/ 1e18` constant at multiple call sites.
-    private static func durationAsDouble(_ duration: Duration) -> Double {
-        Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
-    }
-
-    private static func shouldResumeFromInterruption(_ payload: String?) -> Bool {
-        guard let payload else { return false }
-        let normalized = payload.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalized.isEmpty else { return false }
-        switch normalized {
-        case "reject", "rejected", "cancel", "cancelled", "no":
-            return false
-        default:
-            return true
-        }
-    }
-
-    private static func synthesizeApprovalResumeResult(
-        step: HumanApproval,
-        currentInput: String,
-        payload: String
-    ) throws -> AgentResult {
-        let normalized = payload.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lower = normalized.lowercased()
-
-        if ["reject", "rejected", "cancel", "cancelled", "no"].contains(lower) {
-            throw OrchestrationError.humanApprovalRejected(
-                prompt: step.prompt,
-                reason: "Rejected through resume payload."
+        return CompiledGraph(
+            graph: try builder.compile(),
+            metrics: GraphMetrics(
+                nodeCount: totalNodeCount,
+                maxParallelism: maxParallelism,
+                recommendedMaxSteps: maxStepBudget
             )
-        }
-
-        let output: String
-        let responseValue: String
-
-        if normalized.hasPrefix("modified:") {
-            output = String(normalized.dropFirst("modified:".count))
-            responseValue = "modified"
-        } else {
-            output = currentInput
-            responseValue = "approved"
-        }
-
-        let metadata: [String: SendableValue] = [
-            "approval.prompt": .string(step.prompt),
-            "approval.wait_duration": .double(0),
-            "approval.response": .string(responseValue),
-        ]
-
-        return AgentResult(
-            output: output,
-            toolCalls: [],
-            toolResults: [],
-            iterationCount: 0,
-            duration: .zero,
-            tokenUsage: nil,
-            metadata: metadata
         )
     }
 
@@ -590,42 +717,7 @@ enum OrchestrationHiveEngine {
     }
 }
 
-private actor InMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointQueryableStore {
-    private var checkpoints: [HiveCheckpoint<Schema>] = []
-
-    func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
-        checkpoints.append(checkpoint)
-    }
-
-    func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
-        checkpoints.last(where: { $0.threadID == threadID })
-    }
-
-    func listCheckpoints(threadID: HiveThreadID, limit: Int?) async throws -> [HiveCheckpointSummary] {
-        let summaries = checkpoints
-            .filter { $0.threadID == threadID }
-            .map { checkpoint in
-                HiveCheckpointSummary(
-                    id: checkpoint.id,
-                    threadID: checkpoint.threadID,
-                    runID: checkpoint.runID,
-                    stepIndex: checkpoint.stepIndex
-                )
-            }
-            .sorted(by: { $0.stepIndex < $1.stepIndex })
-
-        if let limit, limit > 0 {
-            return Array(summaries.suffix(limit))
-        }
-        return summaries
-    }
-
-    func loadCheckpoint(threadID: HiveThreadID, id: HiveCheckpointID) async throws -> HiveCheckpoint<Schema>? {
-        checkpoints.last(where: { $0.threadID == threadID && $0.id == id })
-    }
-}
-
-private struct SwarmHiveClock: HiveClock {
+struct SwarmHiveClock: HiveClock {
     func nowNanoseconds() -> UInt64 {
         DispatchTime.now().uptimeNanoseconds
     }
@@ -635,7 +727,7 @@ private struct SwarmHiveClock: HiveClock {
     }
 }
 
-private struct SwarmHiveLogger: HiveLogger {
+struct SwarmHiveLogger: HiveLogger {
     private let logger: Logger
 
     init(logger: Logger = Log.orchestration) {
@@ -665,7 +757,7 @@ private struct SwarmHiveLogger: HiveLogger {
 }
 
 /// Deterministic JSON codec for Hive checkpointing within the Swarm target.
-private struct JSONCodec<Value: Codable & Sendable>: HiveCodec {
+struct JSONCodec<Value: Codable & Sendable>: HiveCodec {
     let id: String
 
     init() {
@@ -682,5 +774,3 @@ private struct JSONCodec<Value: Codable & Sendable>: HiveCodec {
         try JSONDecoder().decode(Value.self, from: data)
     }
 }
-
-#endif

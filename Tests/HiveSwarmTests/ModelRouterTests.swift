@@ -100,6 +100,7 @@ struct ModelRouterTests {
         let outcome = try await OrchestrationHiveEngine.execute(
             steps: [step],
             input: "Hello",
+            threadID: HiveThreadID("orchestration-router-test"),
             session: nil,
             hooks: nil,
             orchestrator: nil,
@@ -109,7 +110,8 @@ struct ModelRouterTests {
             hiveRunOptionsOverride: nil,
             modelRouter: router,
             onIterationStart: nil,
-            onIterationEnd: nil
+            onIterationEnd: nil,
+            onHiveEvent: nil
         )
 
         switch outcome {

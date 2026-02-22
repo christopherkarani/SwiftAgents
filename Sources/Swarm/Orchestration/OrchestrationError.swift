@@ -43,6 +43,12 @@ public enum OrchestrationError: Error, Sendable, Equatable {
 
     /// Hive runtime was required but unavailable for this build/runtime.
     case hiveRuntimeUnavailable(reason: String)
+    
+    /// Orchestration runtime mode is not supported.
+    case unsupportedOrchestrationRuntimeMode(SwarmRuntimeMode)
+
+    /// Step requires a dedicated Hive-native adapter and is not yet supported in Hive-only mode.
+    case unsupportedOrchestrationStep(typeName: String, reason: String)
 
     // MARK: - Workflow Control Errors
 
@@ -86,6 +92,10 @@ extension OrchestrationError: LocalizedError {
             return "All parallel agents failed: [\(errorList)]"
         case let .hiveRuntimeUnavailable(reason):
             return "Hive runtime unavailable: \(reason)"
+        case let .unsupportedOrchestrationRuntimeMode(runtimeMode):
+            return "Unsupported orchestration runtime mode: \(runtimeMode)"
+        case let .unsupportedOrchestrationStep(typeName, reason):
+            return "Unsupported orchestration step '\(typeName)': \(reason)"
         case let .workflowInterrupted(reason):
             return "Workflow interrupted: \(reason)"
         case let .invalidGraph(validationError):
@@ -123,6 +133,10 @@ extension OrchestrationError: CustomDebugStringConvertible {
             return "OrchestrationError.allAgentsFailed(errors: \(errors))"
         case let .hiveRuntimeUnavailable(reason):
             return "OrchestrationError.hiveRuntimeUnavailable(reason: \(reason))"
+        case let .unsupportedOrchestrationRuntimeMode(runtimeMode):
+            return "OrchestrationError.unsupportedOrchestrationRuntimeMode(runtimeMode: \(runtimeMode))"
+        case let .unsupportedOrchestrationStep(typeName, reason):
+            return "OrchestrationError.unsupportedOrchestrationStep(typeName: \(typeName), reason: \(reason))"
         case let .workflowInterrupted(reason):
             return "OrchestrationError.workflowInterrupted(reason: \(reason))"
         case let .invalidGraph(validationError):

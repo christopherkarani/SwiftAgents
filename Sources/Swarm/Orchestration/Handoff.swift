@@ -412,52 +412,18 @@ public actor HandoffCoordinator {
         var effectiveContext = request.context
 
         if let config = configuration {
-            // Check if handoff is enabled
-            if let isEnabled = config.isEnabled {
-                let enabled = await isEnabled(context, targetAgent)
-                if !enabled {
-                    Log.orchestration.info(
-                        "Handoff skipped: \(request.sourceAgentName) -> \(request.targetAgentName) (disabled by isEnabled callback)"
-                    )
-                    throw OrchestrationError.handoffSkipped(
-                        from: request.sourceAgentName,
-                        to: request.targetAgentName,
-                        reason: "Handoff disabled by isEnabled callback"
-                    )
-                }
-            }
-
-            // Create HandoffInputData for callbacks
-            var inputData = HandoffInputData(
+            let applied = try await applyResolvedHandoffConfiguration(
                 sourceAgentName: request.sourceAgentName,
-                targetAgentName: request.targetAgentName,
+                to: targetAgent,
+                targetName: request.targetAgentName,
                 input: request.input,
-                context: request.context,
-                metadata: [:]
+                handoffs: [config],
+                context: context,
+                inputContextSnapshot: request.context
             )
 
-            // Apply input filter if present
-            if let inputFilter = config.inputFilter {
-                inputData = inputFilter(inputData)
-            }
-
-            // Call onHandoff callback if present
-            if let onHandoff = config.onHandoff {
-                do {
-                    try await onHandoff(context, inputData)
-                } catch {
-                    // Log callback errors but don't fail the handoff
-                    Log.orchestration.warning(
-                        "onHandoff callback failed for \(request.sourceAgentName) -> \(request.targetAgentName): \(error.localizedDescription)"
-                    )
-                }
-            }
-
-            // Use potentially modified input from filter
-            effectiveInput = inputData.input
-
-            // Merge filter metadata into context
-            for (key, value) in inputData.metadata {
+            effectiveInput = applied.effectiveInput
+            for (key, value) in applied.metadata {
                 effectiveContext[key] = value
             }
         }

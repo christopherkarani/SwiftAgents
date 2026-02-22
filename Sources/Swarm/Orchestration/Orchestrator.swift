@@ -15,18 +15,12 @@ public protocol OrchestratorProtocol: AgentRuntime {
 
 public extension OrchestratorProtocol {
     nonisolated var orchestratorName: String {
-        let configured = configuration.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !configured.isEmpty {
-            return configured
-        }
-        return String(describing: type(of: self))
+        handoffDisplayName(for: self, fallbackTypeName: "Orchestrator")
     }
 
     /// Finds a handoff configuration for the given target agent.
     func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
-        handoffs.first { config in
-            areSameRuntime(config.targetAgent, targetAgent)
-        }
+        resolveHandoffConfiguration(for: targetAgent, in: handoffs)
     }
 }
 

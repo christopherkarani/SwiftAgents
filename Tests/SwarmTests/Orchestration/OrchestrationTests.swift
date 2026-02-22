@@ -64,41 +64,6 @@ struct FailingAgent: AgentRuntime {
     func cancel() async {}
 }
 
-final class InstanceEchoAgent: AgentRuntime, @unchecked Sendable {
-    let id: String
-    let tools: [any AnyJSONTool] = []
-    let instructions: String
-    let configuration: AgentConfiguration
-
-    init(id: String) {
-        self.id = id
-        instructions = "Instance echo \(id)"
-        configuration = AgentConfiguration(name: id)
-    }
-
-    func run(
-        _ input: String,
-        session _: (any Session)? = nil,
-        hooks _: (any RunHooks)? = nil
-    ) async throws -> AgentResult {
-        AgentResult(output: "\(id)|\(input)")
-    }
-
-    nonisolated func stream(
-        _ input: String,
-        session _: (any Session)? = nil,
-        hooks _: (any RunHooks)? = nil
-    ) -> AsyncThrowingStream<AgentEvent, Error> {
-        StreamHelper.makeTrackedStream { [self] continuation in
-            continuation.yield(.started(input: input))
-            continuation.yield(.completed(result: AgentResult(output: "\(id)|\(input)")))
-            continuation.finish()
-        }
-    }
-
-    func cancel() async {}
-}
-
 // MARK: - Test Steps
 
 struct ContextWriteStep: OrchestrationStep {
@@ -172,48 +137,6 @@ struct OrchestrationTests {
         #expect(result.output == "filtered: hello")
     }
 
-    @Test("Handoff configuration matches target agent by runtime identity in orchestration context")
-    func handoffConfigurationMatchesRuntimeIdentity() async throws {
-        let first = InstanceEchoAgent(id: "first")
-        let second = InstanceEchoAgent(id: "second")
-
-        let firstConfig = AnyHandoffConfiguration(handoff(
-            to: first,
-            inputFilter: { data in
-                var updated = data
-                updated = HandoffInputData(
-                    sourceAgentName: data.sourceAgentName,
-                    targetAgentName: data.targetAgentName,
-                    input: "first-filter::\(data.input)",
-                    context: data.context,
-                    metadata: data.metadata
-                )
-                return updated
-            }
-        ))
-        let secondConfig = AnyHandoffConfiguration(handoff(
-            to: second,
-            inputFilter: { data in
-                var updated = data
-                updated = HandoffInputData(
-                    sourceAgentName: data.sourceAgentName,
-                    targetAgentName: data.targetAgentName,
-                    input: "second-filter::\(data.input)",
-                    context: data.context,
-                    metadata: data.metadata
-                )
-                return updated
-            }
-        ))
-
-        let workflow = Orchestration(handoffs: [firstConfig, secondConfig]) {
-            second
-        }
-
-        let result = try await workflow.run("hello")
-        #expect(result.output == "second|second-filter::hello")
-    }
-
     @Test("Parallel continues on partial failure by default")
     func parallelContinuesOnPartialFailure() async throws {
         let success = EchoAgent()
@@ -262,36 +185,6 @@ struct OrchestrationTests {
         #expect(result.metadata["orchestration.step_1.second_only"]?.boolValue == true)
     }
 
-#if canImport(HiveCore)
-    @Test("Hive engine returns input for empty steps")
-    func hiveEngineReturnsInputForEmptySteps() async throws {
-        let outcome = try await OrchestrationHiveEngine.execute(
-            steps: [],
-            input: "input",
-            session: nil,
-            hooks: nil,
-            orchestrator: nil,
-            orchestratorName: "test",
-            handoffs: [],
-            inferencePolicy: nil,
-            hiveRunOptionsOverride: nil,
-            onIterationStart: nil,
-            onIterationEnd: nil
-        )
-        let result: AgentResult
-        switch outcome {
-        case .completed(let completed):
-            result = completed
-        case .interrupted:
-            Issue.record("Expected completed workflow outcome for empty steps.")
-            return
-        }
-
-        #expect(result.output == "input")
-        #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
-        #expect(result.metadata["orchestration.total_steps"]?.intValue == 0)
-    }
-#endif
 
     @Test("Orchestration records engine metadata")
     func orchestrationRecordsEngineMetadata() async throws {
@@ -303,9 +196,50 @@ struct OrchestrationTests {
         #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
     }
 
-    @Test("Orchestration executes on Hive runtime")
-    func orchestrationExecutesOnHiveRuntime() async throws {
+    @Test("Orchestration runtimeMode.swift is not supported for orchestration")
+    func orchestrationRuntimeModeSwiftIsNotSupported() async {
+        let workflow = Orchestration(
+            configuration: AgentConfiguration(runtimeMode: .swift)
+        ) {
+            Transform { $0 }
+        }
+
+        do {
+            _ = try await workflow.run("ping")
+            Issue.record("Expected .swift orchestration mode to fail fast.")
+        } catch let error as OrchestrationError {
+            #expect(error == .unsupportedOrchestrationRuntimeMode(.swift))
+        } catch {
+            Issue.record("Expected OrchestrationError.unsupportedOrchestrationRuntimeMode(.swift), got \(error)")
+        }
+    }
+
+    @Test("Unsupported orchestration steps are rejected in Hive mode")
+    func unsupportedOrchestrationStepIsRejected() async {
         let workflow = Orchestration {
+            Generate()
+        }
+
+        do {
+            _ = try await workflow.run("ping")
+            Issue.record("Expected unsupported step to fail in Hive mode.")
+        } catch let error as OrchestrationError {
+            if case let .unsupportedOrchestrationStep(typeName: typeName, reason: reason) = error {
+                #expect(typeName == "Generate")
+                #expect(reason.contains("Legacy"))
+            } else {
+                Issue.record("Expected unsupported step error, got \(error)")
+            }
+        } catch {
+            Issue.record("Expected OrchestrationError.unsupportedOrchestrationStep, got \(error)")
+        }
+    }
+
+    @Test("Orchestration runtimeMode.requireHive executes on Hive")
+    func orchestrationRuntimeModeRequireHiveExecutesOnHive() async throws {
+        let workflow = Orchestration(
+            configuration: AgentConfiguration(runtimeMode: .requireHive)
+        ) {
             Transform { $0 }
         }
 
@@ -313,10 +247,43 @@ struct OrchestrationTests {
         #expect(result.metadata["orchestration.engine"]?.stringValue == "hive")
     }
 
+    @Test("Loop zero-iteration duration is zero in Hive runtime")
+    func loopZeroIterationDurationIsZero() async throws {
+        let workflow = Orchestration(
+            configuration: AgentConfiguration(runtimeMode: .hive)
+        ) {
+            Loop(.maxIterations(0)) {
+                Transform { $0 + "!" }
+            }
+        }
+
+        let result = try await workflow.run("ping")
+        #expect(result.output == "ping")
+        #expect(result.metadata["orchestration.step_0.loop.iteration_count"]?.intValue == 0)
+        #expect(result.metadata["orchestration.step_0.loop.duration"]?.doubleValue == 0)
+    }
+
+    @Test("RepeatWhile zero-iteration duration is zero in Hive runtime")
+    func repeatWhileZeroIterationDurationIsZero() async throws {
+        let workflow = Orchestration(
+            configuration: AgentConfiguration(runtimeMode: .hive)
+        ) {
+            RepeatWhile(maxIterations: 5, condition: { _ in false }) {
+                Transform { $0 + "!" }
+            }
+        }
+
+        let result = try await workflow.run("ping")
+        #expect(result.output == "ping")
+        #expect(result.metadata["orchestration.step_0.repeatwhile.iteration_count"]?.intValue == 0)
+        #expect(result.metadata["orchestration.step_0.repeatwhile.duration"]?.doubleValue == 0)
+    }
+
     @Test("Orchestration Hive run options override is passed through")
     func orchestrationHiveRunOptionsOverridePassesThrough() async throws {
         let workflow = Orchestration(
             configuration: AgentConfiguration(
+                runtimeMode: .hive,
                 hiveRunOptionsOverride: .init(maxSteps: 1)
             )
         ) {
@@ -335,6 +302,62 @@ struct OrchestrationTests {
                 Issue.record("Expected internal out-of-steps error, got \(error).")
             }
         }
+    }
+
+    @Test("Orchestration DAG uses compiled graph node count for Hive maxSteps")
+    func orchestrationDAGUsesCompiledGraphNodeCountForMaxSteps() async throws {
+        let workflow = Orchestration {
+            DAG {
+                DAGNode("left", step: Transform { "\($0)L" })
+                DAGNode("right", step: Transform { "\($0)R" })
+                DAGNode("join", step: Transform { "\($0)|J" })
+                    .dependsOn("left", "right")
+            }
+        }
+
+        let result = try await workflow.run("x")
+
+        #expect(result.output.contains("xL"))
+        #expect(result.output.contains("xR"))
+        #expect(result.output.contains("|J"))
+        let nodeCount = try #require(result.metadata["orchestration.graph.node_count"]?.intValue)
+        let maxSteps = try #require(result.metadata["orchestration.run.max_steps"]?.intValue)
+        #expect(nodeCount >= 3)
+        #expect(maxSteps == nodeCount)
+    }
+
+    @Test("Orchestration DAG derives Hive concurrency from graph parallelism")
+    func orchestrationDAGDerivesHiveConcurrencyFromGraphParallelism() async throws {
+        let workflow = Orchestration {
+            DAG {
+                DAGNode("left", step: Transform { "\($0)L" })
+                DAGNode("right", step: Transform { "\($0)R" })
+                DAGNode("join", step: Transform { "\($0)|J" })
+                    .dependsOn("left", "right")
+            }
+        }
+
+        let result = try await workflow.run("x")
+
+        #expect(result.metadata["orchestration.graph.max_parallelism"]?.intValue == 2)
+        #expect(result.metadata["orchestration.run.max_concurrent_tasks"]?.intValue == 2)
+
+        let serializedWorkflow = Orchestration(
+            configuration: AgentConfiguration(
+                hiveRunOptionsOverride: SwarmHiveRunOptionsOverride(maxConcurrentTasks: 1)
+            )
+        ) {
+            DAG {
+                DAGNode("left", step: Transform { "\($0)L" })
+                DAGNode("right", step: Transform { "\($0)R" })
+                DAGNode("join", step: Transform { "\($0)|J" })
+                    .dependsOn("left", "right")
+            }
+        }
+
+        let serializedResult = try await serializedWorkflow.run("x")
+        #expect(serializedResult.metadata["orchestration.graph.max_parallelism"]?.intValue == 2)
+        #expect(serializedResult.metadata["orchestration.run.max_concurrent_tasks"]?.intValue == 1)
     }
 
     @Test("Orchestration inferencePolicy maps to Hive inference hints")

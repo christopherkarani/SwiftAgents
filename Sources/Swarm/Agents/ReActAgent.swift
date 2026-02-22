@@ -136,6 +136,15 @@ public actor ReActAgent: AgentRuntime {
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+        return try await hiveRun(input, session: session, hooks: hooks)
+    }
+
+    /// Internal execution logic for the ReAct agent.
+    ///
+    /// Contains the full run body that was previously in `run()`. Called by
+    /// `hiveNodeBody(input:context:)` so that Hive wraps the agent's logic
+    /// as an execution substrate without changing the internal behavior.
+    private func _executeDirect(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
@@ -162,7 +171,7 @@ public actor ReActAgent: AgentRuntime {
             let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
             _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
-            // Reset cancellation state and create result builder
+            isCancelled = false
             let resultBuilder = AgentResult.Builder()
             _ = resultBuilder.start()
 
@@ -175,6 +184,17 @@ public actor ReActAgent: AgentRuntime {
             // Create user message for this turn
             let userMessage = MemoryMessage.user(input)
 
+            // Store in memory (for AI context) if available
+            if let mem = activeMemory {
+                // Seed session history only once for a fresh memory instance.
+                if session != nil, await mem.isEmpty, !sessionHistory.isEmpty {
+                    for msg in sessionHistory {
+                        await mem.add(msg)
+                    }
+                }
+                await mem.add(userMessage)
+            }
+
             // Execute the ReAct loop with session context
             let output = try await executeReActLoop(
                 input: input,
@@ -186,18 +206,19 @@ public actor ReActAgent: AgentRuntime {
 
             _ = resultBuilder.setOutput(output)
 
-            // Run output guardrails BEFORE storing in session
+            // Run output guardrails BEFORE storing in memory/session
             _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
 
-            // Store turn in session for conversation persistence
-            // Session is the source of truth for conversation history
+            // Store turn in session (user + assistant messages)
             if let session {
                 let assistantMessage = MemoryMessage.assistant(output)
                 try await session.addItems([userMessage, assistantMessage])
             }
 
-            // Note: Memory provides additional context (RAG, summaries) - NOT for conversation storage
-            // This avoids duplication: session stores conversation, memory provides context
+            // Only store output in memory if validation passed
+            if let mem = activeMemory {
+                await mem.add(.assistant(output))
+            }
 
             let result = resultBuilder.build()
             await tracing.traceComplete(result: result)
@@ -247,9 +268,9 @@ public actor ReActAgent: AgentRuntime {
 
     /// Cancels any ongoing execution.
     public func cancel() async {
-        // Simply cancel the current task - the task cancellation handler
-        // will perform any necessary cleanup
+        isCancelled = true
         currentTask?.cancel()
+        currentTask = nil
     }
 
     // MARK: Private
@@ -259,6 +280,7 @@ public actor ReActAgent: AgentRuntime {
     // MARK: - Internal State
 
     private var currentTask: Task<Void, Never>?
+    private var isCancelled: Bool = false
     private let toolRegistry: ToolRegistry
 
     // MARK: - ReAct Loop Implementation
@@ -285,8 +307,11 @@ public actor ReActAgent: AgentRuntime {
         }
 
         while iteration < configuration.maxIterations {
-            // Check for cancellation using standard Swift concurrency pattern
+            // Check for cancellation
             try Task.checkCancellation()
+            if isCancelled {
+                throw AgentError.cancelled
+            }
 
             // Check timeout
             let elapsed = ContinuousClock.now - startTime
@@ -951,5 +976,21 @@ public extension ReActAgent {
         private var outputGuardrails: [any OutputGuardrail]
         private var guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
         private var handoffs: [AnyHandoffConfiguration] = []
+    }
+}
+
+// MARK: - HiveAdaptable
+
+extension ReActAgent: HiveAdaptable {
+    /// Wraps the agent's internal execution for Hive node execution.
+    ///
+    /// Delegates to `_executeDirect()` and converts the result into the
+    /// `(output, accumulator)` tuple expected by the Hive single-node graph.
+    public func hiveNodeBody(
+        input: String,
+        context: AgentHiveContext
+    ) async throws -> (output: String, accumulator: AgentResultAccumulator) {
+        let result = try await _executeDirect(input, session: context.session, hooks: context.hooks)
+        return (result.output, AgentResultAccumulator(from: result))
     }
 }

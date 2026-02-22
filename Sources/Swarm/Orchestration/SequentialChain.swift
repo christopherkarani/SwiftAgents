@@ -225,6 +225,7 @@ public actor SequentialChain: AgentRuntime {
     /// - Throws: `OrchestrationError.noAgentsConfigured` if no agents are configured,
     ///           or `AgentError.cancelled` if execution was cancelled.
     public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+        let sourceName = handoffDisplayName(for: self)
         guard !chainedAgents.isEmpty else {
             throw AgentError.invalidInput(reason: "No agents configured in sequential chain")
         }
@@ -245,53 +246,22 @@ public actor SequentialChain: AgentRuntime {
             }
 
             // Record execution in context
-            let agentName = String(describing: type(of: agent))
+            let agentName = handoffDisplayName(for: agent)
             await context?.recordExecution(agentName: agentName)
 
             // Apply handoff configuration if available
             var effectiveInput = currentInput
             let handoffContext = context ?? AgentContext(input: input)
 
-            if let config = findHandoffConfiguration(for: agent) {
-                // Check isEnabled callback
-                if let isEnabled = config.isEnabled {
-                    let enabled = await isEnabled(handoffContext, agent)
-                    if !enabled {
-                        throw OrchestrationError.handoffSkipped(
-                            from: "SequentialChain",
-                            to: agentName,
-                            reason: "Handoff disabled by isEnabled callback"
-                        )
-                    }
-                }
-
-                // Create HandoffInputData for callbacks
-                var inputData = HandoffInputData(
-                    sourceAgentName: "SequentialChain",
-                    targetAgentName: agentName,
-                    input: currentInput,
-                    context: [:],
-                    metadata: [:]
-                )
-
-                // Apply inputFilter if present
-                if let inputFilter = config.inputFilter {
-                    inputData = inputFilter(inputData)
-                    effectiveInput = inputData.input
-                }
-
-                // Call onHandoff callback if present
-                if let onHandoff = config.onHandoff {
-                    do {
-                        try await onHandoff(handoffContext, inputData)
-                    } catch {
-                        // Log callback errors but don't fail the handoff
-                        Log.orchestration.warning(
-                            "onHandoff callback failed for SequentialChain -> \(agentName): \(error.localizedDescription)"
-                        )
-                    }
-                }
-            }
+            let applied = try await applyResolvedHandoffConfiguration(
+                sourceAgentName: sourceName,
+                to: agent,
+                targetName: agentName,
+                input: currentInput,
+                handoffs: _handoffs,
+                context: handoffContext
+            )
+            effectiveInput = applied.effectiveInput
 
             // Notify hooks of handoff to next agent
             if let context {
@@ -299,7 +269,11 @@ public actor SequentialChain: AgentRuntime {
             }
 
             // Run the agent with potentially modified input
-            let agentResult = try await agent.run(effectiveInput, session: session, hooks: hooks)
+                let rawAgentResult = try await agent.run(effectiveInput, session: session, hooks: hooks)
+                let agentResult = applyHandoffMetadata(
+                    applied.metadata,
+                    to: rawAgentResult
+                )
 
             // Accumulate tool calls and iterations
             for toolCall in agentResult.toolCalls {
@@ -344,7 +318,7 @@ public actor SequentialChain: AgentRuntime {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
 
-            let chainName = actor.configuration.name.isEmpty ? "SequentialChain" : actor.configuration.name
+            let chainName = handoffDisplayName(for: actor)
 
             func forwardStream(
                 toAgentName: String,
@@ -398,54 +372,32 @@ public actor SequentialChain: AgentRuntime {
                         throw AgentError.cancelled
                     }
 
-                    let agentName = String(describing: type(of: agent))
+                    let agentName = handoffDisplayName(for: agent)
                     await sharedContext.recordExecution(agentName: agentName)
 
                     var effectiveInput = currentInput
                     let handoffContext = sharedContext
 
-                    if let config = await actor.findHandoffConfiguration(for: agent) {
-                        if let isEnabled = config.isEnabled {
-                            let enabled = await isEnabled(handoffContext, agent)
-                            if !enabled {
-                                throw OrchestrationError.handoffSkipped(
-                                    from: "SequentialChain",
-                                    to: agentName,
-                                    reason: "Handoff disabled by isEnabled callback"
-                                )
-                            }
-                        }
-
-                        var inputData = HandoffInputData(
-                            sourceAgentName: "SequentialChain",
-                            targetAgentName: agentName,
-                            input: currentInput,
-                            context: [:],
-                            metadata: [:]
-                        )
-
-                        if let inputFilter = config.inputFilter {
-                            inputData = inputFilter(inputData)
-                            effectiveInput = inputData.input
-                        }
-
-                        if let onHandoff = config.onHandoff {
-                            do {
-                                try await onHandoff(handoffContext, inputData)
-                            } catch {
-                                Log.orchestration.warning(
-                                    "onHandoff callback failed for SequentialChain -> \(agentName): \(error.localizedDescription)"
-                                )
-                            }
-                        }
-                    }
+                    let applied = try await applyResolvedHandoffConfiguration(
+                        sourceAgentName: chainName,
+                        to: agent,
+                        targetName: agentName,
+                        input: currentInput,
+                        handoffs: actor._handoffs,
+                        context: handoffContext
+                    )
+                    effectiveInput = applied.effectiveInput
 
                     await hooks?.onHandoff(context: sharedContext, fromAgent: actor, toAgent: agent)
 
-                    let agentResult = try await forwardStream(
+                    let rawAgentResult = try await forwardStream(
                         toAgentName: agentName,
                         agent: agent,
                         input: effectiveInput
+                    )
+                    let agentResult = applyHandoffMetadata(
+                        applied.metadata,
+                        to: rawAgentResult
                     )
 
                     for toolCall in agentResult.toolCalls {
@@ -525,24 +477,6 @@ public actor SequentialChain: AgentRuntime {
     private let _handoffs: [AnyHandoffConfiguration]
 
     // MARK: - Private Methods
-
-    /// Finds a handoff configuration for the given target agent.
-    ///
-    /// - Parameter targetAgent: The agent to find configuration for.
-    /// - Returns: The matching handoff configuration, or nil if none found.
-    private func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
-        _handoffs.first { config in
-            areSameRuntime(config.targetAgent, targetAgent)
-        }
-    }
-
-    private func areSameRuntime(_ lhs: any AgentRuntime, _ rhs: any AgentRuntime) -> Bool {
-        // Note: ObjectIdentifier(lhs as AnyObject) is unreliable for struct-based runtimes because
-        // casting a struct existential to AnyObject creates a new box each time, yielding
-        // different identifiers for the same value. Use name+type matching instead.
-        return lhs.name == rhs.name
-            && String(describing: type(of: lhs)) == String(describing: type(of: rhs))
-    }
 
     private func setContext(_ context: AgentContext?) {
         self.context = context

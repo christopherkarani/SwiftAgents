@@ -4,9 +4,7 @@
 // Declarative DSL for multi-agent workflow orchestration.
 
 import Foundation
-#if canImport(HiveCore)
 import HiveCore
-#endif
 
 // MARK: - OrchestrationStepContext
 
@@ -30,6 +28,9 @@ public struct OrchestrationStepContext: Sendable {
     /// Handoff configurations applied by the orchestrator.
     public let handoffs: [AnyHandoffConfiguration]
 
+    /// Shared typed channel bag for cross-step data passing.
+    public let channels: ChannelBagStorage
+
     /// Creates a new orchestration step context.
     public init(
         agentContext: AgentContext,
@@ -37,7 +38,8 @@ public struct OrchestrationStepContext: Sendable {
         hooks: (any RunHooks)?,
         orchestrator: (any AgentRuntime)?,
         orchestratorName: String,
-        handoffs: [AnyHandoffConfiguration]
+        handoffs: [AnyHandoffConfiguration],
+        channels: ChannelBagStorage = ChannelBagStorage()
     ) {
         self.agentContext = agentContext
         self.session = session
@@ -45,24 +47,34 @@ public struct OrchestrationStepContext: Sendable {
         self.orchestrator = orchestrator
         self.orchestratorName = orchestratorName
         self.handoffs = handoffs
+        self.channels = channels
     }
 }
 
 public extension OrchestrationStepContext {
+    /// Reads a typed orchestration channel value.
+    func get<Value: Codable & Sendable>(_ channel: OrchestrationChannel<Value>) async throws -> Value {
+        try await channels.get(channel)
+    }
+
+    /// Writes a typed orchestration channel value.
+    func set<Value: Codable & Sendable>(_ channel: OrchestrationChannel<Value>, _ value: Value) async throws {
+        try await channels.set(channel, value)
+    }
+
+    /// Returns a snapshot of the shared channel bag.
+    func channelSnapshot() async -> [String: Data] {
+        await channels.snapshot()
+    }
+
     /// Returns a stable display name for an agent.
     func agentName(for agent: any AgentRuntime) -> String {
-        let configured = agent.configuration.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !configured.isEmpty {
-            return configured
-        }
-        return String(describing: type(of: agent))
+        handoffDisplayName(for: agent)
     }
 
     /// Finds a handoff configuration for the given target agent.
     func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
-        handoffs.first { config in
-            areSameRuntime(config.targetAgent, targetAgent)
-        }
+        resolveHandoffConfiguration(for: targetAgent, in: handoffs)
     }
 
     private func areSameRuntime(_ lhs: any AgentRuntime, _ rhs: any AgentRuntime) -> Bool {
@@ -82,46 +94,31 @@ public extension OrchestrationStepContext {
         input: String,
         targetName: String? = nil
     ) async throws -> String {
-        let resolvedName = targetName ?? agentName(for: targetAgent)
-
-        guard let config = findHandoffConfiguration(for: targetAgent) else {
-            return input
-        }
-
-        if let isEnabled = config.isEnabled {
-            let enabled = await isEnabled(agentContext, targetAgent)
-            if !enabled {
-                throw OrchestrationError.handoffSkipped(
-                    from: orchestratorName,
-                    to: resolvedName,
-                    reason: "Handoff disabled by isEnabled callback"
-                )
-            }
-        }
-
-        var inputData = HandoffInputData(
-            sourceAgentName: orchestratorName,
-            targetAgentName: resolvedName,
+        let applied = try await applyHandoffConfigurationWithMetadata(
+            for: targetAgent,
             input: input,
-            context: await agentContext.snapshot,
-            metadata: [:]
+            targetName: targetName
         )
 
-        if let inputFilter = config.inputFilter {
-            inputData = inputFilter(inputData)
-        }
+        return applied.effectiveInput
+    }
 
-        if let onHandoff = config.onHandoff {
-            do {
-                try await onHandoff(agentContext, inputData)
-            } catch {
-                Log.orchestration.warning(
-                    "onHandoff callback failed for \(orchestratorName) -> \(resolvedName): \(error.localizedDescription)"
-                )
-            }
-        }
+    /// Applies handoff configuration for the target agent and returns generated metadata.
+    func applyHandoffConfigurationWithMetadata(
+        for targetAgent: any AgentRuntime,
+        input: String,
+        targetName: String? = nil
+    ) async throws -> AppliedHandoffConfiguration {
+        let applied = try await applyResolvedHandoffConfiguration(
+            sourceAgentName: orchestratorName,
+            to: targetAgent,
+            targetName: targetName ?? agentName(for: targetAgent),
+            input: input,
+            handoffs: handoffs,
+            context: agentContext
+        )
 
-        return inputData.input
+        return applied
     }
 }
 
@@ -159,7 +156,8 @@ public extension OrchestrationStep {
             hooks: hooks,
             orchestrator: nil,
             orchestratorName: "Orchestration",
-            handoffs: []
+            handoffs: [],
+            channels: ChannelBagStorage()
         )
         return try await execute(input, context: context)
     }
@@ -369,11 +367,12 @@ public struct AgentStep: OrchestrationStep {
         let agentName = name ?? context.agentName(for: agent)
         await context.agentContext.recordExecution(agentName: agentName)
 
-        let effectiveInput = try await context.applyHandoffConfiguration(
+        let appliedHandoff = try await context.applyHandoffConfigurationWithMetadata(
             for: agent,
             input: input,
             targetName: agentName
         )
+        let effectiveInput = appliedHandoff.effectiveInput
 
         if let orchestrator = context.orchestrator {
             await context.hooks?.onHandoff(
@@ -388,9 +387,10 @@ public struct AgentStep: OrchestrationStep {
             session: context.session,
             hooks: context.hooks
         )
+        let mergedResult = applyHandoffMetadata(appliedHandoff.metadata, to: result)
 
-        await context.agentContext.setPreviousOutput(result)
-        return result
+        await context.agentContext.setPreviousOutput(mergedResult)
+        return mergedResult
     }
 }
 
@@ -629,11 +629,12 @@ public struct Parallel: OrchestrationStep {
                     do {
                         await context.agentContext.recordExecution(agentName: name)
 
-                        let effectiveInput = try await context.applyHandoffConfiguration(
+                        let appliedHandoff = try await context.applyHandoffConfigurationWithMetadata(
                             for: agent,
                             input: input,
                             targetName: name
                         )
+                        let effectiveInput = appliedHandoff.effectiveInput
 
                         if let orchestrator = context.orchestrator {
                             await context.hooks?.onHandoff(
@@ -648,7 +649,8 @@ public struct Parallel: OrchestrationStep {
                             session: context.session,
                             hooks: context.hooks
                         )
-                        return (index, name, .success(result))
+                        let mergedResult = applyHandoffMetadata(appliedHandoff.metadata, to: result)
+                        return (index, name, .success(mergedResult))
                     } catch {
                         return (index, name, .failure(error))
                     }
@@ -1010,6 +1012,18 @@ private actor OrchestrationRunRegistry {
     }
 }
 
+/// Interruptible orchestration execution outcome.
+///
+/// `Orchestration.runInterruptible(...)` returns this move-only value so callers can
+/// directly handle human-approval suspension and resume with `ResumeToken`.
+public enum OrchestrationRunOutcome: ~Copyable, Sendable {
+    /// Orchestration completed normally.
+    case completed(AgentResult)
+
+    /// Orchestration suspended and can be resumed via the provided token.
+    case interrupted(ResumeToken)
+}
+
 /// A complete orchestrated workflow composed of multiple steps.
 ///
 /// `Orchestration` is the top-level container for declaratively defining
@@ -1046,11 +1060,6 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
 
     /// Handoff configurations applied to sub-agents.
     public let handoffs: [AnyHandoffConfiguration]
-
-    /// Checkpoint cadence for Hive orchestration runs.
-    public let checkpointPolicy: WorkflowCheckpointPolicy
-
-    private let hiveCheckpointStore: AnyHiveCheckpointStore<OrchestrationHiveEngine.Schema>?
     private let runRegistry = OrchestrationRunRegistry()
 
     // MARK: - Agent Protocol Properties
@@ -1070,21 +1079,15 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
     /// Creates a new orchestration.
     /// - Parameters:
     ///   - configuration: Agent configuration for this orchestration. Default: `.default`
-    ///   - checkpointPolicy: Checkpoint policy for Hive orchestration execution. Default: `.onInterrupt`
     ///   - handoffs: Handoff configurations for sub-agents. Default: []
     ///   - content: A builder closure that produces the orchestration steps.
     public init(
         configuration: AgentConfiguration = .default,
-        checkpointPolicy: WorkflowCheckpointPolicy = .onInterrupt,
         handoffs: [AnyHandoffConfiguration] = [],
         @OrchestrationBuilder _ content: () -> OrchestrationStep
     ) {
         root = content()
         self.configuration = configuration
-        self.checkpointPolicy = checkpointPolicy
-        hiveCheckpointStore = checkpointPolicy == .disabled
-            ? nil
-            : OrchestrationHiveEngine.makeDefaultCheckpointStore()
         self.handoffs = handoffs
     }
 
@@ -1092,15 +1095,10 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
     public init(
         root: OrchestrationStep,
         configuration: AgentConfiguration = .default,
-        checkpointPolicy: WorkflowCheckpointPolicy = .onInterrupt,
         handoffs: [AnyHandoffConfiguration] = []
     ) {
         self.root = root
         self.configuration = configuration
-        self.checkpointPolicy = checkpointPolicy
-        hiveCheckpointStore = checkpointPolicy == .disabled
-            ? nil
-            : OrchestrationHiveEngine.makeDefaultCheckpointStore()
         self.handoffs = handoffs
     }
 
@@ -1111,76 +1109,36 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
         session: (any Session)? = nil,
         hooks: (any RunHooks)? = nil
     ) async throws -> AgentResult {
-        let outcome = try await runWithOutcome(input, session: session, hooks: hooks)
-        switch outcome {
-        case .completed(let result):
-            return result
-        case .interrupted(let handle):
-            throw OrchestrationError.workflowInterrupted(reason: interruptionReason(for: handle))
-        }
+        try await run(
+            input,
+            on: HiveThreadID(UUID().uuidString),
+            session: session,
+            hooks: hooks
+        )
     }
 
-    /// Executes the workflow and returns either completion or interruption state.
-    public func runWithOutcome(
+    /// Executes this orchestration on a caller-specified Hive thread.
+    ///
+    /// Use a stable `threadID` to keep an inspectable, resumable execution lineage.
+    public func run(
         _ input: String,
+        on threadID: HiveThreadID,
         session: (any Session)? = nil,
         hooks: (any RunHooks)? = nil
-    ) async throws -> WorkflowExecutionOutcome {
-        let workflowID = UUID().uuidString
-        return try await executeWithTaskRegistration {
+    ) async throws -> AgentResult {
+        let runID = UUID()
+        let task = Task {
             try await executeSteps(
                 steps: rootSteps,
                 input: input,
-                workflowID: workflowID,
-                resumeRequest: nil,
+                threadID: threadID,
                 session: session,
                 hooks: hooks,
                 onIterationStart: nil,
-                onIterationEnd: nil
+                onIterationEnd: nil,
+                onHiveEvent: nil
             )
         }
-    }
-
-    /// Resumes a previously interrupted workflow from its resume handle.
-    public func resume(
-        _ handle: WorkflowResumeHandle,
-        payload: String? = nil,
-        session: (any Session)? = nil,
-        hooks: (any RunHooks)? = nil
-    ) async throws -> WorkflowExecutionOutcome {
-        guard !handle.threadID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AgentError.invalidInput(reason: "Workflow resume handle is missing threadID.")
-        }
-        guard !handle.interruptID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AgentError.invalidInput(reason: "Workflow resume handle is missing interruptID.")
-        }
-
-        let resumePayload = payload ?? handle.suggestedResumePayload ?? "approved"
-        let resumeRequest = OrchestrationHiveEngine.ResumeRequest(
-            workflowID: handle.threadID,
-            interruptID: handle.interruptID,
-            payload: resumePayload
-        )
-
-        return try await executeWithTaskRegistration {
-            try await executeSteps(
-                steps: rootSteps,
-                input: handle.checkpoint.intermediateOutput,
-                workflowID: handle.threadID,
-                resumeRequest: resumeRequest,
-                session: session,
-                hooks: hooks,
-                onIterationStart: nil,
-                onIterationEnd: nil
-            )
-        }
-    }
-
-    private func executeWithTaskRegistration(
-        _ operation: @escaping @Sendable () async throws -> WorkflowExecutionOutcome
-    ) async throws -> WorkflowExecutionOutcome {
-        let runID = UUID()
-        let task = Task(operation: operation)
 
         await runRegistry.register(id: runID) {
             task.cancel()
@@ -1189,15 +1147,56 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
         do {
             let result = try await task.value
             await runRegistry.unregister(id: runID)
-            return finalizeOutcome(result)
+            return applyGroupMetadataIfNeeded(to: result)
         } catch {
             await runRegistry.unregister(id: runID)
             throw error
         }
     }
 
+    /// Executes this orchestration and returns either a completed result or a resume token.
+    ///
+    /// Unlike `run`, this preserves interruption semantics for human approval workflows.
+    public func runInterruptible(
+        _ input: String,
+        on threadID: HiveThreadID = HiveThreadID(UUID().uuidString),
+        session: (any Session)? = nil,
+        hooks: (any RunHooks)? = nil
+    ) async throws -> OrchestrationRunOutcome {
+        let outcome = try await executeStepsInterruptible(
+            steps: rootSteps,
+            input: input,
+            threadID: threadID,
+            session: session,
+            hooks: hooks,
+            onIterationStart: nil,
+            onIterationEnd: nil
+        )
+        switch consume outcome {
+        case .completed(let result):
+            return .completed(applyGroupMetadataIfNeeded(to: result))
+        case .interrupted(let token):
+            return .interrupted(token)
+        }
+    }
+
     public func stream(
         _ input: String,
+        session: (any Session)? = nil,
+        hooks: (any RunHooks)? = nil
+    ) -> AsyncThrowingStream<AgentEvent, Error> {
+        stream(
+            input,
+            on: HiveThreadID(UUID().uuidString),
+            session: session,
+            hooks: hooks
+        )
+    }
+
+    /// Streams orchestration execution on a caller-specified Hive thread.
+    public func stream(
+        _ input: String,
+        on threadID: HiveThreadID,
         session: (any Session)? = nil,
         hooks: (any RunHooks)? = nil
     ) -> AsyncThrowingStream<AgentEvent, Error> {
@@ -1208,8 +1207,7 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
                 try await executeSteps(
                     steps: rootSteps,
                     input: input,
-                    workflowID: UUID().uuidString,
-                    resumeRequest: nil,
+                    threadID: threadID,
                     session: session,
                     hooks: hooks,
                     onIterationStart: { iteration in
@@ -1217,6 +1215,11 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
                     },
                     onIterationEnd: { iteration in
                         continuation.yield(.iterationCompleted(number: iteration))
+                    },
+                    onHiveEvent: { event in
+                        if let mapped = Self.mapHiveEvent(event) {
+                            continuation.yield(mapped)
+                        }
                     }
                 )
             }
@@ -1226,25 +1229,14 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
             }
 
             do {
-                let outcome = try await task.value
+                let result = try await task.value
                 await runRegistry.unregister(id: runID)
-                switch finalizeOutcome(outcome) {
-                case .completed(let result):
-                    continuation.yield(.completed(result: result))
-                    continuation.finish()
-                case .interrupted(let handle):
-                    let reason = interruptionReason(for: handle)
-                    let streamError = AgentError.internalError(reason: reason)
-                    continuation.yield(.failed(error: streamError))
-                    continuation.finish(throwing: OrchestrationError.workflowInterrupted(reason: reason))
-                }
+                let finalized = applyGroupMetadataIfNeeded(to: result)
+                continuation.yield(.completed(result: finalized))
+                continuation.finish()
             } catch let error as AgentError {
                 await runRegistry.unregister(id: runID)
                 continuation.yield(.failed(error: error))
-                continuation.finish(throwing: error)
-            } catch let error as OrchestrationError {
-                await runRegistry.unregister(id: runID)
-                continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
                 continuation.finish(throwing: error)
             } catch {
                 await runRegistry.unregister(id: runID)
@@ -1267,20 +1259,21 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
     private func executeSteps(
         steps: [OrchestrationStep],
         input: String,
-        workflowID: String,
-        resumeRequest: OrchestrationHiveEngine.ResumeRequest?,
+        threadID: HiveThreadID,
         session: (any Session)?,
         hooks: (any RunHooks)?,
         onIterationStart: (@Sendable (Int) -> Void)?,
-        onIterationEnd: (@Sendable (Int) -> Void)?
-    ) async throws -> WorkflowExecutionOutcome {
+        onIterationEnd: (@Sendable (Int) -> Void)?,
+        onHiveEvent: (@Sendable (HiveEvent) -> Void)?
+    ) async throws -> AgentResult {
         guard !steps.isEmpty else {
-            return .completed(AgentResult(output: input))
+            return AgentResult(output: input)
         }
 
         return try await OrchestrationHiveEngine.execute(
             steps: steps,
             input: input,
+            threadID: threadID,
             session: session,
             hooks: hooks,
             orchestrator: self,
@@ -1288,35 +1281,67 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
             handoffs: handoffs,
             inferencePolicy: configuration.inferencePolicy,
             hiveRunOptionsOverride: configuration.hiveRunOptionsOverride,
-            checkpointPolicy: OrchestrationHiveEngine.makeHiveCheckpointPolicy(checkpointPolicy),
-            checkpointStore: hiveCheckpointStore,
-            workflowID: workflowID,
-            resumeRequest: resumeRequest,
+            onIterationStart: onIterationStart,
+            onIterationEnd: onIterationEnd,
+            onHiveEvent: onHiveEvent
+        )
+    }
+
+    private func executeStepsInterruptible(
+        steps: [OrchestrationStep],
+        input: String,
+        threadID: HiveThreadID,
+        session: (any Session)?,
+        hooks: (any RunHooks)?,
+        onIterationStart: (@Sendable (Int) -> Void)?,
+        onIterationEnd: (@Sendable (Int) -> Void)?
+    ) async throws -> OrchestrationRunOutcome {
+        guard !steps.isEmpty else {
+            return .completed(AgentResult(output: input))
+        }
+
+        return try await OrchestrationHiveEngine.executeInterruptible(
+            steps: steps,
+            input: input,
+            threadID: threadID,
+            session: session,
+            hooks: hooks,
+            orchestrator: self,
+            orchestratorName: orchestratorName,
+            handoffs: handoffs,
+            inferencePolicy: configuration.inferencePolicy,
+            hiveRunOptionsOverride: configuration.hiveRunOptionsOverride,
             onIterationStart: onIterationStart,
             onIterationEnd: onIterationEnd
         )
     }
 
-    private func finalizeOutcome(_ outcome: WorkflowExecutionOutcome) -> WorkflowExecutionOutcome {
-        switch outcome {
-        case .completed(let result):
-            return .completed(applyGroupMetadataIfNeeded(to: result))
-        case .interrupted:
-            return outcome
+    private static func mapHiveEvent(_ event: HiveEvent) -> AgentEvent? {
+        switch event.kind {
+        case .modelInvocationStarted(let model):
+            return .llmStarted(model: model, promptTokens: nil)
+        case .modelToken(let token):
+            return .outputToken(token: token)
+        case .modelInvocationFinished:
+            return .llmCompleted(model: nil, promptTokens: nil, completionTokens: nil, duration: 0)
+        case .toolInvocationStarted(let name):
+            return .toolCallStarted(call: ToolCall(toolName: name, arguments: [:]))
+        case .toolInvocationFinished(let name, let success):
+            let call = ToolCall(toolName: name, arguments: [:])
+            if success {
+                let result = ToolResult(callId: call.id, isSuccess: true, output: .null, duration: .zero)
+                return .toolCallCompleted(call: call, result: result)
+            }
+            return .toolCallFailed(
+                call: call,
+                error: AgentError.toolExecutionFailed(
+                    toolName: name,
+                    underlyingError: "Tool invocation failed"
+                )
+            )
+        default:
+            return nil
         }
-    }
-
-    private func interruptionReason(for handle: WorkflowResumeHandle) -> String {
-        let prefix = "human-approval-required:"
-        if handle.interruptPayload.hasPrefix(prefix) {
-            let prompt = String(handle.interruptPayload.dropFirst(prefix.count))
-            return WorkflowInterruptReason.humanApprovalRequired(prompt: prompt).message
-        }
-        let trimmed = handle.interruptPayload.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            return trimmed
-        }
-        return handle.interruptReason.message
     }
 
     private func applyGroupMetadataIfNeeded(to result: AgentResult) -> AgentResult {

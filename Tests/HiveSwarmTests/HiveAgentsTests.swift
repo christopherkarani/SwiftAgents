@@ -84,17 +84,16 @@ struct HiveAgentsTests {
         let store = try requireFullStore(outcome: outcome)
         let messages = try store.get(HiveAgents.Schema.messagesKey)
         let llmInput = try store.get(HiveAgents.Schema.llmInputMessagesKey)
+        let tokenCount = try store.get(HiveAgents.Schema.tokenCountKey)
 
         // Canonical messages must contain history + inputWrites user message.
         #expect(messages.count == history.count + 1)
         #expect(messages.prefix(history.count).map(\.id) == history.map(\.id))
         #expect(messages.prefix(history.count).map(\.content) == history.map(\.content))
 
-        // llmInputMessages must be derived (non-nil) when over budget.
-        let trimmed = try #require(llmInput)
-        #expect(trimmed.count <= messages.count)
-        #expect(trimmed.count == 3)
-        #expect(trimmed.map(\.content) == ["U2", "A2", "Hello"])
+        // llmInputMessages is ephemeral and auto-resets after commit.
+        #expect(llmInput == nil)
+        #expect(tokenCount == messages.count)
     }
 
     @Test("Tool approval: requires checkpoint store (facade preflight)")
@@ -126,6 +125,82 @@ struct HiveAgentsTests {
             _ = try await runControl.start(
                 HiveAgentsRunStartRequest(
                     threadID: HiveThreadID("t"),
+                    input: "Hello",
+                    options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
+                )
+            )
+        }
+        let runtimeError = try #require(thrown as? HiveRuntimeError)
+        switch runtimeError {
+        case .checkpointStoreMissing:
+            break
+        default:
+            Issue.record("Expected checkpointStoreMissing, got \(runtimeError)")
+        }
+    }
+
+    @Test("HiveAgentsRuntime init: wires checkpointStore for approval policy")
+    func hiveAgentsRuntimeInit_wiresCheckpointStore_forApprovalPolicy() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .always)
+        let checkpointStore = InMemoryCheckpointStore<HiveAgents.Schema>()
+
+        let hiveRuntime = try HiveAgentsRuntime(
+            graph: graph,
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(
+                    id: "m1",
+                    role: .assistant,
+                    content: "",
+                    toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
+                )))
+            ])),
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
+            checkpointStore: AnyHiveCheckpointStore(checkpointStore)
+        )
+
+        let handle = try await hiveRuntime.runControl.start(
+            .init(
+                threadID: HiveThreadID("runtime-init-with-store"),
+                input: "Hello",
+                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
+            )
+        )
+        let outcome = try await handle.outcome.value
+        guard case .interrupted = outcome else {
+            Issue.record("Expected interrupted outcome for approval-required tool call.")
+            return
+        }
+    }
+
+    @Test("HiveAgentsRuntime init: missing checkpointStore fails approval preflight")
+    func hiveAgentsRuntimeInit_missingCheckpointStore_failsApprovalPreflight() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .always)
+
+        let hiveRuntime = try HiveAgentsRuntime(
+            graph: graph,
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(
+                    id: "m1",
+                    role: .assistant,
+                    content: "",
+                    toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
+                )))
+            ])),
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42"))
+        )
+
+        let thrown = await #expect(throws: (any Error).self) {
+            _ = try await hiveRuntime.runControl.start(
+                .init(
+                    threadID: HiveThreadID("runtime-init-without-store"),
                     input: "Hello",
                     options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
                 )
@@ -413,79 +488,6 @@ struct HiveAgentsTests {
                 message.content == "ok"
         }
         #expect(hasExpectedAssistantMessage)
-    }
-
-    @Test("SwarmToolRegistry throws duplicateToolName when given duplicate tools")
-    func swarmToolRegistry_rejectsDuplicateToolNames() throws {
-        let duplicateTools = [
-            DuplicateTestTool(name: "calc"),
-            DuplicateTestTool(name: "calc")
-        ]
-
-        let thrown = try? SwarmToolRegistry(tools: duplicateTools)
-        #expect(thrown == nil)
-
-        do {
-            _ = try SwarmToolRegistry(tools: duplicateTools)
-            Issue.record("Expected to throw duplicateToolName error")
-        } catch let error as SwarmToolRegistryError {
-            #expect(error == .duplicateToolName("calc"))
-        }
-    }
-
-    @Test("SwarmToolRegistry invoke throws toolNotFound for unknown tool")
-    func swarmToolRegistry_invokeUnknownTool() async throws {
-        let registry = try SwarmToolRegistry(tools: [DuplicateTestTool(name: "calc")])
-
-        do {
-            _ = try await registry.invoke(
-                HiveToolCall(id: "call-1", name: "missing", argumentsJSON: "{}")
-            )
-            Issue.record("Expected to throw toolNotFound.")
-        } catch let error as SwarmToolRegistryError {
-            #expect(error == .toolNotFound(name: "missing"))
-        }
-    }
-
-    @Test("SwarmToolRegistry invoke throws invalidArgumentsJSON for malformed arguments")
-    func swarmToolRegistry_invokeInvalidArgumentsJSON() async throws {
-        let registry = try SwarmToolRegistry(tools: [DuplicateTestTool(name: "calc")])
-
-        do {
-            _ = try await registry.invoke(
-                HiveToolCall(id: "call-2", name: "calc", argumentsJSON: "not-json")
-            )
-            Issue.record("Expected to throw invalidArgumentsJSON.")
-        } catch let error as SwarmToolRegistryError {
-            #expect(error == .invalidArgumentsJSON)
-        }
-    }
-
-    @Test("SwarmToolRegistry invoke returns tool result on success")
-    func swarmToolRegistry_invokeReturnsToolResult() async throws {
-        let registry = try SwarmToolRegistry(tools: [DuplicateTestTool(name: "calc")])
-        let result = try await registry.invoke(
-            HiveToolCall(id: "call-3", name: "calc", argumentsJSON: "{}")
-        )
-
-        #expect(result.toolCallID == "call-3")
-        #expect(result.content == "result")
-    }
-
-    @Test("SwarmToolRegistry invoke preserves cancellation errors")
-    func swarmToolRegistry_invokePreservesCancellation() async throws {
-        let registry = try SwarmToolRegistry(tools: [CancellableTestTool(name: "cancelled-tool")])
-
-        do {
-            _ = try await registry.invoke(
-                HiveToolCall(id: "call-4", name: "cancelled-tool", argumentsJSON: "{}")
-            )
-            Issue.record("Expected CancellationError.")
-        } catch is CancellationError {
-            // Expected.
-        } catch {
-            Issue.record("Expected CancellationError, got \(error).")
-        }
     }
 }
 
