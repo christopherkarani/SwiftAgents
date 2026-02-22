@@ -187,6 +187,10 @@ The Swarm framework demonstrates strong architectural vision and solid Swift 6.2
 | `HybridMemory.pendingMessages` | `HybridMemory.swift:209` | **None** | Grows indefinitely if summarization fails |
 | `InMemoryBackend` storage dict | `InMemoryBackend.swift:26-113` | **None** | Multi-tenant accumulation |
 | `CircularBuffer._count` (total appended) | `CircularBuffer.swift:114` | Int.max | Integer overflow after 2^63 appends |
+| `TraceContext.spans` array | `TraceContext.swift:206` | **None** | ~40 MB after 100K spans in long-running agents |
+| `MetricsCollector.spanStartTimes` dict | `MetricsCollector.swift:423` | **None** | Orphaned UUIDs on incomplete traces never cleaned |
+| `MetricsCollector.toolDurations` dict keys | `MetricsCollector.swift:418` | **None** | Linear growth with distinct tool names |
+| `OSLogTracer.activeIntervals` dict | `OSLogTracer.swift:119` | **None** | OS signpost resource leak on incomplete spans |
 
 ### 5.3 Blocking / Inefficient Patterns
 
@@ -223,6 +227,9 @@ The Swarm framework demonstrates strong architectural vision and solid Swift 6.2
 - The `swift-log` framework does not support privacy annotations (unlike `os.Logger`), so all interpolated values are logged as-is.
 - **WebSearchTool API key exposure** (`Sources/Swarm/Tools/WebSearchTool.swift:109-114`): HTTP error responses logged verbatim — if the Tavily API echoes back the API key in error responses, it leaks into logs.
 - **@Tool macro error messages expose type info** (`Sources/SwarmMacros/ToolMacro.swift:481-490`): When a tool return type fails to encode, the error includes `String(describing: type(of: result))`, which could serialize objects containing PII.
+- **User input logged unredacted in traces** (`Sources/Swarm/Observability/TracingHelper.swift:62-66`): `input_preview` metadata exposes first 100 chars of user input — credentials, API keys, personal data may be logged.
+- **Tool results logged unredacted** (`Sources/Swarm/Observability/TracingHelper.swift:199-203`): `result_preview` metadata exposes first 200 chars of tool output — may contain database query results, PII, or sensitive responses.
+- **Error messages expose system details** (`Sources/Swarm/Observability/TracingHelper.swift:225-227`): Error type names and `localizedDescription` may reveal SQL queries, file paths, or internal architecture.
 
 ### 6.3 Denial of Service Vectors
 
@@ -394,6 +401,10 @@ Three of six dependencies are authored by the same maintainer. This is a single-
 | M21 | ArithmeticParser stack overflow (no depth limit) | ArithmeticParser.swift | 94-108 |
 | M22 | No tool execution timeout in ToolRegistry | Tool.swift | 625-695 |
 | M23 | WebSearchTool API key exposure in error messages | WebSearchTool.swift | 109-114 |
+| M24 | TraceContext.spans unbounded accumulation (OOM risk) | TraceContext.swift | 155, 206 |
+| M25 | User input/tool results logged unredacted in traces | TracingHelper.swift | 62-66, 199-203 |
+| M26 | CompositeTracer parallel mode has no error handling — tracing error crashes agent | AgentTracer.swift | 134-148 |
+| M27 | MetricsCollector.spanStartTimes never cleaned on incomplete traces | MetricsCollector.swift | 423 |
 
 ### Minor Issues
 
@@ -416,6 +427,10 @@ Three of six dependencies are authored by the same maintainer. This is a single-
 | m15 | String replace unbounded output growth | BuiltInTools.swift | 286-294 |
 | m16 | Tool type coercion silently converts string to int | Tool.swift | 282-380 |
 | m17 | Tool name collision possible in @Tool macro | ToolMacro.swift | 159-168 |
+| m18 | OSLogTracer.activeIntervals never cleaned on incomplete spans | OSLogTracer.swift | 119 |
+| m19 | BufferedTracer flush task not awaited on deinit — pending events lost | AgentTracer.swift | 269, 304 |
+| m20 | Log.bootstrap() fatal error on double call, no guard | Logger+Swarm.swift | 84, 90-92 |
+| m21 | ConsoleTracer allocates ISO8601DateFormatter per instance | ConsoleTracer.swift | 67-68 |
 
 ---
 
@@ -434,8 +449,10 @@ Three of six dependencies are authored by the same maintainer. This is a single-
 6. Auto-call `continuation.finish()` in `StreamHelper` if operation returns without finishing.
 7. Make `DAGWorkflow.init` throwing.
 8. Escape XML tags in summarizer prompts.
-9. Add bounds to `VectorMemory` and `HybridMemory.pendingMessages`.
+9. Add bounds to `VectorMemory`, `HybridMemory.pendingMessages`, and `TraceContext.spans`.
 10. Unify error mapping between `run()` and `stream()` in `HiveBackedAgent`.
+11. **Redact sensitive data in TracingHelper** — replace `input_preview`/`result_preview` with length-only metadata or implement configurable redaction.
+12. **Add error handling to CompositeTracer** parallel mode — catch per-tracer errors instead of crashing.
 
 ### Medium-Term (Next Release)
 
