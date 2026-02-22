@@ -238,8 +238,15 @@ The Swarm framework demonstrates strong architectural vision and solid Swift 6.2
 - **String replace unbounded growth** (`Sources/Swarm/Tools/BuiltInTools.swift:286-294`): Replacing `"a"` with a megabyte string across a large input produces exponential memory growth. No output size validation.
 - **No tool execution timeout** (`Sources/Swarm/Tools/Tool.swift:625-695`): `ToolRegistry.execute` has no built-in timeout mechanism. Malicious or buggy tools hang indefinitely.
 - **WebSearch query size unlimited** (`Sources/Swarm/Tools/WebSearchTool.swift:85-97`): Query parameter sent to Tavily API with no length validation.
+- **MCP request/response size unlimited** (`Sources/Swarm/MCP/HTTPMCPServer.swift:335-366`): No maximum size validation on HTTP payloads — large tool argument arrays or resource blobs can exhaust memory.
 
-### 6.4 Unsafe Assumptions
+### 6.4 MCP-Specific Security
+
+- **Resource URI not validated** (`Sources/Swarm/MCP/HTTPMCPServer.swift:209`): `readResource(uri:)` accepts arbitrary URI strings without scheme validation — `file://`, custom schemes, or path traversal patterns are not rejected.
+- **MCP resource cache key collision** (`Sources/Swarm/MCP/MCPClient.swift:650-656`): Resources from different servers with identical URIs silently overwrite each other — should use compound `"serverName:uri"` keys.
+- **MCP capabilities cache has no TTL** (`Sources/Swarm/MCP/HTTPMCPServer.swift:232-234`): If server capabilities change, clients never discover it. Only `close()` clears the cache.
+
+### 6.5 Unsafe Assumptions
 
 - **No input size limits** — Agent `run()` accepts arbitrary-length strings. No maximum input size validation anywhere in the pipeline.
 - **No tool argument size limits** — Tool execution accepts arbitrary `SendableValue` arguments without size validation.
@@ -405,6 +412,8 @@ Three of six dependencies are authored by the same maintainer. This is a single-
 | M25 | User input/tool results logged unredacted in traces | TracingHelper.swift | 62-66, 199-203 |
 | M26 | CompositeTracer parallel mode has no error handling — tracing error crashes agent | AgentTracer.swift | 134-148 |
 | M27 | MetricsCollector.spanStartTimes never cleaned on incomplete traces | MetricsCollector.swift | 423 |
+| M28 | MCP request/response size unlimited (memory exhaustion) | HTTPMCPServer.swift | 335-366 |
+| M29 | MCP resource URI not validated (scheme, path traversal) | HTTPMCPServer.swift | 209 |
 
 ### Minor Issues
 
@@ -431,6 +440,8 @@ Three of six dependencies are authored by the same maintainer. This is a single-
 | m19 | BufferedTracer flush task not awaited on deinit — pending events lost | AgentTracer.swift | 269, 304 |
 | m20 | Log.bootstrap() fatal error on double call, no guard | Logger+Swarm.swift | 84, 90-92 |
 | m21 | ConsoleTracer allocates ISO8601DateFormatter per instance | ConsoleTracer.swift | 67-68 |
+| m22 | MCP resource cache key collision across servers | MCPClient.swift | 650-656 |
+| m23 | MCP capabilities cache has no TTL | HTTPMCPServer.swift | 232-234 |
 
 ---
 
