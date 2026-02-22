@@ -162,6 +162,48 @@ struct MCPClientToolAggregationTests {
         #expect(toolNames.contains("insert"))
     }
 
+    @Test("getAllTools disambiguates duplicate tool names across servers")
+    func getAllToolsDisambiguatesDuplicateNamesAcrossServers() async throws {
+        let client = MCPClient()
+        let alpha = MockMCPServer(
+            name: "alpha",
+            tools: [
+                ToolSchema(name: "search", description: "Alpha search", parameters: []),
+                ToolSchema(name: "alpha_only", description: "Alpha-only tool", parameters: [])
+            ]
+        )
+        let beta = MockMCPServer(
+            name: "beta",
+            tools: [
+                ToolSchema(name: "search", description: "Beta search", parameters: []),
+                ToolSchema(name: "beta_only", description: "Beta-only tool", parameters: [])
+            ]
+        )
+
+        try await client.addServer(alpha)
+        try await client.addServer(beta)
+
+        let tools = try await client.getAllTools()
+        let names = Set(tools.map(\.name))
+
+        #expect(names.count == 4)
+        #expect(names.contains("alpha.search"))
+        #expect(names.contains("beta.search"))
+        #expect(names.contains("alpha_only"))
+        #expect(names.contains("beta_only"))
+
+        guard let alphaSearch = tools.first(where: { $0.name == "alpha.search" }) else {
+            Issue.record("Expected disambiguated tool alpha.search")
+            return
+        }
+
+        _ = try await alphaSearch.execute(arguments: [:])
+
+        let alphaHistory = await alpha.callToolHistory
+        #expect(alphaHistory.count == 1)
+        #expect(alphaHistory[0].name == "search")
+    }
+
     @Test("getAllTools returns empty for no servers")
     func getAllToolsEmptyServers() async throws {
         let client = MCPClient()
@@ -422,6 +464,27 @@ struct MCPClientResourceTests {
         // server2 must have been tried since it returned successfully
         let server2History = await server2.readResourceHistory
         #expect(server2History.contains("file:///found.txt"))
+    }
+
+    @Test("readResource preserves non-not-found errors instead of masking as not found")
+    func readResourcePreservesNonNotFoundErrors() async throws {
+        let client = MCPClient()
+        let notFoundServer = MockMCPServer(name: "not-found")
+        let failingServer = MockMCPServer(name: "failing")
+
+        try await client.addServer(notFoundServer)
+        try await client.addServer(failingServer)
+        await failingServer.setError(MCPError.internalError("Upstream timeout"))
+
+        do {
+            _ = try await client.readResource(uri: "file:///missing.txt")
+            Issue.record("Expected readResource to preserve non-not-found failure")
+        } catch let error as MCPError {
+            #expect(error.code == MCPError.internalErrorCode)
+            #expect(error.message.localizedCaseInsensitiveContains("upstream"))
+        } catch {
+            Issue.record("Expected MCPError, got \(error)")
+        }
     }
 }
 

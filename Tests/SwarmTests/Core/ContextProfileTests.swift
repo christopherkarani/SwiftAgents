@@ -75,6 +75,40 @@ struct ContextProfileBudgetTests {
         #expect(budget.toolIOTokens == 600)
         #expect(profile.summaryTokenLimit == 400)
     }
+
+    @Test("Invalid values are normalized to non-crashing safe values")
+    func invalidValuesAreNormalized() {
+        let profile = ContextProfile(
+            preset: .balanced,
+            maxContextTokens: 0,
+            workingTokenRatio: 2.0,
+            memoryTokenRatio: -1.0,
+            toolIOTokenRatio: 0.0,
+            summaryTokenRatio: 2.0,
+            maxToolOutputTokens: 0,
+            maxRetrievedItems: 0,
+            maxRetrievedItemTokens: 0,
+            summaryCadenceTurns: 0,
+            summaryTriggerUtilization: -1.0
+        )
+
+        let ratioSum = profile.workingTokenRatio + profile.memoryTokenRatio + profile.toolIOTokenRatio
+        #expect(abs(ratioSum - 1.0) < 0.0001)
+        #expect(profile.maxContextTokens == 1)
+        #expect(profile.maxToolOutputTokens == 1)
+        #expect(profile.maxRetrievedItems == 1)
+        #expect(profile.maxRetrievedItemTokens == 1)
+        #expect(profile.summaryCadenceTurns == 1)
+        #expect(profile.summaryTokenRatio == 1.0)
+        #expect(profile.summaryTriggerUtilization == 0.0)
+
+        // Minimum ratio floor ensures all budgets remain usable after clamping
+        // extreme inputs. Even with workingRatio=2.0 and memoryRatio=-1.0, no
+        // ratio should collapse to zero, preventing broken callers.
+        #expect(profile.workingTokenRatio > 0)
+        #expect(profile.memoryTokenRatio > 0)
+        #expect(profile.toolIOTokenRatio > 0)
+    }
 }
 
 @Suite("ContextProfile Platform Defaults")
@@ -91,5 +125,63 @@ struct ContextProfilePlatformDefaultsTests {
     @Test("macOS default context tokens >= iOS default")
     func platformDefaultOrdering() {
         #expect(ContextProfile.PlatformDefaults.macOS.maxContextTokens >= ContextProfile.PlatformDefaults.iOS.maxContextTokens)
+    }
+}
+
+@Suite("ContextProfile strict4k")
+struct ContextProfileStrict4kTests {
+    @Test("strict4k exposes 4096 total context envelope and 3412 max input")
+    func strict4kDefaults() {
+        let profile = ContextProfile.strict4k
+        let budget = profile.budget
+
+        #expect(profile.preset == .strict4k)
+        #expect(budget.maxTotalContextTokens == 4096)
+        #expect(budget.maxInputTokens == 3412)
+        #expect(budget.maxOutputTokens == 500)
+        #expect(budget.outputReserveTokens == 500)
+        #expect(budget.protocolOverheadReserveTokens == 120)
+        #expect(budget.safetyMarginTokens == 64)
+        #expect(profile.maxContextTokens == 3412)
+        #expect(profile.maxTotalContextTokens == 4096)
+        #expect(budget.workingTokens == 1912)
+        #expect(budget.memoryTokens == 900)
+        #expect(budget.toolIOTokens == 600)
+        #expect(budget.workingTokens + budget.memoryTokens + budget.toolIOTokens == budget.maxInputTokens)
+        #expect(profile.memoryTokenLimit == 900)
+        #expect(profile.summaryTokenLimit == 450)
+        #expect(budget.bucketCaps?.system == 512)
+        #expect(budget.bucketCaps?.history == 1400)
+        #expect(budget.bucketCaps?.memory == 900)
+        #expect(budget.bucketCaps?.toolIO == 600)
+    }
+
+    @Test("strict4k template overrides are honored")
+    func strict4kTemplateOverrides() {
+        let template = ContextProfile.Strict4kTemplate(
+            systemTokens: 600,
+            historyTokens: 1200,
+            memoryTokens: 900,
+            toolIOTokens: 500,
+            outputReserveTokens: 600,
+            protocolOverheadReserveTokens: 100,
+            safetyMarginTokens: 100
+        )
+        let profile = ContextProfile.strict4k(template: template)
+        let budget = profile.budget
+
+        #expect(budget.maxTotalContextTokens == 4096)
+        #expect(budget.maxInputTokens == 3296)
+        #expect(budget.maxOutputTokens == 600)
+        #expect(budget.workingTokens == 1896)
+        #expect(budget.memoryTokens == 900)
+        #expect(budget.toolIOTokens == 500)
+        #expect(budget.workingTokens + budget.memoryTokens + budget.toolIOTokens == budget.maxInputTokens)
+        #expect(profile.memoryTokenLimit == 900)
+        #expect(profile.summaryTokenLimit == 450)
+        #expect(budget.bucketCaps?.system == 600)
+        #expect(budget.bucketCaps?.history == 1200)
+        #expect(budget.bucketCaps?.memory == 900)
+        #expect(budget.bucketCaps?.toolIO == 500)
     }
 }

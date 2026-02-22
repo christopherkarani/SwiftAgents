@@ -414,6 +414,79 @@ struct HiveAgentsTests {
         }
         #expect(hasExpectedAssistantMessage)
     }
+
+    @Test("SwarmToolRegistry throws duplicateToolName when given duplicate tools")
+    func swarmToolRegistry_rejectsDuplicateToolNames() throws {
+        let duplicateTools = [
+            DuplicateTestTool(name: "calc"),
+            DuplicateTestTool(name: "calc")
+        ]
+
+        let thrown = try? SwarmToolRegistry(tools: duplicateTools)
+        #expect(thrown == nil)
+
+        do {
+            _ = try SwarmToolRegistry(tools: duplicateTools)
+            Issue.record("Expected to throw duplicateToolName error")
+        } catch let error as SwarmToolRegistryError {
+            #expect(error == .duplicateToolName("calc"))
+        }
+    }
+
+    @Test("SwarmToolRegistry invoke throws toolNotFound for unknown tool")
+    func swarmToolRegistry_invokeUnknownTool() async throws {
+        let registry = try SwarmToolRegistry(tools: [DuplicateTestTool(name: "calc")])
+
+        do {
+            _ = try await registry.invoke(
+                HiveToolCall(id: "call-1", name: "missing", argumentsJSON: "{}")
+            )
+            Issue.record("Expected to throw toolNotFound.")
+        } catch let error as SwarmToolRegistryError {
+            #expect(error == .toolNotFound(name: "missing"))
+        }
+    }
+
+    @Test("SwarmToolRegistry invoke throws invalidArgumentsJSON for malformed arguments")
+    func swarmToolRegistry_invokeInvalidArgumentsJSON() async throws {
+        let registry = try SwarmToolRegistry(tools: [DuplicateTestTool(name: "calc")])
+
+        do {
+            _ = try await registry.invoke(
+                HiveToolCall(id: "call-2", name: "calc", argumentsJSON: "not-json")
+            )
+            Issue.record("Expected to throw invalidArgumentsJSON.")
+        } catch let error as SwarmToolRegistryError {
+            #expect(error == .invalidArgumentsJSON)
+        }
+    }
+
+    @Test("SwarmToolRegistry invoke returns tool result on success")
+    func swarmToolRegistry_invokeReturnsToolResult() async throws {
+        let registry = try SwarmToolRegistry(tools: [DuplicateTestTool(name: "calc")])
+        let result = try await registry.invoke(
+            HiveToolCall(id: "call-3", name: "calc", argumentsJSON: "{}")
+        )
+
+        #expect(result.toolCallID == "call-3")
+        #expect(result.content == "result")
+    }
+
+    @Test("SwarmToolRegistry invoke preserves cancellation errors")
+    func swarmToolRegistry_invokePreservesCancellation() async throws {
+        let registry = try SwarmToolRegistry(tools: [CancellableTestTool(name: "cancelled-tool")])
+
+        do {
+            _ = try await registry.invoke(
+                HiveToolCall(id: "call-4", name: "cancelled-tool", argumentsJSON: "{}")
+            )
+            Issue.record("Expected CancellationError.")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            Issue.record("Expected CancellationError, got \(error).")
+        }
+    }
 }
 
 // MARK: - Helpers
@@ -599,4 +672,26 @@ private func expectedRoleBasedMessageID(taskID: String, role: String) -> String 
 private struct TestFailure: Error, CustomStringConvertible {
     let description: String
     init(_ description: String) { self.description = description }
+}
+
+private struct DuplicateTestTool: AnyJSONTool {
+    let name: String
+    let description: String = "Test tool"
+
+    var parameters: [ToolParameter] { [] }
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        .string("result")
+    }
+}
+
+private struct CancellableTestTool: AnyJSONTool {
+    let name: String
+    let description: String = "Cancellation test tool"
+
+    var parameters: [ToolParameter] { [] }
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        throw CancellationError()
+    }
 }

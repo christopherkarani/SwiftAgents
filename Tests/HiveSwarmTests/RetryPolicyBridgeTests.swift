@@ -5,7 +5,6 @@
 
 import Foundation
 import Testing
-@testable import HiveSwarm
 @testable import Swarm
 
 @Suite("RetryPolicyBridge — Swarm to Hive mapping")
@@ -74,6 +73,37 @@ struct RetryPolicyBridgeTests {
             #expect(initialNs == 0)
         default:
             Issue.record("Expected .exponentialBackoff for immediate, got \(hive)")
+        }
+    }
+
+    @Test("Negative base delay maps to zero nanoseconds (no crash)")
+    func bridge_negativeBaseDelay_returnsZero() {
+        // Issue #2: Negative delay should not crash, return 0 nanoseconds
+        let swarm = RetryPolicy(maxAttempts: 3, backoff: .exponential(base: -1.0, multiplier: 2.0, maxDelay: 60.0))
+        let hive = RetryPolicyBridge.toHive(swarm)
+        switch hive {
+        case .exponentialBackoff(let initialNs, _, let maxAttempts, let maxNs):
+            #expect(maxAttempts == 3)
+            #expect(initialNs == 0) // Negative base maps to 0
+            #expect(maxNs == 60_000_000_000) // maxDelay is positive
+        default:
+            Issue.record("Expected .exponentialBackoff for negative base, got \(hive)")
+        }
+    }
+
+    @Test("Negative max delay maps to zero nanoseconds (no crash)")
+    func bridge_negativeMaxDelay_returnsZero() {
+        // Issue #2: Negative maxDelay should not crash, return 0 nanoseconds
+        let swarm = RetryPolicy(maxAttempts: 3, backoff: .exponential(base: 1.0, multiplier: 2.0, maxDelay: -10.0))
+        let hive = RetryPolicyBridge.toHive(swarm)
+        switch hive {
+        case .exponentialBackoff(let initialNs, let factor, let maxAttempts, let maxNs):
+            #expect(maxAttempts == 3)
+            #expect(initialNs == 1_000_000_000) // base is positive
+            #expect(factor == 2.0)
+            #expect(maxNs == 0) // Negative maxDelay maps to 0
+        default:
+            Issue.record("Expected .exponentialBackoff for negative maxDelay, got \(hive)")
         }
     }
 }

@@ -121,6 +121,9 @@ public struct DAG: OrchestrationStep, Sendable {
     /// The nodes comprising this DAG.
     public let nodes: [DAGNode]
 
+    /// Stored validation failure captured at construction time.
+    private let validationError: OrchestrationValidationError?
+
     /// Creates a new DAG workflow from a builder closure.
     ///
     /// Validates the graph structure at construction time.
@@ -128,21 +131,30 @@ public struct DAG: OrchestrationStep, Sendable {
     /// - Parameter content: A builder closure producing DAG nodes.
     public init(@DAGBuilder _ content: () -> [DAGNode]) throws {
         let builtNodes = content()
-        try DAG.validate(builtNodes)
+        self.validationError = DAG.validate(builtNodes)
         self.nodes = builtNodes
     }
 
     /// Internal initializer for testing with pre-validated nodes.
     init(validatedNodes: [DAGNode]) {
+        self.validationError = nil
         self.nodes = validatedNodes
     }
 
     // MARK: - Validation
 
     /// Validates that the DAG has no missing dependencies and no cycles.
-    private static func validate(_ nodes: [DAGNode]) throws {
+    private static func validate(_ nodes: [DAGNode]) -> OrchestrationValidationError? {
         guard !nodes.isEmpty else {
-            throw OrchestrationError.invalidWorkflow(reason: "DAG must contain at least one node.")
+            return .emptyGraph
+        }
+
+        var seenNames = Set<String>()
+        for node in nodes {
+            let inserted = seenNames.insert(node.name).inserted
+            if !inserted {
+                return .duplicateNode(name: node.name)
+            }
         }
 
         let nodeNames = Set(nodes.map(\.name))
@@ -151,9 +163,10 @@ public struct DAG: OrchestrationStep, Sendable {
         for node in nodes {
             for dep in node.dependencies {
                 if !nodeNames.contains(dep) {
-                    throw OrchestrationError.invalidWorkflow(reason:
-                        "DAG node '\(node.name)' depends on unknown node '\(dep)'. "
-                        + "Available nodes: \(nodeNames.sorted().joined(separator: ", "))"
+                    return .unknownDependency(
+                        node: node.name,
+                        dependency: dep,
+                        availableNodes: nodeNames.sorted()
                     )
                 }
             }
@@ -164,10 +177,10 @@ public struct DAG: OrchestrationStep, Sendable {
         if sorted.count != nodes.count {
             let sortedNames = Set(sorted.map(\.name))
             let cycleNodes = nodes.filter { !sortedNames.contains($0.name) }.map(\.name)
-            throw OrchestrationError.invalidWorkflow(reason:
-                "Cycle detected in DAG involving nodes: \(cycleNodes.joined(separator: ", "))"
-            )
+            return .cycleDetected(nodes: cycleNodes)
         }
+
+        return nil
     }
 
     // MARK: - Topological Sort (Kahn's Algorithm)
@@ -210,6 +223,10 @@ public struct DAG: OrchestrationStep, Sendable {
     // MARK: - Execution
 
     public func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
+        if let validationError {
+            throw OrchestrationError.invalidGraph(validationError)
+        }
+
         guard !nodes.isEmpty else {
             return AgentResult(output: input)
         }

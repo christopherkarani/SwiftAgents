@@ -801,11 +801,16 @@ public actor AgentRouter: AgentRuntime {
     /// - Returns: The matching handoff configuration, or nil if none found.
     private func findHandoffConfiguration(for targetAgent: any AgentRuntime) -> AnyHandoffConfiguration? {
         _handoffs.first { config in
-            // Match by type - compare the target agent's type
-            let configTargetType = type(of: config.targetAgent)
-            let currentType = type(of: targetAgent)
-            return configTargetType == currentType
+            areSameRuntime(config.targetAgent, targetAgent)
         }
+    }
+
+    private func areSameRuntime(_ lhs: any AgentRuntime, _ rhs: any AgentRuntime) -> Bool {
+        // Note: ObjectIdentifier(lhs as AnyObject) is unreliable for struct-based runtimes because
+        // casting a struct existential to AnyObject creates a new box each time, yielding
+        // different identifiers for the same value. Use name+type matching instead.
+        return lhs.name == rhs.name
+            && String(describing: type(of: lhs)) == String(describing: type(of: rhs))
     }
 }
 

@@ -5,6 +5,8 @@
 //  Created by Chris Karani on 16/01/2026.
 //
 
+import Foundation
+
 // Gate FoundationModels import for cross-platform builds (Linux, Windows, etc.)
 #if canImport(FoundationModels)
 import FoundationModels
@@ -16,11 +18,18 @@ extension LanguageModelSession: InferenceProvider {
         let response = try await self.respond(to: prompt)
         var content = response.content
 
-        // Handle manual stop sequences since Foundation Models might not support them natively via this API
+        // Handle manual stop sequences since Foundation Models might not support them natively via this API.
+        // Find the earliest occurring stop sequence and truncate at that point.
+        var earliestStop: String.Index? = nil
         for stopSequence in options.stopSequences {
             if let range = content.range(of: stopSequence) {
-                content = String(content[..<range.lowerBound])
+                if earliestStop == nil || range.lowerBound < earliestStop! {
+                    earliestStop = range.lowerBound
+                }
             }
+        }
+        if let stop = earliestStop {
+            content = String(content[..<stop])
         }
 
         return content
@@ -44,16 +53,38 @@ extension LanguageModelSession: InferenceProvider {
 
     public func generateWithToolCalls(
         prompt: String,
-        tools _: [ToolSchema],
-        options _: InferenceOptions
+        tools: [ToolSchema],
+        options: InferenceOptions
     ) async throws -> InferenceResponse {
-        // TODO: Implement native tool calling for FoundationModels
-        // Foundation Models on-device may support function calling in future releases.
-        // For now, fall back to text generation without tool calls.
-        let response = try await self.respond(to: prompt)
+        // Build tool-aware prompt if tools are provided
+        let toolPrompt = LanguageModelSessionToolPromptBuilder.buildToolPrompt(basePrompt: prompt, tools: tools)
 
+        // Generate response with the enhanced prompt
+        let response = try await self.respond(to: toolPrompt)
+        let content = response.content
+
+        // If no tools provided, return simple response
+        guard !tools.isEmpty else {
+            return InferenceResponse(
+                content: content,
+                toolCalls: [],
+                finishReason: .completed
+            )
+        }
+
+        // Attempt to parse tool calls from the response
+        if let toolCalls = LanguageModelSessionToolParser.parseToolCalls(from: content, availableTools: tools) {
+            // Response contains valid tool calls
+            return InferenceResponse(
+                content: nil, // Tool call responses typically have no content
+                toolCalls: toolCalls,
+                finishReason: .toolCall
+            )
+        }
+
+        // No valid tool calls found - return as regular content
         return InferenceResponse(
-            content: response.content,
+            content: content,
             toolCalls: [],
             finishReason: .completed
         )
