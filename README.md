@@ -1,376 +1,628 @@
-<img width="3168" height="1344" alt="Swarm — Swift Agent Framework" src="https://github.com/user-attachments/assets/62b0d34a-a0d4-45a9-a289-0e384939839f" />
+
+<img width="3168" height="1344" alt="Gemini_Generated_Image_hflm6thflm6thflm" src="https://github.com/user-attachments/assets/62b0d34a-a0d4-45a9-a289-0e384939839f" />
+
 
 [![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange.svg)](https://swift.org)
-[![Platforms](https://img.shields.io/badge/Platforms-iOS%2026%2B%20%7C%20macOS%2026%2B%20%7C%20Linux-blue.svg)](https://swift.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![SPM](https://img.shields.io/badge/Swift%20Package%20Manager-compatible-brightgreen.svg)](https://swift.org/package-manager/)
+[![Platforms](https://img.shields.io/badge/Platforms-iOS%2026%2B%20|%20macOS%2026%2B%20|%20Linux-blue.svg)](https://swift.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Swift Package Manager](https://img.shields.io/badge/SPM-compatible-brightgreen.svg)](https://swift.org/package-manager/)
 
-> ⭐ If Swarm is useful to you, a star helps others find it.
+**Build autonomous AI agents in Swift** — The agent framework for Apple platforms and Linux servers.
 
-# Swarm
+Swarm provides everything you need to build AI agents: autonomous reasoning, tool use, memory systems, and multi-agent orchestration. Built natively for Swift 6.2 with full concurrency safety.
 
-**Multi-agent orchestration for Swift — built for production, not demos.**
+## Highlights
 
-```swift
-let result = try await (fetchAgent --> reasonAgent --> writerAgent)
-    .run("Summarize the WWDC session on Swift concurrency.")
+- **Agents** — `AgentRuntime` implementations (ToolCalling, ReAct, PlanAndExecute) and `@AgentActor` macro
+- **Workflows** — SwiftUI-style `AgentBlueprint` orchestration (preferred) + legacy loop DSL (deprecated)
+- **Tools** — Typed `Tool` API, `@Tool` macro, `FunctionTool` closures, and `AnyJSONTool` ABI
+- **Runner** — Static `Runner.run()` / `Runner.stream()` entry points separating definition from execution
+- **Agent Composition** — Use any agent as a tool via `.asTool()` for hierarchical delegation
+- **Memory** — Conversation, summary, and vector memory systems
+- **Multi-Agent** — Supervisor routing, chains, handoffs, and parallel execution
+- **Streaming** — Real-time event streaming for responsive UIs
+- **Guardrails** — Input/output validation for safe AI interactions
+- **Observability** — Default tracing out of the box, opt-out with `defaultTracingEnabled: false`
+- **MCP** — Model Context Protocol integration
+- **Cross-Platform** — iOS, macOS, watchOS, tvOS, visionOS, and Linux
 
-print(result.output)
-```
+## Runtime (Hive)
 
-Three agents. One line. Crash-resumable, data-race-safe, compiled to a DAG.
+Swarm orchestration executes on the Hive runtime.
 
----
-
-## Why Swarm
-
-Most agent frameworks are Python-first, stringly-typed, and assume every workflow completes in one shot. Swarm makes three different bets.
-
-### 1. Data races are compile errors
-
-Swift 6.2's `StrictConcurrency` is enabled across every Swarm target — agents, memory systems, orchestrators, macros, and tests. Non-`Sendable` types crossing actor boundaries is a **build failure**, not a 3 AM incident.
-
-```swift
-// ❌ Compile error under Swarm's StrictConcurrency — caught before it ships
-struct BrokenAgent: AgentRuntime {
-    var cache: NSCache<NSString, NSString>
-    // error: stored property 'cache' of 'Sendable'-conforming struct
-    //        has non-Sendable type 'NSCache<NSString, NSString>'
-}
-
-// ✓ Actor isolation makes shared state safe by construction
-actor ResponseCache {
-    private var store: [String: String] = [:]
-    func set(_ value: String, for key: String) { store[key] = value }
-    func get(_ key: String) -> String? { store[key] }
-}
-```
-
-### 2. Workflows survive crashes
-
-Swarm ships a `WorkflowCheckpointStore` protocol with two built-in implementations: `InMemoryWorkflowCheckpointStore` for tests and `FileSystemWorkflowCheckpointStore` for production. Each step boundary writes a snapshot. A pipeline that crashes on step 7 of 10 resumes from step 7 — not from the beginning.
-
-```swift
-// Crash-recovery checkpoint store — survives process restarts
-let store = FileSystemWorkflowCheckpointStore(
-    directory: .applicationSupportDirectory.appending(path: "workflow-checkpoints")
-)
-
-// Snapshots are serialised JSON — human-readable, diff-friendly
-// { "workflowID": "run-42", "stepIndex": 3, "intermediateOutput": "...", "timestamp": "..." }
-```
-
-### 3. Orchestration is a DSL, not a switch statement
-
-Eleven composable step types in a SwiftUI-style `@resultBuilder`. Sequential chains use `-->`. Type-safe pipelines use `>>>`. Dependency DAGs use `.dependsOn()`. Human review gates use a three-way response.
-
-```swift
-// Sequential chain
-fetchAgent --> analyzeAgent --> writerAgent
-
-// Type-safe pipeline (compiler enforces Input/Output types at each stage)
-let pipeline = Pipeline<String, [String]>  { $0.components(separatedBy: "\n") }
-             >>> Pipeline<[String], String> { $0.filter { !$0.isEmpty }.joined(separator: "• ") }
-
-// Dependency DAG — nodes run as soon as their dependencies complete
-DAGWorkflow(nodes: [
-    DAGNode("fetch",   agent: fetchAgent),
-    DAGNode("refs",    agent: refsAgent),
-    DAGNode("analyze", agent: analyzeAgent).dependsOn("fetch", "refs"),
-    DAGNode("write",   agent: writerAgent).dependsOn("analyze"),
-])
-
-// Human-in-the-loop: three-way response
-HumanApproval("Approve before publishing?", handler: reviewerUI)
-// .approved          → workflow continues with current output
-// .rejected(reason)  → workflow throws OrchestrationError.humanApprovalRejected
-// .modified(newInput) → corrected value flows forward, replacing the agent's output
-```
+If a sibling Hive checkout exists at `../Hive`, Swarm auto-uses it; set `SWARM_USE_LOCAL_HIVE=0` to force the remote package (or `SWARM_USE_LOCAL_HIVE=1` to force local).
 
 ---
 
-## How Swarm Compares
+## For Coding Agents
 
-| | Swarm | LangChain (Python) | AutoGen |
-|---|---|---|---|
-| Language | Swift 6.2 | Python | Python |
-| Data race safety | Compile-time ✓ | Runtime | Runtime |
-| On-device LLM | Foundation Models ✓ | ❌ | ❌ |
-| DAG execution engine | Hive (compiled) ✓ | Loop-based | Loop-based |
-| Crash-resumable workflows | ✓ `FileSystemCheckpointStore` | ❌ | Partial |
-| Type-safe tool parameters | ✓ `@Tool` macro | Decorators (runtime) | Runtime |
-| Streaming | `AsyncThrowingStream` ✓ | Callbacks | Callbacks |
-| iOS support | ✓ iOS 26+ | ❌ | ❌ |
+### Retrieving Context (Sessions + Memory)
 
----
+Swarm intentionally keeps **context retrieval** explicit and inspectable. In practice, you’ll pull context from either:
 
-## Quick Start
+- **Session** (conversation history): `getItems(limit:)`
+- **Memory** (RAG / summaries / recent-window): `context(for:tokenLimit:)` and `allMessages()`
 
 ```swift
-import Swarm
+// Session history (for UIs, debugging, or custom prompt building)
+let history = try await session.getItems(limit: 20)
 
-// 1. Define a tool
-@Tool("Returns the current price of a stock")
-struct StockPriceTool {
-    @Parameter("Ticker symbol, e.g. AAPL")
-    var ticker: String
+// Memory context string (what you want the model to “see” as context)
+let context = await memory.context(for: "billing policy", tokenLimit: 1_200)
 
-    func execute() async throws -> String {
-        // call your price API here
-        return "182.50"
-    }
-}
-
-// 2. Define an agent blueprint
-struct FinanceAgent: AgentBlueprint {
-    let analyst = Agent(
-        name: "Analyst",
-        tools: [StockPriceTool()],
-        instructions: "Answer finance questions concisely using real data."
-    )
-
-    @OrchestrationBuilder var body: some OrchestrationStep {
-        Guard(.input) {
-            InputGuard("no_pii") { input in
-                input.contains("SSN") ? .tripwire(message: "PII detected") : .passed()
-            }
-        }
-        analyst
-    }
-}
-
-// 3. Run it
-let result = try await FinanceAgent()
-    .environment(\.inferenceProvider, .anthropic(key: "YOUR_API_KEY"))
-    .run("What is the current price of AAPL?")
-
-print(result.output)
+// Raw memory messages (for inspection / tests)
+let messages = await memory.allMessages()
 ```
 
----
-
-## Features
-
-| Capability | Detail |
-|---|---|
-| **Agents** | `Agent` (tool-calling), `ReActAgent` (thought→action→observation), `PlanAndExecuteAgent` (plan→execute→replan) |
-| **DSL** | `@OrchestrationBuilder`, `-->` sequential chain, `>>>` typed pipeline, `.dependsOn()` DAG |
-| **Step types** | Sequential, Parallel, DAGWorkflow, Router, RepeatWhile, Branch, Guard, Transform, Pipeline, SequentialChain, ParallelGroup |
-| **Memory** | Conversation (rolling buffer), VectorMemory (SIMD cosine via Accelerate), SummaryMemory (LLM-compressed), HybridMemory |
-| **Hive runtime** | Compiled DAG execution, channel checkpointing, deterministic retry (jitter stripped by `RetryPolicyBridge`) |
-| **Macros** | `@Tool` → full `AnyJSONTool` conformance + JSON schema; `@AgentActor` → boilerplate-free agent actors |
-| **Guardrails** | Input, output, tool-input, tool-output validators; tripwire and warning modes |
-| **Resilience** | Configurable retry backoff, circuit breaker, fallback agents, per-step timeouts |
-| **Observability** | `SwiftLogTracer`, `OSLogTracer`, span-based tracing, per-agent token metrics |
-| **MCP** | Model Context Protocol client + HTTP server |
-| **Providers** | Foundation Models (on-device), Anthropic, OpenAI, Ollama, Gemini, MLX via [Conduit](https://github.com/christopherkarani/Conduit) |
-| **Concurrency** | All public types `Sendable`; actors for all shared state; `StrictConcurrency` on every target |
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Your Application                        │
-│          iOS 26+ · macOS 26+ · Linux (Ubuntu 22.04+)        │
-├─────────────────────────────────────────────────────────────┤
-│          AgentBlueprint · Runner.run() · .stream()           │
-├──────────────────────┬──────────────────────────────────────┤
-│   Orchestration DSL  │  Step Types                          │
-│   @resultBuilder     │  Sequential · Parallel · DAGWorkflow │
-│   --> · >>>          │  Router · RepeatWhile · Branch       │
-│   .dependsOn()       │  Guard · Transform · HumanApproval   │
-├──────────────────────┴──────────────────────────────────────┤
-│     Agents              Memory              Tools            │
-│  Agent (tool-call)   Conversation        @Tool macro        │
-│  ReActAgent          VectorMemory        FunctionTool       │
-│  PlanAndExecute      SummaryMemory       AnyJSONTool ABI    │
-│  HiveBackedAgent     HybridMemory        Runtime toggling   │
-├─────────────────────────────────────────────────────────────┤
-│     Guardrails · Resilience · Observability · MCP           │
-├─────────────────────────────────────────────────────────────┤
-│                    Hive Runtime (HiveCore)                   │
-│   Compiled DAG · Channel checkpointing · Tool approval      │
-│   Deterministic retry · RetryPolicyBridge (jitter-free)     │
-├─────────────────────────────────────────────────────────────┤
-│              InferenceProvider (pluggable)                   │
-│   Foundation Models · Anthropic · OpenAI · Ollama · MLX     │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## More Examples
-
-### Parallel Fan-Out
-
-Run multiple agents on the same input concurrently. Each agent's metadata is automatically namespaced as `"agentName.key"` — no key collisions across concurrent results.
+If your memory conforms to `MemoryPromptDescriptor` (e.g. `WaxMemory`), you can also expose UI labels/guidance:
 
 ```swift
-let group = ParallelGroup(
-    agents: [
-        (name: "primary", agent: primaryAgent),
-        (name: "backup",  agent: backupAgent),
-        (name: "expert",  agent: expertAgent),
-    ],
-    mergeStrategy: MergeStrategies.Concatenate(
-        separator: "\n\n---\n\n",
-        shouldIncludeAgentNames: true
-    ),
-    maxConcurrency: 3
-)
-
-let result = try await group.run("Analyze the Swift concurrency model.")
-```
-
-### Semantic Memory (On-Device SIMD)
-
-`VectorMemory` uses Accelerate's `vDSP_dotpr` for cosine similarity — no network call, no cloud embedding API.
-
-```swift
-let memory = VectorMemory(
-    embeddingProvider: myEmbedder,
-    similarityThreshold: 0.75,
-    maxResults: 8
-)
-
-await memory.add(.user("The project deadline is March 15."))
-await memory.add(.assistant("Noted. I will prioritise accordingly."))
-
-// Semantically retrieves the deadline entry despite different phrasing
-let context = await memory.context(for: "When is this due?", tokenLimit: 1_200)
-```
-
-### Supervisor Routing
-
-```swift
-let supervisor = SupervisorAgent(
-    agents: [
-        (name: "math",    agent: mathAgent,    description: mathDesc),
-        (name: "weather", agent: weatherAgent, description: weatherDesc),
-        (name: "code",    agent: codeAgent,    description: codeDesc),
-    ],
-    routingStrategy: LLMRoutingStrategy(inferenceProvider: provider),
-    fallbackAgent: Agent(instructions: "I am a general assistant.")
-)
-
-let result = try await supervisor.run("What is 15% of $240?")
-// Routes to mathAgent
-```
-
-### Resilience
-
-```swift
-let agent = FinanceAgent()
-    .environment(\.inferenceProvider, provider)
-    .withRetry(.exponentialBackoff(maxAttempts: 3, baseDelay: .seconds(1)))
-    .withCircuitBreaker(threshold: 5, resetTimeout: .seconds(60))
-    .withFallback(Agent(instructions: "Service temporarily unavailable."))
-    .withTimeout(.seconds(30))
-```
-
-### Streaming
-
-```swift
-for try await event in (fetchAgent --> writerAgent).stream("Summarise the changelog.") {
-    switch event {
-    case .outputToken(let token):  print(token, terminator: "")
-    case .toolCalling(let call):   print("\n[tool: \(call.toolName)]")
-    case .completed(let result):   print("\n\nDone in \(result.duration)")
-    case .failed(let error):       print("\nError: \(error)")
-    default: break
-    }
+if let descriptor = memory as? any MemoryPromptDescriptor {
+    print(descriptor.memoryPromptTitle)
+    print(descriptor.memoryPromptGuidance ?? "")
 }
 ```
 
-### Session Continuity
+### Copy/Paste Prompts
 
-```swift
-let session = InMemorySession(sessionId: "user-42")
+Use these prompts verbatim in Claude Code / Codex / ChatGPT when working with this repo or integrating Swarm.
 
-try await agent.run("My portfolio has 100 AAPL shares.", session: session)
-let result = try await agent.run("What is my total value?", session: session)
-// Agent recalls the earlier context
+#### 1) Repo Orientation
+
+```text
+You are a coding agent integrating Swarm.
+Please:
+1) Read AGENTS.md and README.md.
+2) Summarize the preferred API surface (AgentBlueprint + @Tool + @AgentActor).
+3) Point me to the 5 most relevant docs pages for orchestration + tools + memory.
+4) Give me a minimal “hello world agent” that compiles (no external services).
 ```
 
----
+#### 2) “How do I retrieve context?”
+
+```text
+In Swarm, show me how to retrieve:
+- session history (Session.getItems)
+- model context from memory (Memory.context(for:tokenLimit:))
+- raw messages (Memory.allMessages)
+Include one example using WaxMemory and one using ConversationMemory.
+```
+
+#### 3) Compose a Complex Workflow
+
+```text
+Design an AgentBlueprint for: plan -> implement -> review -> summarize.
+Constraints:
+- Use Agent runtime steps.
+- Use Parallel for implement+tests where appropriate.
+- Use Router to pick specialist agents.
+- Keep it hard to misuse (types, names, minimal magic).
+Return a single Swift file with the blueprint + setup code.
+```
 
 ## Installation
 
 ### Swift Package Manager
 
 ```swift
-// Package.swift
 dependencies: [
     .package(url: "https://github.com/christopherkarani/Swarm.git", from: "0.3.1")
-],
-targets: [
-    .target(name: "YourApp", dependencies: ["Swarm"])
 ]
+```
+
+Add to your target:
+
+```swift
+.target(name: "YourApp", dependencies: ["Swarm"])
 ```
 
 ### Xcode
 
-**File → Add Package Dependencies →** `https://github.com/christopherkarani/Swarm.git`
+File → Add Package Dependencies → `https://github.com/christopherkarani/Swarm.git`
+
+---
+
+### Optional integrations (Wax)
+
+Wax support lives behind a SwiftPM trait so that the adapter only builds when you explicitly enable it. Conduit is now built into `Swarm`.
+
+Enable the Wax trait when declaring the dependency and bind the trait-aware product inside your target:
+
+```swift
+.package(
+    url: "https://github.com/christopherkarani/Swarm.git",
+    from: "0.3.1",
+    traits: ["Wax"]
+)
+
+.target(
+    name: "YourApp",
+    dependencies: [
+        .product(
+            name: "SwarmWax",
+            package: "Swarm",
+            condition: .when(traits: ["Wax"])
+        ),
+        "Swarm"
+    ]
+)
+```
+
+When invoking SwiftPM directly you must supply `defaults` along with the traits you want:
+
+```bash
+swift build --traits defaults,Wax
+```
+
+The trait also defines a compile-time flag (`SWARM_WAX_ENABLED`) so downstream code can guard integrations.
+
+---
+
+## Wax Memory (RAG)
+
+When the Wax trait is enabled, you can use `WaxMemory` as a primary RAG-backed memory store:
+
+```swift
+import Swarm
+import SwarmWax
+import WaxVectorSearchMiniLM
+
+let embedder = MiniLMEmbedder()
+let memory = try await WaxMemory(url: waxURL, embedder: embedder)
+
+let result = try await CustomerService()
+    .environment(\.inferenceProvider, provider)
+    .environment(\.memory, memory)
+    .run("Summarize our billing policy.")
+```
+
+When using the legacy loop DSL, `Relay()` will prioritize Wax memory context when present.
+
+---
+
+## Quick Start
+
+Start with runtime agents for model calls, then compose them with the SwiftUI-style `AgentBlueprint` workflow DSL when you need orchestration. The legacy loop DSL (`AgentLoopDefinition` + `@AgentLoopBuilder`) remains for compatibility but is deprecated.
+
+```swift
+import Swarm
+
+let provider: any InferenceProvider = .anthropic(key: "ANTHROPIC_API_KEY")
+
+struct CustomerService: AgentBlueprint {
+    let billing = Agent(
+        name: "Billing",
+        tools: [CalculatorTool()],
+        instructions: "You are billing support. Be concise."
+    )
+
+    let general = Agent(
+        name: "General",
+        instructions: "You are general customer support."
+    )
+
+    @OrchestrationBuilder var body: some OrchestrationStep {
+        Guard(.input) {
+            InputGuard("no_secrets") { input in
+                input.contains("password") ? .tripwire(message: "Sensitive data") : .passed()
+            }
+        }
+
+        Router {
+            When(.contains("billing"), name: "billing") { billing }
+            Otherwise { general }
+        }
+
+        Guard(.output) {
+            OutputGuard("no_pii") { output in
+                output.contains("SSN") ? .tripwire(message: "PII detected") : .passed()
+            }
+        }
+    }
+}
+
+let result = try await CustomerService()
+    .environment(\.inferenceProvider, provider)
+    .run("billing help")
+
+print(result.output)
+```
+
+Notes:
+- `AgentBlueprint` is the preferred SwiftUI-style workflow DSL; embed `AgentRuntime` steps (Agent/ReActAgent/PlanAndExecuteAgent).
+- The legacy loop DSL (`AgentLoopDefinition` + `Relay()`/`Generate()`) is deprecated for new code.
+- The actor macro for boilerplate-free runtime agents is `@AgentActor` (renamed from `@Agent`).
+- You can also pass a provider directly: `let agent = Agent(.anthropic(key: "ANTHROPIC_API_KEY"))`.
+- If you don’t provide an inference provider, `Agent` will try Apple Foundation Models (on-device) when available; otherwise `Agent.run(...)` throws `AgentError.inferenceProviderUnavailable`.
+
+---
+
+## Key Features
+
+### Streaming Responses
+
+Stream the blueprint you just defined and inspect `AgentEvent` cases:
+
+```swift
+let streamingAgent = CustomerService()
+    .environment(\.inferenceProvider, provider)
+
+for try await event in streamingAgent.stream("Explain quantum computing") {
+    switch event {
+    case .thinking(let thought):
+        print("Thinking: \(thought)")
+    case .toolCalling(let call):
+        print("Calling tool: \(call.toolName)")
+    case .chunk(let text):
+        print(text, terminator: "")
+    case .completed(let result):
+        print("\nDone in \(result.duration)")
+    case .failed(let error):
+        print("Error: \(error)")
+    default:
+        break
+    }
+}
+```
+
+> See [docs/streaming.md](docs/streaming.md) for SwiftUI integration samples that consume `stream(...)`.
+
+### Multi-Agent Orchestration
+
+Define focused runtime agents and let a supervisor route requests based on routing strategy:
+
+```swift
+let mathAgent = Agent(
+    name: "Math",
+    tools: [CalculatorTool()],
+    instructions: "Solve billing math crisply."
+)
+
+let weatherAgent = Agent(
+    name: "Weather",
+    tools: [WeatherTool()],
+    instructions: "Report weather succinctly."
+)
+
+let mathDesc = AgentDescription(
+    name: "math",
+    description: "Handles billing calculations",
+    keywords: ["math", "calculate"]
+)
+
+let weatherDesc = AgentDescription(
+    name: "weather",
+    description: "Handles weather inquiries",
+    keywords: ["weather", "forecast"]
+)
+
+let strategy = KeywordRoutingStrategy()
+let supervisor = SupervisorAgent(
+    agents: [
+        (name: mathDesc.name, agent: mathAgent, description: mathDesc),
+        (name: weatherDesc.name, agent: weatherAgent, description: weatherDesc)
+    ],
+    routingStrategy: strategy,
+    fallbackAgent: Agent(instructions: "You are general customer support.")
+)
+
+let result = try await supervisor.run("What is 15 × 23?")
+print(result.output)
+```
+
+> Swap in `LLMRoutingStrategy(inferenceProvider: provider)` when you want the supervisor to reason about intent in addition to keywords.
+
+> See [docs/orchestration.md](docs/orchestration.md) for chains, parallel execution, and handoffs built on top of runtime agents and blueprints.
+
+### Session Management
+
+Store conversation history for longer-lived interactions while keeping blueprints stateless:
+
+```swift
+let session = InMemorySession(sessionId: "user_123")
+let customerService = CustomerService()
+    .environment(\.inferenceProvider, provider)
+
+try await customerService.run("Remember: my favorite color is blue", session: session)
+try await customerService.run("What's my favorite color?", session: session)
+// → "Your favorite color is blue."
+```
+
+> See [docs/sessions.md](docs/sessions.md) for persistence adapters, including `PersistentSession` on Apple platforms.
+
+### Guardrails
+
+Guard inputs and outputs in a blueprint by surrounding a runtime agent step:
+
+```swift
+struct GuardedAgent: AgentBlueprint {
+    let core = Agent(instructions: "Only pass safe content through.")
+
+    @OrchestrationBuilder var body: some OrchestrationStep {
+        Guard(.input) {
+            InputGuard("no_shouting") { input in
+                input.contains("SHOUT") ? .tripwire(message: "Calm please") : .passed()
+            }
+        }
+
+        core
+
+        Guard(.output) {
+            OutputGuard("no_pii") { output in
+                output.contains("SSN") ? .tripwire(message: "PII detected") : .passed()
+            }
+        }
+    }
+}
+```
+
+> See [docs/guardrails.md](docs/guardrails.md) for helper guardrails and automatic metadata recording.
+
+### MCP Integration
+
+Offer Model Context Protocol tools directly on runtime agents:
+
+```swift
+let client = MCPClient()
+let server = HTTPMCPServer(name: "my-server", baseURL: serverURL)
+try await client.addServer(server)
+
+let mcpTools = try await client.getAllTools()
+
+let researchAgent = Agent(
+    tools: mcpTools,
+    instructions: "Research the topic with MCP tools."
+)
+let researchResult = try await researchAgent
+    .environment(\.inferenceProvider, provider)
+    .run("Summarize the latest updates.")
+print(researchResult.output)
+```
+
+> See [docs/mcp.md](docs/mcp.md) for server implementations, tool discovery, and caching strategies.
+
+### Tools on Runtime Agents
+
+Runtime agents accept typed tools. The `@Tool` macro reduces boilerplate by generating `Tool` conformance and the JSON schema the model uses for calls.
+
+```swift
+@Tool("Calculates totals")
+struct CalculatorTool {
+    @Parameter("Values to sum")
+    var values: [Double]
+
+    func execute() async throws -> Double {
+        try values.reduce(0, +)
+    }
+}
+
+let billingAgent = Agent(
+    tools: [CalculatorTool()],
+    instructions: "Use calculator for numeric requests."
+)
+
+let billingResult = try await billingAgent
+    .environment(\.inferenceProvider, provider)
+    .run("What is 25% of 200?")
+```
+
+Agent (and ReActAgent / PlanAndExecuteAgent) bridge typed tools to the `AnyJSONTool` ABI so the model can plan tool calls, pass structured parameters, and receive typed results without extra plumbing.
+
+#### FunctionTool — Inline Closures
+
+For simple one-off tools, skip the struct ceremony with `FunctionTool`:
+
+```swift
+let getWeather = FunctionTool(
+    name: "get_weather",
+    description: "Gets weather for a city",
+    parameters: [
+        ToolParameter(name: "city", description: "City name", type: .string, isRequired: true)
+    ]
+) { args in
+    let city = try args.require("city", as: String.self)
+    return .string("72F in \(city)")
+}
+
+let agent = Agent(name: "Assistant", tools: [getWeather], instructions: "Help with weather.")
+```
+
+`FunctionTool` conforms to `AnyJSONTool` and works anywhere a typed tool does — agent registration, blueprints, and tool registries.
+
+#### Runtime Tool Toggling
+
+Tools support an `isEnabled` property for conditional availability. Disabled tools are excluded from LLM schemas and rejected at execution time:
+
+```swift
+struct AdminTool: AnyJSONTool {
+    let name = "admin_reset"
+    let description = "Resets user data"
+    let parameters: [ToolParameter] = []
+    var isEnabled: Bool { UserDefaults.standard.bool(forKey: "isAdmin") }
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        // ...
+    }
+}
+```
+
+### Runner — Execution Entry Point
+
+`Runner` provides a static API for agent execution, cleanly separating agent definition from execution concerns:
+
+```swift
+let agent = Agent(name: "Assistant", instructions: "You are helpful.")
+
+// Simple execution:
+let result = try await Runner.run(agent, input: "Hello!")
+
+// With session:
+let result = try await Runner.run(agent, input: "Hello!", session: mySession)
+
+// Streaming:
+for try await event in Runner.stream(agent, input: "What's the weather?") {
+    switch event {
+    case .chunk(let text):
+        print(text, terminator: "")
+    default:
+        break
+    }
+}
+```
+
+### Agent Composition — Agents as Tools
+
+Use any agent as a callable sub-tool for another agent via `.asTool()`. The inner agent runs with the provided input and returns its output as the tool result:
+
+```swift
+let researcher = Agent(
+    name: "Researcher",
+    instructions: "You research topics thoroughly.",
+    tools: [searchTool]
+)
+
+let writer = Agent(
+    name: "Writer",
+    instructions: "Use the researcher for facts, then write clearly.",
+    tools: [researcher.asTool()]
+)
+
+let result = try await Runner.run(writer, input: "Write about quantum computing")
+```
+
+This enables hierarchical agent patterns without full orchestration infrastructure like `Swarm` or `SupervisorAgent`.
+
+### Handoffs
+
+Pass agents directly as handoff targets — no manual `HandoffConfiguration` wrapping needed:
+
+```swift
+let billing = Agent(name: "Billing", instructions: "Handle billing questions.")
+let support = Agent(name: "Support", instructions: "Handle support requests.")
+
+let triage = Agent(
+    name: "Triage",
+    instructions: "Route requests to billing or support.",
+    handoffAgents: [billing, support]
+)
+```
+
+When using standalone `Agent` (outside `Swarm`), handoffs automatically appear as callable tools (e.g., `transfer_to_billing`). For fine-grained control, use `.asHandoff()`:
+
+```swift
+let handoff = billing.asHandoff(
+    toolName: "transfer_to_billing",
+    description: "Transfer billing questions"
+)
+```
+
+### Resilience
+
+Wrap runtime agents (or blueprint executions) with retry, timeout, fallback, and circuit-breaker behaviors:
+
+```swift
+let resilientAgent = CustomerService()
+    .environment(\.inferenceProvider, provider)
+    .withRetry(.exponentialBackoff(maxAttempts: 3, baseDelay: .seconds(1)))
+    .withCircuitBreaker(threshold: 5, resetTimeout: .seconds(60))
+    .withFallback(Agent(instructions: "You are general customer support."))
+    .withTimeout(.seconds(30))
+
+let final = try await resilientAgent.run("Handle billing help urgently.")
+print(final.output)
+```
+
+> See [docs/resilience.md](docs/resilience.md) for circuit breakers, retry policies, and fallback helpers.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Your Application                      │
+│         (iOS, macOS, watchOS, tvOS, visionOS, Linux)    │
+├─────────────────────────────────────────────────────────┤
+│                 Runner.run() / .stream()                 │
+├─────────────────────────────────────────────────────────┤
+│                        Swarm                             │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐       │
+│  │   Agents    │ │   Memory    │ │    Tools    │       │
+│  │ ReAct, Plan │ │ Conversation│ │ @Tool macro │       │
+│  │ Agent       │ │ Vector, Sum │ │ FunctionTool│       │
+│  └─────────────┘ └─────────────┘ └─────────────┘       │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐       │
+│  │Orchestration│ │ Guardrails  │ │Observability│       │
+│  │ Supervisor  │ │ Input/Output│ │ Tracing     │       │
+│  │ Handoffs    │ │ Validation  │ │ Metrics     │       │
+│  └─────────────┘ └─────────────┘ └─────────────┘       │
+│  ┌─────────────┐ ┌─────────────┐                        │
+│  │    MCP      │ │ AgentTool   │                        │
+│  │ Client/Srv  │ │ .asTool()   │                        │
+│  │ Protocol    │ │ Composition │                        │
+│  └─────────────┘ └─────────────┘                        │
+├─────────────────────────────────────────────────────────┤
+│              InferenceProvider Protocol                  │
+│    (Foundation Models / SOTA Models / Local )        │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Cross-Platform**: Core framework works on all platforms. SwiftData persistence is Apple-only.
 
 ---
 
 ## Documentation
 
 | Topic | Description |
-|---|---|
-| [Agents](docs/agents.md) | Agent types, configuration, `@AgentActor` macro |
-| [Tools](docs/tools.md) | `@Tool` macro, `FunctionTool`, `AnyJSONTool` ABI, runtime toggling |
-| [Memory](docs/memory.md) | Conversation, Vector (SIMD), Summary, Hybrid, SwiftData backends |
-| [Sessions](docs/sessions.md) | In-memory and persistent session management |
-| [Orchestration](docs/orchestration.md) | DAG, parallel, chains, handoffs, human-in-the-loop |
-| [Streaming](docs/streaming.md) | `AgentEvent` streaming and SwiftUI integration |
-| [Observability](docs/observability.md) | Span-based tracing, `OSLogTracer`, `SwiftLogTracer`, metrics |
-| [Resilience](docs/resilience.md) | Retry, circuit breakers, fallback agents, timeouts |
-| [Guardrails](docs/guardrails.md) | Input/output validation, tripwires, audit trails |
-| [MCP](docs/mcp.md) | Model Context Protocol client and server |
-| [Providers](docs/providers.md) | Configuring inference providers |
+|-------|-------------|
+| [Agents](docs/agents.md) | Agent types, configuration, @AgentActor macro |
+| [Tools](docs/tools.md) | Tool creation, @Tool macro, ToolRegistry |
+| [Memory](docs/memory.md) | Memory systems and persistence backends |
+| [Sessions](docs/sessions.md) | Session management and history |
+| [Orchestration](docs/orchestration.md) | Multi-agent patterns and handoffs |
+| [Streaming](docs/streaming.md) | Event streaming and SwiftUI integration |
+| [Observability](docs/observability.md) | Tracing, metrics, and logging |
+| [Resilience](docs/resilience.md) | Circuit breakers, retry, fallbacks |
+| [Guardrails](docs/guardrails.md) | Input/output validation |
+| [MCP](docs/mcp.md) | Model Context Protocol integration |
+| [DSL](docs/dsl.md) | Operators and builders |
+| [Providers](docs/providers.md) | InferenceProvider implementations |
 
 ---
 
 ## Requirements
 
-| | Minimum |
-|---|---|
-| Swift | 6.2 |
-| iOS | 26.0 |
-| macOS | 26.0 |
-| Linux | Ubuntu 22.04 + Swift 6.2 |
-
-> iOS 26 / macOS 26 are required for Apple's on-device Foundation Models. External providers (Anthropic, OpenAI, Ollama) work on any Swift 6.2 platform including Linux.
+- **Swift**: 6.2+
+- **Apple Platforms**: iOS 17+, macOS 14+, watchOS 10+, tvOS 17+, visionOS 1+
+- **Linux**: Ubuntu 22.04+ with Swift 6.2
 
 ---
 
 ## Contributing
 
-1. Fork and create a branch: `git checkout -b feature/my-feature`
-2. All public types must be `Sendable` — `StrictConcurrency` will reject violations at build time
-3. Write tests first: `swift test`
-4. Format: `swift package plugin --allow-writing-to-package-directory swiftformat`
-5. Open a Pull Request — describe what changed and why it matters
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make changes following Swift 6.2 concurrency guidelines
+4. Add tests for new functionality
+5. Run `swift test` and `swift package plugin swiftformat`
+6. Submit a Pull Request
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for agent registry conventions and TDD workflow.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ---
 
 ## Support
 
-- **Issues** — [GitHub Issues](https://github.com/christopherkarani/Swarm/issues)
-- **Discussions** — [GitHub Discussions](https://github.com/christopherkarani/Swarm/discussions)
-- **X** — [@ckarani7](https://x.com/ckarani7)
+- **Issues**: [GitHub Issues](https://github.com/christopherkarani/Swarm/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/christopherkarani/Swarm/discussions)
+- **Twitter**: [@ckarani7](https://x.com/ckarani7)
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+Swarm is released under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-*Built in Swift for Apple platforms and Linux.*
+Built with Swift for Apple platforms and Linux servers.
