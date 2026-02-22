@@ -456,11 +456,14 @@ Three of six dependencies are authored by the same maintainer. This is a single-
 
 ### Medium-Term (Next Release)
 
-11. Replace `Array.removeFirst(n)` with `Deque` in memory systems.
-12. Add input size validation at agent entry points.
-13. Expand test coverage: error paths, cancellation, stress tests, boundary conditions.
-14. Replace timing-dependent tests with synchronization primitives.
-15. Add cross-field validation to `ModelSettings`.
+13. Replace `Array.removeFirst(n)` with `Deque` in memory systems.
+14. Add input size validation at agent entry points.
+15. Add recursion depth limit to `ArithmeticParser` and expression length limit to `CalculatorTool`.
+16. Add tool execution timeout to `ToolRegistry.execute`.
+17. Expand test coverage: error paths, cancellation, stress tests, boundary conditions.
+18. Replace timing-dependent tests with synchronization primitives.
+19. Add cross-field validation to `ModelSettings`.
+20. Add cleanup mechanisms for `MetricsCollector.spanStartTimes` and `OSLogTracer.activeIntervals` on incomplete traces.
 
 ---
 
