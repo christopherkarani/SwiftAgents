@@ -241,9 +241,6 @@ public actor Agent: AgentRuntime {
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
-        if configuration.runtimeMode == .swift {
-            return try await _executeDirect(input, session: session, hooks: hooks)
-        }
         return try await hiveRun(input, session: session, hooks: hooks)
     }
 

@@ -1270,10 +1270,6 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
             return AgentResult(output: input)
         }
 
-        if configuration.runtimeMode == .swift {
-            throw OrchestrationError.unsupportedOrchestrationRuntimeMode(.swift)
-        }
-
         return try await OrchestrationHiveEngine.execute(
             steps: steps,
             input: input,
@@ -1302,10 +1298,6 @@ public struct Orchestration: Sendable, OrchestratorProtocol {
     ) async throws -> OrchestrationRunOutcome {
         guard !steps.isEmpty else {
             return .completed(AgentResult(output: input))
-        }
-
-        if configuration.runtimeMode == .swift {
-            throw OrchestrationError.unsupportedOrchestrationRuntimeMode(.swift)
         }
 
         return try await OrchestrationHiveEngine.executeInterruptible(
