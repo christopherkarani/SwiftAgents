@@ -212,17 +212,32 @@ The Swarm framework demonstrates strong architectural vision and solid Swift 6.2
 - **File:** `Sources/Swarm/Orchestration/HandoffBuilder.swift:63-66`
 - Tool name override accepts any string without validation (empty, special characters, collisions).
 
+#### **DateTime format string injection**
+- **File:** `Sources/Swarm/Tools/BuiltInTools.swift:176`
+- DateTimeTool accepts arbitrary user-supplied format strings passed directly to `DateFormatter.dateFormat` without validation or whitelisting.
+
 ### 6.2 Information Leakage
 
 - Multiple error messages include raw `error.localizedDescription` which may contain internal state, file paths, or model details.
 - Agent logs (`Log.agents.error`) include step details, tool names, and error messages without PII filtering.
 - The `swift-log` framework does not support privacy annotations (unlike `os.Logger`), so all interpolated values are logged as-is.
+- **WebSearchTool API key exposure** (`Sources/Swarm/Tools/WebSearchTool.swift:109-114`): HTTP error responses logged verbatim — if the Tavily API echoes back the API key in error responses, it leaks into logs.
+- **@Tool macro error messages expose type info** (`Sources/SwarmMacros/ToolMacro.swift:481-490`): When a tool return type fails to encode, the error includes `String(describing: type(of: result))`, which could serialize objects containing PII.
 
-### 6.3 Unsafe Assumptions
+### 6.3 Denial of Service Vectors
+
+- **ArithmeticParser unbounded recursion** (`Sources/Swarm/Tools/ArithmeticParser.swift:94-108`): Recursive descent parser has no nesting depth limit. Input like `(((((...(1)...))))))` with 100,000+ levels causes stack overflow.
+- **Calculator expression complexity** (`Sources/Swarm/Tools/BuiltInTools.swift:63-80`): Character whitelist validation passes, but no limit on expression length or operator count. Expressions with millions of operators cause quadratic evaluation time.
+- **String replace unbounded growth** (`Sources/Swarm/Tools/BuiltInTools.swift:286-294`): Replacing `"a"` with a megabyte string across a large input produces exponential memory growth. No output size validation.
+- **No tool execution timeout** (`Sources/Swarm/Tools/Tool.swift:625-695`): `ToolRegistry.execute` has no built-in timeout mechanism. Malicious or buggy tools hang indefinitely.
+- **WebSearch query size unlimited** (`Sources/Swarm/Tools/WebSearchTool.swift:85-97`): Query parameter sent to Tavily API with no length validation.
+
+### 6.4 Unsafe Assumptions
 
 - **No input size limits** — Agent `run()` accepts arbitrary-length strings. No maximum input size validation anywhere in the pipeline.
 - **No tool argument size limits** — Tool execution accepts arbitrary `SendableValue` arguments without size validation.
 - **No session count limits** — `InMemoryBackend` accumulates sessions without bound.
+- **Tool type coercion bypasses** (`Sources/Swarm/Tools/Tool.swift:282-380`): `coerceValue` silently converts `"42"` (string) to `42` (int), which could bypass type-based validation in security-sensitive tools.
 
 ---
 
@@ -376,6 +391,9 @@ Three of six dependencies are authored by the same maintainer. This is a single-
 | M18 | `HiveSwarmTests` unconditionally included in package | Package.swift | 121-129 |
 | M19 | No input size validation on agent `run()` | Agent.swift, ReActAgent.swift | Entry points |
 | M20 | Handoff callback errors silently swallowed | Handoff.swift | 445-454 |
+| M21 | ArithmeticParser stack overflow (no depth limit) | ArithmeticParser.swift | 94-108 |
+| M22 | No tool execution timeout in ToolRegistry | Tool.swift | 625-695 |
+| M23 | WebSearchTool API key exposure in error messages | WebSearchTool.swift | 109-114 |
 
 ### Minor Issues
 
@@ -394,6 +412,10 @@ Three of six dependencies are authored by the same maintainer. This is a single-
 | m11 | Empty ToolChain not caught at init, only at execute | ToolChainBuilder.swift | 509-510 |
 | m12 | Checkpoint decoding uses `try?` swallowing errors | OrchestrationHiveEngine.swift | 344-349 |
 | m13 | Timing-dependent tests risk CI flakiness | ResponseTrackerTests | 98-101, 179 |
+| m14 | Calculator expression complexity DoS (no length/depth limit) | BuiltInTools.swift | 63-80 |
+| m15 | String replace unbounded output growth | BuiltInTools.swift | 286-294 |
+| m16 | Tool type coercion silently converts string to int | Tool.swift | 282-380 |
+| m17 | Tool name collision possible in @Tool macro | ToolMacro.swift | 159-168 |
 
 ---
 
