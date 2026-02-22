@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import HiveCore
+import Swarm
 
 public enum HiveAgentsToolApprovalPolicy: Sendable, Equatable {
     case never
@@ -25,6 +26,20 @@ public enum HiveAgents {
         case toolApproval(decision: ToolApprovalDecision)
     }
 
+    /// Builds a compiled Hive graph for a tool-using chat agent.
+    ///
+    /// The graph implements a model→tools loop: the model generates tool calls, tools execute,
+    /// results are added to the message history, and the cycle repeats until no more tool calls.
+    ///
+    /// - Parameters:
+    ///   - preModel: Optional node that runs before each model invocation. Receives input with
+    ///     `messagesKey` (the conversation history) and should produce `llmInputMessagesKey`
+    ///     (the messages actually sent to the model). Use for compaction, context selection, or
+    ///     injecting system prompts. If nil, a default preModel handles compaction.
+    ///   - postModel: Optional node that runs after each model invocation (before routing).
+    ///     Receives the same input as preModel plus any tool results. Can be used for
+    ///     guardrails, response filtering, or custom routing logic.
+    /// - Returns: A compiled Hive graph ready for execution.
     public static func makeToolUsingChatAgent(
         context: HiveAgentsContext? = nil,
         preModel: HiveNode<Schema>? = nil,
@@ -61,6 +76,7 @@ public enum HiveAgents {
                 let pending = try store.get(Schema.pendingToolCallsKey)
                 return pending.isEmpty ? .end : .nodes([nodeIDs.tools])
             } catch {
+                Log.agents.error("Router failed to read pendingToolCallsKey, ending graph: \(error)")
                 return .end
             }
         }
@@ -86,8 +102,14 @@ public struct HiveCompactionPolicy: Sendable {
     public let preserveLastMessages: Int
 
     public init(maxTokens: Int, preserveLastMessages: Int) {
-        self.maxTokens = maxTokens
-        self.preserveLastMessages = preserveLastMessages
+        if maxTokens < 1 {
+            Log.agents.warning("HiveCompactionPolicy: maxTokens must be >= 1, got \(maxTokens). Clamping to 1.")
+        }
+        if preserveLastMessages < 0 {
+            Log.agents.warning("HiveCompactionPolicy: preserveLastMessages must be >= 0, got \(preserveLastMessages). Clamping to 0.")
+        }
+        self.maxTokens = max(1, maxTokens)
+        self.preserveLastMessages = max(0, preserveLastMessages)
     }
 }
 
@@ -465,9 +487,17 @@ extension HiveAgents {
                 merged.removeAll { deleted.contains($0.id) }
             }
 
-            return merged.filter { message in
-                if case .none = message.op { return true }
-                return false
+            return merged.map { message in
+                let cleaned = HiveChatMessage(
+                    id: message.id,
+                    role: message.role,
+                    content: message.content,
+                    name: message.name,
+                    toolCallID: message.toolCallID,
+                    toolCalls: message.toolCalls,
+                    op: nil
+                )
+                return cleaned
             }
         }
     }
@@ -652,7 +682,7 @@ extension HiveAgents {
     private static func toolsNode() -> HiveNode<Schema> {
         { input in
             let pending = try input.store.get(Schema.pendingToolCallsKey)
-            let calls = pending.sorted(by: Self.toolCallSort)
+            let calls = pending.sorted(by: HiveDeterministicSort.toolCalls)
 
             let approvalRequired: Bool
             switch input.context.toolApprovalPolicy {
@@ -665,6 +695,8 @@ extension HiveAgents {
             }
 
             if approvalRequired {
+                // Defense-in-depth: toolsNode handles approval flow, but if graph edges
+                // are reconfigured, this ensures rejected/cancelled decisions are honored.
                 if let resume = input.run.resume?.payload {
                     switch resume {
                     case let .toolApproval(decision):
@@ -693,15 +725,15 @@ extension HiveAgents {
         }
     }
 
-    private static func rejectedOutput(
+    private static func makeApprovalOutput(
         taskID: HiveTaskID,
         calls _: [HiveToolCall],
         tokenizer: (any HiveTokenizer)?
     ) -> HiveNodeOutput<Schema> {
-        let systemMessage = HiveChatMessage(
+        let sysMsg = HiveChatMessage(
             id: MessageID.system(taskID: taskID),
             role: .system,
-            content: "Tool execution rejected by user.",
+            content: systemMessage,
             toolCalls: [],
             op: nil
         )
@@ -855,6 +887,7 @@ extension HiveAgents {
                     }
                     throw error
                 }
+                return results.sorted { $0.0 < $1.0 }.map(\.1)
             }
 
             var writes: [AnyHiveWrite<Schema>] = circuitResetWrites + [
@@ -971,7 +1004,11 @@ extension HiveAgents {
                     }
                 }
             }
-            throw lastError!
+            if let error = lastError {
+                throw error
+            } else {
+                throw HiveRuntimeError.invalidRunOptions("Retry policy exhausted with no error recorded")
+            }
         }
     }
 
@@ -999,7 +1036,7 @@ extension HiveAgents {
         }
 
         if let first = history.first,
-           first.role.rawValue == "system",
+           first.role == .system,
            history.count > kept.count,
            kept.first?.id != first.id,
            tokenizer.countTokens([first] + kept) <= policy.maxTokens {
@@ -1013,7 +1050,7 @@ extension HiveAgents {
         lhs.name.utf8.lexicographicallyPrecedes(rhs.name.utf8)
     }
 
-    private static func toolCallSort(_ lhs: HiveToolCall, _ rhs: HiveToolCall) -> Bool {
+    static func toolCalls(_ lhs: HiveToolCall, _ rhs: HiveToolCall) -> Bool {
         if lhs.name == rhs.name {
             return lhs.id.utf8.lexicographicallyPrecedes(rhs.id.utf8)
         }

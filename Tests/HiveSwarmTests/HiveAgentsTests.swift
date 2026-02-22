@@ -675,3 +675,25 @@ private struct TestFailure: Error, CustomStringConvertible {
     let description: String
     init(_ description: String) { self.description = description }
 }
+
+private struct DuplicateTestTool: AnyJSONTool {
+    let name: String
+    let description: String = "Test tool"
+
+    var parameters: [ToolParameter] { [] }
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        .string("result")
+    }
+}
+
+private struct CancellableTestTool: AnyJSONTool {
+    let name: String
+    let description: String = "Cancellation test tool"
+
+    var parameters: [ToolParameter] { [] }
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        throw CancellationError()
+    }
+}

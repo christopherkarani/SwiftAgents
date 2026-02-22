@@ -129,7 +129,9 @@ public struct HumanApproval: OrchestrationStep, Sendable {
                         throw OrchestrationError.humanApprovalTimeout(prompt: prompt)
                     }
                     // Return first to complete
-                    let result = try await group.next()!
+                    guard let result = try await group.next() else {
+                        throw OrchestrationError.routingFailed(reason: "HumanApproval: task group completed without result")
+                    }
                     group.cancelAll()
                     return result
                 }

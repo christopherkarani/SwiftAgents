@@ -132,7 +132,7 @@ public actor LoopAgent<Definition: AgentLoopDefinition>: AgentRuntime, Orchestra
             )
         }
         return try await AgentEnvironmentValues.$current.withValue(env) {
-            let agent = RelayAgent(
+            let agent = try RelayAgent(
                 tools: definition.tools,
                 instructions: definition.instructions,
                 configuration: configuration,

@@ -283,6 +283,7 @@ public actor PlanAndExecuteAgent: AgentRuntime {
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - maxReplanAttempts: Maximum replan attempts. Default: 3
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init(
         tools: [any AnyJSONTool] = [],
         instructions: String = "",
@@ -295,7 +296,7 @@ public actor PlanAndExecuteAgent: AgentRuntime {
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         maxReplanAttempts: Int = 3,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         self.tools = tools
         self.instructions = instructions
         self.configuration = configuration
@@ -307,7 +308,7 @@ public actor PlanAndExecuteAgent: AgentRuntime {
         self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
         self.maxReplanAttempts = maxReplanAttempts
         _handoffs = handoffs
-        toolRegistry = ToolRegistry(tools: tools)
+        toolRegistry = try ToolRegistry(tools: tools)
     }
 
     /// Creates a new PlanAndExecuteAgent with typed tools.
@@ -322,6 +323,7 @@ public actor PlanAndExecuteAgent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init<T: Tool>(
         tools: [T] = [],
         instructions: String = "",
@@ -333,9 +335,9 @@ public actor PlanAndExecuteAgent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         let bridged = tools.map { AnyJSONToolAdapter($0) }
-        self.init(
+        try self.init(
             tools: bridged,
             instructions: instructions,
             configuration: configuration,
@@ -890,8 +892,9 @@ public extension PlanAndExecuteAgent {
 
         /// Builds the agent.
         /// - Returns: A new PlanAndExecuteAgent instance.
-        public func build() -> PlanAndExecuteAgent {
-            PlanAndExecuteAgent(
+        /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+        public func build() throws -> PlanAndExecuteAgent {
+            try PlanAndExecuteAgent(
                 tools: _tools,
                 instructions: _instructions,
                 configuration: _configuration,
@@ -942,9 +945,10 @@ public extension PlanAndExecuteAgent {
     /// ```
     ///
     /// - Parameter content: A closure that builds the agent components.
-    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) {
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) throws {
         let components = content()
-        self.init(
+        try self.init(
             tools: components.tools,
             instructions: components.instructions ?? "",
             configuration: components.configuration ?? .default,

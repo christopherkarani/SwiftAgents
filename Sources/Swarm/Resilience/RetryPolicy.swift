@@ -204,18 +204,18 @@ public struct RetryPolicy: Sendable {
     public func execute<T: Sendable>(
         _ operation: @Sendable () async throws -> T
     ) async throws -> T {
-        var attempt = 0
+        var attempt = 1
+        var retryCount = 0
         var lastError: Error?
 
-        while attempt <= maxAttempts {
+        while true {
             do {
                 return try await operation()
             } catch {
                 lastError = error
-                attempt += 1
 
                 // Check if we should retry
-                guard attempt <= maxAttempts else {
+                guard retryCount < maxAttempts else {
                     break
                 }
 
@@ -223,11 +223,14 @@ public struct RetryPolicy: Sendable {
                     throw error
                 }
 
+                retryCount += 1
+                attempt = retryCount + 1
+
                 // Invoke retry callback
-                await onRetry?(attempt, error)
+                await onRetry?(retryCount, error)
 
                 // Calculate and apply backoff delay
-                let delay = backoff.delay(forAttempt: attempt)
+                let delay = backoff.delay(forAttempt: retryCount)
                 if delay > 0 {
                     try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 }
@@ -236,7 +239,7 @@ public struct RetryPolicy: Sendable {
 
         // All retries exhausted
         throw ResilienceError.retriesExhausted(
-            attempts: attempt,
+            attempts: retryCount,
             lastError: lastError?.localizedDescription ?? "Unknown error"
         )
     }

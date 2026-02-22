@@ -186,7 +186,7 @@ struct HiveBackedAgentStreamingTests {
 // MARK: - Helpers
 
 private func makeAgent(modelChunks: [HiveChatStreamChunk]) throws -> HiveBackedAgent {
-    let graph = try! HiveAgents.makeToolUsingChatAgent()
+    let graph = try HiveAgents.makeToolUsingChatAgent()
     let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
     let environment = HiveEnvironment<HiveAgents.Schema>(
         context: context,
@@ -203,7 +203,7 @@ private func makeAgent(modelChunks: [HiveChatStreamChunk]) throws -> HiveBackedA
 }
 
 private func makeScriptedAgent(script: StreamingModelScript) throws -> HiveBackedAgent {
-    let graph = try! HiveAgents.makeToolUsingChatAgent()
+    let graph = try HiveAgents.makeToolUsingChatAgent()
     let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
     let environment = HiveEnvironment<HiveAgents.Schema>(
         context: context,

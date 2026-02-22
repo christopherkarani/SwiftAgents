@@ -60,6 +60,7 @@ public actor ReActAgent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init(
         tools: [any AnyJSONTool] = [],
         instructions: String = "",
@@ -71,7 +72,7 @@ public actor ReActAgent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         self.tools = tools
         self.instructions = instructions
         self.configuration = configuration
@@ -82,7 +83,7 @@ public actor ReActAgent: AgentRuntime {
         self.outputGuardrails = outputGuardrails
         self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
         _handoffs = handoffs
-        toolRegistry = ToolRegistry(tools: tools)
+        toolRegistry = try ToolRegistry(tools: tools)
     }
 
     /// Creates a new ReActAgent with typed tools.
@@ -97,6 +98,7 @@ public actor ReActAgent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init<T: Tool>(
         tools: [T] = [],
         instructions: String = "",
@@ -108,9 +110,9 @@ public actor ReActAgent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         let bridged = tools.map { AnyJSONToolAdapter($0) }
-        self.init(
+        try self.init(
             tools: bridged,
             instructions: instructions,
             configuration: configuration,
@@ -949,8 +951,9 @@ public extension ReActAgent {
 
         /// Builds the agent.
         /// - Returns: A new ReActAgent instance.
-        public func build() -> ReActAgent {
-            ReActAgent(
+        /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+        public func build() throws -> ReActAgent {
+            try ReActAgent(
                 tools: tools,
                 instructions: instructions,
                 configuration: configuration,
