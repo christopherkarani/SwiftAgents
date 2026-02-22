@@ -8,12 +8,12 @@ public struct HiveCodableJSONCodec<Value: Codable & Sendable>: HiveCodec, Sendab
     public let id: String
 
     public init(id: String? = nil) {
-        self.id = id ?? "HiveSwarm.HiveCodableJSONCodec<\(String(reflecting: Value.self))>"
+        self.id = id ?? "HiveSwarm.HiveCodableJSONCodec<\(String(describing: Value.self))>"
     }
 
     public func encode(_ value: Value) throws -> Data {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        encoder.outputFormatting = [.sortedKeys]
         return try encoder.encode(value)
     }
 

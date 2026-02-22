@@ -124,6 +124,9 @@ public struct DAG: OrchestrationStep, Sendable {
     /// Topologically sorted nodes, cached at init time to avoid recomputing on every execute() call.
     private let sortedNodes: [DAGNode]
 
+    /// Stored validation failure captured at construction time.
+    private let validationError: OrchestrationValidationError?
+
     /// Creates a new DAG workflow from a builder closure.
     ///
     /// Validates the graph structure at construction time.
@@ -131,6 +134,7 @@ public struct DAG: OrchestrationStep, Sendable {
     /// - Parameter content: A builder closure producing DAG nodes.
     public init(@DAGBuilder _ content: () -> [DAGNode]) {
         let builtNodes = content()
+        self.validationError = DAG.validate(builtNodes)
         self.nodes = builtNodes
         let (error, sorted) = DAG.validate(builtNodes)
         self.validationError = error
@@ -147,16 +151,16 @@ public struct DAG: OrchestrationStep, Sendable {
     // MARK: - Validation
 
     /// Validates that the DAG has no missing dependencies and no cycles.
-    private static func validate(_ nodes: [DAGNode]) -> (error: DAGValidationError?, sorted: [DAGNode]) {
+    private static func validate(_ nodes: [DAGNode]) -> OrchestrationValidationError? {
         guard !nodes.isEmpty else {
-            return (.emptyGraph, [])
+            return .emptyGraph
         }
 
         var seenNames = Set<String>()
         for node in nodes {
             let inserted = seenNames.insert(node.name).inserted
             if !inserted {
-                return (.duplicateNode(name: node.name), [])
+                return .duplicateNode(name: node.name)
             }
         }
 
@@ -166,13 +170,10 @@ public struct DAG: OrchestrationStep, Sendable {
         for node in nodes {
             for dep in node.dependencies {
                 if !nodeNames.contains(dep) {
-                    return (
-                        .unknownDependency(
-                            node: node.name,
-                            dependency: dep,
-                            availableNodes: nodeNames.sorted()
-                        ),
-                        []
+                    return .unknownDependency(
+                        node: node.name,
+                        dependency: dep,
+                        availableNodes: nodeNames.sorted()
                     )
                 }
             }
@@ -183,10 +184,10 @@ public struct DAG: OrchestrationStep, Sendable {
         if sorted.count != nodes.count {
             let sortedNames = Set(sorted.map(\.name))
             let cycleNodes = nodes.filter { !sortedNames.contains($0.name) }.map(\.name)
-            return (.cycleDetected(nodes: cycleNodes), [])
+            return .cycleDetected(nodes: cycleNodes)
         }
 
-        return (nil, sorted)
+        return nil
     }
 
     // MARK: - Topological Sort (Kahn's Algorithm)
@@ -231,6 +232,10 @@ public struct DAG: OrchestrationStep, Sendable {
     public func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
         if let validationError {
             throw OrchestrationError.invalidGraph(validationError)
+        }
+
+        guard !nodes.isEmpty else {
+            return AgentResult(output: input)
         }
 
         let startTime = ContinuousClock.now

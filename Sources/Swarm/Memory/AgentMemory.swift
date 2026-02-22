@@ -80,22 +80,6 @@ public protocol Memory: Actor, Sendable {
     func clear() async
 }
 
-// MARK: - Backward Compatibility
-
-public extension Memory {
-    /// Deprecated: Use `context(for:tokenLimit:)` instead.
-    @available(*, deprecated, renamed: "context(for:tokenLimit:)", message: "Use context(for:tokenLimit:) instead")
-    func getContext(for query: String, tokenLimit: Int) async -> String {
-        await context(for: query, tokenLimit: tokenLimit)
-    }
-
-    /// Deprecated: Use `allMessages()` instead.
-    @available(*, deprecated, renamed: "allMessages()", message: "Use allMessages() instead")
-    func getAllMessages() async -> [MemoryMessage] {
-        await allMessages()
-    }
-}
-
 // MARK: - Helper Functions
 
 /// Formats messages into a context string within token limits.
@@ -166,12 +150,6 @@ public func formatMessagesForContext(
     return result.reversed().joined(separator: separator)
 }
 
-// MARK: - Deprecated Typealias
-
-/// Deprecated: Use `Memory` instead.
-@available(*, deprecated, renamed: "Memory", message: "AgentMemory has been renamed to Memory")
-public typealias AgentMemory = Memory
-
 // MARK: - AnyMemory
 
 /// Type-erased wrapper for any Memory implementation.
@@ -238,7 +216,3 @@ public actor AnyMemory: Memory {
     private let _count: @Sendable () async -> Int
     private let _isEmpty: @Sendable () async -> Bool
 }
-
-/// Deprecated: Use `AnyMemory` instead.
-@available(*, deprecated, renamed: "AnyMemory", message: "AnyAgentMemory has been renamed to AnyMemory")
-public typealias AnyAgentMemory = AnyMemory

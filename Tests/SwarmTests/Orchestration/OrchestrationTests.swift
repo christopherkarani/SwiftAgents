@@ -278,9 +278,12 @@ struct OrchestrationTests {
             onIterationStart: nil,
             onIterationEnd: nil
         )
-
-        guard case let .completed(result) = outcome else {
-            Issue.record("Expected completed outcome for empty workflow.")
+        let result: AgentResult
+        switch outcome {
+        case .completed(let completed):
+            result = completed
+        case .interrupted:
+            Issue.record("Expected completed workflow outcome for empty steps.")
             return
         }
 

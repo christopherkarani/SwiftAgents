@@ -218,7 +218,9 @@ public actor ParallelComposition: AgentRuntime {
             }
         case .continueOnPartialFailure:
             if results.isEmpty, !errors.isEmpty {
-                let firstError = errors.first!
+                guard let firstError = errors.first else {
+                    throw AgentError.internalError(reason: "ParallelComposition: all agents failed but no error captured")
+                }
                 if let agentError = firstError as? AgentError {
                     throw agentError
                 } else {
