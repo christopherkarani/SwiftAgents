@@ -646,7 +646,8 @@ public extension ReActAgent {
             tracer: components.tracer,
             inputGuardrails: components.inputGuardrails,
             outputGuardrails: components.outputGuardrails,
-            handoffs: components.handoffs
+            handoffs: components.handoffs,
+            mcpClient: components.mcpClient
         )
     }
 }

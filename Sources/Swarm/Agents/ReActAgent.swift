@@ -42,6 +42,8 @@ public actor ReActAgent: AgentRuntime {
     nonisolated public let inputGuardrails: [any InputGuardrail]
     nonisolated public let outputGuardrails: [any OutputGuardrail]
     nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
+    /// Optional MCP client for dynamic tool discovery from connected MCP servers.
+    nonisolated public let mcpClient: MCPClient?
 
     /// Configured handoffs for this agent.
     nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
@@ -71,7 +73,8 @@ public actor ReActAgent: AgentRuntime {
         inputGuardrails: [any InputGuardrail] = [],
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
-        handoffs: [AnyHandoffConfiguration] = []
+        handoffs: [AnyHandoffConfiguration] = [],
+        mcpClient: MCPClient? = nil
     ) throws {
         self.tools = tools
         self.instructions = instructions
@@ -83,6 +86,7 @@ public actor ReActAgent: AgentRuntime {
         self.outputGuardrails = outputGuardrails
         self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
         _handoffs = handoffs
+        self.mcpClient = mcpClient
         toolRegistry = try ToolRegistry(tools: tools)
     }
 
@@ -162,7 +166,8 @@ public actor ReActAgent: AgentRuntime {
             let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
             _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
-            // Reset cancellation state and create result builder
+            // Reset cancellation flag and create result builder
+            isCancelled = false
             let resultBuilder = AgentResult.Builder()
             _ = resultBuilder.start()
 
@@ -246,10 +251,11 @@ public actor ReActAgent: AgentRuntime {
     }
 
     /// Cancels any ongoing execution.
+    ///
+    /// Sets a cancellation flag that the execution loop checks at each iteration boundary.
+    /// The next iteration will throw `CancellationError` and unwind cleanly.
     public func cancel() async {
-        // Simply cancel the current task - the task cancellation handler
-        // will perform any necessary cleanup
-        currentTask?.cancel()
+        isCancelled = true
     }
 
     // MARK: Private
@@ -258,7 +264,8 @@ public actor ReActAgent: AgentRuntime {
 
     // MARK: - Internal State
 
-    private var currentTask: Task<Void, Never>?
+    /// Cancellation flag set by `cancel()` and checked at each iteration boundary.
+    private var isCancelled = false
     private let toolRegistry: ToolRegistry
 
     // MARK: - ReAct Loop Implementation
@@ -273,7 +280,22 @@ public actor ReActAgent: AgentRuntime {
         var iteration = 0
         var scratchpad = "" // Accumulates Thought-Action-Observation history
         let startTime = ContinuousClock.now
-        let toolSchemas = tools.map(\.schema)
+
+        // Register MCP tools at the start of each execution if an MCPClient is configured.
+        // Duplicate registrations (on repeat runs) are silently ignored.
+        if let mcpClient {
+            do {
+                let mcpTools = try await mcpClient.getAllTools()
+                for tool in mcpTools {
+                    try? await toolRegistry.register(tool)
+                }
+            } catch {
+                Log.agents.warning("MCPClient tool discovery failed: \(error.localizedDescription)")
+            }
+        }
+
+        // Build tool schemas from the registry (includes both static and MCP-discovered tools)
+        let toolSchemas = await toolRegistry.schemas
 
         // Retrieve relevant context from memory once at the start
         // This enables RAG-style retrieval for VectorMemory or summarization for SummaryMemory
@@ -285,7 +307,10 @@ public actor ReActAgent: AgentRuntime {
         }
 
         while iteration < configuration.maxIterations {
-            // Check for cancellation using standard Swift concurrency pattern
+            // Check for cancellation via cancel() flag and structured task cancellation
+            if isCancelled {
+                throw CancellationError()
+            }
             try Task.checkCancellation()
 
             // Check timeout
@@ -468,10 +493,19 @@ public actor ReActAgent: AgentRuntime {
             return updatedScratchpad
         }
 
-        // Parallel execution: execute tool calls concurrently, then append observations in order.
+        // Parallel execution: execute tool calls concurrently with a concurrency cap,
+        // then append observations in order. The cap prevents unbounded task creation
+        // when a response contains many tool calls.
+        let maxConcurrentToolCalls = 10
         let engine = ToolExecutionEngine()
         let outcomes = try await withThrowingTaskGroup(of: (Int, ToolExecutionEngine.Outcome).self) { group in
-            for (index, call) in calls.enumerated() {
+            var inFlight = 0
+            var callIterator = calls.enumerated().makeIterator()
+            var results: [(Int, ToolExecutionEngine.Outcome)] = []
+            results.reserveCapacity(calls.count)
+
+            // Seed the group up to maxConcurrentToolCalls tasks
+            while inFlight < maxConcurrentToolCalls, let (index, call) = callIterator.next() {
                 group.addTask { [toolRegistry, resultBuilder, hooks, tracing] in
                     let outcome = try await engine.execute(
                         call,
@@ -485,12 +519,29 @@ public actor ReActAgent: AgentRuntime {
                     )
                     return (index, outcome)
                 }
+                inFlight += 1
             }
 
-            var results: [(Int, ToolExecutionEngine.Outcome)] = []
-            results.reserveCapacity(calls.count)
+            // Drain completed tasks and enqueue the next pending call
             for try await result in group {
                 results.append(result)
+                inFlight -= 1
+                if let (index, call) = callIterator.next() {
+                    group.addTask { [toolRegistry, resultBuilder, hooks, tracing] in
+                        let outcome = try await engine.execute(
+                            call,
+                            registry: toolRegistry,
+                            agent: self,
+                            context: nil,
+                            resultBuilder: resultBuilder,
+                            hooks: hooks,
+                            tracing: tracing,
+                            stopOnToolError: false
+                        )
+                        return (index, outcome)
+                    }
+                    inFlight += 1
+                }
             }
 
             results.sort { $0.0 < $1.0 }

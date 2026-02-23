@@ -66,12 +66,19 @@ public actor InferenceProviderSummarizer: Summarizer {
             ? String(text.prefix(maxInputLength)) + "\n[...truncated]"
             : text
 
-        // Use XML-style boundaries to prevent prompt injection
+        // Escape XML special characters in user content to prevent tag injection.
+        // Without escaping, user text containing "</text_to_summarize>" could corrupt
+        // the summarizer prompt (prompt injection).
+        let escapedText = truncatedText
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+
         let prompt = """
         \(systemPrompt)
 
         <text_to_summarize>
-        \(truncatedText)
+        \(escapedText)
         </text_to_summarize>
 
         Summary:
