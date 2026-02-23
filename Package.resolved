@@ -29,6 +29,15 @@
       }
     },
     {
+      "identity" : "hive",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/christopherkarani/Hive",
+      "state" : {
+        "revision" : "f90e42bd1fdf5dce6b669fb900f0d417d70a6bef",
+        "version" : "0.1.6"
+      }
+    },
+    {
       "identity" : "swift-collections",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-collections.git",
