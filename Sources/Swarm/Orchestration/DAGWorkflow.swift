@@ -132,9 +132,12 @@ public struct DAG: OrchestrationStep, Sendable {
     /// Validates the graph structure at construction time.
     ///
     /// - Parameter content: A builder closure producing DAG nodes.
-    public init(@DAGBuilder _ content: () -> [DAGNode]) {
+    public init(@DAGBuilder _ content: () -> [DAGNode]) throws {
         let builtNodes = content()
-        self.validationError = DAG.validate(builtNodes)
+        if let error = DAG.validate(builtNodes) {
+            throw OrchestrationError.invalidGraph(error)
+        }
+        self.validationError = nil
         self.nodes = builtNodes
         let (error, sorted) = DAG.validate(builtNodes)
         self.validationError = error

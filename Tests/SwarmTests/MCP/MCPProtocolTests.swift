@@ -13,7 +13,7 @@ import Testing
 struct MCPRequestTests {
     @Test("request encoding includes required JSON-RPC fields")
     func requestEncoding() throws {
-        let request = MCPRequest(id: "test-123", method: "tools/list")
+        let request = try MCPRequest(id: "test-123", method: "tools/list")
         let encoder = JSONEncoder()
         let data = try encoder.encode(request)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -24,8 +24,8 @@ struct MCPRequestTests {
     }
 
     @Test("request generates UUID by default")
-    func requestDefaultId() {
-        let request = MCPRequest(method: "initialize")
+    func requestDefaultId() throws {
+        let request = try MCPRequest(method: "initialize")
 
         #expect(!request.id.isEmpty)
         #expect(UUID(uuidString: request.id) != nil)
@@ -39,7 +39,7 @@ struct MCPRequestTests {
             "name": .string("calculator"),
             "arguments": .dictionary(["x": .int(10)])
         ]
-        let request = MCPRequest(method: "tools/call", params: params)
+        let request = try MCPRequest(method: "tools/call", params: params)
 
         // Verify the request has params set
         #expect(request.params != nil)
@@ -58,15 +58,20 @@ struct MCPRequestTests {
     }
 
     @Test("request with empty id is given a UUID fallback")
-    func requestSanitizesEmptyId() {
-        // Only the id is sanitized at runtime; an empty method is a programmer
-        // error enforced via precondition (not testable without process isolation).
-        let request = MCPRequest(id: "", method: "tools/list")
+    func requestSanitizesEmptyId() throws {
+        let request = try MCPRequest(id: "", method: "tools/list")
 
         #expect(!request.id.isEmpty)
         #expect(UUID(uuidString: request.id) != nil)
         #expect(request.method == "tools/list")
         #expect(request.jsonrpc == "2.0")
+    }
+
+    @Test("request with empty method throws")
+    func requestEmptyMethodThrows() async {
+        await #expect(throws: MCPError.self) {
+            _ = try MCPRequest(method: "")
+        }
     }
 }
 
@@ -82,7 +87,7 @@ struct MCPResponseTests {
         // This test verifies the Swift API works correctly with properly encoded values.
 
         // Create response using factory method (proper internal API)
-        let response = MCPResponse.success(id: "resp-1", result: .dictionary(["tools": .array([])]))
+        let response = try MCPResponse.success(id: "resp-1", result: .dictionary(["tools": .array([])]))
 
         #expect(response.jsonrpc == "2.0")
         #expect(response.id == "resp-1")
@@ -123,8 +128,8 @@ struct MCPResponseTests {
     }
 
     @Test("success factory creates valid response")
-    func successFactory() {
-        let response = MCPResponse.success(id: "success-1", result: .string("done"))
+    func successFactory() throws {
+        let response = try MCPResponse.success(id: "success-1", result: .string("done"))
 
         #expect(response.jsonrpc == "2.0")
         #expect(response.id == "success-1")
@@ -133,9 +138,9 @@ struct MCPResponseTests {
     }
 
     @Test("failure factory creates valid error response")
-    func failureFactory() {
+    func failureFactory() throws {
         let errorObj = MCPErrorObject(code: -32600, message: "Invalid request")
-        let response = MCPResponse.failure(id: "fail-1", error: errorObj)
+        let response = try MCPResponse.failure(id: "fail-1", error: errorObj)
 
         #expect(response.jsonrpc == "2.0")
         #expect(response.id == "fail-1")
@@ -296,8 +301,8 @@ struct MCPResourceTests {
     }
 
     @Test("resource content with text has isText true")
-    func resourceContentText() {
-        let content = MCPResourceContent(
+    func resourceContentText() throws {
+        let content = try MCPResourceContent(
             uri: "file:///readme.md",
             mimeType: "text/markdown",
             text: "# Hello"
@@ -309,8 +314,8 @@ struct MCPResourceTests {
     }
 
     @Test("resource content with blob has isBinary true")
-    func resourceContentBinary() {
-        let content = MCPResourceContent(
+    func resourceContentBinary() throws {
+        let content = try MCPResourceContent(
             uri: "file:///image.png",
             mimeType: "image/png",
             blob: "iVBORw0KGgoAAAANSUhEUg=="
@@ -319,5 +324,24 @@ struct MCPResourceTests {
         #expect(content.isText == false)
         #expect(content.isBinary == true)
         #expect(content.blob == "iVBORw0KGgoAAAANSUhEUg==")
+    }
+
+    @Test("resource content throws when both text and blob are provided")
+    func resourceContentBothSetThrows() async {
+        await #expect(throws: MCPError.self) {
+            _ = try MCPResourceContent(
+                uri: "file:///broken",
+                mimeType: "text/plain",
+                text: "hello",
+                blob: "aGVsbG8="
+            )
+        }
+    }
+
+    @Test("resource content throws when neither text nor blob are provided")
+    func resourceContentNeitherSetThrows() async {
+        await #expect(throws: MCPError.self) {
+            _ = try MCPResourceContent(uri: "file:///broken")
+        }
     }
 }

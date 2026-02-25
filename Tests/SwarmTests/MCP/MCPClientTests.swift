@@ -407,7 +407,7 @@ struct MCPClientResourceTests {
     @Test("readResource returns content when found")
     func readResourceFound() async throws {
         let client = MCPClient()
-        let content = MCPResourceContent(
+        let content = try MCPResourceContent(
             uri: "file:///config.json",
             mimeType: "application/json",
             text: "{\"key\": \"value\"}"
@@ -445,7 +445,7 @@ struct MCPClientResourceTests {
         let server1 = MockMCPServer(name: "server1")
 
         // Second server has the resource
-        let content = MCPResourceContent(
+        let content = try MCPResourceContent(
             uri: "file:///found.txt",
             mimeType: "text/plain",
             text: "Found content"
