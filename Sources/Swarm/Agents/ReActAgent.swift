@@ -42,6 +42,8 @@ public actor ReActAgent: AgentRuntime {
     nonisolated public let inputGuardrails: [any InputGuardrail]
     nonisolated public let outputGuardrails: [any OutputGuardrail]
     nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
+    /// Optional MCP client for dynamic tool discovery from connected MCP servers.
+    nonisolated public let mcpClient: MCPClient?
 
     /// Configured handoffs for this agent.
     nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
@@ -60,6 +62,7 @@ public actor ReActAgent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init(
         tools: [any AnyJSONTool] = [],
         instructions: String = "",
@@ -70,8 +73,9 @@ public actor ReActAgent: AgentRuntime {
         inputGuardrails: [any InputGuardrail] = [],
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
-        handoffs: [AnyHandoffConfiguration] = []
-    ) {
+        handoffs: [AnyHandoffConfiguration] = [],
+        mcpClient: MCPClient? = nil
+    ) throws {
         self.tools = tools
         self.instructions = instructions
         self.configuration = configuration
@@ -82,7 +86,8 @@ public actor ReActAgent: AgentRuntime {
         self.outputGuardrails = outputGuardrails
         self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
         _handoffs = handoffs
-        toolRegistry = ToolRegistry(tools: tools)
+        self.mcpClient = mcpClient
+        toolRegistry = try ToolRegistry(tools: tools)
     }
 
     /// Creates a new ReActAgent with typed tools.
@@ -97,6 +102,7 @@ public actor ReActAgent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init<T: Tool>(
         tools: [T] = [],
         instructions: String = "",
@@ -108,9 +114,9 @@ public actor ReActAgent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         let bridged = tools.map { AnyJSONToolAdapter($0) }
-        self.init(
+        try self.init(
             tools: bridged,
             instructions: instructions,
             configuration: configuration,
@@ -134,31 +140,84 @@ public actor ReActAgent: AgentRuntime {
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
-        let runID = UUID()
-        let task = Task { [self] in
-            try await runInternal(input, session: session, hooks: hooks)
+        guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
-        currentTask = task
-        currentRunID = runID
-        defer {
-            if currentRunID == runID {
-                currentTask = nil
-                currentRunID = nil
-            }
+
+        let activeTracer = tracer ?? AgentEnvironmentValues.current.tracer
+        let activeMemory = memory ?? AgentEnvironmentValues.current.memory
+        let lifecycleMemory = activeMemory as? any MemorySessionLifecycle
+
+        let tracing = TracingHelper(
+            tracer: activeTracer,
+            agentName: configuration.name.isEmpty ? "ReActAgent" : configuration.name
+        )
+        await tracing.traceStart(input: input)
+
+        // Notify hooks of agent start
+        await hooks?.onAgentStart(context: nil, agent: self, input: input)
+
+        if let lifecycleMemory {
+            await lifecycleMemory.beginMemorySession()
         }
 
         do {
-            return try await withTaskCancellationHandler(
-                operation: {
-                    try await task.value
-                },
-                onCancel: {
-                    task.cancel()
-                }
+            // Run input guardrails (with hooks for event emission)
+            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
+            _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
+
+            // Reset cancellation flag and create result builder
+            isCancelled = false
+            let resultBuilder = AgentResult.Builder()
+            _ = resultBuilder.start()
+
+            // Load conversation history from session (limit to recent messages)
+            var sessionHistory: [MemoryMessage] = []
+            if let session {
+                sessionHistory = try await session.getItems(limit: configuration.sessionHistoryLimit)
+            }
+
+            // Create user message for this turn
+            let userMessage = MemoryMessage.user(input)
+
+            // Execute the ReAct loop with session context
+            let output = try await executeReActLoop(
+                input: input,
+                sessionHistory: sessionHistory,
+                resultBuilder: resultBuilder,
+                hooks: hooks,
+                tracing: tracing
             )
-        } catch is CancellationError {
-            task.cancel()
-            throw AgentError.cancelled
+
+            _ = resultBuilder.setOutput(output)
+
+            // Run output guardrails BEFORE storing in session
+            _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
+
+            // Store turn in session for conversation persistence
+            // Session is the source of truth for conversation history
+            if let session {
+                let assistantMessage = MemoryMessage.assistant(output)
+                try await session.addItems([userMessage, assistantMessage])
+            }
+
+            // Note: Memory provides additional context (RAG, summaries) - NOT for conversation storage
+            // This avoids duplication: session stores conversation, memory provides context
+
+            let result = resultBuilder.build()
+            await tracing.traceComplete(result: result)
+            await hooks?.onAgentEnd(context: nil, agent: self, result: result)
+            if let lifecycleMemory {
+                await lifecycleMemory.endMemorySession()
+            }
+            return result
+        } catch {
+            await hooks?.onError(context: nil, agent: self, error: error)
+            await tracing.traceError(error)
+            if let lifecycleMemory {
+                await lifecycleMemory.endMemorySession()
+            }
+            throw error
         }
     }
 
@@ -192,115 +251,21 @@ public actor ReActAgent: AgentRuntime {
     }
 
     /// Cancels any ongoing execution.
+    ///
+    /// Sets a cancellation flag that the execution loop checks at each iteration boundary.
+    /// The next iteration will throw `CancellationError` and unwind cleanly.
     public func cancel() async {
         isCancelled = true
-        currentTask?.cancel()
     }
 
     // MARK: Private
-
-    private func runInternal(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
-        guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AgentError.invalidInput(reason: "Input cannot be empty")
-        }
-
-        let activeTracer = tracer ?? AgentEnvironmentValues.current.tracer
-        let activeMemory = memory ?? AgentEnvironmentValues.current.memory
-        let lifecycleMemory = activeMemory as? any MemorySessionLifecycle
-
-        let tracing = TracingHelper(
-            tracer: activeTracer,
-            agentName: configuration.name.isEmpty ? "ReActAgent" : configuration.name
-        )
-        await tracing.traceStart(input: input)
-
-        // Notify hooks of agent start
-        await hooks?.onAgentStart(context: nil, agent: self, input: input)
-
-        if let lifecycleMemory {
-            await lifecycleMemory.beginMemorySession()
-        }
-
-        do {
-            // Run input guardrails (with hooks for event emission)
-            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
-            _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
-
-            isCancelled = false
-            let resultBuilder = AgentResult.Builder()
-            _ = resultBuilder.start()
-
-            // Load conversation history from session (limit to recent messages)
-            var sessionHistory: [MemoryMessage] = []
-            if let session {
-                sessionHistory = try await session.getItems(limit: configuration.sessionHistoryLimit)
-            }
-
-            // Create user message for this turn
-            let userMessage = MemoryMessage.user(input)
-
-            // Store in memory (for AI context) if available
-            if let mem = activeMemory {
-                // Seed session history only once for a fresh memory instance.
-                if session != nil, await mem.isEmpty, !sessionHistory.isEmpty {
-                    for msg in sessionHistory {
-                        await mem.add(msg)
-                    }
-                }
-                await mem.add(userMessage)
-            }
-
-            // Execute the ReAct loop with session context
-            let output = try await executeReActLoop(
-                input: input,
-                sessionHistory: sessionHistory,
-                resultBuilder: resultBuilder,
-                hooks: hooks,
-                tracing: tracing
-            )
-
-            _ = resultBuilder.setOutput(output)
-
-            // Run output guardrails BEFORE storing in memory/session
-            _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
-
-            // Store turn in session (user + assistant messages)
-            if let session {
-                let assistantMessage = MemoryMessage.assistant(output)
-                try await session.addItems([userMessage, assistantMessage])
-            }
-
-            // Only store output in memory if validation passed
-            if let mem = activeMemory {
-                await mem.add(.assistant(output))
-            }
-
-            _ = resultBuilder.setMetadata(RuntimeMetadata.runtimeEngineKey, .string(RuntimeMetadata.hiveRuntimeEngineName))
-            let result = resultBuilder.build()
-            await tracing.traceComplete(result: result)
-            await hooks?.onAgentEnd(context: nil, agent: self, result: result)
-            if let lifecycleMemory {
-                await lifecycleMemory.endMemorySession()
-            }
-            return result
-        } catch {
-            let normalizedError = normalizeCancellation(error)
-            await hooks?.onError(context: nil, agent: self, error: normalizedError)
-            await tracing.traceError(normalizedError)
-            if let lifecycleMemory {
-                await lifecycleMemory.endMemorySession()
-            }
-            throw normalizedError
-        }
-    }
 
     private let _handoffs: [AnyHandoffConfiguration]
 
     // MARK: - Internal State
 
-    private var currentTask: Task<AgentResult, Error>?
-    private var currentRunID: UUID?
-    private var isCancelled: Bool = false
+    /// Cancellation flag set by `cancel()` and checked at each iteration boundary.
+    private var isCancelled = false
     private let toolRegistry: ToolRegistry
 
     // MARK: - ReAct Loop Implementation
@@ -315,137 +280,130 @@ public actor ReActAgent: AgentRuntime {
         var iteration = 0
         var scratchpad = "" // Accumulates Thought-Action-Observation history
         let startTime = ContinuousClock.now
-        let toolSchemas = tools.map(\.schema)
+
+        // Register MCP tools at the start of each execution if an MCPClient is configured.
+        // Duplicate registrations (on repeat runs) are silently ignored.
+        if let mcpClient {
+            do {
+                let mcpTools = try await mcpClient.getAllTools()
+                for tool in mcpTools {
+                    try? await toolRegistry.register(tool)
+                }
+            } catch {
+                Log.agents.warning("MCPClient tool discovery failed: \(error.localizedDescription)")
+            }
+        }
+
+        // Build tool schemas from the registry (includes both static and MCP-discovered tools)
+        let toolSchemas = await toolRegistry.schemas
 
         // Retrieve relevant context from memory once at the start
         // This enables RAG-style retrieval for VectorMemory or summarization for SummaryMemory
         var memoryContext = ""
         if let mem = memory ?? AgentEnvironmentValues.current.memory {
             // Use a reasonable token limit for context (configurable via maxTokens or default)
-            let tokenLimit = configuration.effectiveContextProfile.memoryTokenLimit
+            let tokenLimit = configuration.contextProfile.memoryTokenLimit
             memoryContext = await mem.context(for: input, tokenLimit: tokenLimit)
         }
 
         while iteration < configuration.maxIterations {
+            // Check for cancellation via cancel() flag and structured task cancellation
+            if isCancelled {
+                throw CancellationError()
+            }
+            try Task.checkCancellation()
+
+            // Check timeout
+            let elapsed = ContinuousClock.now - startTime
+            if elapsed > configuration.timeout {
+                throw AgentError.timeout(duration: configuration.timeout)
+            }
+
             iteration += 1
             _ = resultBuilder.incrementIteration()
             await hooks?.onIterationStart(context: nil, agent: self, number: iteration)
 
-            do {
-                if isCancelled {
-                    throw AgentError.cancelled
-                }
-                do {
-                    try Task.checkCancellation()
-                } catch is CancellationError {
-                    throw AgentError.cancelled
-                }
+            // Step 1: Build prompt with current context (including memory context)
+            let prompt = buildPrompt(
+                input: input,
+                sessionHistory: sessionHistory,
+                scratchpad: scratchpad,
+                iteration: iteration,
+                memoryContext: memoryContext
+            )
 
-                // Check timeout
-                let elapsed = ContinuousClock.now - startTime
-                if elapsed > configuration.timeout {
-                    throw AgentError.timeout(duration: configuration.timeout)
-                }
+            // Step 2: Generate response from model
+            await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
+            let inference = try await generateResponse(
+                prompt: prompt,
+                tools: toolSchemas,
+                enableStreaming: configuration.enableStreaming && hooks != nil,
+                hooks: hooks
+            )
+            let modelText = inference.content ?? ""
+            let llmResponseForHooks = modelText.isEmpty
+                ? inference.toolCalls.map { "Calling tool: \($0.name)" }.joined(separator: ", ")
+                : modelText
+            await hooks?.onLLMEnd(context: nil, agent: self, response: llmResponseForHooks, usage: inference.usage)
 
-                // Step 1: Build prompt with current context (including memory context)
-                let prompt = PromptEnvelope.enforce(
-                    prompt: buildPrompt(
-                        input: input,
-                        sessionHistory: sessionHistory,
-                        scratchpad: scratchpad,
-                        iteration: iteration,
-                        memoryContext: memoryContext
-                    ),
-                    profile: configuration.effectiveContextProfile
+            // Emit thinking event if a thought block is present in the response
+            if let thoughtRange = modelText.range(of: "Thought:", options: .caseInsensitive) {
+                var thought = String(modelText[thoughtRange.upperBound...])
+                if let nextMarker = thought.range(of: "Action:", options: .caseInsensitive) {
+                    thought = String(thought[..<nextMarker.lowerBound])
+                } else if let nextMarker = thought.range(of: "Final Answer:", options: .caseInsensitive) {
+                    thought = String(thought[..<nextMarker.lowerBound])
+                }
+                let cleanThought = thought.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !cleanThought.isEmpty {
+                    if let tracing { await tracing.traceThought(cleanThought) }
+                    await hooks?.onThinking(context: nil, agent: self, thought: cleanThought)
+                }
+            }
+
+            if !inference.toolCalls.isEmpty {
+                // Native tool calls - execute them and continue.
+                scratchpad = try await handleToolCalls(
+                    calls: inference.toolCalls,
+                    scratchpad: scratchpad,
+                    resultBuilder: resultBuilder,
+                    hooks: hooks,
+                    tracing: tracing
                 )
+            } else {
+                // Step 3: Parse the response (text-based ReAct fallback)
+                let parsed = parseResponse(modelText)
 
-                // Step 2: Generate response from model
-                await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
-                let inference = try await generateResponse(
-                    prompt: prompt,
-                    tools: toolSchemas,
-                    enableStreaming: configuration.enableStreaming && hooks != nil,
-                    hooks: hooks
-                )
-                let modelText = inference.content ?? ""
-                let llmResponseForHooks = modelText.isEmpty
-                    ? inference.toolCalls.map { "Calling tool: \($0.name)" }.joined(separator: ", ")
-                    : modelText
-                await hooks?.onLLMEnd(context: nil, agent: self, response: llmResponseForHooks, usage: inference.usage)
+                switch parsed {
+                case let .finalAnswer(answer):
+                    // Agent has decided on a final answer
+                    return answer
 
-                // Emit thinking event if a thought block is present in the response
-                if let thoughtRange = modelText.range(of: "Thought:", options: .caseInsensitive) {
-                    var thought = String(modelText[thoughtRange.upperBound...])
-                    if let nextMarker = thought.range(of: "Action:", options: .caseInsensitive) {
-                        thought = String(thought[..<nextMarker.lowerBound])
-                    } else if let nextMarker = thought.range(of: "Final Answer:", options: .caseInsensitive) {
-                        thought = String(thought[..<nextMarker.lowerBound])
-                    }
-                    let cleanThought = thought.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !cleanThought.isEmpty {
-                        if let tracing { await tracing.traceThought(cleanThought) }
-                        await hooks?.onThinking(context: nil, agent: self, thought: cleanThought)
-                    }
-                }
-
-                if !inference.toolCalls.isEmpty {
-                    // Native tool calls - execute them and continue.
-                    scratchpad = try await handleToolCalls(
-                        calls: inference.toolCalls,
+                case let .toolCall(call):
+                    // Agent wants to call a tool - delegate to helper method
+                    scratchpad = try await handleToolCall(
+                        call: call,
                         scratchpad: scratchpad,
                         resultBuilder: resultBuilder,
                         hooks: hooks,
                         tracing: tracing
                     )
-                } else {
-                    // Step 3: Parse the response (text-based ReAct fallback)
-                    let parsed = parseResponse(modelText)
 
-                    switch parsed {
-                    case let .finalAnswer(answer):
-                        // Agent has decided on a final answer
-                        await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
-                        return answer
+                case let .thinking(thought):
+                    // Agent is just thinking, continue
+                    scratchpad += "\nThought: \(thought)"
 
-                    case let .toolCall(call):
-                        // Agent wants to call a tool - delegate to helper method
-                        scratchpad = try await handleToolCall(
-                            call: call,
-                            scratchpad: scratchpad,
-                            resultBuilder: resultBuilder,
-                            hooks: hooks,
-                            tracing: tracing
-                        )
-
-                    case let .thinking(thought):
-                        // Agent is just thinking, continue
-                        scratchpad += "\nThought: \(thought)"
-
-                    case let .invalid(raw):
-                        // Couldn't parse response, treat as thinking
-                        scratchpad += "\nThought: \(raw)"
-                    }
+                case let .invalid(raw):
+                    // Couldn't parse response, treat as thinking
+                    scratchpad += "\nThought: \(raw)"
                 }
-
-                await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
-            } catch {
-                await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
-                throw normalizeCancellation(error)
             }
+
+            await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
         }
 
         // Exceeded max iterations
         throw AgentError.maxIterationsExceeded(iterations: iteration)
-    }
-
-    private func normalizeCancellation(_ error: Error) -> Error {
-        if error is CancellationError {
-            return AgentError.cancelled
-        }
-        if let agentError = error as? AgentError, agentError == .cancelled {
-            return agentError
-        }
-        return error
     }
 
     // MARK: - Tool Call Handling
@@ -535,10 +493,19 @@ public actor ReActAgent: AgentRuntime {
             return updatedScratchpad
         }
 
-        // Parallel execution: execute tool calls concurrently, then append observations in order.
+        // Parallel execution: execute tool calls concurrently with a concurrency cap,
+        // then append observations in order. The cap prevents unbounded task creation
+        // when a response contains many tool calls.
+        let maxConcurrentToolCalls = 10
         let engine = ToolExecutionEngine()
         let outcomes = try await withThrowingTaskGroup(of: (Int, ToolExecutionEngine.Outcome).self) { group in
-            for (index, call) in calls.enumerated() {
+            var inFlight = 0
+            var callIterator = calls.enumerated().makeIterator()
+            var results: [(Int, ToolExecutionEngine.Outcome)] = []
+            results.reserveCapacity(calls.count)
+
+            // Seed the group up to maxConcurrentToolCalls tasks
+            while inFlight < maxConcurrentToolCalls, let (index, call) = callIterator.next() {
                 group.addTask { [toolRegistry, resultBuilder, hooks, tracing] in
                     let outcome = try await engine.execute(
                         call,
@@ -552,12 +519,29 @@ public actor ReActAgent: AgentRuntime {
                     )
                     return (index, outcome)
                 }
+                inFlight += 1
             }
 
-            var results: [(Int, ToolExecutionEngine.Outcome)] = []
-            results.reserveCapacity(calls.count)
+            // Drain completed tasks and enqueue the next pending call
             for try await result in group {
                 results.append(result)
+                inFlight -= 1
+                if let (index, call) = callIterator.next() {
+                    group.addTask { [toolRegistry, resultBuilder, hooks, tracing] in
+                        let outcome = try await engine.execute(
+                            call,
+                            registry: toolRegistry,
+                            agent: self,
+                            context: nil,
+                            resultBuilder: resultBuilder,
+                            hooks: hooks,
+                            tracing: tracing,
+                            stopOnToolError: false
+                        )
+                        return (index, outcome)
+                    }
+                    inFlight += 1
+                }
             }
 
             results.sort { $0.0 < $1.0 }
@@ -990,8 +974,9 @@ public extension ReActAgent {
 
         /// Builds the agent.
         /// - Returns: A new ReActAgent instance.
-        public func build() -> ReActAgent {
-            ReActAgent(
+        /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+        public func build() throws -> ReActAgent {
+            try ReActAgent(
                 tools: tools,
                 instructions: instructions,
                 configuration: configuration,

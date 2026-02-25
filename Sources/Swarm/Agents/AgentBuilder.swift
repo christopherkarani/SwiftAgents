@@ -617,7 +617,8 @@ public extension ReActAgent {
     /// ```
     ///
     /// - Parameter content: A closure that builds the agent components.
-    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) {
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) throws {
         let components = content()
 
         // Build configuration with Phase 5 overrides
@@ -636,7 +637,7 @@ public extension ReActAgent {
             config = config.modelSettings(modelSettings)
         }
 
-        self.init(
+        try self.init(
             tools: components.tools,
             instructions: components.instructions ?? "",
             configuration: config,
@@ -645,7 +646,8 @@ public extension ReActAgent {
             tracer: components.tracer,
             inputGuardrails: components.inputGuardrails,
             outputGuardrails: components.outputGuardrails,
-            handoffs: components.handoffs
+            handoffs: components.handoffs,
+            mcpClient: components.mcpClient
         )
     }
 }

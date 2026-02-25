@@ -74,6 +74,7 @@ public actor Agent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init(
         tools: [any AnyJSONTool] = [],
         instructions: String = "",
@@ -85,7 +86,7 @@ public actor Agent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         self.tools = tools
         self.instructions = instructions
         self.configuration = configuration
@@ -96,7 +97,7 @@ public actor Agent: AgentRuntime {
         self.outputGuardrails = outputGuardrails
         self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
         _handoffs = handoffs
-        toolRegistry = ToolRegistry(tools: tools)
+        toolRegistry = try ToolRegistry(tools: tools)
     }
 
     /// Convenience initializer that takes an unlabeled inference provider.
@@ -116,8 +117,8 @@ public actor Agent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
-        self.init(
+    ) throws {
+        try self.init(
             tools: tools,
             instructions: instructions,
             configuration: configuration,
@@ -143,8 +144,9 @@ public actor Agent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
-    public init(
-        tools: [some Tool] = [],
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+    public init<T: Tool>(
+        tools: [T] = [],
         instructions: String = "",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
@@ -154,9 +156,9 @@ public actor Agent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         let bridged = tools.map { AnyJSONToolAdapter($0) }
-        self.init(
+        try self.init(
             tools: bridged,
             instructions: instructions,
             configuration: configuration,
@@ -195,6 +197,7 @@ public actor Agent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffAgents: Agents to hand off to, automatically wrapped as handoff configurations.
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init(
         tools: [any AnyJSONTool] = [],
         instructions: String = "",
@@ -206,7 +209,7 @@ public actor Agent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffAgents: [any AgentRuntime]
-    ) {
+    ) throws {
         let configs = handoffAgents.map { agent in
             AnyHandoffConfiguration(
                 targetAgent: agent,
@@ -214,7 +217,7 @@ public actor Agent: AgentRuntime {
                 toolDescription: nil
             )
         }
-        self.init(
+        try self.init(
             tools: tools,
             instructions: instructions,
             configuration: configuration,
@@ -238,31 +241,91 @@ public actor Agent: AgentRuntime {
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
-        let runID = UUID()
-        let task = Task { [self] in
-            try await runInternal(input, session: session, hooks: hooks)
+        guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
-        currentTask = task
-        currentRunID = runID
-        defer {
-            if currentRunID == runID {
-                currentTask = nil
-                currentRunID = nil
-            }
+
+        let activeTracer = tracer
+            ?? AgentEnvironmentValues.current.tracer
+            ?? (configuration.defaultTracingEnabled ? SwiftLogTracer(minimumLevel: .debug) : nil)
+        let activeMemory = memory ?? AgentEnvironmentValues.current.memory
+        let lifecycleMemory = activeMemory as? any MemorySessionLifecycle
+
+        let tracing = TracingHelper(
+            tracer: activeTracer,
+            agentName: configuration.name.isEmpty ? "Agent" : configuration.name
+        )
+        await tracing.traceStart(input: input)
+
+        // Notify hooks of agent start
+        await hooks?.onAgentStart(context: nil, agent: self, input: input)
+
+        if let lifecycleMemory {
+            await lifecycleMemory.beginMemorySession()
         }
 
         do {
-            return try await withTaskCancellationHandler(
-                operation: {
-                    try await task.value
-                },
-                onCancel: {
-                    task.cancel()
-                }
+            // Run input guardrails (with hooks for event emission)
+            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
+            _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
+
+            // Reset cancellation flag and create result builder
+            isCancelled = false
+            let resultBuilder = AgentResult.Builder()
+            _ = resultBuilder.start()
+
+            // Load conversation history from session (limit to recent messages)
+            var sessionHistory: [MemoryMessage] = []
+            if let session {
+                sessionHistory = try await session.getItems(limit: configuration.sessionHistoryLimit)
+            }
+
+            // Create user message for this turn
+            let userMessage = MemoryMessage.user(input)
+
+            // Execute the tool calling loop with session context
+            let output = try await executeToolCallingLoop(
+                input: input,
+                sessionHistory: sessionHistory,
+                resultBuilder: resultBuilder,
+                hooks: hooks,
+                tracing: tracing
             )
-        } catch is CancellationError {
-            task.cancel()
-            throw AgentError.cancelled
+
+            _ = resultBuilder.setOutput(output)
+
+            // Run output guardrails BEFORE storing in session/memory
+            _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
+
+            // Store turn in session for conversation persistence
+            // Session is the source of truth for conversation history
+            if let session {
+                let assistantMessage = MemoryMessage.assistant(output)
+                try await session.addItems([userMessage, assistantMessage])
+            }
+
+            // Memory provides additional context (RAG, summaries) - NOT for conversation storage
+            // This avoids duplication: session stores conversation, memory provides context
+            // Note: If using memory for conversation context, populate it from session on demand
+
+            let result = resultBuilder.build()
+            await tracing.traceComplete(result: result)
+
+            // Notify hooks of agent completion
+            await hooks?.onAgentEnd(context: nil, agent: self, result: result)
+
+            if let lifecycleMemory {
+                await lifecycleMemory.endMemorySession()
+            }
+            return result
+        } catch {
+            // Notify hooks of error
+            await hooks?.onError(context: nil, agent: self, error: error)
+            await tracing.traceError(error)
+            if let lifecycleMemory {
+                await lifecycleMemory.endMemorySession()
+            }
+            throw error
         }
     }
 
@@ -295,113 +358,14 @@ public actor Agent: AgentRuntime {
     }
 
     /// Cancels any ongoing execution.
+    ///
+    /// Sets a cancellation flag that the execution loop checks at each iteration boundary.
+    /// The next iteration will throw `CancellationError` and unwind cleanly.
     public func cancel() async {
         isCancelled = true
-        currentTask?.cancel()
     }
 
     // MARK: Private
-
-    private func runInternal(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
-        guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AgentError.invalidInput(reason: "Input cannot be empty")
-        }
-
-        let activeTracer = tracer
-            ?? AgentEnvironmentValues.current.tracer
-            ?? (configuration.defaultTracingEnabled ? SwiftLogTracer(minimumLevel: .debug) : nil)
-        let activeMemory = memory ?? AgentEnvironmentValues.current.memory
-        let lifecycleMemory = activeMemory as? any MemorySessionLifecycle
-
-        let tracing = TracingHelper(
-            tracer: activeTracer,
-            agentName: configuration.name.isEmpty ? "Agent" : configuration.name
-        )
-        await tracing.traceStart(input: input)
-
-        // Notify hooks of agent start
-        await hooks?.onAgentStart(context: nil, agent: self, input: input)
-
-        if let lifecycleMemory {
-            await lifecycleMemory.beginMemorySession()
-        }
-
-        do {
-            // Run input guardrails (with hooks for event emission)
-            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
-            _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
-
-            isCancelled = false
-            let resultBuilder = AgentResult.Builder()
-            _ = resultBuilder.start()
-
-            // Load conversation history from session (limit to recent messages)
-            var sessionHistory: [MemoryMessage] = []
-            if let session {
-                sessionHistory = try await session.getItems(limit: configuration.sessionHistoryLimit)
-            }
-
-            // Create user message for this turn
-            let userMessage = MemoryMessage.user(input)
-
-            // Store in memory (for AI context) if available
-            if let mem = activeMemory {
-                // Seed session history only once for a fresh memory instance.
-                if session != nil, await mem.isEmpty, !sessionHistory.isEmpty {
-                    for msg in sessionHistory {
-                        await mem.add(msg)
-                    }
-                }
-                await mem.add(userMessage)
-            }
-
-            // Execute the tool calling loop with session context
-            let output = try await executeToolCallingLoop(
-                input: input,
-                sessionHistory: sessionHistory,
-                resultBuilder: resultBuilder,
-                hooks: hooks,
-                tracing: tracing
-            )
-
-            _ = resultBuilder.setOutput(output)
-
-            // Run output guardrails BEFORE storing in memory/session
-            _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
-
-            // Store turn in session (user + assistant messages)
-            if let session {
-                let assistantMessage = MemoryMessage.assistant(output)
-                try await session.addItems([userMessage, assistantMessage])
-            }
-
-            // Only store output in memory if validation passed
-            if let mem = activeMemory {
-                await mem.add(.assistant(output))
-            }
-
-            _ = resultBuilder.setMetadata(RuntimeMetadata.runtimeEngineKey, .string(RuntimeMetadata.hiveRuntimeEngineName))
-            let result = resultBuilder.build()
-            await tracing.traceComplete(result: result)
-
-            // Notify hooks of agent completion
-            await hooks?.onAgentEnd(context: nil, agent: self, result: result)
-
-            if let lifecycleMemory {
-                await lifecycleMemory.endMemorySession()
-            }
-            return result
-        } catch {
-            let normalizedError = normalizeCancellation(error)
-            // Notify hooks of error
-            await hooks?.onError(context: nil, agent: self, error: normalizedError)
-            await tracing.traceError(normalizedError)
-            if let lifecycleMemory {
-                await lifecycleMemory.endMemorySession()
-            }
-            throw normalizedError
-        }
-    }
 
     // MARK: - Conversation History
 
@@ -429,9 +393,8 @@ public actor Agent: AgentRuntime {
 
     // MARK: - Internal State
 
-    private var isCancelled: Bool = false
-    private var currentTask: Task<AgentResult, Error>?
-    private var currentRunID: UUID?
+    /// Cancellation flag set by `cancel()` and checked at each iteration boundary.
+    private var isCancelled = false
     private let toolRegistry: ToolRegistry
 
     // MARK: - Inference Provider Resolution
@@ -476,7 +439,7 @@ public actor Agent: AgentRuntime {
         let activeMemory = memory ?? AgentEnvironmentValues.current.memory
         var memoryContext = ""
         if let mem = activeMemory {
-            let tokenLimit = configuration.effectiveContextProfile.memoryTokenLimit
+            let tokenLimit = configuration.contextProfile.memoryTokenLimit
             memoryContext = await mem.context(for: input, tokenLimit: tokenLimit)
         }
 
@@ -497,74 +460,62 @@ public actor Agent: AgentRuntime {
             _ = resultBuilder.incrementIteration()
             await hooks?.onIterationStart(context: nil, agent: self, number: iteration)
 
-            do {
-                try checkCancellationAndTimeout(startTime: startTime)
+            try checkCancellationAndTimeout(startTime: startTime)
 
-                let prompt = PromptEnvelope.enforce(
-                    prompt: buildPrompt(from: conversationHistory),
-                    profile: configuration.effectiveContextProfile
+            let prompt = buildPrompt(from: conversationHistory)
+            let toolSchemas = await buildToolSchemasWithHandoffs()
+
+            // If no tools defined, generate without tool calling
+            if toolSchemas.isEmpty {
+                return try await generateWithoutTools(
+                    provider: provider,
+                    prompt: prompt,
+                    systemPrompt: systemMessage,
+                    enableStreaming: enableStreaming,
+                    hooks: hooks
                 )
-                let toolSchemas = await buildToolSchemasWithHandoffs()
-
-                // If no tools defined, generate without tool calling
-                if toolSchemas.isEmpty {
-                    let output = try await generateWithoutTools(
-                        provider: provider,
-                        prompt: prompt,
-                        systemPrompt: systemMessage,
-                        enableStreaming: enableStreaming,
-                        hooks: hooks
-                    )
-                    await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
-                    return output
-                }
-
-                // Generate response with tool calls
-                let response = if useToolStreaming, let provider = toolStreamingProvider {
-                    try await generateWithToolsStreaming(
-                        provider: provider,
-                        prompt: prompt,
-                        tools: toolSchemas,
-                        systemPrompt: systemMessage,
-                        hooks: hooks
-                    )
-                } else {
-                    try await generateWithTools(
-                        provider: provider,
-                        prompt: prompt,
-                        tools: toolSchemas,
-                        systemPrompt: systemMessage,
-                        hooks: hooks,
-                        emitOutputTokens: enableStreaming
-                    )
-                }
-
-                if response.hasToolCalls {
-                    let handoffResult = try await processToolCallsWithHandoffs(
-                        response: response,
-                        conversationHistory: &conversationHistory,
-                        resultBuilder: resultBuilder,
-                        hooks: hooks,
-                        tracing: tracing
-                    )
-                    // If a handoff occurred, return the target agent's result
-                    if let handoffOutput = handoffResult {
-                        await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
-                        return handoffOutput
-                    }
-                } else {
-                    guard let content = response.content else {
-                        throw AgentError.generationFailed(reason: "Model returned no content or tool calls")
-                    }
-                    await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
-                    return content
-                }
-
-                await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
-            } catch {
-                await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
-                throw normalizeCancellation(error)
             }
+
+            // Generate response with tool calls
+            let response = if useToolStreaming, let provider = toolStreamingProvider {
+                try await generateWithToolsStreaming(
+                    provider: provider,
+                    prompt: prompt,
+                    tools: toolSchemas,
+                    systemPrompt: systemMessage,
+                    hooks: hooks
+                )
+            } else {
+                try await generateWithTools(
+                    provider: provider,
+                    prompt: prompt,
+                    tools: toolSchemas,
+                    systemPrompt: systemMessage,
+                    hooks: hooks,
+                    emitOutputTokens: enableStreaming
+                )
+            }
+
+            if response.hasToolCalls {
+                let handoffResult = try await processToolCallsWithHandoffs(
+                    response: response,
+                    conversationHistory: &conversationHistory,
+                    resultBuilder: resultBuilder,
+                    hooks: hooks,
+                    tracing: tracing
+                )
+                // If a handoff occurred, return the target agent's result
+                if let handoffOutput = handoffResult {
+                    return handoffOutput
+                }
+            } else {
+                guard let content = response.content else {
+                    throw AgentError.generationFailed(reason: "Model returned no content or tool calls")
+                }
+                return content
+            }
+
+            await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
         }
 
         throw AgentError.maxIterationsExceeded(iterations: iteration)
@@ -595,29 +546,16 @@ public actor Agent: AgentRuntime {
 
     /// Checks for cancellation and timeout conditions.
     private func checkCancellationAndTimeout(startTime: ContinuousClock.Instant) throws {
+        // Check explicit cancellation via cancel() and structured task cancellation
         if isCancelled {
-            throw AgentError.cancelled
+            throw CancellationError()
         }
-        do {
-            try Task.checkCancellation()
-        } catch is CancellationError {
-            throw AgentError.cancelled
-        }
+        try Task.checkCancellation()
 
         let elapsed = ContinuousClock.now - startTime
         if elapsed > configuration.timeout {
             throw AgentError.timeout(duration: configuration.timeout)
         }
-    }
-
-    private func normalizeCancellation(_ error: Error) -> Error {
-        if error is CancellationError {
-            return AgentError.cancelled
-        }
-        if let agentError = error as? AgentError, agentError == .cancelled {
-            return agentError
-        }
-        return error
     }
 
     /// Generates a response without tool calling.
@@ -1150,8 +1088,9 @@ public extension Agent {
 
         /// Builds the agent.
         /// - Returns: A new Agent instance.
-        public func build() -> Agent {
-            Agent(
+        /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+        public func build() throws -> Agent {
+            try Agent(
                 tools: _tools,
                 instructions: _instructions,
                 configuration: _configuration,
@@ -1200,9 +1139,10 @@ public extension Agent {
     /// ```
     ///
     /// - Parameter content: A closure that builds the agent components.
-    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) {
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) throws {
         let components = content()
-        self.init(
+        try self.init(
             tools: components.tools,
             instructions: components.instructions ?? "",
             configuration: components.configuration ?? .default,
@@ -1243,6 +1183,7 @@ public extension Agent {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     init(
         name: String,
         instructions: String = "",
@@ -1255,11 +1196,11 @@ public extension Agent {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         // Merge the name into the configuration
         var config = configuration
         config.name = name
-        self.init(
+        try self.init(
             tools: tools,
             instructions: instructions,
             configuration: config,
@@ -1304,6 +1245,7 @@ public extension Agent {
     ///   - outputGuardrails: Output guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Guardrail runner config. Default: .default
     ///   - handoffAgents: Agents to use as handoff targets.
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     init(
         name: String,
         instructions: String = "",
@@ -1316,11 +1258,11 @@ public extension Agent {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffAgents: [any AgentRuntime]
-    ) {
+    ) throws {
         let handoffs = handoffAgents.map { agent in
             AnyHandoffConfiguration(targetAgent: agent)
         }
-        self.init(
+        try self.init(
             name: name,
             instructions: instructions,
             tools: tools,

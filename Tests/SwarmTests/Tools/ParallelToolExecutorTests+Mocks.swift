@@ -114,3 +114,46 @@ struct DelayedTestTool: AnyJSONTool, Sendable {
         return result
     }
 }
+
+// MARK: - ToolExecutionCounter
+
+actor ToolExecutionCounter {
+    private var count: Int = 0
+
+    func increment() {
+        count += 1
+    }
+
+    func snapshot() -> Int {
+        count
+    }
+}
+
+// MARK: - CountingTool
+
+struct CountingTool: AnyJSONTool, Sendable {
+    let name: String
+    let counter: ToolExecutionCounter
+
+    var description: String { "Tool that increments a counter" }
+    var parameters: [ToolParameter] { [] }
+
+    func execute(arguments _: [String: SendableValue]) async throws -> SendableValue {
+        await counter.increment()
+        return .string("ok")
+    }
+}
+
+// MARK: - DisabledTestTool
+
+struct DisabledTestTool: AnyJSONTool, Sendable {
+    let name: String
+
+    var description: String { "Disabled tool" }
+    var parameters: [ToolParameter] { [] }
+    var isEnabled: Bool { false }
+
+    func execute(arguments _: [String: SendableValue]) async throws -> SendableValue {
+        .string("unused")
+    }
+}

@@ -190,7 +190,9 @@ public enum MergeStrategies {
                 throw OrchestrationError.mergeStrategyFailed(reason: "No results to merge")
             }
 
-            let longest = results.max { $0.value.output.count < $1.value.output.count }!
+            guard let longest = results.max(by: { $0.value.output.count < $1.value.output.count }) else {
+                throw OrchestrationError.mergeStrategyFailed(reason: "Failed to determine longest result")
+            }
 
             let result = longest.value
             var metadata = result.metadata

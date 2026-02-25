@@ -192,6 +192,20 @@ struct MultiProviderModelParsingTests {
 
         #expect(response == "Response from anthropic")
     }
+
+    @Test("trims whitespace around prefix and model name")
+    func trimsWhitespaceAroundPrefixAndModel() async throws {
+        let defaultProvider = SimpleMockProvider(name: "default")
+        let multiProvider = MultiProvider(defaultProvider: defaultProvider)
+
+        let openaiProvider = SimpleMockProvider(name: "openai")
+        try await multiProvider.register(prefix: "openai", provider: openaiProvider)
+
+        await multiProvider.setModel("  OpenAI / gpt-4o  ")
+        let response = try await multiProvider.generate(prompt: "Test", options: .default)
+
+        #expect(response == "Response from openai")
+    }
 }
 
 // MARK: - MultiProviderRoutingTests

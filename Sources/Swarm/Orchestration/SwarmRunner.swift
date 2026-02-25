@@ -408,7 +408,7 @@ public actor SwarmRunner {
         var messages: [MemoryMessage] = []
         var contextUpdates: [String: SendableValue] = [:]
         let handoffs = buildHandoffEntries(for: activeProfile)
-        let registry = ToolRegistry(tools: activeProfile.tools)
+        let registry = try ToolRegistry(tools: activeProfile.tools)
         let toolEngine = ToolExecutionEngine()
         let builder = AgentResult.Builder()
 

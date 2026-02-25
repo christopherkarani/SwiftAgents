@@ -123,6 +123,34 @@ struct ParallelToolExecutorTests {
         #expect(results[1].error != nil)
     }
 
+    @Test("Disabled tools fail validation before execution")
+    func disabledToolFailsValidationBeforeExecution() async throws {
+        let counter = ToolExecutionCounter()
+        let enabledTool = CountingTool(name: "enabled_tool", counter: counter)
+        let disabledTool = DisabledTestTool(name: "disabled_tool")
+
+        let registry = await createRegistry(tools: [enabledTool, disabledTool])
+        let executor = ParallelToolExecutor()
+        let agent = createMockAgent()
+
+        let calls = [
+            ToolCall(toolName: "enabled_tool", arguments: [:]),
+            ToolCall(toolName: "disabled_tool", arguments: [:])
+        ]
+
+        await #expect(throws: AgentError.self) {
+            _ = try await executor.executeInParallel(
+                calls,
+                using: registry,
+                agent: agent,
+                context: nil
+            )
+        }
+
+        let executionCount = await counter.snapshot()
+        #expect(executionCount == 0)
+    }
+
     @Test("Error strategy .failFast throws on first error")
     func errorStrategyFailFast() async throws {
         let successTool1 = MockDelayTool(name: "success1", delay: .zero, resultValue: .string("ok1"))

@@ -132,7 +132,7 @@ public actor ParallelToolExecutor {
 
         // 1. Validate all tools exist BEFORE starting any execution
         for call in calls {
-            guard await registry.tool(named: call.toolName) != nil else {
+            guard let tool = await registry.tool(named: call.toolName), tool.isEnabled else {
                 throw AgentError.toolNotFound(name: call.toolName)
             }
         }
@@ -261,6 +261,11 @@ public actor ParallelToolExecutor {
 
         // Apply error strategy
         switch errorStrategy {
+        case .failFast:
+            // Handled above with true cancellation - this case should never be reached
+            // If we reach here, it indicates a logic error in the implementation
+            throw AgentError.internalError(reason: "ParallelToolExecutor: failFast case reached unexpectedly in error strategy switch")
+
         case .collectErrors:
             // Collect all errors and throw composite error
             let errors = results.compactMap(\.error)
@@ -275,12 +280,6 @@ public actor ParallelToolExecutor {
         case .continueOnError:
             // Return results as-is with failures included
             break
-
-        case .failFast:
-            // failFast is handled before this switch via executeWithFailFast().
-            // Reaching here means the early-exit guard above was removed or bypassed,
-            // which would make failFast silently return failures — the opposite of its contract.
-            assertionFailure("failFast must be handled before reaching this switch; check the guard at the top of this method")
         }
 
         return results
