@@ -57,8 +57,8 @@ public struct SwarmToolRegistry: HiveToolRegistry, Sendable {
             let output = try await registry.execute(toolNamed: call.name, arguments: arguments)
             let content = try Self.encodeJSONFragment(output)
             return HiveToolResult(toolCallID: call.id, content: content)
-        } catch is CancellationError {
-            throw
+        } catch let error as CancellationError {
+            throw error
         } catch let error as AgentError {
             switch error {
             case let .toolNotFound(name):

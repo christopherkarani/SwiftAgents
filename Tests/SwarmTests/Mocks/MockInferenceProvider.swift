@@ -18,7 +18,7 @@ import Foundation
 ///     "Final Answer: The result is 4"
 /// ])
 ///
-/// let agent = ReActAgent(tools: [CalculatorTool()], inferenceProvider: mock)
+/// let agent = try ReActAgent(tools: [CalculatorTool()], inferenceProvider: mock)
 /// let result = try await agent.run("What is 2+2?")
 /// ```
 public actor MockInferenceProvider: InferenceProvider {

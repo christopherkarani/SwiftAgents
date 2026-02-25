@@ -16,15 +16,18 @@ public struct AgentEnvironment: Sendable {
     public var inferenceProvider: (any InferenceProvider)?
     public var tracer: (any Tracer)?
     public var memory: (any Memory)?
+    public var membrane: MembraneEnvironment?
 
     public init(
         inferenceProvider: (any InferenceProvider)? = nil,
         tracer: (any Tracer)? = nil,
-        memory: (any Memory)? = nil
+        memory: (any Memory)? = nil,
+        membrane: MembraneEnvironment? = nil
     ) {
         self.inferenceProvider = inferenceProvider
         self.tracer = tracer
         self.memory = memory
+        self.membrane = membrane
     }
 }
 
@@ -35,4 +38,3 @@ public struct AgentEnvironment: Sendable {
 public enum AgentEnvironmentValues {
     @TaskLocal public static var current = AgentEnvironment()
 }
-

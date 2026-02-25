@@ -20,7 +20,7 @@ struct ParallelToolExecutorAdvancedTests {
         let successTool = MockDelayTool(name: "success", delay: .zero, resultValue: .string("ok"))
         let errorTool = MockErrorTool(name: "error")
 
-        let registry = await createRegistry(tools: [successTool, errorTool])
+        let registry = try await createRegistry(tools: [successTool, errorTool])
         let executor = ParallelToolExecutor()
         let agent = ParallelTestMockAgent()
 
@@ -46,7 +46,7 @@ struct ParallelToolExecutorAdvancedTests {
         let successTool = MockDelayTool(name: "success", delay: .zero, resultValue: .string("ok"))
         let errorTool = MockErrorTool(name: "error")
 
-        let registry = await createRegistry(tools: [successTool, errorTool])
+        let registry = try await createRegistry(tools: [successTool, errorTool])
         let executor = ParallelToolExecutor()
         let agent = ParallelTestMockAgent()
 
@@ -77,7 +77,7 @@ struct ParallelToolExecutorAdvancedTests {
         let tool2 = MockDelayTool(name: "tool2", delay: .zero, resultValue: .int(42))
         let tool3 = MockDelayTool(name: "tool3", delay: .zero, resultValue: .bool(true))
 
-        let registry = await createRegistry(tools: [tool1, tool2, tool3])
+        let registry = try await createRegistry(tools: [tool1, tool2, tool3])
         let executor = ParallelToolExecutor()
         let agent = ParallelTestMockAgent()
 
@@ -107,7 +107,7 @@ struct ParallelToolExecutorAdvancedTests {
         let error2 = MockErrorTool(name: "fail2")
         let error3 = MockErrorTool(name: "fail3")
 
-        let registry = await createRegistry(tools: [error1, error2, error3])
+        let registry = try await createRegistry(tools: [error1, error2, error3])
         let executor = ParallelToolExecutor()
         let agent = ParallelTestMockAgent()
 
@@ -135,7 +135,7 @@ struct ParallelToolExecutorAdvancedTests {
     @Test("Same tool can be called multiple times")
     func sameToolMultipleCalls() async throws {
         let tool = MockDelayTool(name: "reusable", delay: .zero, resultValue: .string("result"))
-        let registry = await createRegistry(tools: [tool])
+        let registry = try await createRegistry(tools: [tool])
         let executor = ParallelToolExecutor()
         let agent = ParallelTestMockAgent()
 
@@ -166,9 +166,9 @@ struct ParallelToolExecutorAdvancedTests {
 
     // MARK: - Test Helpers
 
-    private func createRegistry(tools: [any AnyJSONTool]) async -> ToolRegistry {
+    private func createRegistry(tools: [any AnyJSONTool]) async throws -> ToolRegistry {
         let registry = ToolRegistry()
-        await registry.register(tools)
+        try await registry.register(tools)
         return registry
     }
 }
@@ -182,7 +182,7 @@ struct ParallelToolExecutorCancellationTests {
         // Create a slow tool that takes 2 seconds
         let slowTool = DelayedTestTool(name: "slow", delay: .seconds(2), result: .string("completed"))
         let registry = ToolRegistry()
-        await registry.register([slowTool])
+        try await registry.register([slowTool])
         let executor = ParallelToolExecutor()
         let agent = ParallelTestMockAgent()
 
@@ -221,7 +221,7 @@ struct ParallelToolExecutorCancellationTests {
         let tool2 = DelayedTestTool(name: "slow2", delay: .seconds(1), result: .string("two"))
         let tool3 = DelayedTestTool(name: "slow3", delay: .seconds(1), result: .string("three"))
         let registry = ToolRegistry()
-        await registry.register([tool1, tool2, tool3])
+        try await registry.register([tool1, tool2, tool3])
         let executor = ParallelToolExecutor()
         let agent = ParallelTestMockAgent()
 

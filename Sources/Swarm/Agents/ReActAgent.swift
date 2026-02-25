@@ -199,6 +199,7 @@ public actor ReActAgent: AgentRuntime {
         currentTask?.cancel()
     }
 
+
     // MARK: Private
 
     private func runInternal(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
@@ -284,49 +285,15 @@ public actor ReActAgent: AgentRuntime {
         }
     }
 
-    /// Streams the agent's execution, yielding events as they occur.
-    /// - Parameters:
-    ///   - input: The user's input/query.
-    ///   - session: Optional session for conversation history management.
-    ///   - hooks: Optional hooks for observing agent execution events.
-    /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
-        StreamHelper.makeTrackedStream(for: self) { agent, continuation in
-            // Create event bridge hooks
-            let streamHooks = EventStreamHooks(continuation: continuation)
-
-            // Combine with user-provided hooks
-            let combinedHooks: any RunHooks
-            if let userHooks = hooks {
-                combinedHooks = CompositeRunHooks(hooks: [userHooks, streamHooks])
-            } else {
-                combinedHooks = streamHooks
-            }
-
-            do {
-                _ = try await agent.run(input, session: session, hooks: combinedHooks)
-                continuation.finish()
-            } catch {
-                // Error is handled by EventStreamHooks.onError
-                continuation.finish(throwing: error)
-            }
-        }
-    }
-
-    /// Cancels any ongoing execution.
-    public func cancel() async {
-        // Simply cancel the current task - the task cancellation handler
-        // will perform any necessary cleanup
-        currentTask?.cancel()
-    }
-
     // MARK: Private
 
     private let _handoffs: [AnyHandoffConfiguration]
 
     // MARK: - Internal State
 
-    private var currentTask: Task<Void, Never>?
+    private var currentTask: Task<AgentResult, any Error>?
+    private var currentRunID: UUID?
+    private var isCancelled: Bool = false
     private let toolRegistry: ToolRegistry
 
     // MARK: - ReAct Loop Implementation
@@ -670,7 +637,7 @@ public actor ReActAgent: AgentRuntime {
         5. Use parameter types shown in the tool list (quote strings; keep numbers/booleans unquoted).
         \(conversationContext.isEmpty ? "" : "\nConversation History:\n\(conversationContext)")\(memorySection)
 
-        User Query: \(input)
+        User Query: \(sanitizeUserInput(input))
         """
 
         if scratchpad.isEmpty {
@@ -678,6 +645,14 @@ public actor ReActAgent: AgentRuntime {
         } else {
             return basePrompt + "\n\nPrevious steps:" + scratchpad + "\n\nContinue with your next step:"
         }
+    }
+
+    private func sanitizeUserInput(_ input: String) -> String {
+        let escaped = input
+            .replacingOccurrences(of: "Thought:", with: "[Thought:]")
+            .replacingOccurrences(of: "Action:", with: "[Action:]")
+            .replacingOccurrences(of: "Final Answer:", with: "[Final Answer:]")
+        return "<user_input>\(escaped)</user_input>"
     }
 
     private func buildConversationContext(from sessionHistory: [MemoryMessage]) -> String {

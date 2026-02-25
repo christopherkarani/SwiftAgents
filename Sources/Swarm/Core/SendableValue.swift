@@ -301,7 +301,7 @@ public extension SendableValue {
         }
 
         // For complex types, use JSON decoding as an intermediate format
-        let jsonObject = toJSONObject()
+        let jsonObject = _convertToJSONObject()
         do {
             let data = try JSONSerialization.data(withJSONObject: jsonObject)
             let decoder = JSONDecoder()
@@ -347,7 +347,7 @@ public extension SendableValue {
     }
 
     /// Converts this SendableValue to a JSON-compatible object.
-    private func toJSONObject() -> Any {
+    fileprivate func _convertToJSONObject() -> Any {
         switch self {
         case .null:
             return NSNull()
@@ -360,13 +360,15 @@ public extension SendableValue {
         case let .string(v):
             return v
         case let .array(v):
-            return v.map { $0.toJSONObject() }
+            return v.map { $0._convertToJSONObject() }
         case let .dictionary(v):
             var result: [String: Any] = [:]
             for (key, value) in v {
-                result[key] = value.toJSONObject()
+                result[key] = value._convertToJSONObject()
             }
             return result
         }
     }
 }
+
+// Ensure no duplicate definitions

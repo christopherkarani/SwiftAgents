@@ -77,11 +77,24 @@ extension ReActAgent {
         //   {"tool":"tool_name","arguments":{...}}
         //   {"name":"tool_name","arguments":{...}}
         if trimmed.first == "{", let data = trimmed.data(using: .utf8) {
-            if let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // Limit payload size
+            guard data.count < 1_000_000 else { return nil }
+
+            do {
+                guard let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    return nil
+                }
+
                 let callIdRaw = (jsonObject["id"] as? String) ?? (jsonObject["call_id"] as? String)
                 let toolNameRaw = (jsonObject["tool"] as? String) ?? (jsonObject["name"] as? String)
                 let toolName = toolNameRaw?.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard let toolName, !toolName.isEmpty else { return nil }
+
+                // Validate tool name format (alphanumeric + underscore only)
+                guard let toolName,
+                      !toolName.isEmpty,
+                      toolName.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else {
+                    return nil
+                }
 
                 var arguments: [String: SendableValue] = [:]
                 if let argsObject = jsonObject["arguments"] as? [String: Any] {
@@ -91,6 +104,8 @@ extension ReActAgent {
                 }
 
                 return InferenceResponse.ParsedToolCall(id: callIdRaw, name: toolName, arguments: arguments)
+            } catch {
+                return nil
             }
         }
 

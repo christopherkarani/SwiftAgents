@@ -17,7 +17,7 @@ struct MemoryIngestionPolicyTests {
         ])
 
         let memory = MockAgentMemory()
-        let agent = Agent(
+        let agent = try Agent(
             tools: [tool],
             configuration: .default.maxIterations(3),
             memory: memory,
@@ -46,7 +46,7 @@ struct MemoryIngestionPolicyTests {
         let provider = MockInferenceProvider(responses: ["Final Answer: ok"])
         let memory = MockAgentMemory()
 
-        let agent = Agent(
+        let agent = try Agent(
             memory: memory,
             inferenceProvider: provider
         )

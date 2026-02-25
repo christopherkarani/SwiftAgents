@@ -440,7 +440,7 @@ import Testing
         @Test("Calculator tool works in ToolRegistry")
         func calculatorInToolRegistry() async throws {
             var calculator = CalculatorTool()
-            let registry = ToolRegistry(tools: [calculator])
+            let registry = try ToolRegistry(tools: [calculator])
 
             let result = try await registry.execute(
                 toolNamed: "calculator",
@@ -451,9 +451,9 @@ import Testing
         }
 
         @Test("Calculator tool can be found in registry")
-        func calculatorFoundInRegistry() async {
+        func calculatorFoundInRegistry() async throws {
             var calculator = CalculatorTool()
-            let registry = ToolRegistry(tools: [calculator])
+            let registry = try ToolRegistry(tools: [calculator])
 
             let hasCalculator = await registry.contains(named: "calculator")
             let tool = await registry.tool(named: "calculator")

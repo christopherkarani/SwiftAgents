@@ -120,7 +120,7 @@ public struct DAGBuilder {
 public struct DAG: OrchestrationStep, Sendable {
     /// The nodes comprising this DAG.
     public let nodes: [DAGNode]
-    private let validationError: DAGValidationError?
+
     /// Topologically sorted nodes, cached at init time to avoid recomputing on every execute() call.
     private let sortedNodes: [DAGNode]
 
@@ -136,9 +136,7 @@ public struct DAG: OrchestrationStep, Sendable {
         let builtNodes = content()
         self.validationError = DAG.validate(builtNodes)
         self.nodes = builtNodes
-        let (error, sorted) = DAG.validate(builtNodes)
-        self.validationError = error
-        self.sortedNodes = sorted
+        self.sortedNodes = DAG.topologicalSort(builtNodes)
     }
 
     /// Internal initializer for testing with pre-validated nodes.

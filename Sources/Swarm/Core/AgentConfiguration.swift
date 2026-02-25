@@ -11,6 +11,10 @@ public enum ContextMode: Sendable, Equatable {
     /// Adaptive context sizing based on configured profile/platform defaults.
     case adaptive
 
+    /// Strict 4K token limit for context window.
+    case strict4k
+}
+
 /// Runtime execution mode for orchestration.
 public enum SwarmRuntimeMode: Sendable, Equatable {
     /// Execute orchestration using the Hive runtime.
