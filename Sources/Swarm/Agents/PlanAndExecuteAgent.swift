@@ -197,14 +197,22 @@ public struct ExecutionPlan: Sendable, Equatable {
     }
 
     /// Marks all pending steps that depend on a failed step as skipped.
+    ///
+    /// Uses a visited set to prevent infinite recursion on circular dependency graphs.
     /// - Parameter failedStepId: The ID of the failed step.
     public mutating func skipDependentSteps(of failedStepId: UUID) {
+        var visited: Set<UUID> = []
+        cascadeSkip(from: failedStepId, visited: &visited)
+    }
+
+    /// Recursively skips dependent steps using a visited set for cycle detection.
+    private mutating func cascadeSkip(from stepId: UUID, visited: inout Set<UUID>) {
+        guard visited.insert(stepId).inserted else { return }
         for index in steps.indices {
-            if steps[index].dependsOn.contains(failedStepId), steps[index].status == .pending {
+            if steps[index].dependsOn.contains(stepId), steps[index].status == .pending {
                 steps[index].status = .skipped
                 steps[index].error = "Skipped due to dependency failure"
-                // Recursively skip steps that depend on this one
-                skipDependentSteps(of: steps[index].id)
+                cascadeSkip(from: steps[index].id, visited: &visited)
             }
         }
     }

@@ -56,13 +56,13 @@ public struct TracingHelper: Sendable {
     /// - Parameter input: The input being processed
     public func traceStart(input: String) async {
         guard let tracer else { return }
+        // Only log input length, not the content — input may contain credentials or PII.
         await tracer.trace(TraceEvent(
             traceId: traceId,
             kind: .agentStart,
             message: "Agent \(agentName) started",
             metadata: [
-                "input_length": .int(input.count),
-                "input_preview": .string(String(input.prefix(100)))
+                "input_length": .int(input.count)
             ],
             agentName: agentName
         ))
@@ -189,6 +189,7 @@ public struct TracingHelper: Sendable {
         duration: Duration
     ) async {
         guard let tracer else { return }
+        // Only log result length, not the content — tool results may contain PII or sensitive data.
         await tracer.trace(TraceEvent(
             traceId: traceId,
             spanId: spanId,
@@ -199,8 +200,7 @@ public struct TracingHelper: Sendable {
             metadata: [
                 "tool_name": .string(name),
                 "result_length": .int(result.count),
-                "duration_ms": .double(duration.milliseconds),
-                "result_preview": .string(String(result.prefix(200)))
+                "duration_ms": .double(duration.milliseconds)
             ],
             agentName: agentName,
             toolName: name

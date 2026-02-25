@@ -62,6 +62,9 @@ struct ArithmeticParser: Sendable {
 
         /// An invalid number format was encountered.
         case invalidNumber(String)
+
+        /// The expression exceeds the maximum nesting depth.
+        case nestingDepthExceeded
     }
 
     // MARK: - Token
@@ -216,13 +219,16 @@ struct ArithmeticParser: Sendable {
     private struct Parser: Sendable {
         // MARK: Internal
 
+        /// Maximum allowed parenthesis nesting depth to prevent stack overflow DoS.
+        static let maxNestingDepth = 200
+
         init(tokens: [Token]) {
             self.tokens = tokens
         }
 
         /// Parses and evaluates the expression.
         mutating func parse() throws -> Double {
-            let result = try parseExpression()
+            let result = try parseExpression(depth: 0)
 
             guard currentToken == .end else {
                 throw ParserError.unexpectedToken(tokenDescription(currentToken))
@@ -245,17 +251,20 @@ struct ArithmeticParser: Sendable {
         }
 
         /// Parses an expression: Term (('+' | '-') Term)*
-        private mutating func parseExpression() throws -> Double {
-            var result = try parseTerm()
+        private mutating func parseExpression(depth: Int) throws -> Double {
+            guard depth <= Parser.maxNestingDepth else {
+                throw ParserError.nestingDepthExceeded
+            }
+            var result = try parseTerm(depth: depth)
 
             while true {
                 switch currentToken {
                 case .plus:
                     advance()
-                    result += try parseTerm()
+                    result += try parseTerm(depth: depth)
                 case .minus:
                     advance()
-                    result -= try parseTerm()
+                    result -= try parseTerm(depth: depth)
                 default:
                     return result
                 }
@@ -263,17 +272,17 @@ struct ArithmeticParser: Sendable {
         }
 
         /// Parses a term: Factor (('*' | '/') Factor)*
-        private mutating func parseTerm() throws -> Double {
-            var result = try parseFactor()
+        private mutating func parseTerm(depth: Int) throws -> Double {
+            var result = try parseFactor(depth: depth)
 
             while true {
                 switch currentToken {
                 case .multiply:
                     advance()
-                    result *= try parseFactor()
+                    result *= try parseFactor(depth: depth)
                 case .divide:
                     advance()
-                    let divisor = try parseFactor()
+                    let divisor = try parseFactor(depth: depth)
                     guard divisor != 0 else {
                         throw ParserError.divisionByZero
                     }
@@ -285,7 +294,7 @@ struct ArithmeticParser: Sendable {
         }
 
         /// Parses a factor: Number | '(' Expression ')' | '-' Factor | '+' Factor
-        private mutating func parseFactor() throws -> Double {
+        private mutating func parseFactor(depth: Int) throws -> Double {
             switch currentToken {
             case let .number(value):
                 advance()
@@ -293,7 +302,7 @@ struct ArithmeticParser: Sendable {
 
             case .leftParen:
                 advance()
-                let result = try parseExpression()
+                let result = try parseExpression(depth: depth + 1)
                 guard currentToken == .rightParen else {
                     throw ParserError.missingClosingParenthesis
                 }
@@ -302,11 +311,11 @@ struct ArithmeticParser: Sendable {
 
             case .minus:
                 advance()
-                return try -parseFactor()
+                return try -parseFactor(depth: depth + 1)
 
             case .plus:
                 advance()
-                return try parseFactor()
+                return try parseFactor(depth: depth + 1)
 
             case .end:
                 throw ParserError.unexpectedEndOfExpression
