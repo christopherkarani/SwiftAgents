@@ -1,0 +1,325 @@
+/* ============================================================
+   Swarm Docs — Custom Theme
+   Fonts: Satoshi (body) · Syne (headings) · JetBrains Mono (code)
+   Palette: Deep dark with teal/orange accents (ygl-oros inspired)
+   ============================================================ */
+
+/* --- Font stacks --- */
+:root {
+  --vp-font-family-base: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --vp-font-family-mono: 'JetBrains Mono', 'Fira Code', 'Menlo', 'Monaco',
+    'Consolas', monospace;
+  --swarm-font-display: 'Syne', 'Georgia', serif;
+}
+
+/* --- Dark palette (default) --- */
+:root {
+  /* Brand colors — teal accent */
+  --vp-c-brand-1: #10b981;
+  --vp-c-brand-2: #34d399;
+  --vp-c-brand-3: #059669;
+  --vp-c-brand-soft: rgba(16, 185, 129, 0.14);
+
+  /* Tip / success */
+  --vp-c-tip-1: #10b981;
+  --vp-c-tip-2: #34d399;
+  --vp-c-tip-3: #059669;
+  --vp-c-tip-soft: rgba(16, 185, 129, 0.14);
+
+  /* Warning — amber */
+  --vp-c-warning-1: #f59e0b;
+  --vp-c-warning-2: #fbbf24;
+  --vp-c-warning-3: #d97706;
+  --vp-c-warning-soft: rgba(245, 158, 11, 0.14);
+
+  /* Danger — red */
+  --vp-c-danger-1: #ef4444;
+  --vp-c-danger-2: #f87171;
+  --vp-c-danger-3: #dc2626;
+  --vp-c-danger-soft: rgba(239, 68, 68, 0.14);
+}
+
+.dark {
+  /* Background layers */
+  --vp-c-bg: #0d1117;
+  --vp-c-bg-alt: #11161d;
+  --vp-c-bg-elv: #161b22;
+  --vp-c-bg-soft: #1a1f27;
+
+  /* Text */
+  --vp-c-text-1: rgba(255, 255, 255, 0.92);
+  --vp-c-text-2: rgba(255, 255, 255, 0.60);
+  --vp-c-text-3: rgba(255, 255, 255, 0.38);
+
+  /* Borders */
+  --vp-c-border: rgba(255, 255, 255, 0.08);
+  --vp-c-divider: rgba(255, 255, 255, 0.06);
+  --vp-c-gutter: #0d1117;
+
+  /* Nav / sidebar */
+  --vp-nav-bg-color: rgba(13, 17, 23, 0.85);
+  --vp-sidebar-bg-color: #0d1117;
+
+  /* Code blocks */
+  --vp-code-block-bg: #0d1117;
+  --vp-code-block-divider-color: rgba(255, 255, 255, 0.06);
+  --vp-code-tab-divider: rgba(255, 255, 255, 0.06);
+  --vp-code-copy-code-bg: rgba(255, 255, 255, 0.05);
+  --vp-code-copy-code-hover-bg: rgba(255, 255, 255, 0.1);
+  --vp-code-copy-code-active-text: #10b981;
+
+  /* Carbon block (custom containers) */
+  --vp-carbon-ads-bg-color: #161b22;
+}
+
+/* --- Light mode overrides --- */
+:root:not(.dark) {
+  --vp-c-bg: #ffffff;
+  --vp-c-bg-alt: #f8f9fa;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-bg-soft: #f3f4f6;
+}
+
+/* ============================================================
+   Typography — Syne for headings
+   ============================================================ */
+
+/* Hero H1 — display weight */
+.VPHero .name,
+.VPHero .text {
+  font-family: var(--swarm-font-display) !important;
+  letter-spacing: -0.025em;
+}
+
+.VPHero .name {
+  font-weight: 800;
+}
+
+.VPHero .text {
+  font-weight: 700;
+}
+
+.VPHero .tagline {
+  font-family: var(--vp-font-family-base) !important;
+  font-weight: 400;
+  letter-spacing: -0.005em;
+  color: var(--vp-c-text-2);
+}
+
+/* Section & content headings */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3 {
+  font-family: var(--swarm-font-display);
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+.vp-doc h1 {
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+/* Sidebar group titles */
+.VPSidebarItem .text {
+  font-family: var(--vp-font-family-base);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+/* --- Body text tuning --- */
+.vp-doc p,
+.vp-doc li {
+  letter-spacing: -0.005em;
+  line-height: 1.75;
+}
+
+/* --- Code --- */
+.vp-doc code {
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.875em;
+}
+
+.vp-doc div[class*='language-'] code {
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.85em;
+  line-height: 1.7;
+}
+
+/* ============================================================
+   Hero section — full-bleed dark
+   ============================================================ */
+
+.VPHero {
+  padding-bottom: 64px !important;
+}
+
+/* Hero name gradient — teal to emerald */
+.VPHero .name .clip {
+  background: linear-gradient(135deg, #10b981 0%, #34d399 40%, #6ee7b7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Hero action buttons */
+.VPButton.brand {
+  background-color: #10b981 !important;
+  border-color: #10b981 !important;
+  color: #0d1117 !important;
+  font-family: var(--vp-font-family-base);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: all 0.2s ease;
+}
+
+.VPButton.brand:hover {
+  background-color: #34d399 !important;
+  border-color: #34d399 !important;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+.VPButton.alt {
+  font-family: var(--vp-font-family-base);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* ============================================================
+   Feature cards — ygl-oros card style
+   ============================================================ */
+
+.VPFeature {
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-radius: 12px !important;
+  background: var(--vp-c-bg-elv) !important;
+  transition: all 0.25s ease;
+}
+
+.VPFeature:hover {
+  border-color: rgba(16, 185, 129, 0.25) !important;
+  box-shadow: 0 4px 24px rgba(16, 185, 129, 0.08);
+  transform: translateY(-2px);
+}
+
+.VPFeature .title {
+  font-family: var(--swarm-font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.VPFeature .details {
+  font-family: var(--vp-font-family-base);
+  font-weight: 400;
+  color: var(--vp-c-text-2);
+  line-height: 1.6;
+}
+
+/* ============================================================
+   Navbar — frosted glass
+   ============================================================ */
+
+.VPNav {
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+}
+
+.dark .VPNav {
+  background: rgba(13, 17, 23, 0.8) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ============================================================
+   Sidebar refinements
+   ============================================================ */
+
+.dark .VPSidebar {
+  background: var(--vp-c-bg) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.VPSidebarItem.is-active > .item > .link > .text {
+  color: var(--vp-c-brand-1) !important;
+  font-weight: 600;
+}
+
+/* ============================================================
+   Custom container refinements
+   ============================================================ */
+
+.vp-doc .custom-block {
+  border-radius: 10px;
+  border-width: 1px;
+}
+
+.vp-doc .custom-block.tip {
+  border-color: rgba(16, 185, 129, 0.25);
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.vp-doc .custom-block.warning {
+  border-color: rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.vp-doc .custom-block.danger {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+/* ============================================================
+   Tables
+   ============================================================ */
+
+.vp-doc table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.dark .vp-doc tr {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .vp-doc th {
+  background: var(--vp-c-bg-elv);
+  font-family: var(--vp-font-family-base);
+  font-weight: 600;
+}
+
+/* ============================================================
+   Scrollbar (dark)
+   ============================================================ */
+
+.dark ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ============================================================
+   Footer
+   ============================================================ */
+
+.VPFooter {
+  border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+.VPFooter .message,
+.VPFooter .copyright {
+  font-family: var(--vp-font-family-base);
+  font-weight: 400;
+  color: var(--vp-c-text-3);
+}

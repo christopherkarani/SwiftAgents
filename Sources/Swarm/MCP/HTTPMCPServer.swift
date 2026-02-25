@@ -284,7 +284,8 @@ public actor HTTPMCPServer: MCPServer {
                 // Don't retry client errors (4xx range mapped to specific MCP errors)
                 if error.code == MCPError.invalidRequestCode ||
                     error.code == MCPError.invalidParamsCode ||
-                    error.code == MCPError.methodNotFoundCode {
+                    error.code == MCPError.methodNotFoundCode ||
+                    (400...499).contains(error.code) {
                     throw error
                 }
 

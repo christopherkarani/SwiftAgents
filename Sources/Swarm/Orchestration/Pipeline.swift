@@ -235,10 +235,12 @@ public extension Pipeline {
             for attempt in 0..<attempts {
                 do {
                     return try await self.execute(input)
+                } catch is CancellationError {
+                    throw CancellationError()
                 } catch {
                     lastError = error
                     if attempt < attempts - 1, delay > .zero {
-                        try? await Task.sleep(for: delay)
+                        try await Task.sleep(for: delay)
                     }
                 }
             }

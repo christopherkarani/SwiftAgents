@@ -120,6 +120,9 @@ public struct DAGBuilder {
 public struct DAG: OrchestrationStep, Sendable {
     /// The nodes comprising this DAG.
     public let nodes: [DAGNode]
+    private let validationError: DAGValidationError?
+    /// Topologically sorted nodes, cached at init time to avoid recomputing on every execute() call.
+    private let sortedNodes: [DAGNode]
 
     /// Stored validation failure captured at construction time.
     private let validationError: OrchestrationValidationError?
@@ -136,12 +139,16 @@ public struct DAG: OrchestrationStep, Sendable {
         }
         self.validationError = nil
         self.nodes = builtNodes
+        let (error, sorted) = DAG.validate(builtNodes)
+        self.validationError = error
+        self.sortedNodes = sorted
     }
 
     /// Internal initializer for testing with pre-validated nodes.
     init(validatedNodes: [DAGNode]) {
         self.validationError = nil
         self.nodes = validatedNodes
+        self.sortedNodes = DAG.topologicalSort(validatedNodes)
     }
 
     // MARK: - Validation
@@ -175,7 +182,7 @@ public struct DAG: OrchestrationStep, Sendable {
             }
         }
 
-        // Detect cycles via topological sort
+        // Detect cycles via topological sort; reuse the sorted result on success.
         let sorted = topologicalSort(nodes)
         if sorted.count != nodes.count {
             let sortedNames = Set(sorted.map(\.name))
@@ -236,7 +243,7 @@ public struct DAG: OrchestrationStep, Sendable {
 
         let startTime = ContinuousClock.now
 
-        let sorted = DAG.topologicalSort(nodes)
+        let sorted = sortedNodes
         let state = DAGExecutionState()
 
         // Build adjacency: node name -> downstream node names
@@ -315,9 +322,20 @@ public struct DAG: OrchestrationStep, Sendable {
         let criticalPathDuration = await computeCriticalPathDuration(sorted: sorted, state: state)
         allMetadata["dag.critical_path_duration"] = .double(criticalPathDuration)
 
-        // Output is from the last node(s) in topological order
-        let lastNodeName = sorted.last?.name ?? ""
-        let finalOutput = allResults[lastNodeName]?.output ?? input
+        // Output is from the sink node(s) (nodes with no downstream edges) in topological order.
+        let sinkNames = sorted
+            .map(\.name)
+            .filter { downstreamMap[$0, default: []].isEmpty }
+        let sinkOutputs = sinkNames.compactMap { allResults[$0]?.output }
+        let finalOutput: String
+        switch sinkOutputs.count {
+        case 0:
+            finalOutput = input
+        case 1:
+            finalOutput = sinkOutputs[0]
+        default:
+            finalOutput = sinkOutputs.joined(separator: "\n")
+        }
 
         return AgentResult(
             output: finalOutput,
@@ -379,6 +397,10 @@ public struct DAG: OrchestrationStep, Sendable {
         return longestPath.values.max() ?? 0
     }
 }
+
+// MARK: - DAGValidationError
+
+public typealias DAGValidationError = OrchestrationValidationError
 
 // MARK: - DAGExecutionState
 

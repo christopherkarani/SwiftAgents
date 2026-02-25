@@ -227,8 +227,11 @@ public struct MCPResponse: Sendable, Codable, Equatable {
         result: SendableValue? = nil,
         error: MCPErrorObject? = nil
     ) throws {
+        guard jsonrpc == "2.0" else {
+            throw MCPError.invalidRequest("Invalid JSON-RPC version: expected '2.0', got '\(jsonrpc)'")
+        }
         guard !id.isEmpty else {
-            throw MCPError.invalidRequest("MCPResponse: id cannot be empty")
+            throw MCPError.invalidRequest("Response ID cannot be empty")
         }
         guard (result == nil) != (error == nil) else {
             throw MCPError.invalidRequest(
@@ -247,6 +250,14 @@ public struct MCPResponse: Sendable, Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
         let jsonrpc = try container.decode(String.self, forKey: .jsonrpc)
+        guard jsonrpc == "2.0" else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: [CodingKeys.jsonrpc],
+                    debugDescription: "Invalid JSON-RPC version: expected '2.0', got '\(jsonrpc)'"
+                )
+            )
+        }
         let id = try container.decode(String.self, forKey: .id)
         guard !id.isEmpty else {
             throw DecodingError.dataCorrupted(
@@ -287,6 +298,23 @@ public struct MCPResponse: Sendable, Codable, Equatable {
 
     // MARK: Private
 
+    /// Internal initializer for validated response construction.
+    /// Callers must ensure exactly one of result or error is set.
+    private init(
+        id: String,
+        result: SendableValue?,
+        error: MCPErrorObject?
+    ) {
+        assert(
+            (result == nil) != (error == nil),
+            "MCPResponse invariant violated: exactly one of result/error must be set"
+        )
+        self.jsonrpc = "2.0"
+        self.id = id
+        self.result = result
+        self.error = error
+    }
+
     private enum CodingKeys: String, CodingKey {
         case jsonrpc
         case id
@@ -304,9 +332,17 @@ public extension MCPResponse {
     ///   - id: The identifier matching the corresponding request. Must be non-empty.
     ///   - result: The result value to include in the response.
     /// - Returns: An MCPResponse with the result set and error as `nil`.
-    /// - Throws: `MCPError.invalidRequest` if `id` is empty.
-    static func success(id: String, result: SendableValue) throws -> MCPResponse {
-        try MCPResponse(id: id, result: result, error: nil)
+    ///
+    /// - Precondition: `id` must be non-empty. Passing an empty string is a
+    ///   programming error and will terminate the process in both debug and
+    ///   release builds via `precondition`.
+    static func success(id: String, result: SendableValue) -> MCPResponse {
+        precondition(!id.isEmpty, "MCPResponse.success requires a non-empty id")
+        MCPResponse(
+            id: id,
+            result: result,
+            error: nil
+        )
     }
 
     /// Creates an error response with the given error object.
@@ -315,9 +351,17 @@ public extension MCPResponse {
     ///   - id: The identifier matching the corresponding request. Must be non-empty.
     ///   - error: The error object describing what went wrong.
     /// - Returns: An MCPResponse with the error set and result as `nil`.
-    /// - Throws: `MCPError.invalidRequest` if `id` is empty.
-    static func failure(id: String, error: MCPErrorObject) throws -> MCPResponse {
-        try MCPResponse(id: id, result: nil, error: error)
+    ///
+    /// - Precondition: `id` must be non-empty. Passing an empty string is a
+    ///   programming error and will terminate the process in both debug and
+    ///   release builds via `precondition`.
+    static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
+        precondition(!id.isEmpty, "MCPResponse.failure requires a non-empty id")
+        MCPResponse(
+            id: id,
+            result: nil,
+            error: error
+        )
     }
 }
 
