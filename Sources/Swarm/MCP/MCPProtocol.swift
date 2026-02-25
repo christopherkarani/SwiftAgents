@@ -332,13 +332,12 @@ public extension MCPResponse {
     ///   - id: The identifier matching the corresponding request. Must be non-empty.
     ///   - result: The result value to include in the response.
     /// - Returns: An MCPResponse with the result set and error as `nil`.
-    ///
-    /// - Precondition: `id` must be non-empty. Passing an empty string is a
-    ///   programming error and will terminate the process in both debug and
-    ///   release builds via `precondition`.
-    static func success(id: String, result: SendableValue) -> MCPResponse {
-        precondition(!id.isEmpty, "MCPResponse.success requires a non-empty id")
-        MCPResponse(
+    /// - Throws: `MCPError.invalidRequest` if `id` is empty.
+    static func success(id: String, result: SendableValue) throws -> MCPResponse {
+        guard !id.isEmpty else {
+            throw MCPError.invalidRequest("MCPResponse.success: id must be non-empty")
+        }
+        return MCPResponse(
             id: id,
             result: result,
             error: nil
@@ -351,13 +350,12 @@ public extension MCPResponse {
     ///   - id: The identifier matching the corresponding request. Must be non-empty.
     ///   - error: The error object describing what went wrong.
     /// - Returns: An MCPResponse with the error set and result as `nil`.
-    ///
-    /// - Precondition: `id` must be non-empty. Passing an empty string is a
-    ///   programming error and will terminate the process in both debug and
-    ///   release builds via `precondition`.
-    static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
-        precondition(!id.isEmpty, "MCPResponse.failure requires a non-empty id")
-        MCPResponse(
+    /// - Throws: `MCPError.invalidRequest` if `id` is empty.
+    static func failure(id: String, error: MCPErrorObject) throws -> MCPResponse {
+        guard !id.isEmpty else {
+            throw MCPError.invalidRequest("MCPResponse.failure: id must be non-empty")
+        }
+        return MCPResponse(
             id: id,
             result: nil,
             error: error

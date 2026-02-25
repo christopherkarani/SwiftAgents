@@ -120,7 +120,6 @@ public struct DAGBuilder {
 public struct DAG: OrchestrationStep, Sendable {
     /// The nodes comprising this DAG.
     public let nodes: [DAGNode]
-    private let validationError: DAGValidationError?
     /// Topologically sorted nodes, cached at init time to avoid recomputing on every execute() call.
     private let sortedNodes: [DAGNode]
 
@@ -129,19 +128,19 @@ public struct DAG: OrchestrationStep, Sendable {
 
     /// Creates a new DAG workflow from a builder closure.
     ///
-    /// Validates the graph structure at construction time.
+    /// Validates the graph structure at construction time. Throws if the graph
+    /// is empty, contains duplicate node names, has missing dependencies, or contains cycles.
     ///
     /// - Parameter content: A builder closure producing DAG nodes.
+    /// - Throws: `OrchestrationError.invalidGraph` if the graph is structurally invalid.
     public init(@DAGBuilder _ content: () -> [DAGNode]) throws {
         let builtNodes = content()
         if let error = DAG.validate(builtNodes) {
             throw OrchestrationError.invalidGraph(error)
         }
-        self.validationError = nil
         self.nodes = builtNodes
-        let (error, sorted) = DAG.validate(builtNodes)
-        self.validationError = error
-        self.sortedNodes = sorted
+        self.validationError = nil
+        self.sortedNodes = DAG.topologicalSort(builtNodes)
     }
 
     /// Internal initializer for testing with pre-validated nodes.
