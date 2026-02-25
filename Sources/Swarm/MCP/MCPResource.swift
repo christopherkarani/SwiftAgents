@@ -138,8 +138,11 @@ public struct MCPResourceContent: Sendable, Codable, Equatable {
         text: String? = nil,
         blob: String? = nil
     ) throws {
-        guard (text == nil) != (blob == nil) else {
-            throw MCPError.invalidRequest("MCPResourceContent requires exactly one of text or blob.")
+        if text != nil, blob != nil {
+            throw MCPError.invalidRequest("MCPResourceContent: both text and blob cannot be set simultaneously.")
+        }
+        if text == nil, blob == nil {
+            throw MCPError.invalidRequest("MCPResourceContent: at least one of text or blob must be provided.")
         }
         self.uri = uri
         self.mimeType = mimeType
@@ -154,11 +157,19 @@ public struct MCPResourceContent: Sendable, Codable, Equatable {
         text = try container.decodeIfPresent(String.self, forKey: .text)
         blob = try container.decodeIfPresent(String.self, forKey: .blob)
 
-        guard (text == nil) != (blob == nil) else {
+        if text != nil, blob != nil {
             throw DecodingError.dataCorrupted(
                 DecodingError.Context(
                     codingPath: container.codingPath,
-                    debugDescription: "MCPResourceContent requires exactly one of text or blob."
+                    debugDescription: "MCPResourceContent: both text and blob cannot be set simultaneously."
+                )
+            )
+        }
+        if text == nil, blob == nil {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: container.codingPath,
+                    debugDescription: "MCPResourceContent: at least one of text or blob must be provided."
                 )
             )
         }

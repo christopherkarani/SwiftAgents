@@ -22,10 +22,10 @@ import Foundation
 /// ## Example Usage
 /// ```swift
 /// // Simple request without parameters
-/// let request = MCPRequest(method: "tools/list")
+/// let request = try MCPRequest(method: "tools/list")
 ///
 /// // Request with parameters
-/// let callRequest = MCPRequest(
+/// let callRequest = try MCPRequest(
 ///     method: "tools/call",
 ///     params: [
 ///         "name": "calculator",
@@ -34,7 +34,7 @@ import Foundation
 /// )
 ///
 /// // Request with custom ID
-/// let customRequest = MCPRequest(
+/// let customRequest = try MCPRequest(
 ///     id: "request-001",
 ///     method: "resources/read",
 ///     params: ["uri": "file:///example.txt"]
@@ -76,39 +76,26 @@ public struct MCPRequest: Sendable, Codable, Equatable {
     ///
     /// - Parameters:
     ///   - id: A unique identifier for the request. Defaults to a new UUID string.
-    ///         Must be non-empty per JSON-RPC 2.0 specification.
+    ///         An empty string is replaced with a fresh UUID automatically.
     ///   - method: The name of the method to invoke. Must be non-empty.
     ///   - params: Optional parameters for the method. Defaults to `nil`.
-    ///
-    /// Creates a new JSON-RPC 2.0 request.
-    ///
-    /// - Parameters:
-    ///   - id: A unique identifier for the request. Defaults to a new UUID string.
-    ///         Must be non-empty per JSON-RPC 2.0 specification.
-    ///   - method: The name of the method to invoke. Must be non-empty.
-    ///   - params: Optional parameters for the method. Defaults to `nil`.
-    /// - Precondition: `id` must be non-empty.
-    /// - Precondition: `method` must be non-empty. Passing an empty method is always
-    ///   a programmer error; the framework does not silently substitute a sentinel value.
+    /// - Throws: `MCPError.invalidRequest` if `method` is empty.
     public init(
         id: String = UUID().uuidString,
         method: String,
         params: [String: SendableValue]? = nil
-    ) {
+    ) throws {
         // Validate id — generate a fresh UUID if caller passed empty string.
         let validatedId = id.isEmpty ? UUID().uuidString : id
 
-        // Validate method — empty method produces an invalid JSON-RPC 2.0 request.
-        // Assert in debug builds to catch programming errors early; warn in release.
-        assert(!method.isEmpty, "MCPRequest: method must be non-empty per JSON-RPC 2.0")
-        if method.isEmpty {
-            Log.agents.warning("MCPRequest: method was empty; defaulting to 'unknown'. This produces an invalid JSON-RPC 2.0 request.")
+        // Validate method — empty method is invalid per JSON-RPC 2.0.
+        guard !method.isEmpty else {
+            throw MCPError.invalidRequest("MCPRequest: method must be non-empty per JSON-RPC 2.0")
         }
-        let validatedMethod = method.isEmpty ? "unknown" : method
 
         jsonrpc = "2.0"
         self.id = validatedId
-        self.method = validatedMethod
+        self.method = method
         self.params = params
     }
 
@@ -314,31 +301,23 @@ public extension MCPResponse {
     /// Creates a successful response with the given result.
     ///
     /// - Parameters:
-    ///   - id: The identifier matching the corresponding request.
+    ///   - id: The identifier matching the corresponding request. Must be non-empty.
     ///   - result: The result value to include in the response.
     /// - Returns: An MCPResponse with the result set and error as `nil`.
-    static func success(id: String, result: SendableValue) -> MCPResponse {
-        // We control the invariants: result is non-nil, error is nil — init will not throw.
-        do {
-            return try MCPResponse(id: id, result: result, error: nil)
-        } catch {
-            fatalError("MCPResponse.success invariant violated — result was nil or error was set: \(error)")
-        }
+    /// - Throws: `MCPError.invalidRequest` if `id` is empty.
+    static func success(id: String, result: SendableValue) throws -> MCPResponse {
+        try MCPResponse(id: id, result: result, error: nil)
     }
 
     /// Creates an error response with the given error object.
     ///
     /// - Parameters:
-    ///   - id: The identifier matching the corresponding request.
+    ///   - id: The identifier matching the corresponding request. Must be non-empty.
     ///   - error: The error object describing what went wrong.
     /// - Returns: An MCPResponse with the error set and result as `nil`.
-    static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
-        // We control the invariants: error is non-nil, result is nil — init will not throw.
-        do {
-            return try MCPResponse(id: id, result: nil, error: error)
-        } catch let initError {
-            fatalError("MCPResponse.failure invariant violated — result was set or error was nil: \(initError)")
-        }
+    /// - Throws: `MCPError.invalidRequest` if `id` is empty.
+    static func failure(id: String, error: MCPErrorObject) throws -> MCPResponse {
+        try MCPResponse(id: id, result: nil, error: error)
     }
 }
 
