@@ -223,6 +223,28 @@ struct AgentConfigurationTests {
         #expect(modified.maxIterations == 20)
         #expect(modified.temperature == 0.5)
     }
+
+    @Test("Invalid initializer inputs are coerced to safe defaults")
+    func invalidInputsAreCoerced() {
+        let config = AgentConfiguration(
+            maxIterations: 0,
+            timeout: .zero,
+            temperature: .infinity
+        )
+
+        #expect(config.maxIterations == 1)
+        #expect(config.timeout == .seconds(60))
+        #expect(config.temperature == 1.0)
+    }
+}
+
+@Suite("InferencePolicy Tests")
+struct InferencePolicyTests {
+    @Test("Invalid token budget is dropped instead of crashing")
+    func invalidTokenBudgetIsDropped() {
+        let policy = InferencePolicy(tokenBudget: 0)
+        #expect(policy.tokenBudget == nil)
+    }
 }
 
 // MARK: - AgentErrorTests

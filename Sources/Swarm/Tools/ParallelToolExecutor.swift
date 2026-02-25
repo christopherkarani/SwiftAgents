@@ -261,6 +261,11 @@ public actor ParallelToolExecutor {
 
         // Apply error strategy
         switch errorStrategy {
+        case .failFast:
+            // Handled above with true cancellation - this case should never be reached
+            // If we reach here, it indicates a logic error in the implementation
+            throw AgentError.internalError(reason: "ParallelToolExecutor: failFast case reached unexpectedly in error strategy switch")
+
         case .collectErrors:
             // Collect all errors and throw composite error
             let errors = results.compactMap(\.error)

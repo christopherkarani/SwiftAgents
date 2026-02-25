@@ -23,7 +23,7 @@ struct SessionIntegrationTests {
             "Final Answer: I'm doing great, thank you for asking!"
         ])
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -61,7 +61,7 @@ struct SessionIntegrationTests {
             "Final Answer: Of course, Alice! I remember you."
         ])
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -94,7 +94,7 @@ struct SessionIntegrationTests {
         let mockProvider1 = MockInferenceProvider(responses: [
             "Final Answer: I understand you want to calculate something."
         ])
-        let agent1 = ReActAgent(
+        let agent1 = try ReActAgent(
             tools: [],
             instructions: "You are a math assistant.",
             inferenceProvider: mockProvider1
@@ -104,7 +104,7 @@ struct SessionIntegrationTests {
         let mockProvider2 = MockInferenceProvider(responses: [
             "Final Answer: Based on the previous context, I can help with that calculation."
         ])
-        let agent2 = ReActAgent(
+        let agent2 = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider2
@@ -170,7 +170,7 @@ struct SessionIntegrationTests {
             "Final Answer: Hello! I'm ready to help."
         ])
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -199,7 +199,7 @@ struct SessionIntegrationTests {
             "Final Answer: Hello, world!"
         ])
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -220,7 +220,7 @@ struct SessionIntegrationTests {
             "Final Answer: Response without session"
         ])
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -247,7 +247,7 @@ struct SessionIntegrationTests {
             "Final Answer: Second response for session 1"
         ])
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -290,7 +290,7 @@ struct SessionIntegrationTests {
             "Final Answer: Yes, you are Bob."
         ])
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant that remembers names.",
             inferenceProvider: mockProvider
@@ -340,7 +340,7 @@ struct SessionIntegrationTests {
             "Final Answer: The result is 4"
         ])
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [mockTool],
             instructions: "You are a math assistant.",
             inferenceProvider: mockProvider
@@ -373,7 +373,7 @@ struct SessionIntegrationTests {
             let mockProvider = MockInferenceProvider(responses: [
                 "Final Answer: First agent response"
             ])
-            let agent = ReActAgent(
+            let agent = try ReActAgent(
                 tools: [],
                 instructions: "First agent",
                 inferenceProvider: mockProvider
@@ -386,7 +386,7 @@ struct SessionIntegrationTests {
             let mockProvider = MockInferenceProvider(responses: [
                 "Final Answer: Second agent response"
             ])
-            let agent = ReActAgent(
+            let agent = try ReActAgent(
                 tools: [],
                 instructions: "Second agent",
                 inferenceProvider: mockProvider
@@ -417,7 +417,7 @@ struct SessionIntegrationTests {
         }
         let mockProvider = MockInferenceProvider(responses: responses)
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -448,7 +448,7 @@ struct SessionIntegrationTests {
             "Final Answer: Response with special chars: <>&\""
         ])
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -475,7 +475,7 @@ struct SessionIntegrationTests {
         }
         let mockProvider = MockInferenceProvider(responses: responses)
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider

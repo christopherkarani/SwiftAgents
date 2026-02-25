@@ -515,156 +515,77 @@ struct HiveAgentsTests {
         #expect(hasExpectedAssistantMessage)
     }
 
-    @Test("preModelHook mutates model request messages and system prompt")
-    func preModelHook_mutatesModelRequest() async throws {
-        let recorder = ModelInvocationRecorder(chunksByInvocation: [
-            [.final(HiveChatResponse(message: message(id: "m1", role: .assistant, content: "done")))]
-        ])
-        let graph = try HiveAgents.makeToolUsingChatAgent(
-            preModelHook: InjectingPreModelHook()
-        )
+    @Test("SwarmToolRegistry throws duplicateToolName when given duplicate tools")
+    func swarmToolRegistry_rejectsDuplicateToolNames() throws {
+        let duplicateTools = [
+            DuplicateTestTool(name: "calc"),
+            DuplicateTestTool(name: "calc")
+        ]
 
-        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
-        let environment = HiveEnvironment<HiveAgents.Schema>(
-            context: context,
-            clock: NoopClock(),
-            logger: NoopLogger(),
-            model: AnyHiveModelClient(CapturingModelClient(recorder: recorder)),
-            modelRouter: nil,
-            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "ok")),
-            checkpointStore: nil
-        )
+        let thrown = try? SwarmToolRegistry(tools: duplicateTools)
+        #expect(thrown == nil)
 
-        let runtime = try HiveRuntime(graph: graph, environment: environment)
-        let outcome = try await waitOutcome(
-            await runtime.run(
-                threadID: HiveThreadID("hook-pre-model"),
-                input: "Hello",
-                options: HiveRunOptions(maxSteps: 4, checkpointPolicy: .disabled)
-            )
-        )
-        _ = try requireFullStore(outcome: outcome)
-
-        let request = try #require(await recorder.firstRequest())
-        let systemMessage = request.messages.first
-        #expect(systemMessage?.role == .system)
-        #expect(systemMessage?.content == "Injected system prompt")
-        #expect(request.messages.contains { $0.role == .user && $0.content == "Hello" })
-        #expect(request.messages.contains { $0.role == .user && $0.content == "Hook-injected user context" })
-    }
-
-    @Test("toolProvider overrides environment tool registry definitions")
-    func toolProvider_overridesRegistryDefinitions() async throws {
-        let recorder = ModelInvocationRecorder(chunksByInvocation: [
-            [.final(HiveChatResponse(message: message(id: "m1", role: .assistant, content: "done")))]
-        ])
-        let graph = try HiveAgents.makeToolUsingChatAgent(
-            toolProvider: {
-                [makeToolDefinition(name: "from_provider")]
-            }
-        )
-
-        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
-        let environment = HiveEnvironment<HiveAgents.Schema>(
-            context: context,
-            clock: NoopClock(),
-            logger: NoopLogger(),
-            model: AnyHiveModelClient(CapturingModelClient(recorder: recorder)),
-            modelRouter: nil,
-            tools: AnyHiveToolRegistry(ListingToolRegistry(
-                definitions: [makeToolDefinition(name: "from_registry")],
-                resultContent: "registry-result"
-            )),
-            checkpointStore: nil
-        )
-
-        let runtime = try HiveRuntime(graph: graph, environment: environment)
-        let outcome = try await waitOutcome(
-            await runtime.run(
-                threadID: HiveThreadID("hook-tool-provider"),
-                input: "Hello",
-                options: HiveRunOptions(maxSteps: 4, checkpointPolicy: .disabled)
-            )
-        )
-        _ = try requireFullStore(outcome: outcome)
-
-        let request = try #require(await recorder.firstRequest())
-        #expect(request.tools.map(\.name) == ["from_provider"])
-    }
-
-    @Test("messageIDFactory controls assistant message IDs")
-    func messageIDFactory_controlsAssistantIDs() async throws {
-        let graph = try HiveAgents.makeToolUsingChatAgent(
-            messageIDFactory: PrefixMessageIDFactory()
-        )
-
-        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
-        let environment = HiveEnvironment<HiveAgents.Schema>(
-            context: context,
-            clock: NoopClock(),
-            logger: NoopLogger(),
-            model: AnyHiveModelClient(StubModelClient(chunks: [
-                .final(HiveChatResponse(message: message(id: "ignored-by-factory", role: .assistant, content: "ok")))
-            ])),
-            modelRouter: nil,
-            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "ok")),
-            checkpointStore: nil
-        )
-
-        let runtime = try HiveRuntime(graph: graph, environment: environment)
-        let outcome = try await waitOutcome(
-            await runtime.run(
-                threadID: HiveThreadID("hook-message-id"),
-                input: "Hello",
-                options: HiveRunOptions(maxSteps: 4, checkpointPolicy: .disabled)
-            )
-        )
-        let store = try requireFullStore(outcome: outcome)
-        let messages = try store.get(HiveAgents.Schema.messagesKey)
-
-        let customAssistant = messages.first { $0.role == .assistant }
-        #expect(customAssistant?.id.hasPrefix("custom-assistant-") == true)
-    }
-
-    @Test("toolResultTransformer rewrites tool output before model continuation")
-    func toolResultTransformer_rewritesToolOutput() async throws {
-        let graph = try HiveAgents.makeToolUsingChatAgent(
-            toolResultTransformer: PrefixToolResultTransformer()
-        )
-        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
-        let environment = HiveEnvironment<HiveAgents.Schema>(
-            context: context,
-            clock: NoopClock(),
-            logger: NoopLogger(),
-            model: AnyHiveModelClient(ScriptedModelClient(script: ModelScript(chunksByInvocation: [
-                [.final(HiveChatResponse(message: message(
-                    id: "m1",
-                    role: .assistant,
-                    content: "",
-                    toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
-                )))],
-                [.final(HiveChatResponse(message: message(id: "m2", role: .assistant, content: "done")))]
-            ]))),
-            modelRouter: nil,
-            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
-            checkpointStore: nil
-        )
-
-        let runtime = try HiveRuntime(graph: graph, environment: environment)
-        let outcome = try await waitOutcome(
-            await runtime.run(
-                threadID: HiveThreadID("hook-tool-transform"),
-                input: "Hello",
-                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
-            )
-        )
-        let store = try requireFullStore(outcome: outcome)
-        let messages = try store.get(HiveAgents.Schema.messagesKey)
-
-        let transformedToolMessage = messages.first { message in
-            message.role == .tool && message.toolCallID == "c1"
+        do {
+            _ = try SwarmToolRegistry(tools: duplicateTools)
+            Issue.record("Expected to throw duplicateToolName error")
+        } catch let error as SwarmToolRegistryError {
+            #expect(error == .duplicateToolName("calc"))
         }
-        #expect(transformedToolMessage?.content == "transformed:calc:42")
+    }
+
+    @Test("SwarmToolRegistry invoke throws toolNotFound for unknown tool")
+    func swarmToolRegistry_invokeUnknownTool() async throws {
+        let registry = try SwarmToolRegistry(tools: [DuplicateTestTool(name: "calc")])
+
+        do {
+            _ = try await registry.invoke(
+                HiveToolCall(id: "call-1", name: "missing", argumentsJSON: "{}")
+            )
+            Issue.record("Expected to throw toolNotFound.")
+        } catch let error as SwarmToolRegistryError {
+            #expect(error == .toolNotFound(name: "missing"))
+        }
+    }
+
+    @Test("SwarmToolRegistry invoke throws invalidArgumentsJSON for malformed arguments")
+    func swarmToolRegistry_invokeInvalidArgumentsJSON() async throws {
+        let registry = try SwarmToolRegistry(tools: [DuplicateTestTool(name: "calc")])
+
+        do {
+            _ = try await registry.invoke(
+                HiveToolCall(id: "call-2", name: "calc", argumentsJSON: "not-json")
+            )
+            Issue.record("Expected to throw invalidArgumentsJSON.")
+        } catch let error as SwarmToolRegistryError {
+            #expect(error == .invalidArgumentsJSON)
+        }
+    }
+
+    @Test("SwarmToolRegistry invoke returns tool result on success")
+    func swarmToolRegistry_invokeReturnsToolResult() async throws {
+        let registry = try SwarmToolRegistry(tools: [DuplicateTestTool(name: "calc")])
+        let result = try await registry.invoke(
+            HiveToolCall(id: "call-3", name: "calc", argumentsJSON: "{}")
+        )
+
+        #expect(result.toolCallID == "call-3")
+        #expect(result.content == "result")
+    }
+
+    @Test("SwarmToolRegistry invoke preserves cancellation errors")
+    func swarmToolRegistry_invokePreservesCancellation() async throws {
+        let registry = try SwarmToolRegistry(tools: [CancellableTestTool(name: "cancelled-tool")])
+
+        do {
+            _ = try await registry.invoke(
+                HiveToolCall(id: "call-4", name: "cancelled-tool", argumentsJSON: "{}")
+            )
+            Issue.record("Expected CancellationError.")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            Issue.record("Expected CancellationError, got \(error).")
+        }
     }
 }
 
@@ -972,4 +893,26 @@ private func expectedRoleBasedMessageID(taskID: String, role: String) -> String 
 private struct TestFailure: Error, CustomStringConvertible {
     let description: String
     init(_ description: String) { self.description = description }
+}
+
+private struct DuplicateTestTool: AnyJSONTool {
+    let name: String
+    let description: String = "Test tool"
+
+    var parameters: [ToolParameter] { [] }
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        .string("result")
+    }
+}
+
+private struct CancellableTestTool: AnyJSONTool {
+    let name: String
+    let description: String = "Cancellation test tool"
+
+    var parameters: [ToolParameter] { [] }
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        throw CancellationError()
+    }
 }

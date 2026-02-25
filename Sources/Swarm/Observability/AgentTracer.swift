@@ -63,12 +63,6 @@ public protocol Tracer: Actor, Sendable {
     func flush() async
 }
 
-// MARK: - Deprecated Typealias
-
-/// Deprecated: Use `Tracer` instead.
-@available(*, deprecated, renamed: "Tracer", message: "AgentTracer has been renamed to Tracer")
-public typealias AgentTracer = Tracer
-
 // MARK: - Default Implementation
 
 public extension Tracer {
@@ -402,7 +396,3 @@ public actor AnyTracer: Tracer {
     private let _trace: @Sendable (TraceEvent) async -> Void
     private let _flush: @Sendable () async -> Void
 }
-
-/// Deprecated: Use `AnyTracer` instead.
-@available(*, deprecated, renamed: "AnyTracer", message: "AnyAgentTracer has been renamed to AnyTracer")
-public typealias AnyAgentTracer = AnyTracer

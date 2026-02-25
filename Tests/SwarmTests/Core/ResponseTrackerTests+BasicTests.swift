@@ -178,6 +178,25 @@ struct ResponseTrackerBasicTests {
         #expect(retrieved?.usage?.outputTokens == 50)
     }
 
+    @Test("Invalid init values are coerced to safe bounds")
+    func invalidInitValuesAreCoerced() {
+        let tracker = ResponseTracker(maxHistorySize: 0, maxSessions: 0)
+        #expect(tracker.maxHistorySize == 1)
+        #expect(tracker.maxSessions == 1)
+    }
+
+    @Test("Invalid record inputs are dropped without crashing")
+    func invalidRecordInputsAreDropped() async {
+        let tracker = ResponseTracker()
+        let invalidResponse = makeTestResponse(id: "")
+
+        await tracker.recordResponse(invalidResponse, sessionId: "valid-session")
+        await tracker.recordResponse(makeTestResponse(id: "ok"), sessionId: "")
+
+        #expect(await tracker.getCount(for: "valid-session") == 0)
+        #expect(await tracker.getAllSessionIds().isEmpty)
+    }
+
     // MARK: Private
 
     // MARK: - Test Helpers

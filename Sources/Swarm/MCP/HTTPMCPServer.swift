@@ -207,6 +207,29 @@ public actor HTTPMCPServer: MCPServer {
     /// - Returns: The content of the resource.
     /// - Throws: `MCPError` if the request fails.
     public func readResource(uri: String) async throws -> MCPResourceContent {
+        // Validate URI format
+        guard let url = URL(string: uri),
+              let scheme = url.scheme?.lowercased() else {
+            throw MCPError.invalidParams("Invalid URI format")
+        }
+
+        // Whitelist allowed schemes
+        guard ["https", "http", "file"].contains(scheme) else {
+            throw MCPError.invalidParams("URI scheme '\(scheme)' not allowed")
+        }
+
+        // Block path traversal
+        guard !uri.contains("..") else {
+            throw MCPError.invalidParams("Path traversal not allowed")
+        }
+
+        // For file URLs, ensure they're absolute paths only
+        if scheme == "file" {
+            guard uri.hasPrefix("file:///") else {
+                throw MCPError.invalidParams("File URI must be absolute")
+            }
+        }
+
         let params: [String: SendableValue] = [
             "uri": .string(uri)
         ]

@@ -159,20 +159,20 @@ final class APIAuditTests: XCTestCase {
         XCTAssertFalse(tool.isEnabled)
     }
 
-    func testToolRegistrySchemasFiltersByIsEnabled() async {
+    func testToolRegistrySchemasFiltersByIsEnabled() async throws {
         let enabledTool = MockTool(name: "enabled", result: .string("ok"))
         let disabledTool = DisabledTool()
 
-        let registry = ToolRegistry(tools: [enabledTool, disabledTool])
+        let registry = try ToolRegistry(tools: [enabledTool, disabledTool])
         let schemas = await registry.schemas
 
         XCTAssertEqual(schemas.count, 1)
         XCTAssertEqual(schemas.first?.name, "enabled")
     }
 
-    func testToolRegistryRejectsDisabledToolExecution() async {
+    func testToolRegistryRejectsDisabledToolExecution() async throws {
         let disabledTool = DisabledTool()
-        let registry = ToolRegistry(tools: [disabledTool])
+        let registry = try ToolRegistry(tools: [disabledTool])
 
         do {
             _ = try await registry.execute(toolNamed: "disabled", arguments: [:])
@@ -192,31 +192,31 @@ final class APIAuditTests: XCTestCase {
 
     // MARK: - Agent Name Convenience Init Tests
 
-    func testAgentNameConvenienceInit() async {
-        let agent = Agent(name: "TestAgent", instructions: "You are helpful.")
+    func testAgentNameConvenienceInit() async throws {
+        let agent = try Agent(name: "TestAgent", instructions: "You are helpful.")
         let name = await agent.configuration.name
         XCTAssertEqual(name, "TestAgent")
     }
 
-    func testAgentNameConvenienceInitPreservesInstructions() async {
-        let agent = Agent(name: "Helper", instructions: "Be concise.")
+    func testAgentNameConvenienceInitPreservesInstructions() async throws {
+        let agent = try Agent(name: "Helper", instructions: "Be concise.")
         let instructions = await agent.instructions
         XCTAssertEqual(instructions, "Be concise.")
     }
 
-    func testAgentNameAccessedViaRuntimeProperty() async {
-        let agent = Agent(name: "RuntimeName", instructions: "test")
+    func testAgentNameAccessedViaRuntimeProperty() async throws {
+        let agent = try Agent(name: "RuntimeName", instructions: "test")
         let name = await agent.name
         XCTAssertEqual(name, "RuntimeName")
     }
 
     // MARK: - Agent handoffAgents Init Tests
 
-    func testAgentHandoffAgentsInit() async {
-        let billing = Agent(name: "Billing", instructions: "Handle billing")
-        let support = Agent(name: "Support", instructions: "Handle support")
+    func testAgentHandoffAgentsInit() async throws {
+        let billing = try Agent(name: "Billing", instructions: "Handle billing")
+        let support = try Agent(name: "Support", instructions: "Handle support")
 
-        let triage = Agent(
+        let triage = try Agent(
             name: "Triage",
             instructions: "Route requests",
             handoffAgents: [billing, support]
@@ -226,9 +226,9 @@ final class APIAuditTests: XCTestCase {
         XCTAssertEqual(handoffs.count, 2)
     }
 
-    func testAgentHandoffAgentsTargetsCorrectAgents() async {
-        let billing = Agent(name: "Billing", instructions: "Handle billing")
-        let triage = Agent(
+    func testAgentHandoffAgentsTargetsCorrectAgents() async throws {
+        let billing = try Agent(name: "Billing", instructions: "Handle billing")
+        let triage = try Agent(
             name: "Triage",
             instructions: "Route requests",
             handoffAgents: [billing]
@@ -241,8 +241,8 @@ final class APIAuditTests: XCTestCase {
 
     // MARK: - AgentTool Tests
 
-    func testAgentToolCreation() async {
-        let innerAgent = await Agent(
+    func testAgentToolCreation() async throws {
+        let innerAgent = try Agent(
             name: "Researcher",
             instructions: "Research topics",
             inferenceProvider: MockInferenceProvider()
@@ -256,8 +256,8 @@ final class APIAuditTests: XCTestCase {
         XCTAssertEqual(tool.parameters.first?.type, .string)
     }
 
-    func testAgentToolCustomNameAndDescription() async {
-        let innerAgent = await Agent(
+    func testAgentToolCustomNameAndDescription() async throws {
+        let innerAgent = try Agent(
             name: "Worker",
             instructions: "Work",
             inferenceProvider: MockInferenceProvider()
@@ -273,8 +273,8 @@ final class APIAuditTests: XCTestCase {
         XCTAssertEqual(tool.description, "A custom worker tool")
     }
 
-    func testAgentAsToolExtension() async {
-        let agent = await Agent(
+    func testAgentAsToolExtension() async throws {
+        let agent = try Agent(
             name: "Helper",
             instructions: "Help users",
             inferenceProvider: MockInferenceProvider()
@@ -285,8 +285,8 @@ final class APIAuditTests: XCTestCase {
         XCTAssertTrue(tool.description.contains("Helper"))
     }
 
-    func testAgentAsToolWithCustomParams() async {
-        let agent = await Agent(
+    func testAgentAsToolWithCustomParams() async throws {
+        let agent = try Agent(
             name: "Helper",
             instructions: "Help users",
             inferenceProvider: MockInferenceProvider()
@@ -297,11 +297,11 @@ final class APIAuditTests: XCTestCase {
         XCTAssertEqual(tool.description, "My helper tool")
     }
 
-    func testAgentToolRejectsEmptyInput() async {
-        let mock = await MockInferenceProvider()
+    func testAgentToolRejectsEmptyInput() async throws {
+        let mock = MockInferenceProvider()
         await mock.setResponses(["Final Answer: done"])
 
-        let innerAgent = Agent(
+        let innerAgent = try Agent(
             name: "Worker",
             instructions: "Work",
             inferenceProvider: mock
@@ -319,9 +319,9 @@ final class APIAuditTests: XCTestCase {
 
     // MARK: - AgentRuntime.name Tests
 
-    func testAgentRuntimeNameDefaultsToConfigName() async {
+    func testAgentRuntimeNameDefaultsToConfigName() async throws {
         let config = AgentConfiguration(name: "ConfiguredName")
-        let agent = await Agent(
+        let agent = try Agent(
             instructions: "test",
             configuration: config,
             inferenceProvider: MockInferenceProvider()
@@ -331,8 +331,8 @@ final class APIAuditTests: XCTestCase {
         XCTAssertEqual(name, "ConfiguredName")
     }
 
-    func testAgentRuntimeNameDefaultName() async {
-        let agent = await Agent(
+    func testAgentRuntimeNameDefaultName() async throws {
+        let agent = try Agent(
             instructions: "test",
             inferenceProvider: MockInferenceProvider()
         )
@@ -343,8 +343,8 @@ final class APIAuditTests: XCTestCase {
 
     // MARK: - AgentRuntime.asHandoff() Tests
 
-    func testAgentAsHandoffReturnsCorrectTarget() async {
-        let agent = await Agent(
+    func testAgentAsHandoffReturnsCorrectTarget() async throws {
+        let agent = try Agent(
             name: "Billing",
             instructions: "Handle billing",
             inferenceProvider: MockInferenceProvider()
@@ -354,8 +354,8 @@ final class APIAuditTests: XCTestCase {
         XCTAssertEqual(handoff.targetAgent.name, "Billing")
     }
 
-    func testAgentAsHandoffWithCustomToolName() async {
-        let agent = await Agent(
+    func testAgentAsHandoffWithCustomToolName() async throws {
+        let agent = try Agent(
             name: "Support",
             instructions: "Handle support",
             inferenceProvider: MockInferenceProvider()
@@ -370,8 +370,8 @@ final class APIAuditTests: XCTestCase {
         XCTAssertEqual(handoff.toolDescription, "Transfer to support team")
     }
 
-    func testAgentAsHandoffDefaultsNilOverrides() async {
-        let agent = await Agent(
+    func testAgentAsHandoffDefaultsNilOverrides() async throws {
+        let agent = try Agent(
             name: "Worker",
             instructions: "Work",
             inferenceProvider: MockInferenceProvider()
@@ -529,12 +529,12 @@ final class APIAuditTests: XCTestCase {
 
     // MARK: - ToolRegistry with Mixed Enabled/Disabled Tools
 
-    func testToolRegistryMixedEnabledDisabled() async {
+    func testToolRegistryMixedEnabledDisabled() async throws {
         let tool1 = MockTool(name: "tool_a", result: .string("a"))
         let tool2 = DisabledTool()
         let tool3 = MockTool(name: "tool_c", result: .string("c"))
 
-        let registry = ToolRegistry(tools: [tool1, tool2, tool3])
+        let registry = try ToolRegistry(tools: [tool1, tool2, tool3])
 
         // allTools should include all
         let allTools = await registry.allTools

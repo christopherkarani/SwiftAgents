@@ -50,7 +50,7 @@ struct AnyToolTests {
         }
 
         let tool = GuardrailedTool(inputGuardrails: [input])
-        let registry = ToolRegistry(tools: [AnyTool(tool)])
+        let registry = try ToolRegistry(tools: [AnyTool(tool)])
 
         do {
             _ = try await registry.execute(toolNamed: tool.name, arguments: [:])

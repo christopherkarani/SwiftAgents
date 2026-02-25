@@ -10,8 +10,8 @@ import XCTest
 final class AgentToolTests: XCTestCase {
     // MARK: - AgentTool Creation Tests
 
-    func testAgentToolCreation() async {
-        let innerAgent = await Agent(
+    func testAgentToolCreation() async throws {
+        let innerAgent = try Agent(
             name: "Researcher",
             instructions: "Research topics",
             inferenceProvider: MockInferenceProvider()
@@ -25,8 +25,8 @@ final class AgentToolTests: XCTestCase {
         XCTAssertEqual(tool.parameters.first?.type, .string)
     }
 
-    func testAgentToolCustomNameAndDescription() async {
-        let innerAgent = await Agent(
+    func testAgentToolCustomNameAndDescription() async throws {
+        let innerAgent = try Agent(
             name: "Worker",
             instructions: "Work",
             inferenceProvider: MockInferenceProvider()
@@ -44,8 +44,8 @@ final class AgentToolTests: XCTestCase {
 
     // MARK: - .asTool() Extension Tests
 
-    func testAgentAsToolExtension() async {
-        let agent = await Agent(
+    func testAgentAsToolExtension() async throws {
+        let agent = try Agent(
             name: "Helper",
             instructions: "Help users",
             inferenceProvider: MockInferenceProvider()
@@ -56,8 +56,8 @@ final class AgentToolTests: XCTestCase {
         XCTAssertTrue(tool.description.contains("Helper"))
     }
 
-    func testAgentAsToolWithCustomParams() async {
-        let agent = await Agent(
+    func testAgentAsToolWithCustomParams() async throws {
+        let agent = try Agent(
             name: "Helper",
             instructions: "Help users",
             inferenceProvider: MockInferenceProvider()
@@ -70,11 +70,11 @@ final class AgentToolTests: XCTestCase {
 
     // MARK: - AgentTool Execution Tests
 
-    func testAgentToolRejectsEmptyInput() async {
-        let mock = await MockInferenceProvider()
+    func testAgentToolRejectsEmptyInput() async throws {
+        let mock = MockInferenceProvider()
         await mock.setResponses(["Final Answer: done"])
 
-        let innerAgent = Agent(
+        let innerAgent = try Agent(
             name: "Worker",
             instructions: "Work",
             inferenceProvider: mock
@@ -90,11 +90,11 @@ final class AgentToolTests: XCTestCase {
         }
     }
 
-    func testAgentToolRejectsMissingInput() async {
-        let mock = await MockInferenceProvider()
+    func testAgentToolRejectsMissingInput() async throws {
+        let mock = MockInferenceProvider()
         await mock.setResponses(["Final Answer: done"])
 
-        let innerAgent = Agent(
+        let innerAgent = try Agent(
             name: "Worker",
             instructions: "Work",
             inferenceProvider: mock
@@ -112,8 +112,8 @@ final class AgentToolTests: XCTestCase {
 
     // MARK: - AgentTool Name Derivation Tests
 
-    func testAgentToolNameDerivedFromAgentName() async {
-        let agent = await Agent(
+    func testAgentToolNameDerivedFromAgentName() async throws {
+        let agent = try Agent(
             name: "MyResearchAgent",
             instructions: "Research",
             inferenceProvider: MockInferenceProvider()
@@ -124,8 +124,8 @@ final class AgentToolTests: XCTestCase {
         XCTAssertEqual(tool.name, "my_research_agent")
     }
 
-    func testAgentToolNameFallbackForEmptyAgentName() async {
-        let agent = await Agent(
+    func testAgentToolNameFallbackForEmptyAgentName() async throws {
+        let agent = try Agent(
             instructions: "Test",
             configuration: AgentConfiguration(name: ""),
             inferenceProvider: MockInferenceProvider()

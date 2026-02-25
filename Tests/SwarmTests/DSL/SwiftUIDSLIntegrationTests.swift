@@ -11,7 +11,7 @@ struct SwiftUIDSLIntegrationTests {
     @Test("Environment provides inference provider to agents")
     func environmentProvidesInferenceProvider() async throws {
         let provider = MockInferenceProvider(responses: ["Final Answer: Hello"])
-        let base = ReActAgent(tools: [], instructions: "Test agent")
+        let base = try ReActAgent(tools: [], instructions: "Test agent")
 
         let result = try await base
             .environment(\.inferenceProvider, provider)
@@ -25,7 +25,7 @@ struct SwiftUIDSLIntegrationTests {
     func environmentWorksThroughBlueprint() async throws {
         struct Blueprint: AgentBlueprint {
             @OrchestrationBuilder var body: some OrchestrationStep {
-                ReActAgent(tools: [], instructions: "Blueprint agent")
+                try! ReActAgent(tools: [], instructions: "Blueprint agent")
             }
         }
 

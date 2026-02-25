@@ -22,7 +22,7 @@ struct FluentResilienceTests {
         // Configure to fail twice then succeed
         let failingProvider = FailThenSucceedProvider(failCount: 2)
 
-        let baseAgent = ReActAgent(
+        let baseAgent = try ReActAgent(
             tools: [],
             instructions: "Test agent",
             inferenceProvider: failingProvider
@@ -42,7 +42,7 @@ struct FluentResilienceTests {
     func withRetryRespectsMaxAttempts() async throws {
         let alwaysFailingProvider = AlwaysFailingProvider()
 
-        let baseAgent = ReActAgent(
+        let baseAgent = try ReActAgent(
             tools: [],
             instructions: "Test agent",
             inferenceProvider: alwaysFailingProvider
@@ -78,7 +78,7 @@ struct FluentResilienceTests {
     func withCircuitBreakerWrapsAgent() async throws {
         let mockProvider = MockInferenceProvider(responses: ["Final Answer: Success"])
 
-        let baseAgent = ReActAgent(
+        let baseAgent = try ReActAgent(
             tools: [],
             instructions: "Test agent",
             inferenceProvider: mockProvider
@@ -94,7 +94,7 @@ struct FluentResilienceTests {
     func withCircuitBreakerOpensAfterThreshold() async throws {
         let alwaysFailingProvider = AlwaysFailingProvider()
 
-        let baseAgent = ReActAgent(
+        let baseAgent = try ReActAgent(
             tools: [],
             instructions: "Test agent",
             inferenceProvider: alwaysFailingProvider
@@ -134,13 +134,13 @@ struct FluentResilienceTests {
         let alwaysFailingProvider = AlwaysFailingProvider()
         let fallbackProvider = MockInferenceProvider(responses: ["Final Answer: Fallback response"])
 
-        let primaryAgent = ReActAgent(
+        let primaryAgent = try ReActAgent(
             tools: [],
             instructions: "Primary agent",
             inferenceProvider: alwaysFailingProvider
         )
 
-        let fallbackAgent = ReActAgent(
+        let fallbackAgent = try ReActAgent(
             tools: [],
             instructions: "Fallback agent",
             inferenceProvider: fallbackProvider
@@ -157,13 +157,13 @@ struct FluentResilienceTests {
         let primaryProvider = MockInferenceProvider(responses: ["Final Answer: Primary response"])
         let fallbackProvider = MockInferenceProvider(responses: ["Final Answer: Fallback response"])
 
-        let primaryAgent = ReActAgent(
+        let primaryAgent = try ReActAgent(
             tools: [],
             instructions: "Primary agent",
             inferenceProvider: primaryProvider
         )
 
-        let fallbackAgent = ReActAgent(
+        let fallbackAgent = try ReActAgent(
             tools: [],
             instructions: "Fallback agent",
             inferenceProvider: fallbackProvider
@@ -182,13 +182,13 @@ struct FluentResilienceTests {
         let mockProvider = MockInferenceProvider(responses: ["Final Answer: Resilient response"])
         let fallbackProvider = MockInferenceProvider(responses: ["Final Answer: Fallback"])
 
-        let baseAgent = ReActAgent(
+        let baseAgent = try ReActAgent(
             tools: [],
             instructions: "Base agent",
             inferenceProvider: mockProvider
         )
 
-        let fallbackAgent = ReActAgent(
+        let fallbackAgent = try ReActAgent(
             tools: [],
             instructions: "Fallback agent",
             inferenceProvider: fallbackProvider
@@ -210,7 +210,7 @@ struct FluentResilienceTests {
     func withTimeoutCancelsAfterTimeout() async throws {
         let slowProvider = SlowInferenceProvider(delay: .seconds(5))
 
-        let baseAgent = ReActAgent(
+        let baseAgent = try ReActAgent(
             tools: [],
             instructions: "Slow agent",
             inferenceProvider: slowProvider
@@ -237,7 +237,7 @@ struct FluentResilienceTests {
     func withTimeoutCompletesIfFastEnough() async throws {
         let fastProvider = MockInferenceProvider(responses: ["Final Answer: Fast response"])
 
-        let baseAgent = ReActAgent(
+        let baseAgent = try ReActAgent(
             tools: [],
             instructions: "Fast agent",
             inferenceProvider: fastProvider
@@ -255,7 +255,7 @@ struct FluentResilienceTests {
     func resilientAgentIncludesRetryMetadata() async throws {
         let failThenSucceed = FailThenSucceedProvider(failCount: 1)
 
-        let baseAgent = ReActAgent(
+        let baseAgent = try ReActAgent(
             tools: [],
             instructions: "Test agent",
             inferenceProvider: failThenSucceed

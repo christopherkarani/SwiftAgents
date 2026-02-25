@@ -4,14 +4,29 @@
 // Runtime configuration settings for agent execution.
 
 import Foundation
+import Logging
 
 /// Context envelope mode used by agent prompt construction.
 public enum ContextMode: Sendable, Equatable {
     /// Adaptive context sizing based on configured profile/platform defaults.
     case adaptive
 
-    /// Enforce a strict 4k context template (`ContextProfile.strict4k`).
+    /// Strict 4K token limit for context window.
     case strict4k
+}
+
+/// Runtime execution mode for orchestration.
+public enum SwarmRuntimeMode: Sendable, Equatable {
+    /// Execute orchestration using the Hive runtime.
+    case hive
+
+    /// Deprecated: Legacy mode selector, now same as `.hive`.
+    @available(*, deprecated, renamed: "hive")
+    case swift
+
+    /// Deprecated: Alias for `.hive`.
+    @available(*, deprecated, renamed: "hive")
+    case requireHive
 }
 
 /// Optional Hive run options override for orchestration execution.
@@ -80,12 +95,12 @@ public struct InferencePolicy: Sendable, Equatable {
         tokenBudget: Int? = nil,
         networkState: NetworkState = .online
     ) {
-        if let tokenBudget {
-            precondition(tokenBudget > 0, "tokenBudget must be positive")
+        if let tokenBudget, tokenBudget <= 0 {
+            Log.agents.warning("InferencePolicy: tokenBudget \(tokenBudget) must be > 0; dropping value")
         }
         self.latencyTier = latencyTier
         self.privacyRequired = privacyRequired
-        self.tokenBudget = tokenBudget
+        self.tokenBudget = tokenBudget.flatMap { $0 > 0 ? $0 : nil }
         self.networkState = networkState
     }
 }
@@ -308,14 +323,19 @@ public struct AgentConfiguration: Sendable, Equatable {
         autoPreviousResponseId: Bool = false,
         defaultTracingEnabled: Bool = true
     ) {
-        precondition(maxIterations > 0, "maxIterations must be positive")
-        precondition(timeout > .zero, "timeout must be positive")
-        precondition((0.0 ... 2.0).contains(temperature), "temperature must be 0.0-2.0")
-
+        if maxIterations < 1 {
+            Log.agents.warning("AgentConfiguration: maxIterations \(maxIterations) must be >= 1; using 1")
+        }
+        if timeout <= .zero {
+            Log.agents.warning("AgentConfiguration: timeout must be positive; using default 60 seconds")
+        }
+        if !temperature.isFinite || !(0.0 ... 2.0).contains(temperature) {
+            Log.agents.warning("AgentConfiguration: temperature \(temperature) out of [0.0, 2.0]; using default 1.0")
+        }
         self.name = name
-        self.maxIterations = maxIterations
-        self.timeout = timeout
-        self.temperature = temperature
+        self.maxIterations = max(1, maxIterations)
+        self.timeout = timeout > .zero ? timeout : .seconds(60)
+        self.temperature = (temperature.isFinite && (0.0 ... 2.0).contains(temperature)) ? temperature : 1.0
         self.maxTokens = maxTokens
         self.stopSequences = stopSequences
         self.modelSettings = modelSettings

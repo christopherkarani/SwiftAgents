@@ -11,7 +11,7 @@ import Testing
 struct ToolSchemaIntegrationTests {
     @Test("ToolRegistry bridges typed Tool execution")
     func registryBridgesTypedTool() async throws {
-        let registry = ToolRegistry(tools: [SchemaEchoTool()])
+        let registry = try ToolRegistry(tools: [SchemaEchoTool()])
         let result = try await registry.execute(
             toolNamed: "echo",
             arguments: ["text": .string("hello")]
@@ -22,8 +22,8 @@ struct ToolSchemaIntegrationTests {
     }
 
     @Test("ToolRegistry exposes ToolSchema for typed tools")
-    func registrySchemas() async {
-        let registry = ToolRegistry(tools: [SchemaEchoTool()])
+    func registrySchemas() async throws {
+        let registry = try ToolRegistry(tools: [SchemaEchoTool()])
         let schemas = await registry.schemas
 
         #expect(schemas.count == 1)
@@ -33,18 +33,18 @@ struct ToolSchemaIntegrationTests {
     }
 
     @Test("Agents accept typed Tool arrays")
-    func agentsAcceptTypedTools() {
+    func agentsAcceptTypedTools() throws {
         let tool = SchemaEchoTool()
 
-        let agent = Agent(tools: [tool])
+        let agent = try Agent(tools: [tool])
         #expect(agent.tools.count == 1)
         #expect(agent.tools.first?.name == "echo")
 
-        let react = ReActAgent(tools: [tool])
+        let react = try ReActAgent(tools: [tool])
         #expect(react.tools.count == 1)
         #expect(react.tools.first?.name == "echo")
 
-        let planAndExecute = PlanAndExecuteAgent(tools: [tool])
+        let planAndExecute = try PlanAndExecuteAgent(tools: [tool])
         #expect(planAndExecute.tools.count == 1)
         #expect(planAndExecute.tools.first?.name == "echo")
     }

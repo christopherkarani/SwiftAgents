@@ -4,6 +4,7 @@
 // Profiles and budgets for managing on-device context allocation.
 
 import Foundation
+import Logging
 
 // MARK: - ContextProfile
 
@@ -314,41 +315,52 @@ public struct ContextProfile: Sendable, Equatable {
         safetyMarginTokens: Int = 0,
         bucketCaps: ContextBucketCaps? = nil
     ) {
-        precondition(maxContextTokens > 0, "maxContextTokens must be positive")
-        precondition((0.0 ... 1.0).contains(workingTokenRatio), "workingTokenRatio must be 0.0-1.0")
-        precondition((0.0 ... 1.0).contains(memoryTokenRatio), "memoryTokenRatio must be 0.0-1.0")
-        precondition((0.0 ... 1.0).contains(toolIOTokenRatio), "toolIOTokenRatio must be 0.0-1.0")
-        precondition((0.0 ... 1.0).contains(summaryTokenRatio), "summaryTokenRatio must be 0.0-1.0")
-        let ratioSum = workingTokenRatio + memoryTokenRatio + toolIOTokenRatio
-        precondition(abs(ratioSum - 1.0) < 0.0001, "Context ratios must sum to 1.0")
-        precondition(maxToolOutputTokens > 0, "maxToolOutputTokens must be positive")
-        precondition(maxRetrievedItems > 0, "maxRetrievedItems must be positive")
-        precondition(maxRetrievedItemTokens > 0, "maxRetrievedItemTokens must be positive")
-        precondition(summaryCadenceTurns > 0, "summaryCadenceTurns must be positive")
-        precondition((0.0 ... 1.0).contains(summaryTriggerUtilization), "summaryTriggerUtilization must be 0.0-1.0")
-        precondition(outputReserveTokens >= 0, "outputReserveTokens cannot be negative")
-        precondition(protocolOverheadReserveTokens >= 0, "protocolOverheadReserveTokens cannot be negative")
-        precondition(safetyMarginTokens >= 0, "safetyMarginTokens cannot be negative")
-
-        let reserved = outputReserveTokens + protocolOverheadReserveTokens + safetyMarginTokens
-        let resolvedMaxTotal = maxTotalContextTokens ?? (maxContextTokens + reserved)
-        precondition(resolvedMaxTotal >= maxContextTokens + reserved, "maxTotalContextTokens cannot be smaller than input + reserves")
+        let safeWorking = Self.clampUnitInterval(workingTokenRatio)
+        let safeMemory = Self.clampUnitInterval(memoryTokenRatio)
+        let safeToolIO = Self.clampUnitInterval(toolIOTokenRatio)
+        if safeWorking != workingTokenRatio {
+            Log.agents.warning("ContextProfile: workingTokenRatio \(workingTokenRatio) out of [0,1]; clamped to \(safeWorking)")
+        }
+        if safeMemory != memoryTokenRatio {
+            Log.agents.warning("ContextProfile: memoryTokenRatio \(memoryTokenRatio) out of [0,1]; clamped to \(safeMemory)")
+        }
+        if safeToolIO != toolIOTokenRatio {
+            Log.agents.warning("ContextProfile: toolIOTokenRatio \(toolIOTokenRatio) out of [0,1]; clamped to \(safeToolIO)")
+        }
+        let normalizedRatios = Self.normalizeContextRatios(
+            working: safeWorking,
+            memory: safeMemory,
+            toolIO: safeToolIO
+        )
+        let safeSummary = Self.clampUnitInterval(summaryTokenRatio)
+        if safeSummary != summaryTokenRatio {
+            Log.agents.warning("ContextProfile: summaryTokenRatio \(summaryTokenRatio) out of [0,1]; clamped to \(safeSummary)")
+        }
+        let safeSummaryTrigger = Self.clampUnitInterval(summaryTriggerUtilization)
+        if safeSummaryTrigger != summaryTriggerUtilization {
+            Log.agents.warning("ContextProfile: summaryTriggerUtilization \(summaryTriggerUtilization) out of [0,1]; clamped to \(safeSummaryTrigger)")
+        }
 
         self.preset = preset
-        self.maxContextTokens = maxContextTokens
-        self.maxTotalContextTokens = resolvedMaxTotal
-        self.workingTokenRatio = workingTokenRatio
-        self.memoryTokenRatio = memoryTokenRatio
-        self.toolIOTokenRatio = toolIOTokenRatio
-        self.summaryTokenRatio = summaryTokenRatio
-        self.maxToolOutputTokens = maxToolOutputTokens
-        self.maxRetrievedItems = maxRetrievedItems
-        self.maxRetrievedItemTokens = maxRetrievedItemTokens
-        self.summaryCadenceTurns = summaryCadenceTurns
-        self.summaryTriggerUtilization = summaryTriggerUtilization
-        self.outputReserveTokens = outputReserveTokens
-        self.protocolOverheadReserveTokens = protocolOverheadReserveTokens
-        self.safetyMarginTokens = safetyMarginTokens
+        self.maxContextTokens = max(1, maxContextTokens)
+        let safeOutputReserveTokens = max(0, outputReserveTokens)
+        let safeProtocolOverheadTokens = max(0, protocolOverheadReserveTokens)
+        let safeSafetyMarginTokens = max(0, safetyMarginTokens)
+        let reserved = safeOutputReserveTokens + safeProtocolOverheadTokens + safeSafetyMarginTokens
+        let resolvedMaxTotal = maxTotalContextTokens ?? (max(1, maxContextTokens) + reserved)
+        self.maxTotalContextTokens = max(resolvedMaxTotal, max(1, maxContextTokens) + reserved)
+        self.workingTokenRatio = normalizedRatios.working
+        self.memoryTokenRatio = normalizedRatios.memory
+        self.toolIOTokenRatio = normalizedRatios.toolIO
+        self.summaryTokenRatio = safeSummary
+        self.maxToolOutputTokens = max(1, maxToolOutputTokens)
+        self.maxRetrievedItems = max(1, maxRetrievedItems)
+        self.maxRetrievedItemTokens = max(1, maxRetrievedItemTokens)
+        self.summaryCadenceTurns = max(1, summaryCadenceTurns)
+        self.summaryTriggerUtilization = safeSummaryTrigger
+        self.outputReserveTokens = safeOutputReserveTokens
+        self.protocolOverheadReserveTokens = safeProtocolOverheadTokens
+        self.safetyMarginTokens = safeSafetyMarginTokens
         self.bucketCaps = bucketCaps
     }
 
@@ -399,6 +411,41 @@ public struct ContextProfile: Sendable, Equatable {
     /// Maximum tokens reserved for summaries within memory.
     public var summaryTokenLimit: Int {
         Int(Double(budget.memoryTokens) * summaryTokenRatio)
+    }
+
+    // MARK: Private
+
+    private static func clampUnitInterval(_ value: Double) -> Double {
+        if !value.isFinite {
+            return 0.0
+        }
+        if value < 0 {
+            return 0.0
+        }
+        if value > 1 {
+            return 1.0
+        }
+        return value
+    }
+
+    /// Minimum ratio floor applied to each context bucket before normalization.
+    ///
+    /// Prevents degenerate configurations where one or more budgets collapse to
+    /// zero tokens, which can break callers that consume those budgets (e.g., memory
+    /// retrieval, tool I/O). Each ratio is guaranteed to be at least this value
+    /// after normalization.
+    private static let minimumContextRatio: Double = 0.05
+
+    private static func normalizeContextRatios(working: Double, memory: Double, toolIO: Double) -> (working: Double, memory: Double, toolIO: Double) {
+        // Apply a minimum floor so no budget collapses to zero tokens.
+        let w = max(minimumContextRatio, working)
+        let m = max(minimumContextRatio, memory)
+        let t = max(minimumContextRatio, toolIO)
+        let sum = w + m + t
+        if sum <= .ulpOfOne {
+            return (0.55, 0.30, 0.15)
+        }
+        return (w / sum, m / sum, t / sum)
     }
 }
 

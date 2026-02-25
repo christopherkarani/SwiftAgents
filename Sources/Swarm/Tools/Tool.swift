@@ -497,6 +497,14 @@ public struct ToolParameter: Sendable, Equatable {
 /// let registry = ToolRegistry(tools: [DateTimeTool(), StringTool()])
 /// let result = try await registry.execute(toolNamed: "datetime", arguments: ["format": "iso8601"])
 /// ```
+// MARK: - Tool Registry Errors
+
+/// Errors thrown by `ToolRegistry` operations.
+public enum ToolRegistryError: Error, Sendable {
+    /// Thrown when attempting to register a tool with a name that already exists.
+    case duplicateToolName(name: String)
+}
+
 public actor ToolRegistry {
     // MARK: Public
 
@@ -525,43 +533,71 @@ public actor ToolRegistry {
 
     /// Creates a tool registry with the given tools.
     /// - Parameter tools: The initial tools to register.
-    public init(tools: [any AnyJSONTool]) {
+    /// - Throws: `ToolRegistryError.duplicateToolName` if a tool with the same name already exists.
+    public init(tools: [any AnyJSONTool]) throws {
         for tool in tools {
+            guard self.tools[tool.name] == nil else {
+                throw ToolRegistryError.duplicateToolName(name: tool.name)
+            }
             self.tools[tool.name] = tool
         }
     }
 
     /// Creates a tool registry with the given typed tools.
     /// - Parameter tools: The initial tools to register.
-    public init(tools: [some Tool]) {
+    /// - Throws: `ToolRegistryError.duplicateToolName` if a tool with the same name already exists.
+    public init(tools: [some Tool]) throws {
         for tool in tools {
-            self.tools[tool.name] = AnyJSONToolAdapter(tool)
+            let name = tool.name
+            guard self.tools[name] == nil else {
+                throw ToolRegistryError.duplicateToolName(name: name)
+            }
+            self.tools[name] = AnyJSONToolAdapter(tool)
         }
     }
 
     /// Registers a tool.
     /// - Parameter tool: The tool to register.
-    public func register(_ tool: any AnyJSONTool) {
+    /// - Throws: `ToolRegistryError.duplicateToolName` if a tool with the same name already exists.
+    public func register(_ tool: any AnyJSONTool) throws {
+        guard tools[tool.name] == nil else {
+            throw ToolRegistryError.duplicateToolName(name: tool.name)
+        }
         tools[tool.name] = tool
     }
 
     /// Registers a typed tool by bridging it to `AnyJSONTool`.
-    public func register(_ tool: some Tool) {
-        tools[tool.name] = AnyJSONToolAdapter(tool)
+    /// - Parameter tool: The tool to register.
+    /// - Throws: `ToolRegistryError.duplicateToolName` if a tool with the same name already exists.
+    public func register(_ tool: some Tool) throws {
+        let name = tool.name
+        guard tools[name] == nil else {
+            throw ToolRegistryError.duplicateToolName(name: name)
+        }
+        tools[name] = AnyJSONToolAdapter(tool)
     }
 
     /// Registers multiple typed tools.
     /// - Parameter newTools: The typed tools to register.
-    public func register(_ newTools: [some Tool]) {
+    /// - Throws: `ToolRegistryError.duplicateToolName` if a tool with the same name already exists.
+    public func register(_ newTools: [some Tool]) throws {
         for tool in newTools {
-            tools[tool.name] = AnyJSONToolAdapter(tool)
+            let name = tool.name
+            guard tools[name] == nil else {
+                throw ToolRegistryError.duplicateToolName(name: name)
+            }
+            tools[name] = AnyJSONToolAdapter(tool)
         }
     }
 
     /// Registers multiple tools.
     /// - Parameter newTools: The tools to register.
-    public func register(_ newTools: [any AnyJSONTool]) {
+    /// - Throws: `ToolRegistryError.duplicateToolName` if a tool with the same name already exists.
+    public func register(_ newTools: [any AnyJSONTool]) throws {
         for tool in newTools {
+            guard tools[tool.name] == nil else {
+                throw ToolRegistryError.duplicateToolName(name: tool.name)
+            }
             tools[tool.name] = tool
         }
     }

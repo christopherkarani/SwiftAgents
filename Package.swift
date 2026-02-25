@@ -32,7 +32,18 @@ if useLocalDependencies {
     }) ?? "../Wax"
 
     packageDependencies.append(.package(path: waxPath))
-    packageDependencies.append(.package(path: "../Conduit"))
+    packageDependencies.append(
+        .package(
+            path: "../Conduit",
+            traits: [
+                .trait(name: "OpenAI"),
+                .trait(name: "OpenRouter"),
+                .trait(name: "Anthropic"),
+                .trait(name: "MLX"),
+            ]
+        )
+    )
+    packageDependencies.append(.package(path: "../Membrane"))
 } else {
     packageDependencies.append(
         .package(
@@ -40,7 +51,18 @@ if useLocalDependencies {
             from: "0.1.3"
         )
     )
-    packageDependencies.append(.package(url: "https://github.com/christopherkarani/Conduit", from: "0.3.1"))
+    packageDependencies.append(
+        .package(
+            url: "https://github.com/christopherkarani/Conduit",
+            from: "0.3.1",
+            traits: [
+                .trait(name: "OpenAI"),
+                .trait(name: "OpenRouter"),
+                .trait(name: "Anthropic"),
+                .trait(name: "MLX"),
+            ]
+        )
+    )
 }
 
 packageDependencies.append(.package(url: "https://github.com/christopherkarani/Hive", from: "0.1.0"))
@@ -58,6 +80,11 @@ swarmDependencies.append(
         package: "Hive"
     )
 )
+
+if useLocalDependencies {
+    swarmDependencies.append(.product(name: "Membrane", package: "Membrane"))
+    swarmDependencies.append(.product(name: "MembraneHive", package: "Membrane"))
+}
 
 var swarmSwiftSettings: [SwiftSetting] = [
     .enableExperimentalFeature("StrictConcurrency")
@@ -157,7 +184,8 @@ let package = Package(
     name: "Swarm",
     platforms: [
         .macOS(.v26),
-        .iOS(.v26)
+        .iOS(.v26),
+        .tvOS(.v26),
     ],
     products: packageProducts,
     dependencies: packageDependencies,

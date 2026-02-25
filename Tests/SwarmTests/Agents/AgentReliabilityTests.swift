@@ -7,7 +7,7 @@ struct AgentReliabilityTests {
     @Test("Agent cancel terminates in-flight run promptly")
     func agentCancelTerminatesInflightRun() async throws {
         let provider = HangingInferenceProvider(delay: .seconds(2))
-        let agent = Agent(
+        let agent = try Agent(
             tools: [],
             instructions: "Cancellation test agent",
             inferenceProvider: provider
@@ -40,7 +40,7 @@ struct AgentReliabilityTests {
     @Test("ReActAgent cancel terminates in-flight run promptly")
     func reactCancelTerminatesInflightRun() async throws {
         let provider = HangingInferenceProvider(delay: .seconds(2))
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "Cancellation test ReAct agent",
             inferenceProvider: provider
@@ -74,7 +74,7 @@ struct AgentReliabilityTests {
     func agentAlwaysEmitsIterationEndOnTerminalReturn() async throws {
         let provider = MockInferenceProvider(responses: ["terminal output"])
         let hooks = IterationRecordingHooks()
-        let agent = Agent(
+        let agent = try Agent(
             tools: [],
             instructions: "Iteration hook test agent",
             inferenceProvider: provider
@@ -91,7 +91,7 @@ struct AgentReliabilityTests {
     func reactAlwaysEmitsIterationEndOnTerminalReturn() async throws {
         let provider = MockInferenceProvider(responses: ["Final Answer: done"])
         let hooks = IterationRecordingHooks()
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "Iteration hook test ReAct agent",
             inferenceProvider: provider

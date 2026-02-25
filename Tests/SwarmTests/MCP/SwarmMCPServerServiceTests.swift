@@ -368,9 +368,9 @@ struct SwarmMCPServerServiceTests {
 
 private func metadataObject(from content: [MCP.Tool.Content]) throws -> [String: Value] {
     for item in content {
-        if case let .resource(_, mimeType, text) = item,
-           mimeType == "application/json",
-           let text,
+        if case let .resource(resource: resourceContent, annotations: _, _meta: _) = item,
+           resourceContent.mimeType == "application/json",
+           let text = resourceContent.text,
            let data = text.data(using: .utf8)
         {
             let value = try JSONDecoder().decode(Value.self, from: data)

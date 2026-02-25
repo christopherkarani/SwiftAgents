@@ -74,6 +74,7 @@ public actor Agent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init(
         tools: [any AnyJSONTool] = [],
         instructions: String = "",
@@ -85,7 +86,7 @@ public actor Agent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         self.tools = tools
         self.instructions = instructions
         self.configuration = configuration
@@ -96,7 +97,7 @@ public actor Agent: AgentRuntime {
         self.outputGuardrails = outputGuardrails
         self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
         _handoffs = handoffs
-        toolRegistry = ToolRegistry(tools: tools)
+        toolRegistry = try ToolRegistry(tools: tools)
     }
 
     /// Convenience initializer that takes an unlabeled inference provider.
@@ -116,8 +117,8 @@ public actor Agent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
-        self.init(
+    ) throws {
+        try self.init(
             tools: tools,
             instructions: instructions,
             configuration: configuration,
@@ -143,8 +144,9 @@ public actor Agent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
-    public init(
-        tools: [some Tool] = [],
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+    public init<T: Tool>(
+        tools: [T] = [],
         instructions: String = "",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
@@ -154,9 +156,9 @@ public actor Agent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         let bridged = tools.map { AnyJSONToolAdapter($0) }
-        self.init(
+        try self.init(
             tools: bridged,
             instructions: instructions,
             configuration: configuration,
@@ -195,6 +197,7 @@ public actor Agent: AgentRuntime {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffAgents: Agents to hand off to, automatically wrapped as handoff configurations.
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     public init(
         tools: [any AnyJSONTool] = [],
         instructions: String = "",
@@ -206,7 +209,7 @@ public actor Agent: AgentRuntime {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffAgents: [any AgentRuntime]
-    ) {
+    ) throws {
         let configs = handoffAgents.map { agent in
             AnyHandoffConfiguration(
                 targetAgent: agent,
@@ -214,7 +217,7 @@ public actor Agent: AgentRuntime {
                 toolDescription: nil
             )
         }
-        self.init(
+        try self.init(
             tools: tools,
             instructions: instructions,
             configuration: configuration,
@@ -331,7 +334,7 @@ public actor Agent: AgentRuntime {
             let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
             _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
-            isCancelled = false
+            // Reset cancellation state and create result builder
             let resultBuilder = AgentResult.Builder()
             _ = resultBuilder.start()
 
@@ -344,17 +347,6 @@ public actor Agent: AgentRuntime {
             // Create user message for this turn
             let userMessage = MemoryMessage.user(input)
 
-            // Store in memory (for AI context) if available
-            if let mem = activeMemory {
-                // Seed session history only once for a fresh memory instance.
-                if session != nil, await mem.isEmpty, !sessionHistory.isEmpty {
-                    for msg in sessionHistory {
-                        await mem.add(msg)
-                    }
-                }
-                await mem.add(userMessage)
-            }
-
             // Execute the tool calling loop with session context
             let output = try await executeToolCallingLoop(
                 input: input,
@@ -366,19 +358,19 @@ public actor Agent: AgentRuntime {
 
             _ = resultBuilder.setOutput(output)
 
-            // Run output guardrails BEFORE storing in memory/session
+            // Run output guardrails BEFORE storing in session/memory
             _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
 
-            // Store turn in session (user + assistant messages)
+            // Store turn in session for conversation persistence
+            // Session is the source of truth for conversation history
             if let session {
                 let assistantMessage = MemoryMessage.assistant(output)
                 try await session.addItems([userMessage, assistantMessage])
             }
 
-            // Only store output in memory if validation passed
-            if let mem = activeMemory {
-                await mem.add(.assistant(output))
-            }
+            // Memory provides additional context (RAG, summaries) - NOT for conversation storage
+            // This avoids duplication: session stores conversation, memory provides context
+            // Note: If using memory for conversation context, populate it from session on demand
 
             _ = resultBuilder.setMetadata(RuntimeMetadata.runtimeEngineKey, .string(RuntimeMetadata.hiveRuntimeEngineName))
             let result = resultBuilder.build()
@@ -402,6 +394,8 @@ public actor Agent: AgentRuntime {
             throw normalizedError
         }
     }
+
+    // MARK: Private
 
     // MARK: - Conversation History
 
@@ -429,9 +423,9 @@ public actor Agent: AgentRuntime {
 
     // MARK: - Internal State
 
-    private var isCancelled: Bool = false
-    private var currentTask: Task<AgentResult, Error>?
+    private var currentTask: Task<AgentResult, any Error>?
     private var currentRunID: UUID?
+    private var isCancelled: Bool = false
     private let toolRegistry: ToolRegistry
 
     // MARK: - Inference Provider Resolution
@@ -457,6 +451,16 @@ public actor Agent: AgentRuntime {
             or via `.environment(\\.inferenceProvider, ...)`.
             """
         )
+    }
+
+    private func resolvedMembraneAdapter() -> (any MembraneAgentAdapter)? {
+        guard let membrane = AgentEnvironmentValues.current.membrane, membrane.isEnabled else {
+            return nil
+        }
+        if let adapter = membrane.adapter {
+            return adapter
+        }
+        return DefaultMembraneAgentAdapter(configuration: membrane.configuration)
     }
 
     // MARK: - Tool Calling Loop Implementation
@@ -491,6 +495,7 @@ public actor Agent: AgentRuntime {
         let enableStreaming = configuration.enableStreaming && hooks != nil
         let toolStreamingProvider = provider as? any ToolCallStreamingInferenceProvider
         let useToolStreaming = enableStreaming && toolStreamingProvider != nil
+        let membraneAdapter = resolvedMembraneAdapter()
 
         while iteration < configuration.maxIterations {
             iteration += 1
@@ -500,11 +505,34 @@ public actor Agent: AgentRuntime {
             do {
                 try checkCancellationAndTimeout(startTime: startTime)
 
+                let rawPrompt = buildPrompt(from: conversationHistory)
+                let unplannedSchemas = await buildToolSchemasWithHandoffs()
+                var plannedPrompt = rawPrompt
+                var plannedSchemas = MembraneInternalTools.sortedSchemas(unplannedSchemas)
+
+                if let membraneAdapter {
+                    do {
+                        let plan = try await membraneAdapter.plan(
+                            prompt: rawPrompt,
+                            toolSchemas: unplannedSchemas,
+                            profile: configuration.effectiveContextProfile
+                        )
+                        plannedPrompt = plan.prompt
+                        plannedSchemas = MembraneInternalTools.sortedSchemas(plan.toolSchemas)
+                        _ = resultBuilder.setMetadata("membrane.mode", .string(plan.mode))
+                    } catch {
+                        _ = resultBuilder.setMetadata("membrane.fallback.used", .bool(true))
+                        _ = resultBuilder.setMetadata("membrane.fallback.error", .string(fallbackDiagnosticMessage(for: error)))
+                        plannedPrompt = rawPrompt
+                        plannedSchemas = MembraneInternalTools.sortedSchemas(unplannedSchemas)
+                    }
+                }
+
                 let prompt = PromptEnvelope.enforce(
-                    prompt: buildPrompt(from: conversationHistory),
+                    prompt: plannedPrompt,
                     profile: configuration.effectiveContextProfile
                 )
-                let toolSchemas = await buildToolSchemasWithHandoffs()
+                let toolSchemas = MembraneInternalTools.sortedSchemas(plannedSchemas)
 
                 // If no tools defined, generate without tool calling
                 if toolSchemas.isEmpty {
@@ -545,7 +573,8 @@ public actor Agent: AgentRuntime {
                         conversationHistory: &conversationHistory,
                         resultBuilder: resultBuilder,
                         hooks: hooks,
-                        tracing: tracing
+                        tracing: tracing,
+                        membraneAdapter: membraneAdapter
                     )
                     // If a handoff occurred, return the target agent's result
                     if let handoffOutput = handoffResult {
@@ -595,14 +624,9 @@ public actor Agent: AgentRuntime {
 
     /// Checks for cancellation and timeout conditions.
     private func checkCancellationAndTimeout(startTime: ContinuousClock.Instant) throws {
-        if isCancelled {
-            throw AgentError.cancelled
-        }
-        do {
-            try Task.checkCancellation()
-        } catch is CancellationError {
-            throw AgentError.cancelled
-        }
+        // Use Task.checkCancellation() for reliable cancellation detection
+        // This is the standard Swift concurrency pattern
+        try Task.checkCancellation()
 
         let elapsed = ContinuousClock.now - startTime
         if elapsed > configuration.timeout {
@@ -618,6 +642,20 @@ public actor Agent: AgentRuntime {
             return agentError
         }
         return error
+    }
+
+    private func fallbackDiagnosticMessage(for error: Error) -> String {
+        let described = String(describing: error)
+        if described != String(describing: type(of: error)) {
+            return described
+        }
+
+        let localized = error.localizedDescription
+        if !localized.isEmpty {
+            return localized
+        }
+
+        return String(describing: type(of: error))
     }
 
     /// Generates a response without tool calling.
@@ -659,7 +697,8 @@ public actor Agent: AgentRuntime {
         conversationHistory: inout [ConversationMessage],
         resultBuilder: AgentResult.Builder,
         hooks: (any RunHooks)?,
-        tracing: TracingHelper?
+        tracing: TracingHelper?,
+        membraneAdapter: (any MembraneAgentAdapter)?
     ) async throws {
         let toolCallSummary = response.toolCalls.map { "Calling tool: \($0.name)" }.joined(separator: ", ")
         conversationHistory.append(.assistant(response.content ?? toolCallSummary))
@@ -670,7 +709,8 @@ public actor Agent: AgentRuntime {
                 conversationHistory: &conversationHistory,
                 resultBuilder: resultBuilder,
                 hooks: hooks,
-                tracing: tracing
+                tracing: tracing,
+                membraneAdapter: membraneAdapter
             )
         }
     }
@@ -681,9 +721,71 @@ public actor Agent: AgentRuntime {
         conversationHistory: inout [ConversationMessage],
         resultBuilder: AgentResult.Builder,
         hooks: (any RunHooks)?,
-        tracing: TracingHelper?
+        tracing: TracingHelper?,
+        membraneAdapter: (any MembraneAgentAdapter)?
     ) async throws {
         let activeMemory = memory ?? AgentEnvironmentValues.current.memory
+
+        if let membraneAdapter,
+           MembraneInternalTools.isInternalTool(parsedCall.name)
+        {
+            let call = ToolCall(
+                providerCallId: parsedCall.id,
+                toolName: parsedCall.name,
+                arguments: parsedCall.arguments
+            )
+            _ = resultBuilder.addToolCall(call)
+            await hooks?.onToolStart(context: nil, agent: self, call: call)
+
+            let spanID = await tracing?.traceToolCall(name: parsedCall.name, arguments: parsedCall.arguments)
+            let startTime = ContinuousClock.now
+
+            do {
+                let output = try await membraneAdapter.handleInternalToolCall(
+                    name: parsedCall.name,
+                    arguments: parsedCall.arguments
+                ) ?? "ok"
+
+                let duration = ContinuousClock.now - startTime
+                let result = ToolResult.success(callId: call.id, output: .string(output), duration: duration)
+                _ = resultBuilder.addToolResult(result)
+                conversationHistory.append(.toolResult(toolName: parsedCall.name, result: output))
+                if let activeMemory {
+                    await activeMemory.add(.tool(output, toolName: parsedCall.name))
+                }
+                if let spanID {
+                    await tracing?.traceToolResult(
+                        spanId: spanID,
+                        name: parsedCall.name,
+                        result: output,
+                        duration: duration
+                    )
+                }
+                await hooks?.onToolEnd(context: nil, agent: self, result: result)
+                return
+            } catch {
+                let duration = ContinuousClock.now - startTime
+                let message = error.localizedDescription
+                let result = ToolResult.failure(callId: call.id, error: message, duration: duration)
+                _ = resultBuilder.addToolResult(result)
+                if let spanID {
+                    await tracing?.traceToolError(spanId: spanID, name: parsedCall.name, error: error)
+                }
+                await hooks?.onToolEnd(context: nil, agent: self, result: result)
+                if configuration.stopOnToolError {
+                    throw AgentError.toolExecutionFailed(toolName: parsedCall.name, underlyingError: message)
+                }
+                conversationHistory.append(.toolResult(
+                    toolName: parsedCall.name,
+                    result: "[TOOL ERROR] Execution failed: \(message). Please try a different approach or tool."
+                ))
+                if let activeMemory {
+                    await activeMemory.add(.tool("Error - \(message)", toolName: parsedCall.name))
+                }
+                return
+            }
+        }
+
         let engine = ToolExecutionEngine()
         let outcome = try await engine.execute(
             parsedCall,
@@ -697,9 +799,27 @@ public actor Agent: AgentRuntime {
         )
 
         if outcome.result.isSuccess {
-            conversationHistory.append(.toolResult(toolName: parsedCall.name, result: outcome.result.output.description))
+            var toolOutputText = outcome.result.output.description
+            if let membraneAdapter {
+                do {
+                    let transformed = try await membraneAdapter.transformToolResult(
+                        toolName: parsedCall.name,
+                        output: toolOutputText
+                    )
+                    toolOutputText = transformed.textForConversation
+                    if let pointerID = transformed.pointerID {
+                        _ = resultBuilder.setMetadata("membrane.pointerized", .bool(true))
+                        _ = resultBuilder.setMetadata("membrane.pointer.last_id", .string(pointerID))
+                    }
+                } catch {
+                    _ = resultBuilder.setMetadata("membrane.fallback.used", .bool(true))
+                    _ = resultBuilder.setMetadata("membrane.fallback.error", .string(fallbackDiagnosticMessage(for: error)))
+                }
+            }
+
+            conversationHistory.append(.toolResult(toolName: parsedCall.name, result: toolOutputText))
             if let activeMemory {
-                await activeMemory.add(.tool(outcome.result.output.description, toolName: parsedCall.name))
+                await activeMemory.add(.tool(toolOutputText, toolName: parsedCall.name))
             }
         } else {
             let errorMessage = outcome.result.errorMessage ?? "Unknown error"
@@ -742,7 +862,7 @@ public actor Agent: AgentRuntime {
             schemas.append(handoffSchema)
         }
 
-        return schemas
+        return MembraneInternalTools.sortedSchemas(schemas)
     }
 
     /// Processes tool calls, handling both regular tools and handoff tools.
@@ -755,7 +875,8 @@ public actor Agent: AgentRuntime {
         conversationHistory: inout [ConversationMessage],
         resultBuilder: AgentResult.Builder,
         hooks: (any RunHooks)?,
-        tracing: TracingHelper?
+        tracing: TracingHelper?,
+        membraneAdapter: (any MembraneAgentAdapter)?
     ) async throws -> String? {
         let handoffMap = Dictionary(
             uniqueKeysWithValues: _handoffs.map { ($0.effectiveToolName, $0) }
@@ -816,7 +937,8 @@ public actor Agent: AgentRuntime {
                 conversationHistory: &conversationHistory,
                 resultBuilder: resultBuilder,
                 hooks: hooks,
-                tracing: tracing
+                tracing: tracing,
+                membraneAdapter: membraneAdapter
             )
         }
 
@@ -1150,8 +1272,9 @@ public extension Agent {
 
         /// Builds the agent.
         /// - Returns: A new Agent instance.
-        public func build() -> Agent {
-            Agent(
+        /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+        public func build() throws -> Agent {
+            try Agent(
                 tools: _tools,
                 instructions: _instructions,
                 configuration: _configuration,
@@ -1200,9 +1323,10 @@ public extension Agent {
     /// ```
     ///
     /// - Parameter content: A closure that builds the agent components.
-    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) {
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
+    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) throws {
         let components = content()
-        self.init(
+        try self.init(
             tools: components.tools,
             instructions: components.instructions ?? "",
             configuration: components.configuration ?? .default,
@@ -1243,6 +1367,7 @@ public extension Agent {
     ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     init(
         name: String,
         instructions: String = "",
@@ -1255,11 +1380,11 @@ public extension Agent {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffs: [AnyHandoffConfiguration] = []
-    ) {
+    ) throws {
         // Merge the name into the configuration
         var config = configuration
         config.name = name
-        self.init(
+        try self.init(
             tools: tools,
             instructions: instructions,
             configuration: config,
@@ -1304,6 +1429,7 @@ public extension Agent {
     ///   - outputGuardrails: Output guardrails. Default: []
     ///   - guardrailRunnerConfiguration: Guardrail runner config. Default: .default
     ///   - handoffAgents: Agents to use as handoff targets.
+    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
     init(
         name: String,
         instructions: String = "",
@@ -1316,11 +1442,11 @@ public extension Agent {
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         handoffAgents: [any AgentRuntime]
-    ) {
+    ) throws {
         let handoffs = handoffAgents.map { agent in
             AnyHandoffConfiguration(targetAgent: agent)
         }
-        self.init(
+        try self.init(
             name: name,
             instructions: instructions,
             tools: tools,

@@ -105,7 +105,7 @@ struct AgentLiveToolCallStreamingTests {
             ],
         ])
 
-        let agent = Agent(
+        let agent = try Agent(
             tools: [EchoTool()],
             configuration: .default.maxIterations(3),
             inferenceProvider: provider
@@ -238,7 +238,7 @@ struct AgentLiveToolCallStreamingTests {
             ],
         ])
 
-        let agent = Agent(
+        let agent = try Agent(
             tools: [EchoTool()],
             configuration: .default.maxIterations(3),
             inferenceProvider: ConduitProviderSelection.provider(provider)

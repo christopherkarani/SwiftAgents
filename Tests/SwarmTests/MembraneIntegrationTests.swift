@@ -1,0 +1,154 @@
+import Foundation
+@testable import Swarm
+import Testing
+
+@Suite("Membrane Integration")
+struct MembraneIntegrationTests {
+    @Test("strict4k_jitAvoidsPromptEnvelopeTruncation")
+    func strict4k_jitAvoidsPromptEnvelopeTruncation() async throws {
+        let provider = MockInferenceProvider()
+        await provider.setToolCallResponses([
+            InferenceResponse(content: "ok", toolCalls: [], finishReason: .completed),
+        ])
+
+        let session = try await makeLargeSession()
+        let tools = makeTestTools(count: 30)
+        let agent = try Agent(
+            tools: tools,
+            instructions: longBlock("instructions", lines: 220),
+            configuration: AgentConfiguration(
+                name: "strict4k-membrane",
+                contextMode: .strict4k,
+                defaultTracingEnabled: false
+            ),
+            inferenceProvider: provider
+        ).environment(
+            \.membrane,
+            MembraneEnvironment(
+                isEnabled: true,
+                configuration: MembraneFeatureConfiguration(
+                    jitMinToolCount: 10,
+                    defaultJITLoadCount: 6,
+                    pointerThresholdBytes: 1024,
+                    pointerSummaryMaxChars: 200
+                )
+            )
+        )
+
+        _ = try await agent.run("needle-user-input", session: session, hooks: nil)
+
+        let lastCall = await provider.toolCallCalls.last
+        let prompt = try #require(lastCall?.prompt)
+        let plannedTools = try #require(lastCall?.tools)
+
+        #expect(!prompt.contains("[... context truncated for strict4k budget ...]"))
+        #expect(plannedTools.count < tools.count)
+
+        let schemaNames = plannedTools.map(\.name)
+        #expect(schemaNames == schemaNames.sorted {
+            $0.utf8.lexicographicallyPrecedes($1.utf8)
+        })
+        #expect(schemaNames.contains("membrane_load_tool_schema"))
+        #expect(schemaNames.contains("Add_Tools"))
+        #expect(schemaNames.contains("Remove_Tools"))
+        #expect(schemaNames.contains("resolve_pointer"))
+    }
+
+    @Test("membraneThrowFallsBackWithoutCrash")
+    func membraneThrowFallsBackWithoutCrash() async throws {
+        let provider = MockInferenceProvider(responses: ["fallback-ok"])
+        let throwingAdapter = ThrowingMembraneAdapter()
+        let agent = try Agent(
+            tools: [],
+            instructions: "Fallback test",
+            configuration: AgentConfiguration(
+                name: "membrane-fallback",
+                contextMode: .strict4k,
+                defaultTracingEnabled: false
+            ),
+            inferenceProvider: provider
+        ).environment(
+            \.membrane,
+            MembraneEnvironment(isEnabled: true, adapter: throwingAdapter)
+        )
+
+        let result = try await agent.run("hello")
+
+        #expect(result.output == "fallback-ok")
+        #expect(result.metadata["membrane.fallback.used"] == .bool(true))
+        #expect(result.metadata["membrane.fallback.error"]?.stringValue?.contains("forced membrane failure") == true)
+    }
+}
+
+private func makeLargeSession() async throws -> InMemorySession {
+    let session = InMemorySession()
+    for index in 0 ..< 120 {
+        try await session.addItems([
+            .user("history-user-\(index): \(longBlock("u", lines: 1))"),
+            .assistant("history-assistant-\(index): \(longBlock("a", lines: 1))"),
+        ])
+    }
+    return session
+}
+
+private func longBlock(_ label: String, lines: Int) -> String {
+    (0 ..< lines)
+        .map { index in
+            "\(label)-\(index): this is intentionally verbose content to stress prompt budget enforcement."
+        }
+        .joined(separator: "\n")
+}
+
+private func makeTestTools(count: Int) -> [any AnyJSONTool] {
+    (0 ..< count).map { index in
+        MembraneTestTool(name: String(format: "tool_%02d", count - index))
+    }
+}
+
+private struct MembraneTestTool: AnyJSONTool, Sendable {
+    let name: String
+    let description: String
+    let parameters: [ToolParameter]
+
+    init(name: String) {
+        self.name = name
+        description = "Synthetic tool \(name) with verbose schema payload for JIT planning."
+        parameters = [
+            ToolParameter(name: "input", description: "Input", type: .string),
+        ]
+    }
+
+    func execute(arguments _: [String: SendableValue]) async throws -> SendableValue {
+        .string("ok")
+    }
+}
+
+private actor ThrowingMembraneAdapter: MembraneAgentAdapter {
+    func plan(
+        prompt _: String,
+        toolSchemas _: [ToolSchema],
+        profile _: ContextProfile
+    ) async throws -> MembranePlannedBoundary {
+        struct ForcedFailure: Error, CustomStringConvertible {
+            let description = "forced membrane failure"
+        }
+        throw ForcedFailure()
+    }
+
+    func transformToolResult(
+        toolName _: String,
+        output: String
+    ) async throws -> MembraneToolResultBoundary {
+        MembraneToolResultBoundary(textForConversation: output)
+    }
+
+    func handleInternalToolCall(
+        name _: String,
+        arguments _: [String: SendableValue]
+    ) async throws -> String? {
+        nil
+    }
+
+    func restore(checkpointData _: Data?) async throws {}
+    func snapshotCheckpointData() async throws -> Data? { nil }
+}

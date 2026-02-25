@@ -276,24 +276,32 @@ public extension SendableValue {
     func decode<T: Decodable>() throws -> T {
         // Handle primitive types directly
         if T.self == Bool.self, let value = boolValue {
-            // swiftlint:disable:next force_cast
-            return value as! T
+            guard let result = value as? T else {
+                throw ConversionError.decodingFailed("Failed to cast Bool to \(T.self)")
+            }
+            return result
         }
         if T.self == Int.self, let value = intValue {
-            // swiftlint:disable:next force_cast
-            return value as! T
+            guard let result = value as? T else {
+                throw ConversionError.decodingFailed("Failed to cast Int to \(T.self)")
+            }
+            return result
         }
         if T.self == Double.self, let value = doubleValue {
-            // swiftlint:disable:next force_cast
-            return value as! T
+            guard let result = value as? T else {
+                throw ConversionError.decodingFailed("Failed to cast Double to \(T.self)")
+            }
+            return result
         }
         if T.self == String.self, let value = stringValue {
-            // swiftlint:disable:next force_cast
-            return value as! T
+            guard let result = value as? T else {
+                throw ConversionError.decodingFailed("Failed to cast String to \(T.self)")
+            }
+            return result
         }
 
         // For complex types, use JSON decoding as an intermediate format
-        let jsonObject = toJSONObject()
+        let jsonObject = _convertToJSONObject()
         do {
             let data = try JSONSerialization.data(withJSONObject: jsonObject)
             let decoder = JSONDecoder()
@@ -315,9 +323,11 @@ public extension SendableValue {
         case let int as Int:
             return .int(int)
         case let double as Double:
-            // Check if it's actually an integer stored as double
+            // Check if it's actually an integer stored as double.
+            // Use the JavaScript safe integer range (2^53) to avoid precision loss
+            // when converting Double to Int near Int.min/Int.max boundaries.
             if double.truncatingRemainder(dividingBy: 1) == 0,
-               double >= Double(Int.min), double <= Double(Int.max) {
+               double >= -9_007_199_254_740_992, double <= 9_007_199_254_740_992 {
                 return .int(Int(double))
             }
             return .double(double)
@@ -337,7 +347,7 @@ public extension SendableValue {
     }
 
     /// Converts this SendableValue to a JSON-compatible object.
-    private func toJSONObject() -> Any {
+    fileprivate func _convertToJSONObject() -> Any {
         switch self {
         case .null:
             return NSNull()
@@ -350,13 +360,15 @@ public extension SendableValue {
         case let .string(v):
             return v
         case let .array(v):
-            return v.map { $0.toJSONObject() }
+            return v.map { $0._convertToJSONObject() }
         case let .dictionary(v):
             var result: [String: Any] = [:]
             for (key, value) in v {
-                result[key] = value.toJSONObject()
+                result[key] = value._convertToJSONObject()
             }
             return result
         }
     }
 }
+
+// Ensure no duplicate definitions

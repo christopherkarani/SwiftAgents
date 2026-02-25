@@ -20,3 +20,9 @@ coverage/
 
 # Implementation plans (internal documentation)
 IMPLEMENTATION_PLAN.md
+
+# VitePress / Node
+node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+package-lock.json
