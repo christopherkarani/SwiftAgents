@@ -312,13 +312,12 @@ public struct MCPResponse: Sendable, Codable, Equatable {
     // MARK: Private
 
     /// Internal initializer for validated response construction.
-    /// Callers must ensure id is non-empty and exactly one of result or error is set.
+    /// Callers must ensure exactly one of result or error is set.
     private init(
         id: String,
         result: SendableValue?,
         error: MCPErrorObject?
     ) {
-        precondition(!id.isEmpty, "MCPResponse: id cannot be empty")
         assert(
             (result == nil) != (error == nil),
             "MCPResponse invariant violated: exactly one of result/error must be set"

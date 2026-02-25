@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 import Testing
-@testable import HiveSwarm
+@testable import Swarm
 
 @Suite("HiveAgents (HiveSwarm) — HiveCore runtime")
 struct HiveAgentsTests {
@@ -137,6 +137,43 @@ struct HiveAgentsTests {
             break
         default:
             Issue.record("Expected checkpointStoreMissing, got \(runtimeError)")
+        }
+    }
+
+    @Test("Model node throws modelClientMissing when neither model nor router is configured")
+    func modelNode_missingModelClient_throwsTypedError() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: nil,
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "ok")),
+            checkpointStore: nil
+        )
+
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let handle = await runtime.run(
+            threadID: HiveThreadID("missing-model-client"),
+            input: "Hello",
+            options: HiveRunOptions(maxSteps: 3, checkpointPolicy: .disabled)
+        )
+
+        let thrown = await #expect(throws: (any Error).self) {
+            _ = try await handle.outcome.value
+        }
+
+        guard let runtimeError = thrown as? HiveRuntimeError else {
+            Issue.record("Expected HiveRuntimeError, got \(String(describing: thrown))")
+            return
+        }
+        switch runtimeError {
+        case .modelClientMissing:
+            break
+        default:
+            Issue.record("Expected modelClientMissing, got \(runtimeError)")
         }
     }
 
@@ -284,6 +321,69 @@ struct HiveAgentsTests {
                 message.content == "42"
         }
         #expect(hasExecutedToolMessage == false)
+    }
+
+    @Test("Tool approval: restart after interrupt resumes with single tool execution")
+    func toolApproval_restartAfterInterrupt_executesToolOnce() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let store = InMemoryCheckpointStore<HiveAgents.Schema>()
+        let counter = ToolInvocationCounter()
+        let registry = CountingToolRegistry(resultContent: "42", counter: counter)
+        let script = ModelScript(chunksByInvocation: [
+            [.final(HiveChatResponse(message: message(
+                id: "m1",
+                role: .assistant,
+                content: "",
+                toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
+            )))],
+            [.final(HiveChatResponse(message: message(id: "m2", role: .assistant, content: "done")))]
+        ])
+
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .always)
+        let makeEnvironment = {
+            HiveEnvironment<HiveAgents.Schema>(
+                context: context,
+                clock: NoopClock(),
+                logger: NoopLogger(),
+                model: AnyHiveModelClient(ScriptedModelClient(script: script)),
+                modelRouter: nil,
+                tools: AnyHiveToolRegistry(registry),
+                checkpointStore: AnyHiveCheckpointStore(store)
+            )
+        }
+
+        // First process run reaches interruption.
+        let runtime1 = try HiveRuntime(graph: graph, environment: makeEnvironment())
+        let runControl1 = HiveAgentsRunController(runtime: runtime1)
+        let start = try await runControl1.start(
+            .init(
+                threadID: HiveThreadID("approval-restart"),
+                input: "Hello",
+                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
+            )
+        )
+        let interrupted = try requireInterruption(outcome: try await start.outcome.value)
+
+        // Simulated process restart: new runtime/controller using same checkpoint store.
+        let runtime2 = try HiveRuntime(graph: graph, environment: makeEnvironment())
+        let runControl2 = HiveAgentsRunController(runtime: runtime2)
+        let resumed = try await runControl2.resume(
+            .init(
+                threadID: HiveThreadID("approval-restart"),
+                interruptID: interrupted.interrupt.id,
+                payload: .toolApproval(decision: .approved),
+                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
+            )
+        )
+
+        let finalStore = try requireFullStore(outcome: try await resumed.outcome.value)
+        let messages = try finalStore.get(HiveAgents.Schema.messagesKey)
+        let toolMessages = messages.filter { message in
+            message.role.rawValue == "tool" && message.toolCallID == "c1" && message.content == "42"
+        }
+
+        #expect(toolMessages.count == 1)
+        #expect(await counter.value() == 1)
     }
 
     @Test("Run control resume request options are passed through")
@@ -580,12 +680,133 @@ private struct ScriptedModelClient: HiveModelClient {
     }
 }
 
+private actor ModelInvocationRecorder {
+    private var requests: [HiveChatRequest] = []
+    private var chunksByInvocation: [[HiveChatStreamChunk]]
+
+    init(chunksByInvocation: [[HiveChatStreamChunk]]) {
+        self.chunksByInvocation = chunksByInvocation
+    }
+
+    func record(_ request: HiveChatRequest) {
+        requests.append(request)
+    }
+
+    func firstRequest() -> HiveChatRequest? {
+        requests.first
+    }
+
+    func nextChunks() -> [HiveChatStreamChunk] {
+        guard chunksByInvocation.isEmpty == false else {
+            return [.final(HiveChatResponse(message: message(id: "fallback", role: .assistant, content: "ok")))]
+        }
+        return chunksByInvocation.removeFirst()
+    }
+}
+
+private struct CapturingModelClient: HiveModelClient {
+    let recorder: ModelInvocationRecorder
+
+    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        await recorder.record(request)
+        let chunks = await recorder.nextChunks()
+        for chunk in chunks {
+            if case let .final(response) = chunk {
+                return response
+            }
+        }
+        throw HiveRuntimeError.modelStreamInvalid("Missing final chunk.")
+    }
+
+    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                await recorder.record(request)
+                let chunks = await recorder.nextChunks()
+                for chunk in chunks {
+                    continuation.yield(chunk)
+                }
+                continuation.finish()
+            }
+        }
+    }
+}
+
+private actor ToolInvocationCounter {
+    private var count = 0
+
+    func increment() {
+        count += 1
+    }
+
+    func value() -> Int {
+        count
+    }
+}
+
+private struct CountingToolRegistry: HiveToolRegistry, Sendable {
+    let resultContent: String
+    let counter: ToolInvocationCounter
+
+    func listTools() -> [HiveToolDefinition] { [] }
+
+    func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
+        await counter.increment()
+        return HiveToolResult(toolCallID: call.id, content: resultContent)
+    }
+}
+
 private struct StubToolRegistry: HiveToolRegistry, Sendable {
     let resultContent: String
     func listTools() -> [HiveToolDefinition] { [] }
     func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
         HiveToolResult(toolCallID: call.id, content: resultContent)
     }
+}
+
+private struct ListingToolRegistry: HiveToolRegistry, Sendable {
+    let definitions: [HiveToolDefinition]
+    let resultContent: String
+
+    func listTools() -> [HiveToolDefinition] {
+        definitions
+    }
+
+    func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
+        HiveToolResult(toolCallID: call.id, content: resultContent)
+    }
+}
+
+private struct InjectingPreModelHook: HiveAgentsPreModelHook {
+    func transform(
+        messages: [HiveChatMessage],
+        systemPrompt _: String,
+        context _: HiveAgentsContext
+    ) async -> (messages: [HiveChatMessage], systemPrompt: String) {
+        var modified = messages
+        modified.append(message(id: "hook-user", role: .user, content: "Hook-injected user context"))
+        return (modified, "Injected system prompt")
+    }
+}
+
+private struct PrefixMessageIDFactory: HiveAgentsMessageIDFactory {
+    func messageID(for role: String, taskID: HiveTaskID, stepIndex: Int) -> String {
+        "custom-\(role)-\(taskID.rawValue)-\(stepIndex)"
+    }
+}
+
+private struct PrefixToolResultTransformer: HiveAgentsToolResultTransformer {
+    func transform(result: String, toolName: String, tokenEstimate _: Int) async -> String {
+        "transformed:\(toolName):\(result)"
+    }
+}
+
+private func makeToolDefinition(name: String) -> HiveToolDefinition {
+    HiveToolDefinition(
+        name: name,
+        description: "\(name) description",
+        parametersJSONSchema: #"{"type":"object"}"#
+    )
 }
 
 private struct NoopClock: HiveClock {

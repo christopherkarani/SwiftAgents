@@ -1,293 +1,240 @@
-# Swarm (FoundationAgents) Framework
+# CLAUDE.md
 
-## Project Context
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Swarm is an open-source Swift framework providing "LangChain for Apple platforms"—comprehensive agent development capabilities built on Apple's Foundation Models. It complements SwiftAI SDK (inference layer) by providing the agent layer: autonomous reasoning, memory systems, and multi-agent orchestration.
+## Project Overview
 
-### Architecture
-```
-SwiftAI SDK (Inference) → Swarm (Agent Orchestration) → Application
-```
+Swarm is a Swift 6.2 multi-agent orchestration framework — "LangChain for Apple platforms." It provides agent reasoning, memory systems, tool execution, and multi-agent coordination on top of pluggable inference providers (Apple Foundation Models, Anthropic, OpenAI, Ollama, Gemini, MLX via Conduit).
 
-### Key Directories
-- `Sources/Swarm/` - Core framework source
-- `Sources/Swarm/Agents/` - Agent implementations (ReActAgent, PlanAndExecuteAgent)
-- `Sources/Swarm/Memory/` - Memory systems (conversation, vector, summary)
-- `Sources/Swarm/Tools/` - Tool execution framework
-- `Sources/Swarm/Orchestration/` - Multi-agent coordination
-- `Sources/Swarm/Observability/` - Tracing and monitoring
-- `Tests/SwarmTests/` - Test suites with mock protocols
+**Platforms**: macOS 26+, iOS 26+ (Apple Intelligence-era), Linux (Ubuntu 22.04+ with Swift 6.2)
 
-## Development Standards
+## Build & Test Commands
 
-### Swift 6.2 Requirements
-- **Minimum**: iOS 17+, macOS 14+, Swift 6.2
-- **Concurrency**: Use `async/await`, actors, and `@MainActor` isolation by default
-- **Data Safety**: All public types must be `Sendable`; use `@concurrent` for explicit parallel execution
-- **Value Types**: Prefer `struct` over `class`; use actors for shared mutable state
-
-### API Design Principles
-- Protocol-first: Define behavior contracts before implementations
-- Composition over inheritance: Use protocol composition (`Runnable & Observable`)
-- Fluent interfaces: Enable chaining with `@discardableResult` where appropriate
-- Progressive disclosure: Simple defaults, advanced configuration via builders
-
-### Naming Conventions
-- Types/Protocols: `UpperCamelCase` (e.g., `AgentProtocol`, `MemoryStore`)
-- Methods: Verb phrases for mutations (`execute`, `store`), noun phrases for accessors (`configuration`)
-- Boolean properties: Use `is`, `has`, `should` prefixes
-- Generics: Descriptive names (`Element`, `Input`, `Output`) over single letters when unclear
-
-## Workflow
-
-### Verification Commands
 ```bash
-swift build                           # Build framework
-swift test                            # Run test suite
-swift test --filter AgentTests        # Run specific tests
-swift package plugin --allow-writing-to-package-directory swiftformat  # Format code
+swift build                                    # Build all targets
+swift test                                     # Run all test suites
+swift test --filter AgentTests                 # Run a specific test suite
+swift test --filter AgentTests/testHandoff     # Run a single test
+swift run SwarmDemo                            # Run demo (requires SWARM_INCLUDE_DEMO=1)
+SWARM_INCLUDE_DEMO=1 swift build               # Build with demo targets included
+
+# Formatting & linting
+swift package plugin --allow-writing-to-package-directory swiftformat
+swiftlint lint
+
+# Coverage
+./scripts/generate-coverage-report.sh          # Outputs to .build/coverage/, 70% threshold
 ```
 
-### Before Committing
-1. Run `swift build` - ensure no compilation errors
-2. Run `swift test` - all tests must pass
-3. Run SwiftFormat - code must be formatted (`swift package plugin --allow-writing-to-package-directory swiftformat`)
-4. Run SwiftLint - code must pass linting checks (`swiftlint lint` - install via Homebrew if needed)
-5. Verify `Sendable` conformance on public types
-6. Ensure documentation comments on public APIs
+**Environment variables**:
+- `SWARM_INCLUDE_DEMO=1` — enables `SwarmDemo` and `SwarmMCPServerDemo` executable targets
+- `SWARM_USE_LOCAL_DEPS=1` — uses local `../Wax` and `../Conduit` instead of remote packages
 
-### Branch Naming
-- `feature/agent-memory-system`
-- `fix/orchestration-race-condition`
-- `refactor/protocol-conformance`
+## Package Targets
 
-## Technical Guidelines
+| Target | Type | Purpose |
+|--------|------|---------|
+| `Swarm` | Library | Core framework — agents, tools, memory, orchestration, Hive integration |
+| `SwarmMCP` | Library | MCP server bridge — exposes Swarm tools to MCP clients |
+| `SwarmMacros` | Macro (compiler plugin) | `@Tool`, `@AgentActor`, `@Prompt`, `@Traceable` macros |
+| `SwarmTests` | Test | Tests for Swarm + SwarmMCP |
+| `SwarmMacrosTests` | Test | Macro expansion tests using SwiftSyntaxMacrosTestSupport |
+| `HiveSwarmTests` | Test | Hive integration tests |
 
-### Protocols
-- Use `associatedtype` for type-safe generic protocols
-- Provide protocol extensions with sensible defaults
-- Mark class-only protocols with `AnyObject` constraint
-- See `Sources/Swarm/Core/Protocols/` for patterns
+## Architecture — What Actually Matters
+
+### Core Protocol: `AgentRuntime` (not "AgentProtocol")
+
+`AgentRuntime` (in `Core/AgentRuntime.swift`) is THE central protocol. Every agent — `Agent`, `ReActAgent`, `PlanAndExecuteAgent`, `SupervisorAgent`, `HiveBackedAgent` — conforms to it.
+
+```
+AgentRuntime: Sendable
+├── name, tools, instructions, configuration, memory
+├── run(input:session:hooks:) async throws -> AgentResult
+└── stream(input:session:hooks:) -> AsyncThrowingStream<AgentEvent, Error>
+```
+
+`InferenceProvider` (also in `AgentRuntime.swift`) is the protocol for LLM backends. Resolution order in `Agent`: explicit provider → `AgentEnvironmentValues.current.inferenceProvider` (TaskLocal) → Foundation Models → throws.
+
+### Three DSL Generations
+
+1. **`AgentLoopDefinition`** — deprecated legacy DSL using `AgentLoop`, `Generate()`, `Relay()`. Converts to `AgentRuntime` via `.asRuntime()`.
+2. **`AgentBlueprint`** — current preferred SwiftUI-style protocol with `@OrchestrationBuilder var body: some OrchestrationStep`.
+3. **`Orchestration` struct** — for purely structural (non-declarative) composition.
+
+Always use `AgentBlueprint` for new code.
+
+### Orchestration Always Goes Through Hive
+
+Every `Orchestration { ... }` execution goes through `OrchestrationHiveEngine.makeGraph()`, which compiles `[OrchestrationStep]` into a HiveCore DAG. Even a single-step orchestration gets Hive's checkpointing and interrupt/resume infrastructure. There is no lightweight bypass.
+
+The HiveSwarm bridge code lives at `Sources/Swarm/HiveSwarm/` (inside the Swarm target, NOT a separate target despite the name). Key files:
+- `HiveBackedAgent.swift` — wraps an `AgentRuntime` as a Hive node
+- `RetryPolicyBridge.swift` — converts Swarm retry policies to Hive retry policies (strips jitter for determinism)
+- `SwarmToolRegistry.swift` — bridges Swarm tools to Hive's tool approval system
+
+### `SendableValue` — The Universal Data Carrier
+
+A JSON-compatible enum used everywhere `Any` would break `Sendable`:
+
+```swift
+public enum SendableValue: Sendable, Codable, Equatable {
+    case string(String), int(Int), double(Double), bool(Bool)
+    case array([SendableValue]), dictionary([String: SendableValue]), null
+}
+```
+
+Appears in: tool arguments/results, `AgentResult.metadata`, `AgentContext` values, MCP request/response, `GuardrailResult.outputInfo`, `HandoffInputData`.
+
+### Environment Injection via TaskLocal
+
+`AgentEnvironmentValues` uses `@TaskLocal` for dependency injection (inference provider, tracer, memory). The `.environment(...)` modifier on `AgentRuntime` wraps execution in an `EnvironmentAgent` that sets TaskLocal values for the subtree.
+
+### Handoffs Are Tools
+
+Handoffs are injected as extra `ToolSchema` entries into `generateWithToolCalls`. When the LLM chooses a handoff tool (name: `handoff_to_<snake_case_target>`), `Agent` detects the match and calls `targetAgent.run()` directly. Not a separate communication channel.
+
+### MultiProvider — Prefix-Based Routing
+
+`MultiProvider` (actor) routes inference by model name prefix: `"anthropic/claude-3-5-sonnet"` → provider for `"anthropic"`. Models without a slash use the default provider. Enables mixing Claude, GPT, and Ollama in one orchestration.
+
+### Orchestration Step Types (11)
+
+Sequential, Parallel, DAGWorkflow, Router, RepeatWhile, Branch, Guard, Transform, Pipeline, SequentialChain, ParallelGroup. All conform to `OrchestrationStep` protocol. Built with `@OrchestrationBuilder` (a `@resultBuilder`).
+
+DSL operators: `-->` (sequential chain), `>>>` (type-safe pipeline composition), `.dependsOn()` (DAG edges).
+
+### Memory System
+
+All memory types conform to `Memory: Actor, Sendable` — actor conformance is mandatory.
+
+| Type | Purpose |
+|------|---------|
+| `ConversationMemory` | Rolling token-limited buffer |
+| `VectorMemory` | SIMD cosine similarity via Accelerate (no network) |
+| `SummaryMemory` | LLM-compressed history |
+| `SlidingWindowMemory` | Fixed message count window |
+| `PersistentMemory` | SwiftData-backed durable storage |
+
+Backends: `InMemoryBackend`, `SwiftDataBackend` conforming to `PersistentMemoryBackend: Actor`.
+
+### MCP — Two Directions
+
+- `Sources/Swarm/MCP/` — Swarm as **MCP client** (fetches tools from external MCP servers)
+- `Sources/SwarmMCP/` — Swarm as **MCP server** (exposes its tools to other MCP clients via `SwarmMCPServerService`)
+
+### External Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| **Conduit** | Unified inference provider abstraction — wraps Anthropic, OpenAI, Ollama, Gemini, OpenRouter APIs |
+| **Wax** | Embedding provider + vector operations for `VectorMemory` |
+| **HiveCore** (from Hive) | Compiled DAG execution engine, checkpointing, interrupt/resume |
+| **swift-syntax** | Powers `SwarmMacros` compiler plugin |
+| **swift-log** | Cross-platform logging (`Log.agents`, `Log.memory`, `Log.orchestration`, etc.) |
+| **swift-sdk** (MCP) | Model Context Protocol Swift SDK |
+
+## Key Conventions
 
 ### Concurrency
-- Use structured concurrency (`TaskGroup`, `async let`) over unstructured
-- Annotate with `@MainActor` for UI-bound code
-- Use `actor` for shared state requiring synchronization
-- Apply `nonisolated` explicitly when needed for cross-isolation calls
+- `StrictConcurrency` enabled on ALL targets — non-`Sendable` types crossing actor boundaries are build errors
+- All public types must be `Sendable`
+- Memory protocol requires `Actor` conformance
+- `Tracer` protocol requires `Actor` conformance
+- Use structured concurrency (`TaskGroup`, `async let`) over unstructured `Task { }`
 
-### Macros
-- Use `@AgentActor` macro for agent boilerplate
-- Use `@Tool` macro for tool registration
-- Use `@Observable` for state management
-- See `Sources/SwarmMacros/` for implementation patterns
-
-### Memory Systems
-- `ConversationMemory`: Short-term, token-limited context
-- `VectorMemory`: Long-term semantic retrieval (requires embedding provider)
-- `SummaryMemory`: Compressed conversation history
+### Testing
+- Use Swift Testing (`import Testing`, `@Suite`, `@Test`) — not XCTest
+- Foundation Models unavailable in test — always use `MockInferenceProvider`
+- Mocks live in `Tests/SwarmTests/Mocks/` (`MockInferenceProvider`, `MockAgentMemory`, `MockSummarizer`, `MockTool`)
+- Test files mirror source structure: `Tests/SwarmTests/Core/`, `Tests/SwarmTests/Orchestration/`, etc.
 
 ### Logging
-- Use `swift-log` for cross-platform compatibility (Apple platforms + Linux servers)
-- Call `Log.bootstrap()` once at application startup to configure logging
-- Never use `print()` statements in production code
-- Use category-specific loggers:
-  - `Log.agents`: Agent lifecycle and execution
-  - `Log.memory`: Memory system operations
-  - `Log.tracing`: Observability and tracing events
-  - `Log.metrics`: Performance and usage metrics
-  - `Log.orchestration`: Multi-agent coordination
-- Choose appropriate log levels: `.trace`, `.debug`, `.info`, `.notice`, `.warning`, `.error`, `.critical`
-- **Privacy Note**: Unlike `os.Logger`, swift-log does not support `privacy:` parameter annotations
-  - Do not log sensitive user data, credentials, or PII in production
-  - Configure log handlers to redact sensitive information at runtime
-  - Default behavior logs all interpolated values as-is
-- Example: `Log.memory.error("Failed to save: \(error.localizedDescription)")`
-- For Apple-only code, `OSLogTracer` is available with privacy annotations wrapped in `#if canImport(os)`
+- Use `swift-log` category loggers: `Log.agents`, `Log.memory`, `Log.tracing`, `Log.metrics`, `Log.orchestration`
+- Never use `print()` in production code
+- swift-log does NOT support `privacy:` annotations — do not log PII
 
-### Testing Strategy (TDD Required)
-- **Test-Driven Development is mandatory** for all new features and bug fixes
-- Foundation Models unavailable in simulators—use mock protocols
-- All protocols have corresponding `Mock*` implementations in test targets
-- Test async code with `XCTestExpectation` or async test methods
+### Commit Style
+- Short, imperative, capitalized: `Add`, `Fix`, `Refactor`, `Default`, `Revert`
 
-### TDD Workflow
-Follow Red-Green-Refactor cycle for all development:
-
-1. **Red**: Write failing tests first
-   - Define expected behavior through test cases
-   - Use `test-specialist` agent to design comprehensive test coverage
-   - Tests must fail initially (verifies test is meaningful)
-
-2. **Green**: Write minimal implementation
-   - Only write enough code to make tests pass
-   - No premature optimization or extra features
-   - Focus on satisfying test assertions
-
-3. **Refactor**: Improve code quality
-   - Clean up implementation while keeping tests green
-   - Apply Swift patterns and conventions
-   - Use `code-reviewer` agent to verify refactoring
-
-**TDD Guidelines**:
-- Never write implementation before tests
-- One test case per behavior/feature
-- Test edge cases and error conditions
-- Mock external dependencies (LLM providers, network)
-- Run `swift test` frequently during development
-
-## Integration Points
-- **SwiftAI SDK**: Inference provider abstraction
-- **Foundation Models**: Apple's on-device models (iOS 26+)
-- **MLX**: Local model execution fallback
-
-## Agent Orchestration System
+## Agent Orchestration System (Claude Code Sub-Agents)
 
 ### Agent Registry
 
-#### Tier 1: Orchestration Layer (Route & Coordinate)
-| Agent | Model | Mode | Role |
-|-------|-------|------|------|
-| **Lead Session** (Claude Code main) | opus | — | Router, delegator, user interface. Always active. |
-| `context-builder` | sonnet | plan | Research at start of tasks spanning 3+ files |
-| `context-manager` | haiku | default | Context preservation between phases, before compaction |
+#### Tier 1: Orchestration (Route & Coordinate)
+| Agent | Model | Role |
+|-------|-------|------|
+| **Lead Session** | opus | Router, delegator, user interface |
+| `context-builder` | sonnet | Research at start of tasks spanning 3+ files |
+| `context-manager` | haiku | Context preservation between phases |
 
-#### Tier 2: Design Layer (Think & Plan — Read-Only)
-| Agent | Model | When to Use |
+#### Tier 2: Design (Read-Only)
+| Agent | When to Use |
+|-------|-------------|
+| `protocol-architect` | Protocol design, type hierarchies, generic constraints |
+| `api-designer` | Public API naming, fluent interfaces, progressive disclosure |
+| `framework-architect` | Orchestration patterns, new step types, Hive DAG design |
+| `concurrency-expert` | Actor isolation, Sendable conformance, data-race review |
+
+#### Tier 3: Implementation
+| Agent | Scope | When to Use |
 |-------|-------|-------------|
-| `protocol-architect` | sonnet | Designing protocols, type hierarchies, protocol composition, generic constraints |
-| `api-designer` | sonnet | Public API naming, fluent interfaces, progressive disclosure, builder patterns |
-| `framework-architect` | sonnet | Multi-agent orchestration patterns, new step types, Hive DAG compilation design |
-| `concurrency-expert` | sonnet | Actor isolation design, Sendable conformance, data-race prevention review |
+| `swarm-implementer` | `Sources/Swarm/` | Swarm framework code |
+| `hive-implementer` | `Sources/Swarm/HiveSwarm/` | HiveSwarm bridge code |
+| `swift-expert` (opus) | Any | Complex: new subsystems, multi-file refactors |
+| `implementer` (sonnet) | Any | Medium: add methods, implement protocols |
+| `fixer` (haiku) | Any | Low: rename, fix imports, <20 line edits |
 
-#### Tier 3: Implementation Layer (Write Code)
-| Agent | Model | Scope | When to Use |
-|-------|-------|-------|-------------|
-| `swarm-implementer` | sonnet | `Sources/Swarm/` | Swarm framework code: orchestration steps, agents, memory, DSL, tools |
-| `hive-implementer` | sonnet | `Sources/HiveSwarm/` + Hive compilation | HiveSwarm bridge code, DAG compilation, checkpoint serialization |
-| `swift-expert` | opus | Any Swift | Complex: new subsystems, multi-file refactors, novel architectural patterns |
-| `implementer` | sonnet | Any Swift | Medium complexity: add methods, implement protocols, standard patterns |
-| `fixer` | haiku | Any Swift | Low complexity: rename, fix imports, small single-file edits (<20 lines) |
+#### Tier 4: Quality
+| Agent | When to Use |
+|-------|-------------|
+| `test-specialist` | TDD Red phase: write failing tests, create mocks. Never production code. |
+| `macro-engineer` | Swift macros (@AgentActor, @Tool, custom) |
+| `swift-code-reviewer` | After code changes, before commits |
+| `swift-debug-agent` | Build failures, compilation errors |
 
-#### Tier 4: Quality Layer (Verify & Validate)
-| Agent | Model | When to Use |
-|-------|-------|-------------|
-| `test-specialist` | sonnet | TDD Red phase: write failing tests, create mocks, design coverage. Never production code. |
-| `macro-engineer` | sonnet | Create/modify Swift macros (@AgentActor, @Tool, custom macros) |
-| `swift-code-reviewer` | — | After code changes, before commits |
-| `swift-debug-agent` | — | Build failures, compilation errors, linker issues |
-
-### Routing Decision Tree
-
-Evaluate conditions **in order** (first-match-wins, inspired by Swarm's `AgentRouter`):
+### Routing (First-Match-Wins)
 
 ```
-TASK RECEIVED
-│
-├─ NEW SESSION or COMPLEX TASK (3+ files)?
-│  └─ YES → context-builder (research phase)
-│
-├─ DESIGNING a new protocol or type hierarchy?
-│  └─ YES → protocol-architect
-│
-├─ DESIGNING a public API surface?
-│  └─ YES → api-designer
-│
-├─ ORCHESTRATION patterns (routing, chains, parallel, handoffs)?
-│  └─ YES → framework-architect
-│
-├─ CONCURRENCY (actors, Sendable, async, isolation)?
-│  └─ YES → concurrency-expert (review) → implementer (code)
-│
-├─ SWIFT MACROS?
-│  └─ YES → macro-engineer
-│
-├─ WRITING TESTS (TDD Red phase)?
-│  └─ YES → test-specialist
-│
-├─ WRITING CODE?
-│  ├─ Swarm framework (Sources/Swarm/, Tests/SwarmTests/)?
-│  │  ├─ HiveSwarm bridge (Sources/HiveSwarm/)? → hive-implementer
-│  │  └─ YES → swarm-implementer
-│  ├─ High complexity (3+ files, novel pattern) → swift-expert (opus)
-│  ├─ Medium complexity (standard patterns) → implementer (sonnet)
-│  └─ Low complexity (<20 lines) → fixer (haiku)
-│
-├─ BUILD FAILURE? → swift-debug-agent
-├─ CODE REVIEW? → swift-code-reviewer
-├─ DOCUMENTATION? → api-documenter
-└─ FALLBACK → Lead session handles directly
+TASK → 3+ files? → context-builder
+     → Protocol design? → protocol-architect
+     → Public API design? → api-designer
+     → Orchestration patterns? → framework-architect
+     → Concurrency? → concurrency-expert → implementer
+     → Macros? → macro-engineer
+     → Tests? → test-specialist
+     → Swarm source code? → swarm-implementer (or hive-implementer for HiveSwarm/)
+     → High complexity? → swift-expert
+     → Medium? → implementer
+     → Low (<20 lines)? → fixer
+     → Build failure? → swift-debug-agent
+     → Code review? → swift-code-reviewer
 ```
 
-### Common Agent Chains
+### Common Chains
 
-**New Swarm Feature (TDD)**:
-`context-builder → test-specialist → protocol-architect → api-designer → swarm-implementer → concurrency-expert → swift-code-reviewer`
+- **New Feature**: `context-builder → test-specialist → protocol-architect → api-designer → swarm-implementer → concurrency-expert → swift-code-reviewer`
+- **Bug Fix**: `context-builder → swift-debug-agent → swarm-implementer → test-specialist → swift-code-reviewer`
+- **Hive Bridge**: `context-builder → framework-architect → test-specialist → hive-implementer → concurrency-expert → swift-code-reviewer`
 
-**Hive Bridge Feature**:
-`context-builder → framework-architect → test-specialist → hive-implementer → concurrency-expert → swift-code-reviewer`
+### Agent Handoff Protocol
 
-**Bug Fix (Swarm)**:
-`context-builder → swift-debug-agent → swarm-implementer → test-specialist → swift-code-reviewer`
+Every delegation includes: task brief, context path, previous agent summary, file scope.
+Every agent returns: summary (<200 words), files changed, decisions with rationale, handoff notes, risks.
 
-**New Orchestration Pattern**:
-`context-builder → framework-architect → protocol-architect → test-specialist → swarm-implementer → concurrency-expert → swift-code-reviewer`
+### Quality Gates
 
-### Agent Delegation Protocol
+| Gate | Check |
+|------|-------|
+| Design → Implementation | Protocol compiles, API is ergonomic |
+| Implementation → Review | `swift build` succeeds |
+| Review → Commit | No critical issues from reviewer |
+| Commit → Done | `swift test` passes |
 
-#### Context Handoff
-Every delegation MUST include:
-1. Task brief (what to do)
-2. Context document path (`.claude/context/active-task.md`)
-3. Previous agent output summary
-4. File scope constraints (which files to touch)
+### Skills
 
-Every agent MUST return:
-1. Summary (< 200 words)
-2. Files changed list
-3. Decisions made with rationale
-4. Handoff notes for next agent
-5. Concerns or risks discovered
-
-#### Quality Gates
-| Gate | Check | Agent |
-|------|-------|-------|
-| Design → Implementation | Protocol compiles, API is ergonomic | Lead session review |
-| Implementation → Review | `swift build` succeeds | swift-debug-agent |
-| Review → Commit | No critical issues | swift-code-reviewer |
-| Commit → Done | `swift test` passes | Lead session (Bash) |
-
-#### Conflict Resolution
-| Conflict | Resolution |
-|----------|------------|
-| swarm-implementer vs implementer | Swarm source files → swarm-implementer; non-Swarm → global implementer |
-| hive-implementer vs swarm-implementer | `Sources/HiveSwarm/` → hive; `Sources/Swarm/` → swarm |
-| swift-expert vs swarm-implementer | Novel patterns / 3+ files → swift-expert; standard Swarm → swarm-implementer |
-| implementer vs fixer | Single file, <20 lines → fixer (cost optimization) |
-| Design agents disagree | Present both options to user via AskUserQuestion; record decision |
-
-#### Context Management (Long-Running Tasks)
-**Always use `context-builder` agent** at the start of complex or long-running tasks to:
-- Gather comprehensive requirements before implementation
-- Research existing codebase patterns and conventions
-- Identify dependencies and integration points
-- Create a clear roadmap before delegating to specialist agents
-
-**Context Preservation Workflow**:
-1. **Start**: Use `context-builder` to research and gather context
-2. **Plan**: Document findings and create implementation plan
-3. **Execute**: Delegate to specialist agents with clear context handoffs
-4. **Checkpoint**: Re-invoke `context-manager` between major phases
-5. **Update**: Keep `.claude/context/active-task.md` and memory updated throughout
-
-### Skills Reference
-
-| Skill | Purpose | When to Load |
-|-------|---------|-------------|
-| `/swarm-patterns` | Swarm framework patterns reference | Any agent working on Swarm code |
-| `/tdd-workflow` | TDD Red-Green-Refactor with Swarm examples | Start of implementation tasks |
-| `/swift-concurrency-guide` | Swift 6.2 concurrency quick reference | Concurrency review or async code |
-
-## Quick References
-- API patterns: See `Sources/Swarm/Examples/`
-- Protocol design: See `Sources/Swarm/Core/Protocols/`
-- Testing mocks: See `Tests/SwarmTests/Mocks/`
+| Skill | When to Load |
+|-------|-------------|
+| `/swarm-patterns` | Any agent working on Swarm code |
+| `/tdd-workflow` | Start of implementation tasks |
+| `/swift-concurrency-guide` | Concurrency review or async code |

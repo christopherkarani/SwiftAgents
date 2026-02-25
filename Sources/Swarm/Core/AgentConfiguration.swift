@@ -6,7 +6,10 @@
 import Foundation
 import Logging
 
-// MARK: - SwarmRuntimeMode
+/// Context envelope mode used by agent prompt construction.
+public enum ContextMode: Sendable, Equatable {
+    /// Adaptive context sizing based on configured profile/platform defaults.
+    case adaptive
 
 /// Runtime execution mode for orchestration.
 public enum SwarmRuntimeMode: Sendable, Equatable {
@@ -119,11 +122,6 @@ public struct AgentConfiguration: Sendable, Equatable {
     /// Default configuration with sensible defaults.
     public static let `default` = AgentConfiguration()
 
-    /// Default runtime mode for orchestration execution.
-    public static var defaultRuntimeMode: SwarmRuntimeMode {
-        .hive
-    }
-
     // MARK: - Identity
 
     /// The name of the agent for identification and logging.
@@ -177,13 +175,13 @@ public struct AgentConfiguration: Sendable, Equatable {
     /// Default: `.platformDefault`
     public var contextProfile: ContextProfile
 
-    // MARK: - Runtime Engine Settings
-
-    /// Runtime mode for orchestration execution.
+    /// Context envelope mode for prompt construction.
     ///
-    /// This value is retained for source compatibility. Execution always uses Hive.
-    /// Default: `.hive`.
-    public var runtimeMode: SwarmRuntimeMode
+    /// When set to `.strict4k`, the runtime uses `ContextProfile.strict4k`
+    /// regardless of `contextProfile`.
+    public var contextMode: ContextMode
+
+    // MARK: - Hive Runtime Settings
 
     /// Optional Hive run options override used by orchestration runs in Hive mode.
     ///
@@ -291,8 +289,8 @@ public struct AgentConfiguration: Sendable, Equatable {
     ///   - stopOnToolError: Stop on first tool error. Default: false
     ///   - includeReasoning: Include reasoning in events. Default: true
     ///   - sessionHistoryLimit: Maximum session history messages to load. Default: 50
+    ///   - contextMode: Context envelope mode. Default: `.adaptive`
     ///   - contextProfile: Context budgeting profile. Default: `.platformDefault`
-    ///   - runtimeMode: Runtime mode selector retained for compatibility. Default: `.hive`
     ///   - hiveRunOptionsOverride: Optional Hive run options override for orchestration. Default: nil
     ///   - inferencePolicy: Inference routing policy hints. Default: nil
     ///   - parallelToolCalls: Enable parallel tool execution. Default: false
@@ -308,7 +306,6 @@ public struct AgentConfiguration: Sendable, Equatable {
         stopSequences: [String] = [],
         modelSettings: ModelSettings? = nil,
         contextProfile: ContextProfile = .platformDefault,
-        runtimeMode: SwarmRuntimeMode = AgentConfiguration.defaultRuntimeMode,
         hiveRunOptionsOverride: SwarmHiveRunOptionsOverride? = nil,
         inferencePolicy: InferencePolicy? = nil,
         enableStreaming: Bool = true,
@@ -316,6 +313,7 @@ public struct AgentConfiguration: Sendable, Equatable {
         stopOnToolError: Bool = false,
         includeReasoning: Bool = true,
         sessionHistoryLimit: Int? = 50,
+        contextMode: ContextMode = .adaptive,
         parallelToolCalls: Bool = false,
         previousResponseId: String? = nil,
         autoPreviousResponseId: Bool = false,
@@ -338,7 +336,6 @@ public struct AgentConfiguration: Sendable, Equatable {
         self.stopSequences = stopSequences
         self.modelSettings = modelSettings
         self.contextProfile = contextProfile
-        self.runtimeMode = runtimeMode
         self.hiveRunOptionsOverride = hiveRunOptionsOverride
         self.inferencePolicy = inferencePolicy
         self.enableStreaming = enableStreaming
@@ -346,6 +343,7 @@ public struct AgentConfiguration: Sendable, Equatable {
         self.stopOnToolError = stopOnToolError
         self.includeReasoning = includeReasoning
         self.sessionHistoryLimit = sessionHistoryLimit
+        self.contextMode = contextMode
         self.parallelToolCalls = parallelToolCalls
         self.previousResponseId = previousResponseId
         self.autoPreviousResponseId = autoPreviousResponseId
@@ -367,7 +365,6 @@ extension AgentConfiguration: CustomStringConvertible {
             stopSequences: \(stopSequences),
             modelSettings: \(modelSettings.map { String(describing: $0) } ?? "nil"),
             contextProfile: \(contextProfile),
-            runtimeMode: \(runtimeMode),
             hiveRunOptionsOverride: \(hiveRunOptionsOverride.map { String(describing: $0) } ?? "nil"),
             inferencePolicy: \(inferencePolicy.map { String(describing: $0) } ?? "nil"),
             enableStreaming: \(enableStreaming),
@@ -375,6 +372,7 @@ extension AgentConfiguration: CustomStringConvertible {
             stopOnToolError: \(stopOnToolError),
             includeReasoning: \(includeReasoning),
             sessionHistoryLimit: \(sessionHistoryLimit.map(String.init) ?? "nil"),
+            contextMode: \(contextMode),
             parallelToolCalls: \(parallelToolCalls),
             previousResponseId: \(previousResponseId.map { "\"\($0)\"" } ?? "nil"),
             autoPreviousResponseId: \(autoPreviousResponseId),
