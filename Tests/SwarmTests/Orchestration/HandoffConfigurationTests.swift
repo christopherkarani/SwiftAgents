@@ -530,3 +530,60 @@ struct AnyHandoffConfigurationTests {
         #expect(configurations[1].toolNameOverride == "handoff_2")
     }
 }
+
+// MARK: - HandoffConfigurationLookupTests
+
+@Suite("HandoffConfiguration Lookup Tests")
+struct HandoffConfigurationLookupTests {
+    @Test("returns matching configuration for registered agent")
+    func returnsMatchForRegisteredAgent() {
+        let targetAgent = MockHandoffAgent(name: "Target")
+        let otherAgent = MockHandoffAgent(name: "Other")
+        let configurations: [AnyHandoffConfiguration] = [
+            AnyHandoffConfiguration(targetAgent: otherAgent),
+            AnyHandoffConfiguration(targetAgent: targetAgent),
+        ]
+
+        let found = configurations.handoffConfiguration(for: targetAgent)
+
+        #expect(found != nil)
+        // Verify it's the correct configuration (the one wrapping targetAgent).
+        // Since actors use reference identity, only the same instance matches.
+        #expect(found?.effectiveToolDescription.contains("MockHandoffAgent") == true)
+    }
+
+    @Test("returns nil when agent is not in the sequence")
+    func returnsNilWhenAgentNotRegistered() {
+        let registered = MockHandoffAgent(name: "Registered")
+        let unregistered = MockHandoffAgent(name: "Unregistered")
+        let configurations: [AnyHandoffConfiguration] = [
+            AnyHandoffConfiguration(targetAgent: registered),
+        ]
+
+        let found = configurations.handoffConfiguration(for: unregistered)
+
+        #expect(found == nil)
+    }
+
+    @Test("returns nil for empty sequence")
+    func returnsNilForEmptySequence() {
+        let agent = MockHandoffAgent(name: "Agent")
+        let empty: [AnyHandoffConfiguration] = []
+
+        let found = empty.handoffConfiguration(for: agent)
+
+        #expect(found == nil)
+    }
+
+    @Test("returns first match when multiple configurations target the same agent")
+    func returnsFirstMatchForDuplicateTargets() {
+        let agent = MockHandoffAgent(name: "Agent")
+        let first = AnyHandoffConfiguration(targetAgent: agent, toolNameOverride: "first_tool")
+        let second = AnyHandoffConfiguration(targetAgent: agent, toolNameOverride: "second_tool")
+        let configurations = [first, second]
+
+        let found = configurations.handoffConfiguration(for: agent)
+
+        #expect(found?.toolNameOverride == "first_tool")
+    }
+}
