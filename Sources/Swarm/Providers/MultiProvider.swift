@@ -272,17 +272,18 @@ public actor MultiProvider: InferenceProvider {
     /// - `"gpt-4"` returns `(prefix: nil, modelName: "gpt-4")`
     /// - `"openai/gpt-4o-mini"` returns `(prefix: "openai", modelName: "gpt-4o-mini")`
     private func parseModelName(_ model: String) -> (prefix: String?, modelName: String) {
-        guard let slashIndex = model.firstIndex(of: "/") else {
-            return (prefix: nil, modelName: model)
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let slashIndex = trimmedModel.firstIndex(of: "/") else {
+            return (prefix: nil, modelName: trimmedModel)
         }
 
-        let prefix = String(model[..<slashIndex])
-        let afterSlash = model.index(after: slashIndex)
-        let modelName = String(model[afterSlash...])
+        let prefix = String(trimmedModel[..<slashIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let afterSlash = trimmedModel.index(after: slashIndex)
+        let modelName = String(trimmedModel[afterSlash...]).trimmingCharacters(in: .whitespacesAndNewlines)
 
         // If prefix is empty or model name is empty, treat as no prefix
         guard !prefix.isEmpty, !modelName.isEmpty else {
-            return (prefix: nil, modelName: model)
+            return (prefix: nil, modelName: trimmedModel)
         }
 
         return (prefix: prefix.lowercased(), modelName: modelName)

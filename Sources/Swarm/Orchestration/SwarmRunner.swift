@@ -446,7 +446,7 @@ public actor SwarmRunner {
                 providerCallId: toolCall.id,
                 registry: registry,
                 agent: DummyAgent(profile: activeProfile),
-                context: nil,
+                context: context,
                 resultBuilder: builder,
                 hooks: nil,
                 tracing: nil,
