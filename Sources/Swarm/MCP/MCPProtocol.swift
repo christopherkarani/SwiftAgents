@@ -293,8 +293,8 @@ public struct MCPResponse: Sendable, Codable, Equatable {
             )
         }
 
-        // Use private initializer that bypasses the throwing check
-        // since we've already validated above
+        // Assign properties directly — the throwing public init would re-validate
+        // the mutual-exclusivity invariant that we already checked above.
         self.jsonrpc = jsonrpc
         self.id = id
         self.result = result

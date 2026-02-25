@@ -587,3 +587,90 @@ struct HandoffConfigurationLookupTests {
         #expect(found?.toolNameOverride == "first_tool")
     }
 }
+
+// MARK: - AgentRuntimeIdentifiableTests
+
+/// Tests for `AgentRuntimeIdentifiable` and the `areSameRuntime` free function.
+@Suite("AgentRuntimeIdentifiable Tests")
+struct AgentRuntimeIdentifiableTests {
+    // A minimal value-type agent with explicit identity via `AgentRuntimeIdentifiable`.
+    private struct IdentifiableAgent: AgentRuntime, AgentRuntimeIdentifiable {
+        let id: String
+        let tools: [any AnyJSONTool] = []
+        let instructions = "Identifiable agent"
+        var configuration: AgentConfiguration
+
+        var runtimeIdentity: String { id }
+
+        init(id: String) {
+            self.id = id
+            configuration = AgentConfiguration(name: "agent-\(id)")
+        }
+
+        func run(
+            _ input: String,
+            session _: (any Session)? = nil,
+            hooks _: (any RunHooks)? = nil
+        ) async throws -> AgentResult {
+            AgentResult(output: input)
+        }
+
+        nonisolated func stream(
+            _ input: String,
+            session _: (any Session)? = nil,
+            hooks _: (any RunHooks)? = nil
+        ) -> AsyncThrowingStream<AgentEvent, Error> {
+            StreamHelper.makeTrackedStream { continuation in
+                continuation.yield(.started(input: input))
+                continuation.yield(.completed(result: AgentResult(output: input)))
+                continuation.finish()
+            }
+        }
+
+        func cancel() async {}
+    }
+
+    @Test("value-type agents with same runtimeIdentity are considered the same runtime")
+    func sameIdentityComparesEqual() {
+        let a = IdentifiableAgent(id: "agent-42")
+        let b = IdentifiableAgent(id: "agent-42")
+        #expect(areSameRuntime(a, b))
+    }
+
+    @Test("value-type agents with different runtimeIdentity are not the same runtime")
+    func differentIdentityDoesNotCompareEqual() {
+        let a = IdentifiableAgent(id: "agent-1")
+        let b = IdentifiableAgent(id: "agent-2")
+        #expect(!areSameRuntime(a, b))
+    }
+
+    @Test("reference-type agent conforming to AgentRuntimeIdentifiable uses reference identity")
+    func referenceTypeUsesObjectIdentityNotString() {
+        // MockHandoffAgent is an actor (reference type). Two separate instances with
+        // the same name should NOT compare as equal — AnyObject identity takes priority
+        // over AgentRuntimeIdentifiable, so each distinct instance is a distinct runtime.
+        let a = MockHandoffAgent(name: "shared-name")
+        let b = MockHandoffAgent(name: "shared-name")
+        // Different instances → not the same runtime despite having the same name.
+        #expect(!areSameRuntime(a, b))
+        // Same instance → identical.
+        #expect(areSameRuntime(a, a))
+    }
+
+    @Test("handoffConfiguration lookup works with AgentRuntimeIdentifiable value-type agents")
+    func lookupWorksWithIdentifiableValueType() {
+        let agent = IdentifiableAgent(id: "lookup-target")
+        let config = AnyHandoffConfiguration(targetAgent: agent)
+        let configurations: [AnyHandoffConfiguration] = [config]
+
+        // A second instance with the same runtimeIdentity should match.
+        let sameIdentity = IdentifiableAgent(id: "lookup-target")
+        let found = configurations.handoffConfiguration(for: sameIdentity)
+        #expect(found != nil)
+
+        // A different identity should not match.
+        let different = IdentifiableAgent(id: "other-target")
+        let notFound = configurations.handoffConfiguration(for: different)
+        #expect(notFound == nil)
+    }
+}

@@ -42,13 +42,18 @@ struct AgentRuntimeIdentity: Hashable, Sendable {
     private let storage: Storage
 
     init(_ runtime: any AgentRuntime) {
-        if let identifiable = runtime as? any AgentRuntimeIdentifiable {
+        // Reference types (class/actor) always use object identity — checked first so
+        // that conforming to `AgentRuntimeIdentifiable` on a class/actor does not
+        // silently replace stable pointer-based identity with a potentially colliding
+        // string identity.
+        if type(of: runtime) is AnyObject.Type {
+            storage = .reference(ObjectIdentifier(runtime as AnyObject))
+        } else if let identifiable = runtime as? any AgentRuntimeIdentifiable {
+            // Value-type agents that explicitly declare identity via the protocol.
             storage = .custom(
                 type: ObjectIdentifier(type(of: runtime)),
                 id: identifiable.runtimeIdentity
             )
-        } else if type(of: runtime) is AnyObject.Type {
-            storage = .reference(ObjectIdentifier(runtime as AnyObject))
         } else {
             // `String(reflecting:)` is used as a best-effort fingerprint for value
             // types that don't conform to `AgentRuntimeIdentifiable`. Two instances
