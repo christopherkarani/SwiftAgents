@@ -289,6 +289,23 @@ public struct MCPResponse: Sendable, Codable, Equatable {
 
     // MARK: Private
 
+    /// Internal initializer for validated response construction.
+    /// Callers must ensure exactly one of result or error is set.
+    private init(
+        id: String,
+        result: SendableValue?,
+        error: MCPErrorObject?
+    ) {
+        assert(
+            (result == nil) != (error == nil),
+            "MCPResponse invariant violated: exactly one of result/error must be set"
+        )
+        self.jsonrpc = "2.0"
+        self.id = id
+        self.result = result
+        self.error = error
+    }
+
     private enum CodingKeys: String, CodingKey {
         case jsonrpc
         case id
