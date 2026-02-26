@@ -4,7 +4,7 @@
 - [x] Fix package/dependency wiring breakages that prevent compilation.
 - [x] Add regression coverage for identified correctness defects.
 - [x] Implement production-grade fixes in `Sources/Swarm` for audited defects.
-- [ ] Run `swift build` and `swift test` to verify zero regressions. (blocked: disk full in sandbox, `No space left on device`)
+- [ ] Run `swift build` and `swift test` to verify zero regressions. (`swift build` passes; `swift test` blocked by disk full in sandbox: `No space left on device`)
 - [ ] Commit with detailed message(s), push branch, and open PR. (blocked pending successful build/test in this environment)
 
 # Review
@@ -22,5 +22,6 @@
 - `Tests/SwarmTests/Resilience/ResilienceTests+RateLimiter.swift`: invalid constructor parameter sanitization tests.
 
 - Verification status:
-- Dependency + compile progressed through project compilation but halted with repeated filesystem errors while writing build/index artifacts:
+- `swift build` passes.
+- `swift test` fails in this sandbox due filesystem exhaustion while compiling dependency test artifacts:
   `No space left on device`.
