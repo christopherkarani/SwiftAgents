@@ -280,12 +280,6 @@ public actor ParallelToolExecutor {
         case .continueOnError:
             // Return results as-is with failures included
             break
-
-        case .failFast:
-            // failFast is handled before this switch via executeWithFailFast().
-            // Reaching here means the early-exit guard above was removed or bypassed,
-            // which would make failFast silently return failures — the opposite of its contract.
-            assertionFailure("failFast must be handled before reaching this switch; check the guard at the top of this method")
         }
 
         return results

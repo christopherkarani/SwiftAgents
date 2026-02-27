@@ -351,7 +351,7 @@ public extension MCPResponse {
     ///   release builds via `precondition`.
     static func success(id: String, result: SendableValue) -> MCPResponse {
         precondition(!id.isEmpty, "MCPResponse.success requires a non-empty id")
-        MCPResponse(
+        return MCPResponse(
             id: id,
             result: result,
             error: nil
@@ -370,7 +370,7 @@ public extension MCPResponse {
     ///   release builds via `precondition`.
     static func failure(id: String, error: MCPErrorObject) -> MCPResponse {
         precondition(!id.isEmpty, "MCPResponse.failure requires a non-empty id")
-        MCPResponse(
+        return MCPResponse(
             id: id,
             result: nil,
             error: error

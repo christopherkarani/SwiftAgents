@@ -39,7 +39,6 @@ if useLocalDependencies {
                 .trait(name: "OpenAI"),
                 .trait(name: "OpenRouter"),
                 .trait(name: "Anthropic"),
-                .trait(name: "MLX"),
             ]
         )
     )
@@ -54,12 +53,11 @@ if useLocalDependencies {
     packageDependencies.append(
         .package(
             url: "https://github.com/christopherkarani/Conduit",
-            from: "0.3.1",
+            exact: "0.3.5",
             traits: [
                 .trait(name: "OpenAI"),
                 .trait(name: "OpenRouter"),
                 .trait(name: "Anthropic"),
-                .trait(name: "MLX"),
             ]
         )
     )

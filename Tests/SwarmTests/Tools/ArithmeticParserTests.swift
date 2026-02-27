@@ -469,6 +469,23 @@ struct ArithmeticParserErrorCasesTests {
         // The expression "2 + + 3" might actually be valid (unary +)
         // So we just ensure it doesn't crash - remove the expectation
     }
+
+    @Test("Nesting beyond max depth throws nestingDepthExceeded")
+    func nestingDepthExceeded() {
+        let depth = 210
+        let expression = String(repeating: "(", count: depth) + "1" + String(repeating: ")", count: depth)
+
+        var thrownError: ArithmeticParser.ParserError?
+        do {
+            _ = try ArithmeticParser.evaluate(expression)
+        } catch let error as ArithmeticParser.ParserError {
+            thrownError = error
+        } catch {
+            #expect(Bool(false), "Expected ParserError")
+        }
+
+        #expect(thrownError == .nestingDepthExceeded)
+    }
 }
 
 // MARK: - ArithmeticParserEdgeCasesTests
@@ -568,5 +585,8 @@ struct ArithmeticParserErrorPropertiesTests {
 
         let numberError = ArithmeticParser.ParserError.invalidNumber("abc")
         #expect(numberError.errorDescription == "Invalid number: abc")
+
+        let nestingError = ArithmeticParser.ParserError.nestingDepthExceeded
+        #expect(nestingError.errorDescription == "Expression nesting depth exceeded")
     }
 }
