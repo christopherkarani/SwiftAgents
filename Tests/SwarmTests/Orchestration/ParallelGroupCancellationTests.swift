@@ -40,6 +40,72 @@ struct ParallelGroupCancellationTests {
             Issue.record("Expected AgentError.cancelled, got \(error)")
         }
     }
+
+    @Test("maxConcurrency zero does not deadlock")
+    func maxConcurrencyZeroDoesNotDeadlock() async throws {
+        let first = SlowCancellableRuntimeAgent(name: "first")
+        let second = SlowCancellableRuntimeAgent(name: "second")
+        let group = ParallelGroup(
+            agents: [
+                ("first", first),
+                ("second", second)
+            ],
+            shouldContinueOnError: true,
+            maxConcurrency: 0
+        )
+
+        let runTask = Task {
+            try await group.run("work")
+        }
+
+        let completion = await awaitParallelTaskResult(runTask, timeout: .seconds(3))
+        guard let completion else {
+            await group.cancel()
+            _ = await awaitParallelTaskResult(runTask, timeout: .seconds(2))
+            Issue.record("ParallelGroup.run deadlocked with maxConcurrency = 0")
+            return
+        }
+
+        switch completion {
+        case let .success(result):
+            #expect(!result.output.isEmpty)
+        case let .failure(error):
+            Issue.record("Expected success for zero maxConcurrency normalization, got \(error)")
+        }
+    }
+
+    @Test("maxConcurrency negative does not deadlock")
+    func maxConcurrencyNegativeDoesNotDeadlock() async throws {
+        let first = SlowCancellableRuntimeAgent(name: "first")
+        let second = SlowCancellableRuntimeAgent(name: "second")
+        let group = ParallelGroup(
+            agents: [
+                ("first", first),
+                ("second", second)
+            ],
+            shouldContinueOnError: true,
+            maxConcurrency: -1
+        )
+
+        let runTask = Task {
+            try await group.run("work")
+        }
+
+        let completion = await awaitParallelTaskResult(runTask, timeout: .seconds(3))
+        guard let completion else {
+            await group.cancel()
+            _ = await awaitParallelTaskResult(runTask, timeout: .seconds(2))
+            Issue.record("ParallelGroup.run deadlocked with maxConcurrency = -1")
+            return
+        }
+
+        switch completion {
+        case let .success(result):
+            #expect(!result.output.isEmpty)
+        case let .failure(error):
+            Issue.record("Expected success for negative maxConcurrency normalization, got \(error)")
+        }
+    }
 }
 
 private actor SlowCancellableRuntimeAgent: AgentRuntime {

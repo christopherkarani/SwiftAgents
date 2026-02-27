@@ -218,8 +218,8 @@ public actor HTTPMCPServer: MCPServer {
             throw MCPError.invalidParams("URI scheme '\(scheme)' not allowed")
         }
 
-        // Block path traversal
-        guard !uri.contains("..") else {
+        // Block path traversal, including encoded traversal.
+        guard !containsPathTraversal(uri) else {
             throw MCPError.invalidParams("Path traversal not allowed")
         }
 
@@ -277,6 +277,17 @@ public actor HTTPMCPServer: MCPServer {
 
     /// Cached capabilities from the server.
     private var cachedCapabilities: MCPCapabilities?
+
+    private nonisolated func containsPathTraversal(_ uri: String) -> Bool {
+        let decoded = uri.removingPercentEncoding ?? uri
+        return hasTraversalComponent(decoded)
+    }
+
+    private nonisolated func hasTraversalComponent(_ value: String) -> Bool {
+        value
+            .split(whereSeparator: { $0 == "/" || $0 == "\\" })
+            .contains(where: { $0 == ".." })
+    }
 
     /// JSON encoder for requests.
     private let encoder: JSONEncoder

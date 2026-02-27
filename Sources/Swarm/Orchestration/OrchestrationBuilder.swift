@@ -63,17 +63,6 @@ public extension OrchestrationStepContext {
         handoffs.handoffConfiguration(for: targetAgent)
     }
 
-    private func areSameRuntime(_ lhs: any AgentRuntime, _ rhs: any AgentRuntime) -> Bool {
-        let lhsObject = lhs as AnyObject
-        let rhsObject = rhs as AnyObject
-        if ObjectIdentifier(lhsObject) == ObjectIdentifier(rhsObject) {
-            return true
-        }
-
-        return lhs.name == rhs.name
-            && String(describing: type(of: lhs)) == String(describing: type(of: rhs))
-    }
-
     /// Applies handoff configuration for the target agent if present.
     func applyHandoffConfiguration(
         for targetAgent: any AgentRuntime,

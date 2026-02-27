@@ -205,6 +205,7 @@ public actor InMemoryWorkflowCheckpointStore: WorkflowCheckpointStore {
 /// Files are named `{workflowID}_{stepIndex}_{timestamp}.json`.
 public actor FileSystemWorkflowCheckpointStore: WorkflowCheckpointStore {
     private let directory: URL
+    private let standardizedDirectory: URL
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
@@ -213,6 +214,7 @@ public actor FileSystemWorkflowCheckpointStore: WorkflowCheckpointStore {
     ///   Created automatically if it doesn't exist.
     public init(directory: URL) {
         self.directory = directory
+        standardizedDirectory = directory.standardizedFileURL
         encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
         encoder.dateEncodingStrategy = .iso8601
@@ -224,8 +226,9 @@ public actor FileSystemWorkflowCheckpointStore: WorkflowCheckpointStore {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let timestamp = Int(state.timestamp.timeIntervalSince1970)
-        let filename = "\(state.workflowID)_\(state.stepIndex)_\(timestamp).json"
-        let fileURL = directory.appendingPathComponent(filename)
+        let safeWorkflowID = sanitizeWorkflowID(state.workflowID)
+        let filename = "\(safeWorkflowID)_\(state.stepIndex)_\(timestamp).json"
+        let fileURL = try secureFileURL(for: filename)
 
         let data = try encoder.encode(state)
         try data.write(to: fileURL, options: .atomic)
@@ -274,6 +277,8 @@ public actor FileSystemWorkflowCheckpointStore: WorkflowCheckpointStore {
             return []
         }
 
+        let safeWorkflowID = sanitizeWorkflowID(workflowID)
+
         let contents = try FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: [.contentModificationDateKey],
@@ -281,11 +286,34 @@ public actor FileSystemWorkflowCheckpointStore: WorkflowCheckpointStore {
         )
 
         return contents
-            .filter { $0.lastPathComponent.hasPrefix("\(workflowID)_") && $0.pathExtension == "json" }
+            .filter { $0.lastPathComponent.hasPrefix("\(safeWorkflowID)_") && $0.pathExtension == "json" }
             .sorted { lhs, rhs in
                 let lhsDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 let rhsDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 return lhsDate < rhsDate
             }
+    }
+
+    private func secureFileURL(for filename: String) throws -> URL {
+        let candidate = directory.appendingPathComponent(filename).standardizedFileURL
+        let rootPath = standardizedDirectory.path
+        let candidatePath = candidate.path
+        guard candidatePath == rootPath || candidatePath.hasPrefix(rootPath + "/") else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
+        return candidate
+    }
+
+    private func sanitizeWorkflowID(_ workflowID: String) -> String {
+        let sanitized = workflowID.unicodeScalars.map { scalar in
+            switch scalar {
+            case "a"..."z", "A"..."Z", "0"..."9", "-", "_", ".":
+                Character(scalar)
+            default:
+                "_"
+            }
+        }
+        let value = String(sanitized)
+        return value.isEmpty ? "workflow" : value
     }
 }

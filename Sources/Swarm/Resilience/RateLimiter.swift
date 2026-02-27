@@ -38,17 +38,18 @@ public actor RateLimiter {
 
     /// Create rate limiter with requests per minute
     public init(maxRequestsPerMinute: Int) {
-        maxTokens = maxRequestsPerMinute
-        refillRate = Double(maxRequestsPerMinute) / 60.0
-        availableTokens = Double(maxRequestsPerMinute)
+        let safeMaxTokens = max(1, maxRequestsPerMinute)
+        maxTokens = safeMaxTokens
+        refillRate = Double(safeMaxTokens) / 60.0
+        availableTokens = Double(safeMaxTokens)
         lastRefillTime = .now
     }
 
     /// Create rate limiter with custom token bucket parameters
     public init(maxTokens: Int, refillRatePerSecond: Double) {
-        self.maxTokens = maxTokens
-        refillRate = refillRatePerSecond
-        availableTokens = Double(maxTokens)
+        self.maxTokens = max(1, maxTokens)
+        refillRate = refillRatePerSecond.isFinite && refillRatePerSecond > 0 ? refillRatePerSecond : 1
+        availableTokens = Double(self.maxTokens)
         lastRefillTime = .now
     }
 
@@ -58,7 +59,8 @@ public actor RateLimiter {
         refill()
 
         while availableTokens < 1 {
-            let waitTime = (1 - availableTokens) / refillRate
+            let safeRefillRate = refillRate.isFinite && refillRate > 0 ? refillRate : 1
+            let waitTime = max((1 - availableTokens) / safeRefillRate, 0.001)
             try await Task.sleep(for: .seconds(waitTime))
             try Task.checkCancellation()
             refill()

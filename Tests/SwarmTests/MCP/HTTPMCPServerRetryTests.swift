@@ -36,6 +36,29 @@ struct HTTPMCPServerRetryTests {
 
         #expect(MockURLProtocol.requestCount == 1)
     }
+
+    @Test("ReadResource rejects encoded traversal before network call")
+    func readResourceRejectsEncodedTraversalBeforeNetworkCall() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: config)
+
+        MockURLProtocol.reset()
+        defer { MockURLProtocol.reset() }
+
+        let server = HTTPMCPServer(
+            url: URL(string: "https://mcp.example.com/api")!,
+            name: "retry-test",
+            maxRetries: 3,
+            session: session
+        )
+
+        await #expect(throws: MCPError.self) {
+            _ = try await server.readResource(uri: "file:///tmp/%2e%2e/etc/passwd")
+        }
+
+        #expect(MockURLProtocol.requestCount == 0)
+    }
 }
 
 private final class MockURLProtocol: URLProtocol {

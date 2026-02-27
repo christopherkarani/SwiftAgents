@@ -230,9 +230,9 @@ public struct RetryPolicy: Sendable {
                 await onRetry?(retryCount, error)
 
                 // Calculate and apply backoff delay
-                let delay = backoff.delay(forAttempt: retryCount)
+                let delay = sanitizedDelay(backoff.delay(forAttempt: retryCount))
                 if delay > 0 {
-                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    try await Task.sleep(for: .seconds(delay))
                 }
             }
         }
@@ -243,6 +243,15 @@ public struct RetryPolicy: Sendable {
             lastError: lastError?.localizedDescription ?? "Unknown error"
         )
     }
+}
+
+private func sanitizedDelay(_ delay: TimeInterval) -> TimeInterval {
+    guard delay.isFinite, delay > 0 else {
+        return 0
+    }
+    // Keep conversion to Duration bounded and deterministic.
+    let maxRepresentableSeconds = Double(UInt64.max) / 1_000_000_000
+    return min(delay, maxRepresentableSeconds)
 }
 
 // MARK: Equatable

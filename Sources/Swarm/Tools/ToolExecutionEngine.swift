@@ -74,6 +74,12 @@ public struct ToolExecutionEngine: Sendable {
             await hooks?.onToolEnd(context: context, agent: agent, result: result)
 
             if stopOnToolError {
+                if error is CancellationError {
+                    throw AgentError.cancelled
+                }
+                if let agentError = error as? AgentError, agentError == .cancelled {
+                    throw AgentError.cancelled
+                }
                 throw AgentError.toolExecutionFailed(toolName: toolName, underlyingError: errorMessage)
             }
 

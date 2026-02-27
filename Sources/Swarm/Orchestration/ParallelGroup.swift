@@ -382,7 +382,7 @@ public actor ParallelGroup: AgentRuntime {
         self.agents = agents
         self.mergeStrategy = mergeStrategy
         self.shouldContinueOnError = shouldContinueOnError
-        self.maxConcurrency = maxConcurrency
+        self.maxConcurrency = ParallelGroup.normalizedConcurrency(maxConcurrency)
         self.configuration = configuration
     }
 
@@ -408,7 +408,7 @@ public actor ParallelGroup: AgentRuntime {
         }
         self.mergeStrategy = mergeStrategy
         self.shouldContinueOnError = shouldContinueOnError
-        self.maxConcurrency = maxConcurrency
+        self.maxConcurrency = ParallelGroup.normalizedConcurrency(maxConcurrency)
         self.configuration = configuration
     }
 
@@ -693,6 +693,11 @@ public actor ParallelGroup: AgentRuntime {
 
     /// Optional shared context for orchestration.
     private var context: AgentContext?
+
+    private nonisolated static func normalizedConcurrency(_ maxConcurrency: Int?) -> Int? {
+        guard let maxConcurrency else { return nil }
+        return max(1, maxConcurrency)
+    }
 
     // MARK: - Streaming Helpers
 

@@ -171,6 +171,32 @@ struct RetryPolicyTests {
         #expect(strategy.delay(forAttempt: 5) == 50.0)
     }
 
+    @Test("Invalid custom backoff values do not crash retry execution")
+    func invalidCustomBackoffValuesDoNotCrash() async throws {
+        let policy = RetryPolicy(maxAttempts: 2, backoff: .custom { attempt in
+            switch attempt {
+            case 1: Double.nan
+            case 2: Double.infinity
+            default: -1
+            }
+        })
+
+        let counter = TestCounter()
+        do {
+            _ = try await policy.execute {
+                _ = await counter.increment()
+                throw TestError.transient
+            }
+            Issue.record("Expected retriesExhausted")
+        } catch let error as ResilienceError {
+            if case .retriesExhausted = error {
+                #expect(await counter.get() == 3)
+            } else {
+                Issue.record("Expected retriesExhausted, got \(error)")
+            }
+        }
+    }
+
     // MARK: - shouldRetry Predicate Tests
 
     @Test("shouldRetry predicate controls retry behavior")
