@@ -42,6 +42,8 @@ struct MembraneIntegrationTests {
         let plannedTools = try #require(lastCall?.tools)
 
         #expect(!prompt.contains("[... context truncated for strict4k budget ...]"))
+
+        #if canImport(Membrane)
         #expect(plannedTools.count < tools.count)
 
         let schemaNames = plannedTools.map(\.name)
@@ -52,6 +54,54 @@ struct MembraneIntegrationTests {
         #expect(schemaNames.contains("Add_Tools"))
         #expect(schemaNames.contains("Remove_Tools"))
         #expect(schemaNames.contains("resolve_pointer"))
+        #endif
+    }
+
+    @Test("membraneRuntimeFeatureFlagsPropagateToProviderSettings")
+    func membraneRuntimeFeatureFlagsPropagateToProviderSettings() async throws {
+        let provider = MockInferenceProvider()
+        await provider.setToolCallResponses([
+            InferenceResponse(content: "ok", toolCalls: [], finishReason: .completed),
+        ])
+
+        let tools = [MembraneTestTool(name: "runtime_test_tool")]
+        let agent = try Agent(
+            tools: tools,
+            instructions: "Runtime flags test",
+            configuration: AgentConfiguration(
+                name: "membrane-runtime-flags",
+                contextMode: .strict4k,
+                defaultTracingEnabled: false
+            ),
+            inferenceProvider: provider
+        ).environment(
+            \.membrane,
+            MembraneEnvironment(
+                isEnabled: true,
+                configuration: MembraneFeatureConfiguration(
+                    runtimeFeatureFlags: [
+                        "conduit.runtime.kv_quantization": true,
+                        "conduit.runtime.attention_sinks": false,
+                        "conduit.runtime.kv_swap": true,
+                        "conduit.runtime.incremental_prefill": true,
+                        "conduit.runtime.speculative": true,
+                    ],
+                    runtimeModelAllowlist: ["mlx-community/model-b", "mlx-community/model-a"]
+                )
+            )
+        )
+
+        _ = try await agent.run("hello")
+
+        let lastCall = try #require(await provider.toolCallCalls.last)
+        let providerSettings = try #require(lastCall.options.providerSettings)
+
+        #expect(providerSettings["conduit.runtime.policy.kv_quantization.enabled"] == .bool(true))
+        #expect(providerSettings["conduit.runtime.policy.attention_sinks.enabled"] == .bool(false))
+        #expect(providerSettings["conduit.runtime.policy.kv_swap.enabled"] == .bool(true))
+        #expect(providerSettings["conduit.runtime.policy.incremental_prefill.enabled"] == .bool(true))
+        #expect(providerSettings["conduit.runtime.policy.speculative.enabled"] == .bool(true))
+        #expect(providerSettings["conduit.runtime.policy.model_allowlist"] == .array([.string("mlx-community/model-a"), .string("mlx-community/model-b")]))
     }
 
     @Test("membraneThrowFallsBackWithoutCrash")
