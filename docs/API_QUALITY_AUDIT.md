@@ -1,6 +1,7 @@
 # Swarm Framework — Public API Quality Audit
 
 **Date:** 2026-02-27
+**Revision:** 2 (post-verification pass — all claims checked against source)
 **Methodology:** Evaluated against [Apple's Swift API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/), Apple framework conventions (SwiftUI, Foundation, Observation), and Apple Human Interface engineering principles.
 **Scope:** All public declarations in `Swarm` and `SwarmMCP` targets.
 
@@ -83,10 +84,17 @@ Five custom operators is excessive for a framework at this stage:
 
 Apple frameworks use custom operators extremely sparingly (SwiftUI uses zero). The idiomatic SwiftUI approach is method chaining and result builders, which Swarm *also* has via `Sequential { }` and `Parallel { }`.
 
+Notably, the types produced by `&+` and `~>` are *already deprecated*:
+- `ParallelComposition` (from `&+`): `@available(*, deprecated, message: "Use ParallelGroup for parallel orchestration.")`
+- `AgentSequence` (from `~>`): `@available(*, deprecated, message: "Use SequentialChain for sequential orchestration.")`
+
+The framework has already identified these as redundant but hasn't deprecated the *operators themselves*, leaving a trap: the operators still compile cleanly and produce deprecated types.
+
 **Recommendation:**
-- Keep `-->` (most intuitive) and `>>>` (established FP convention).
-- Remove `&+`, `~>`, and `|?`. The result builder DSL already covers these use cases with better discoverability.
-- Add deprecation notices pointing users to the builder equivalents.
+- Deprecate `&+` and `~>` operators to match their deprecated return types.
+- Keep `-->` (most intuitive, non-deprecated `SequentialChain`) and `>>>` (established FP convention).
+- Deprecate `|?` in favor of an explicit `ConditionalFallback` initializer or result builder pattern.
+- Add `@available(*, deprecated)` on the operator functions, not just the types.
 
 ---
 
@@ -125,14 +133,24 @@ Apple convention (Observation, Combine): events are past-tense (`didChange`, `wi
 | Hook | `onAgentStart` / `onAgentEnd` | `agentDidStart` / `agentDidFinish` |
 | Event | `toolCallStarted` / `toolCallCompleted` | Consistent past-tense (good) |
 
-### 4b. `AnyJSONTool` — Misleading Prefix
+### 4b. `AnyJSONTool` — Misleading Prefix (Partially Mitigated)
 
-In Swift, the `Any` prefix means "type-erased wrapper" (`AnyView`, `AnyPublisher`, `AnySequence`). But `AnyJSONTool` is a *protocol*, not a type-erased box. This will confuse experienced Swift developers who will look for a concrete `Tool` protocol that `AnyJSONTool` erases.
+In Swift, the `Any` prefix means "type-erased wrapper" (`AnyView`, `AnyPublisher`, `AnySequence`). `AnyJSONTool` is a *protocol*, not a type-erased box, which violates this convention.
+
+The framework *does* have the right layering underneath:
+- `protocol Tool` — strongly-typed tool with `associatedtype Input/Output` (`TypedToolProtocol.swift`)
+- `protocol AnyJSONTool` — dynamic JSON-level tool at the model boundary (`Tool.swift`)
+- `struct AnyTool: AnyJSONTool` — actual type-erased wrapper (`AnyTool.swift`)
+
+The problem is that `AnyJSONTool` is the protocol that appears in every public API signature (`tools: [any AnyJSONTool]`), so users see `any AnyJSONTool` — a doubly-abstract-looking type. Apple convention would be:
 
 | Current | Apple Convention |
 |---------|-----------------|
-| `protocol AnyJSONTool` | Should be `protocol Tool` or `protocol JSONTool` |
-| (no type eraser) | `struct AnyTool: Tool` would be the eraser |
+| `protocol AnyJSONTool` | `protocol JSONTool` or `protocol DynamicTool` |
+| `protocol Tool` | Good — correct name for the primary typed protocol |
+| `struct AnyTool: AnyJSONTool` | Should conform to `JSONTool` (or whatever the protocol becomes) |
+
+The `protocol Tool` name is correct. The issue is the `Any` prefix on its dynamic sibling.
 
 ### 4c. `SendableValue` — Unconventional Name
 
@@ -253,7 +271,12 @@ struct AgentConfiguration {
 
 ### 5c. `temperature` Appears in Three Places
 
-`temperature` lives on `AgentConfiguration`, `InferenceOptions`, *and* `ModelSettings`. The precedence is documented but the duplication creates a "which one wins?" question at every call site.
+`temperature` lives on:
+- `AgentConfiguration.temperature` — non-optional, default `1.0` (`AgentConfiguration.swift:149`)
+- `ModelSettings.temperature` — optional, default `nil` (`ModelSettings.swift:50`)
+- `InferenceOptions.temperature` — non-optional, default `1.0` (`AgentRuntime.swift:311`)
+
+The precedence is documented and implemented in `AgentConfiguration+InferenceOptions.swift`: `ModelSettings.temperature ?? AgentConfiguration.temperature → InferenceOptions.temperature`. This works correctly, but the three-layer indirection means a user setting `configuration.temperature(0.7)` may be surprised when `modelSettings.temperature` silently overrides it. Apple would have exactly one place to set temperature.
 
 ---
 
@@ -372,11 +395,11 @@ One concern: `AgentResult.Builder` is `final class: @unchecked Sendable`, which 
 ## 11. MINOR ISSUES
 
 ### 11a. `TokenUsage` Defined Twice
-`TokenUsage` exists as both:
-- `AgentResult.TokenUsage` (in `AgentResult.swift` — used as a top-level type)
-- `InferenceResponse.TokenUsage` (in `AgentRuntime.swift` — nested)
+`TokenUsage` exists as two structurally identical but distinct types:
+- `TokenUsage` — top-level in `AgentResult.swift`, conforms to `Sendable, Equatable, Codable`
+- `InferenceResponse.TokenUsage` — nested in `AgentRuntime.swift`, conforms to `Sendable, Equatable` (no `Codable`)
 
-These are separate types with the same shape. Apple would have one canonical `TokenUsage` type.
+Same fields (`inputTokens`, `outputTokens`, computed `totalTokens`), same init signature, but they are NOT aliases — they are separate struct definitions with different conformances. The codebase uses qualified access (`InferenceResponse.TokenUsage`) to disambiguate. Apple would have one canonical `TokenUsage` type, adding `Codable` conformance uniformly.
 
 ### 11b. Inconsistent Optional Handling in `run()`
 ```swift
@@ -420,9 +443,9 @@ This is an implementation-detail name leaking into the public API. `HiveExecutio
 
 ## TOP 5 CHANGES FOR APPLE-WORTHY STATUS
 
-1. **Rename `AnyJSONTool` to `Tool`** (or `JSONTool`) and create `AnyTool` as the type-erased wrapper. This aligns with every Apple protocol naming convention.
+1. **Rename `AnyJSONTool` to `JSONTool`** (or `DynamicTool`). The framework already has the right `Tool` protocol and `AnyTool` wrapper — the `Any` prefix on the *protocol* is the problem. Every public API surface reads `[any AnyJSONTool]`, which is confusing. `[any JSONTool]` reads cleanly.
 
-2. **Consolidate operators to two** (`-->` and `>>>`), deprecate `&+`, `~>`, `|?`. The result builder DSL makes them redundant.
+2. **Deprecate the `&+`, `~>`, and `|?` operators** to match their already-deprecated return types (`ParallelComposition`, `AgentSequence`). Keep `-->` and `>>>` which produce non-deprecated types. The operators still compile cleanly and silently produce deprecated types — a trap for new users.
 
 3. **Unify event naming** — pick either `Start/End` or `Started/Completed` and apply it everywhere. Consolidate the five handoff event cases into a nested `HandoffEvent` enum.
 
