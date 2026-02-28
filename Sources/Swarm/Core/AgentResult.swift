@@ -273,6 +273,17 @@ extension AgentResult: CustomStringConvertible {
     }
 }
 
+// MARK: - AgentResult + Runtime Metadata
+
+public extension AgentResult {
+    /// The runtime engine that produced this result, if recorded.
+    /// Returns `"hive"` when the Hive DAG runtime was used, `"native"` otherwise.
+    var runtimeEngine: String? {
+        guard case let .string(value) = metadata["runtime.engine"] else { return nil }
+        return value
+    }
+}
+
 // MARK: - TokenUsage + CustomStringConvertible
 
 extension TokenUsage: CustomStringConvertible {

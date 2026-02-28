@@ -74,6 +74,9 @@ public enum AgentError: Error, Sendable, Equatable {
 
     // MARK: - Internal Errors
 
+    /// An agent with the specified name was not registered.
+    case agentNotFound(name: String)
+
     /// An internal error occurred.
     case internalError(reason: String)
 }
@@ -121,6 +124,8 @@ extension AgentError: LocalizedError {
             }
         case let .embeddingFailed(reason):
             "Embedding failed: \(reason)"
+        case let .agentNotFound(name):
+            "Agent not found: '\(name)'"
         case let .internalError(reason):
             "Internal error: \(reason)"
         }
@@ -166,6 +171,8 @@ extension AgentError: CustomDebugStringConvertible {
             return "AgentError.rateLimitExceeded(retryAfter: \(String(describing: retryAfter)))"
         case let .embeddingFailed(reason):
             return "AgentError.embeddingFailed(reason: \(reason))"
+        case let .agentNotFound(name):
+            return "AgentError.agentNotFound(name: \(name))"
         case let .internalError(reason):
             return "AgentError.internalError(reason: \(reason))"
         }
