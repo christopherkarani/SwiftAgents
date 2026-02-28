@@ -442,6 +442,11 @@ public struct MCPClientComponent: AgentComponent {
 ///     )
 /// }
 /// ```
+
+/// Preferred name for the agent result builder.
+public typealias AgentBuilder = LegacyAgentBuilder
+
+@available(*, deprecated, renamed: "AgentBuilder")
 @resultBuilder
 public struct LegacyAgentBuilder {
     // MARK: Public

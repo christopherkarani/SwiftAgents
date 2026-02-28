@@ -15,17 +15,29 @@ public struct MembraneFeatureConfiguration: Sendable, Equatable {
     public var defaultJITLoadCount: Int
     public var pointerThresholdBytes: Int
     public var pointerSummaryMaxChars: Int
+    /// Optional provider-runtime feature policy flags keyed by namespaced identifier.
+    ///
+    /// Example keys:
+    /// - `conduit.runtime.kv_quantization`
+    /// - `conduit.runtime.attention_sinks`
+    public var runtimeFeatureFlags: [String: Bool]
+    /// Optional provider model allowlist used by runtime feature policy.
+    public var runtimeModelAllowlist: [String]
 
     public init(
         jitMinToolCount: Int = 12,
         defaultJITLoadCount: Int = 6,
         pointerThresholdBytes: Int = 1024,
-        pointerSummaryMaxChars: Int = 240
+        pointerSummaryMaxChars: Int = 240,
+        runtimeFeatureFlags: [String: Bool] = [:],
+        runtimeModelAllowlist: [String] = []
     ) {
         self.jitMinToolCount = max(1, jitMinToolCount)
         self.defaultJITLoadCount = max(1, defaultJITLoadCount)
         self.pointerThresholdBytes = max(1, pointerThresholdBytes)
         self.pointerSummaryMaxChars = max(0, pointerSummaryMaxChars)
+        self.runtimeFeatureFlags = runtimeFeatureFlags
+        self.runtimeModelAllowlist = runtimeModelAllowlist.sorted()
     }
 }
 
@@ -44,13 +56,8 @@ public struct MembraneEnvironment: Sendable {
         self.adapter = adapter
     }
 
-    public static var disabled: MembraneEnvironment {
-        MembraneEnvironment(isEnabled: false)
-    }
-
-    public static var enabled: MembraneEnvironment {
-        MembraneEnvironment(isEnabled: true)
-    }
+    public static let disabled = MembraneEnvironment(isEnabled: false)
+    public static let enabled = MembraneEnvironment(isEnabled: true)
 }
 
 public struct MembranePlannedBoundary: Sendable {
