@@ -61,6 +61,12 @@ if useLocalDependencies {
             ]
         )
     )
+    packageDependencies.append(
+        .package(
+            url: "https://github.com/christopherkarani/Membrane",
+            .branch("main")
+        )
+    )
 }
 
 packageDependencies.append(.package(url: "https://github.com/christopherkarani/Hive", from: "0.1.0"))
@@ -69,20 +75,11 @@ var swarmDependencies: [Target.Dependency] = [
     "SwarmMacros",
     .product(name: "Logging", package: "swift-log"),
     .product(name: "Conduit", package: "Conduit"),
-    .product(name: "Wax", package: "Wax")
+    .product(name: "Wax", package: "Wax"),
+    .product(name: "HiveCore", package: "Hive"),
+    .product(name: "Membrane", package: "Membrane"),
+    .product(name: "MembraneHive", package: "Membrane")
 ]
-
-swarmDependencies.append(
-    .product(
-        name: "HiveCore",
-        package: "Hive"
-    )
-)
-
-if useLocalDependencies {
-    swarmDependencies.append(.product(name: "Membrane", package: "Membrane"))
-    swarmDependencies.append(.product(name: "MembraneHive", package: "Membrane"))
-}
 
 var swarmSwiftSettings: [SwiftSetting] = [
     .enableExperimentalFeature("StrictConcurrency")

@@ -1,5 +1,5 @@
 {
-  "originHash" : "cf95c4d3d84a7343b44fe9930a0016b3f0c6420de942a373a0e67185c2906b47",
+  "originHash" : "c7a199b964331a16a4d30526773f33d386653001af3f841767db89398c5b333b",
   "pins" : [
     {
       "identity" : "conduit",
@@ -35,6 +35,15 @@
       "state" : {
         "revision" : "f90e42bd1fdf5dce6b669fb900f0d417d70a6bef",
         "version" : "0.1.6"
+      }
+    },
+    {
+      "identity" : "membrane",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/christopherkarani/Membrane",
+      "state" : {
+        "branch" : "main",
+        "revision" : "98403aae550de15bf407b320b06675a59ac00346"
       }
     },
     {
