@@ -126,9 +126,10 @@ public actor DefaultMembraneAgentAdapter: MembraneAgentAdapter {
         toolPlan = .allowAll
         #endif
 
-        #if canImport(MembraneHive)
-        checkpointAdapter = MembraneCheckpointAdapter()
-        #endif
+        // TODO: Restore when MembraneHive ships MembraneCheckpointAdapter
+        // #if canImport(MembraneHive)
+        // checkpointAdapter = MembraneCheckpointAdapter()
+        // #endif
     }
 
     public func plan(
@@ -288,46 +289,13 @@ public actor DefaultMembraneAgentAdapter: MembraneAgentAdapter {
         }
     }
 
-    public func restore(checkpointData: Data?) async throws {
-        #if canImport(MembraneHive)
-        try await checkpointAdapter.restore(from: checkpointData)
-
-        guard let state = await checkpointAdapter.currentState() else {
-            loadedToolNames = []
-            allowListToolNames = []
-            pointerIDs = []
-            usageCounts = [:]
-            #if canImport(Membrane)
-            toolPlan = .allowAll
-            #endif
-            return
-        }
-
-        loadedToolNames = state.toolState.loadedToolNames.sorted()
-        allowListToolNames = state.toolState.allowListToolNames.sorted()
-        pointerIDs = state.pointerIDs.sorted()
-        usageCounts = Dictionary(uniqueKeysWithValues: state.toolState.usageCounts.map { ($0.toolName, $0.count) })
-
-        #if canImport(Membrane)
-        switch state.toolState.mode {
-        case .allowAll:
-            toolPlan = .allowAll
-        case .allowList:
-            toolPlan = .allowList(toolNames: allowListToolNames)
-        case .jit:
-            toolPlan = .normalizedJIT(index: [], loadedToolNames: loadedToolNames)
-        }
-        #endif
-        #endif
+    public func restore(checkpointData _: Data?) async throws {
+        // TODO: Restore when MembraneHive ships MembraneCheckpointAdapter/MembraneCheckpointState.
     }
 
     public func snapshotCheckpointData() async throws -> Data? {
-        #if canImport(MembraneHive)
-        try await syncCheckpointState()
-        return try await checkpointAdapter.checkpointData()
-        #else
+        // TODO: Restore when MembraneHive ships MembraneCheckpointAdapter.
         return nil
-        #endif
     }
 
     private let configuration: MembraneFeatureConfiguration
@@ -343,9 +311,10 @@ public actor DefaultMembraneAgentAdapter: MembraneAgentAdapter {
     private var toolPlan: ToolPlan
     #endif
 
-    #if canImport(MembraneHive)
-    private let checkpointAdapter: MembraneCheckpointAdapter
-    #endif
+    // TODO: Restore when MembraneHive ships MembraneCheckpointAdapter
+    // #if canImport(MembraneHive)
+    // private let checkpointAdapter: MembraneCheckpointAdapter
+    // #endif
 
     private func parseToolNames(_ value: SendableValue?) -> [String] {
         guard let value else { return [] }
@@ -416,44 +385,7 @@ public actor DefaultMembraneAgentAdapter: MembraneAgentAdapter {
         return String(text[start...])
     }
 
-    private func syncCheckpointState(totalTokens: Int = 4_096) async throws {
-        #if canImport(MembraneHive)
-        let mode: MembraneCheckpointState.ToolState.Mode
-        #if canImport(Membrane)
-        switch toolPlan {
-        case .allowAll:
-            mode = .allowAll
-        case .allowList:
-            mode = .allowList
-        case .jit:
-            mode = .jit
-        }
-        #else
-        mode = .allowAll
-        #endif
-
-        let usage = usageCounts
-            .map { MembraneCheckpointState.ToolState.UsageCount(toolName: $0.key, count: $0.value) }
-            .sorted { lhs, rhs in
-                if lhs.toolName != rhs.toolName {
-                    return lhs.toolName < rhs.toolName
-                }
-                return lhs.count < rhs.count
-            }
-
-        let state = MembraneCheckpointState(
-            budget: .init(totalTokens: max(1, totalTokens)),
-            csoSummaries: [],
-            pagingCursor: nil,
-            toolState: .init(
-                mode: mode,
-                loadedToolNames: loadedToolNames,
-                allowListToolNames: allowListToolNames,
-                usageCounts: usage
-            ),
-            pointerIDs: pointerIDs
-        )
-        await checkpointAdapter.replaceState(state)
-        #endif
+    private func syncCheckpointState(totalTokens _: Int = 4_096) async throws {
+        // TODO: Restore when MembraneHive ships MembraneCheckpointState/MembraneCheckpointAdapter.
     }
 }
