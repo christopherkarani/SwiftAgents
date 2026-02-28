@@ -206,7 +206,7 @@ public struct HiveAgentsContext: Sendable {
     public init(
         modelName: String,
         systemPrompt: String? = nil,
-        toolApprovalPolicy: HiveAgentsToolApprovalPolicy,
+        toolApprovalPolicy: HiveAgentsToolApprovalPolicy = .never,
         compactionPolicy: HiveCompactionPolicy? = nil,
         tokenizer: (any HiveTokenizer)? = nil,
         retryPolicy: HiveRetryPolicy? = nil,
@@ -263,52 +263,94 @@ public struct HiveAgentsRunResumeRequest: Sendable {
     }
 }
 
+public struct HiveAgentsExternalWriteRequest: Sendable {
+    public var threadID: HiveThreadID
+    public var writes: [AnyHiveWrite<HiveAgents.Schema>]
+    public var options: HiveRunOptions
+
+    public init(
+        threadID: HiveThreadID,
+        writes: [AnyHiveWrite<HiveAgents.Schema>],
+        options: HiveRunOptions
+    ) {
+        self.threadID = threadID
+        self.writes = writes
+        self.options = options
+    }
+}
+
 public struct HiveAgentsRunController: Sendable {
     public let runtime: HiveRuntime<HiveAgents.Schema>
+    let stateTracker: HiveAgentsStateTracker
 
     public init(
         runtime: HiveRuntime<HiveAgents.Schema>
     ) {
         self.runtime = runtime
+        self.stateTracker = HiveAgentsStateTracker()
     }
 
+    @available(*, deprecated, message: "Use start(threadID:input:options:) instead.")
     public func start(_ request: HiveAgentsRunStartRequest) async throws -> HiveRunHandle<HiveAgents.Schema> {
-        try Self.preflight(environment: runtime.environmentSnapshot)
-        return await runtime.run(
+        try validateRunOptions(request.options)
+        let handle = await runtime.run(
             threadID: request.threadID,
             input: request.input,
             options: request.options
         )
+        await stateTracker.markAttemptStarted(threadID: request.threadID, runID: handle.runID)
+        return decorate(handle: handle, threadID: request.threadID, eventBufferCapacity: request.options.eventBufferCapacity)
     }
 
+    @available(*, deprecated, message: "Use resume(threadID:interruptID:payload:options:) instead.")
     public func resume(_ request: HiveAgentsRunResumeRequest) async throws -> HiveRunHandle<HiveAgents.Schema> {
-        try Self.preflight(environment: runtime.environmentSnapshot)
-        return await runtime.resume(
+        try validateRunOptions(request.options)
+        try await validateResumeRequest(request)
+        let handle = await runtime.resume(
             threadID: request.threadID,
             interruptID: request.interruptID,
             payload: request.payload,
             options: request.options
         )
+        await stateTracker.markAttemptStarted(threadID: request.threadID, runID: handle.runID)
+        return decorate(handle: handle, threadID: request.threadID, eventBufferCapacity: request.options.eventBufferCapacity)
     }
 
-    private static func preflight(environment: HiveEnvironment<HiveAgents.Schema>) throws {
-        if environment.modelRouter == nil, environment.model == nil {
-            throw HiveRuntimeError.modelClientMissing
-        }
-        if environment.tools == nil {
-            throw HiveRuntimeError.toolRegistryMissing
-        }
-        if environment.context.toolApprovalPolicy != .never, environment.checkpointStore == nil {
-            throw HiveRuntimeError.checkpointStoreMissing
-        }
-        if let policy = environment.context.compactionPolicy {
-            guard environment.context.tokenizer != nil else {
-                throw HiveRuntimeError.invalidRunOptions("Compaction policy requires a tokenizer.")
-            }
-            if policy.maxTokens < 1 || policy.preserveLastMessages < 0 {
-                throw HiveRuntimeError.invalidRunOptions("Invalid compaction policy bounds.")
-            }
-        }
+    /// Convenience overload — pass parameters directly without constructing a request struct.
+    public func start(
+        threadID: HiveThreadID,
+        input: String,
+        options: HiveRunOptions = HiveRunOptions()
+    ) async throws -> HiveRunHandle<HiveAgents.Schema> {
+        try validateRunOptions(options)
+        let handle = await runtime.run(threadID: threadID, input: input, options: options)
+        await stateTracker.markAttemptStarted(threadID: threadID, runID: handle.runID)
+        return decorate(handle: handle, threadID: threadID, eventBufferCapacity: options.eventBufferCapacity)
+    }
+
+    /// Convenience overload — pass parameters directly without constructing a request struct.
+    public func resume(
+        threadID: HiveThreadID,
+        interruptID: HiveInterruptID,
+        payload: HiveAgents.Resume,
+        options: HiveRunOptions = HiveRunOptions()
+    ) async throws -> HiveRunHandle<HiveAgents.Schema> {
+        let request = HiveAgentsRunResumeRequest(
+            threadID: threadID,
+            interruptID: interruptID,
+            payload: payload,
+            options: options
+        )
+        try validateRunOptions(options)
+        try await validateResumeRequest(request)
+        let handle = await runtime.resume(
+            threadID: threadID,
+            interruptID: interruptID,
+            payload: payload,
+            options: options
+        )
+        await stateTracker.markAttemptStarted(threadID: threadID, runID: handle.runID)
+        return decorate(handle: handle, threadID: threadID, eventBufferCapacity: options.eventBufferCapacity)
     }
 }
 
@@ -389,7 +431,7 @@ public extension HiveAgents {
             _ input: String,
             inputContext: HiveInputContext
         ) throws -> [AnyHiveWrite<Self>] {
-            let messageID = try MessageID.user(runID: inputContext.runID, stepIndex: inputContext.stepIndex)
+            let messageID = try MessageID.user(threadID: inputContext.threadID, stepIndex: inputContext.stepIndex)
             let message = HiveChatMessage(
                 id: messageID,
                 role: .user,
@@ -502,13 +544,14 @@ extension HiveAgents {
     }
 
     enum MessageID {
-        static func user(runID: HiveRunID, stepIndex: Int) throws -> String {
+        static func user(threadID: HiveThreadID, stepIndex: Int) throws -> String {
             guard let stepIndexValue = UInt32(exactly: stepIndex) else {
                 throw HiveRuntimeError.invalidRunOptions("Invalid stepIndex.")
             }
             var data = Data()
             data.append(contentsOf: Array("HMSG1".utf8))
-            data.append(contentsOf: runID.rawValue.bytes)
+            data.append(contentsOf: Array(threadID.rawValue.utf8))
+            data.append(0x00)
             data.append(contentsOf: stepIndexValue.bigEndianBytes)
             data.append(contentsOf: Array("user".utf8))
             data.append(contentsOf: UInt32(0).bigEndianBytes)
@@ -988,15 +1031,6 @@ extension HiveAgents {
 
 }
 
-/// Typed constants for HiveChatRole to avoid raw string comparisons.
-/// Declared as internal so they can be shared across the HiveSwarm module
-/// without duplicating the definitions in each file.
-extension HiveChatRole {
-    static let system = Self(rawValue: "system")
-    static let tool = Self(rawValue: "tool")
-    static let assistant = Self(rawValue: "assistant")
-}
-
 /// Deterministic sorting utilities to ensure reproducible message ordering.
 private enum HiveDeterministicSort {
     static func byName(_ lhs: HiveToolDefinition, _ rhs: HiveToolDefinition) -> Bool {
@@ -1008,10 +1042,6 @@ private enum HiveDeterministicSort {
             return lhs.id.utf8.lexicographicallyPrecedes(rhs.id.utf8)
         }
         return lhs.name.utf8.lexicographicallyPrecedes(rhs.name.utf8)
-    }
-
-    static func strings(_ lhs: String, _ rhs: String) -> Bool {
-        lhs.utf8.lexicographicallyPrecedes(rhs.utf8)
     }
 }
 

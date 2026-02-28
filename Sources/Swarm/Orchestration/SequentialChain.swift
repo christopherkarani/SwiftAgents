@@ -59,7 +59,7 @@ public func --> (lhs: SequentialChain, rhs: any AgentRuntime) -> SequentialChain
 /// Example:
 /// ```swift
 /// let chain = agentA --> agentB
-/// let configured = chain.withTransformer(after: 0, .withMetadata)
+/// let configured = chain.withTransformer(after: 0, transformer: .withMetadata)
 /// ```
 public struct OutputTransformer: Sendable {
     // MARK: Public
@@ -123,7 +123,7 @@ public struct OutputTransformer: Sendable {
 /// You can customize output transformation between agents:
 /// ```swift
 /// let chain = agentA --> agentB
-/// let configured = chain.withTransformer(after: 0, .withMetadata)
+/// let configured = chain.withTransformer(after: 0, transformer: .withMetadata)
 /// ```
 public actor SequentialChain: AgentRuntime {
     // MARK: Public
@@ -197,9 +197,9 @@ public actor SequentialChain: AgentRuntime {
     /// let chain = agentA --> agentB --> agentC
     /// let configured = chain
     ///     .withTransformer(after: 0, .withMetadata)
-    ///     .withTransformer(after: 1, .passthrough)
+    ///     .withTransformer(after: 1, transformer: .passthrough)
     /// ```
-    nonisolated public func withTransformer(after index: Int, _ transformer: OutputTransformer) -> SequentialChain {
+    nonisolated public func withTransformer(after index: Int, transformer: OutputTransformer) -> SequentialChain {
         var newTransformers = transformers
         newTransformers[index] = transformer
         return SequentialChain(

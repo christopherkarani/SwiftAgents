@@ -111,7 +111,12 @@ public enum BackoffStrategy: Sendable {
     /// No delay between retries.
     case immediate
 
-    /// Custom delay calculation.
+    /// Custom delay calculation using a closure.
+    ///
+    /// - Important: Two `.custom` values are **never equal** (`==` always returns `false`)
+    ///   because Swift cannot compare closures for equality. Avoid using `.custom` in
+    ///   contexts where `Equatable` equality is load-bearing (e.g., `Set`, `Dictionary` keys,
+    ///   or equality-checked retry policy comparisons).
     case custom(@Sendable (Int) -> TimeInterval)
 }
 
@@ -241,7 +246,7 @@ public struct RetryPolicy: Sendable {
 
         // All retries exhausted
         throw ResilienceError.retriesExhausted(
-            attempts: retryCount,
+            attempts: retryCount + 1,
             lastError: lastError?.localizedDescription ?? "Unknown error"
         )
     }
