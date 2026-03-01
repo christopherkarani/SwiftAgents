@@ -558,6 +558,7 @@ struct ArithmeticParserErrorPropertiesTests {
         #expect(ArithmeticParser.ParserError.unexpectedEndOfExpression == .unexpectedEndOfExpression)
         #expect(ArithmeticParser.ParserError.divisionByZero == .divisionByZero)
         #expect(ArithmeticParser.ParserError.missingClosingParenthesis == .missingClosingParenthesis)
+        #expect(ArithmeticParser.ParserError.nestingDepthExceeded == .nestingDepthExceeded)
 
         #expect(ArithmeticParser.ParserError.unexpectedToken("x") == .unexpectedToken("x"))
         #expect(ArithmeticParser.ParserError.unexpectedToken("x") != .unexpectedToken("y"))

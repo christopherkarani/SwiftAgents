@@ -134,9 +134,10 @@ public struct DAG: OrchestrationStep, Sendable {
     /// - Parameter content: A builder closure producing DAG nodes.
     public init(@DAGBuilder _ content: () -> [DAGNode]) {
         let builtNodes = content()
-        self.validationError = DAG.validate(builtNodes)
+        let validationError = DAG.validate(builtNodes)
+        self.validationError = validationError
         self.nodes = builtNodes
-        self.sortedNodes = DAG.topologicalSort(builtNodes)
+        self.sortedNodes = validationError == nil ? DAG.topologicalSort(builtNodes) : []
     }
 
     /// Internal initializer for testing with pre-validated nodes.

@@ -344,6 +344,13 @@ public actor Agent: AgentRuntime {
                 sessionHistory = try await session.getItems(limit: configuration.sessionHistoryLimit)
             }
 
+            // Seed memory with session history once (only if memory is empty).
+            if let activeMemory, !sessionHistory.isEmpty, await activeMemory.isEmpty {
+                for message in sessionHistory {
+                    await activeMemory.add(message)
+                }
+            }
+
             // Create user message for this turn
             let userMessage = MemoryMessage.user(input)
 
@@ -1002,7 +1009,8 @@ public actor Agent: AgentRuntime {
         hooks: (any RunHooks)? = nil,
         emitOutputTokens: Bool = false
     ) async throws -> InferenceResponse {
-        let options = configuration.inferenceOptions
+        var options = configuration.inferenceOptions
+        options = optionsWithMembraneRuntimeSettings(options)
 
         // Notify hooks of LLM start
         await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
@@ -1031,7 +1039,8 @@ public actor Agent: AgentRuntime {
         systemPrompt: String,
         hooks: (any RunHooks)? = nil
     ) async throws -> InferenceResponse {
-        let options = configuration.inferenceOptions
+        var options = configuration.inferenceOptions
+        options = optionsWithMembraneRuntimeSettings(options)
 
         await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
 
@@ -1073,6 +1082,37 @@ public actor Agent: AgentRuntime {
             finishReason: parsedToolCalls.isEmpty ? .completed : .toolCall,
             usage: usage
         )
+    }
+
+    private func optionsWithMembraneRuntimeSettings(_ base: InferenceOptions) -> InferenceOptions {
+        guard let membrane = AgentEnvironmentValues.current.membrane, membrane.isEnabled else {
+            return base
+        }
+
+        let flags = membrane.configuration.runtimeFeatureFlags
+        let allowlist = membrane.configuration.runtimeModelAllowlist
+
+        if flags.isEmpty, allowlist.isEmpty {
+            return base
+        }
+
+        var updated = base
+        var settings = updated.providerSettings ?? [:]
+
+        for (key, isEnabled) in flags {
+            let prefix = "conduit.runtime."
+            guard key.hasPrefix(prefix) else { continue }
+            let feature = String(key.dropFirst(prefix.count))
+            settings["conduit.runtime.policy.\(feature).enabled"] = .bool(isEnabled)
+        }
+
+        if !allowlist.isEmpty {
+            let uniqueSorted = Array(Set(allowlist)).sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+            settings["conduit.runtime.policy.model_allowlist"] = .array(uniqueSorted.map { .string($0) })
+        }
+
+        updated.providerSettings = settings.isEmpty ? nil : settings
+        return updated
     }
 }
 

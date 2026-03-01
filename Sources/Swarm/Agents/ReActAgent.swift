@@ -796,7 +796,14 @@ public actor ReActAgent: AgentRuntime {
     }
 
     private func formatArguments(_ arguments: [String: SendableValue]) -> String {
-        arguments.map { "\($0.key): \($0.value.description)" }.joined(separator: ", ")
+        arguments
+            .keys
+            .sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+            .compactMap { key in
+                guard let value = arguments[key] else { return nil }
+                return "\(key): \(value.description)"
+            }
+            .joined(separator: ", ")
     }
 }
 

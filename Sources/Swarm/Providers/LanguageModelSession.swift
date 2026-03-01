@@ -56,38 +56,14 @@ extension LanguageModelSession: InferenceProvider {
         tools: [ToolSchema],
         options: InferenceOptions
     ) async throws -> InferenceResponse {
-        // Build tool-aware prompt if tools are provided
-        let toolPrompt = LanguageModelSessionToolPromptBuilder.buildToolPrompt(basePrompt: prompt, tools: tools)
-
-        // Generate response with the enhanced prompt
-        let response = try await self.respond(to: toolPrompt)
-        let content = response.content
-
-        // If no tools provided, return simple response
-        guard !tools.isEmpty else {
-            return InferenceResponse(
-                content: content,
-                toolCalls: [],
-                finishReason: .completed
+        if !tools.isEmpty {
+            throw AgentError.generationFailed(
+                reason: "Foundation Models tool calling is not supported by Swarm's LanguageModelSession provider."
             )
         }
 
-        // Attempt to parse tool calls from the response
-        if let toolCalls = LanguageModelSessionToolParser.parseToolCalls(from: content, availableTools: tools) {
-            // Response contains valid tool calls
-            return InferenceResponse(
-                content: nil, // Tool call responses typically have no content
-                toolCalls: toolCalls,
-                finishReason: .toolCall
-            )
-        }
-
-        // No valid tool calls found - return as regular content
-        return InferenceResponse(
-            content: content,
-            toolCalls: [],
-            finishReason: .completed
-        )
+        let content = try await generate(prompt: prompt, options: options)
+        return InferenceResponse(content: content, toolCalls: [], finishReason: .completed)
     }
 }
 #endif

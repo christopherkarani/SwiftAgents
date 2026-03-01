@@ -93,7 +93,12 @@ extension SwarmToolRegistry {
             throw SwarmToolRegistryError.invalidArgumentsJSON
         }
 
-        let jsonObject = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        let jsonObject: Any
+        do {
+            jsonObject = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        } catch {
+            throw SwarmToolRegistryError.invalidArgumentsJSON
+        }
         guard let dict = jsonObject as? [String: Any] else {
             throw SwarmToolRegistryError.argumentsMustBeJSONObject
         }
@@ -106,6 +111,9 @@ extension SwarmToolRegistry {
     }
 
     private static func encodeJSONFragment(_ value: SendableValue) throws -> String {
+        if case let .string(s) = value {
+            return s
+        }
         let object = value.toJSONObject()
         let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .fragmentsAllowed])
         guard let json = String(data: data, encoding: .utf8) else {

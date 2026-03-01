@@ -22,7 +22,7 @@ enum LanguageModelSessionToolPromptBuilder {
 
         var toolDefinitions: [String] = []
         for tool in tools {
-            let params = tool.parameters.map { param in
+            let params: String = tool.parameters.map { (param: ToolParameter) -> String in
                 let typeDesc = parameterTypeDescription(param.type)
                 let required = param.isRequired ? " (required)" : ""
                 return "  - \(param.name): \(typeDesc)\(required) - \(param.description)"

@@ -1,195 +1,154 @@
-# Hive -> Swarm Support Hardening (Non-Fork) — Execution Prompt
+# Hive -> Swarm Hardening (Non-Fork) — Execution Prompt v2
 
-You are acting as a principal Swift engineer in the Hive repository.
+You are a principal Swift 6.2 engineer.  
+Your mission is to implement and verify the non-fork Hive hardening contract for Swarm with minimal behavioral ambiguity and deterministic outcomes.
 
-## Mission
-Implement the Hive runtime features required to make Swarm integration production-grade, deterministic, and contract-safe, excluding fork support (already in progress elsewhere).
+## Objective
 
-## Plan Reference (absolute path)
-`/Users/chriskarani/CodingProjects/AIStack/Swarm/docs/plans/hive-swarm-nonfork-implementation-plan.md`
+- Implement production-grade runtime semantics for Hive-in-Swarm execution.
+- Exclude fork support.
+- Keep changes scoped and typed.
+- Preserve deterministic behavior and replay safety for prompt-driven workflows.
 
-Use that plan as the implementation source of truth.
+## Source-of-Truth Artifacts (must be authoritative)
 
-## Constraints
-- Swift 6.2, strict concurrency, `Sendable` correctness.
-- TDD required: failing tests first, then minimal implementation, then refactor.
-- Deterministic behavior is mandatory.
-- No silent fallback for unsupported features or invalid options.
-- Typed errors for all contract failures.
-- No SwiftAgents references.
-- Do not implement fork in this task.
+- `docs/plans/hive-swarm-nonfork-implementation-plan.md`
+- `Sources/Swarm/HiveSwarm/HiveAgents.swift`
+- `Sources/Swarm/HiveSwarm/HiveBackedAgent.swift`
+- `Sources/Swarm/Agents/Chat.swift`
+- `Sources/Swarm/Agents/ReActAgent.swift`
+- `Sources/Swarm/Core/PromptEnvelope.swift`
+- `Sources/Swarm/Core/AgentError.swift`
 
-## Scope (In)
-Implement all of the following in Hive runtime/core APIs:
+## Observed Runtime Facts (Do not override unless explicitly required)
 
-1. First-class typed state snapshot API (`getState`)
-2. Checkpoint capability discovery / contract (query support and typed unsupported)
-3. Deterministic transcript export + hashing utility
-4. Explicit cancellation semantics when cancellation races with checkpoint persistence
-5. Strong interrupt/resume contracts (pending interrupt and mismatch behavior)
-6. External writes validation + atomicity guarantees
-7. Stable event schema versioning for replay compatibility
-8. Run options preflight validator API (typed fail-fast)
+1. Run control entrypoints exist in `HiveAgents.swift`:
+   - `HiveAgentsRunController.start(_:)` calls `runtime.run(threadID:input:options:)`.
+   - `HiveAgentsRunController.resume(_:)` calls `runtime.resume(threadID:interruptID:payload:options:)`.
+   - Both currently call `preflight(environment:)`.
+2. Current preflight checks in `HiveAgentsRunController.preflight(...)` include:
+   - model presence (`modelRouter` or `model`),
+   - tool registry presence,
+   - checkpoint store required when tool approval policy is not `.never`,
+   - compaction policy bounds and tokenizer dependency.
+3. `HiveAgents.Schema` currently defines global channels:
+   - `messagesKey`, `pendingToolCallsKey`, `finalAnswerKey`, `llmInputMessagesKey`, `membraneCheckpointDataKey`.
+4. `HiveBackedAgent` owns run lifecycle integration:
+   - `run(_:)`, `stream(_:)`, and `cancel()`,
+   - maps `HiveRuntimeError` to `AgentError` in `mapHiveError(_:)`.
+5. Existing mapping in `HiveBackedAgent.mapHiveEvent(_:)` is partial:
+   - checkpoint and write-applied style events currently yield `nil`.
+6. `HiveAgents.Schema.inputWrites(...)` currently seeds `messagesKey` and resets `finalAnswerKey`.
+7. `ChatAgent` and `ReActAgent` build prompts using plain string concatenation and call `PromptEnvelope.enforce(...)` prior to model invocation.
 
-## Scope (Out)
-- Native `fork` runtime API and implementation (already being handled separately)
+You should **not** assume behavior outside this list unless you locate direct evidence in the source files above.
 
----
+## Prompt Design Instructions
 
-## Required Feature Details
+1. Use strict, explicit decomposition:
+   - constraints → implementation plan → validation → risks → evidence.
+2. Keep all suggestions grounded to existing symbols.
+3. Do not invent APIs, return types, or runtime behavior.
+4. If needed context is missing, call it out as an assumption and propose a source lookup task.
+5. Prioritize correctness and determinism over convenience.
 
-### 1) Typed `getState` API
-Add runtime state read APIs that are stable and explicit:
-- `getState(threadID:) async throws -> HiveRuntimeStateSnapshot<Schema>?`
-- Snapshot must include at minimum:
-  - thread ID, run ID
-  - step index
-  - interruption metadata (if present)
-  - checkpoint ID (if present)
-  - global channel values (or hashes + optional typed projection)
-  - frontier summary (stable representation suitable for deterministic comparisons)
-- Define clear null behavior: missing thread returns `nil`, not error.
+## Required Scope (Contract Areas)
 
-Acceptance:
-- Snapshot is deterministic for same state.
-- No schema leakage via untyped/`Any` payloads unless explicitly marked debug-only.
+1. Typed state snapshot API
+   - Add typed `getState(threadID:) async throws -> HiveRuntimeStateSnapshot<Schema>?`
+   - Return `nil` for missing threads.
+   - Snapshot must include deterministic fields (thread ID, run ID, step index, interruption metadata, checkpoint ID, frontier summary/hashes, and optional channel state summary).
+2. Checkpoint capability contract
+   - Add explicit discovery and typed unsupported failures for checkpoint query/load operations.
+3. Deterministic transcript and hashes
+   - Canonical event/state projection with stable ordering.
+   - Add transcript hash + final-state hash utilities.
+   - Add first-diff reporting for first mismatch path.
+4. Cancel + checkpoint race semantics
+   - Define deterministic outcomes when cancellation overlaps persistence.
+   - Keep event lifecycle transitions observable.
+5. Interrupt/resume contract hardening
+   - Handle pending interrupt, missing interrupt, mismatch interrupt ID, and state/version mismatch explicitly.
+6. External write validation and atomicity
+   - Validate channel scope/schema/task locality.
+   - All-or-nothing commit semantics.
+   - Preserve frontier/step semantics on success only.
+7. Event schema versioning
+   - Emit explicit schema version metadata for events/transcripts.
+   - Add compatibility checks on replay and typed compatibility errors.
+8. `validateRunOptions(_:)`
+   - Expose typed validation entrypoint for bounds, unsupported combinations, and dependencies.
+   - Ensure existing preflight paths use this same validation logic.
 
-### 2) Checkpoint Capability Contract
-Introduce explicit capability APIs to avoid runtime guesswork:
-- Query support should be discoverable (e.g., capability enum/flags).
-- Calling query APIs on unsupported store must throw typed `unsupported` error.
-- Ensure list/load by ID paths have clear typed failures.
+## Non-Goals
 
-Acceptance:
-- No silent degrade to latest-checkpoint behavior when ID lookup unsupported.
-- Error typing distinguishes unsupported vs missing data.
+- Native fork API (`native fork` runtime behavior) is out of scope.
+- Avoid changing public semantics outside this hardening scope.
+- Do not add implicit fallback behavior for unsupported capability branches.
 
-### 3) Deterministic Transcript + Hash
-Add standardized transcript export:
-- Canonical event projection (stable field ordering, schema-version tagged).
-- Deterministic normalization for allowed nondeterministic metadata.
-- Hash utility:
-  - transcript hash
-  - final state hash
-- Minimal structured diff utility for first mismatch.
+## Quality and Safety Standards
 
-Acceptance:
-- Repeated identical seeded runs produce identical hashes.
-- Mismatch report points to first divergent event/state key path.
+- Swift 6.2 and strict concurrency discipline.
+- Preserve `Sendable` correctness and typed error models.
+- Deterministic ordering for all hash/handoff comparisons.
+- Structured logging only for critical state transitions.
 
-### 4) Cancellation During Checkpoint Persistence
-Define and enforce explicit outcome semantics:
-- If cancellation races with checkpoint persistence, outcome must be deterministic and typed.
-- Avoid ambiguous generic thrown errors.
-- Preserve partial output/state semantics consistently.
+## Hard Prohibitions
 
-Acceptance:
-- Contract tests prove deterministic outcome class on repeated runs.
-- Event stream clearly reflects cancellation lifecycle.
+- No speculative APIs without explicit "assumption + discovery task."
+- No generic catch-all error paths in typed contract surfaces.
+- No silent fallback when a capability is unsupported.
+- No partial commits on failed external write batches.
 
-### 5) Interrupt/Resume Contract Hardening
-Guarantee explicit behavior for:
-- pending interrupt handling
-- interrupt ID mismatch
-- no interrupt to resume
-- checkpoint version mismatch on resume
+## Required Deliverables
 
-Acceptance:
-- All resume failure classes are typed and tested.
-- No implicit continuation without valid interrupt context.
+1. Code changes for all 8 contract areas.
+2. Unit + integration + determinism tests with concrete assertions.
+3. Docs updates that define API signatures and error semantics.
+4. Evidence artifact with:
+   - targeted test commands,
+   - hash/replay evidence for determinism,
+   - remaining risks and mitigations.
 
-### 6) External Writes Validation + Atomicity
-Harden `applyExternalWrites` semantics:
-- Validate channel existence, scope correctness, and payload shape.
-- Reject malformed/unknown/task-local-mismatch writes.
-- Enforce all-or-nothing commit behavior.
-- Preserve frontier + step index semantics.
+## Output Schema (You must return in this exact shape)
 
-Acceptance:
-- Negative tests confirm no partial commit on invalid write batches.
-- Deterministic event emission for successful external write application.
+Return exactly these sections, in order, with no extra prose:
 
-### 7) Event Schema Versioning
-Introduce explicit event schema version marker:
-- Each event/transcript should carry schema version (or stream-level metadata).
-- Versioning strategy must support replay compatibility checks across releases.
+1. `Assumptions`  
+   - include only what is unverifiable from the listed source-of-truth files.  
+   - label any uncertain items as `High Risk`.
+2. `Observed Facts`  
+   - list concise, file-level evidence you are relying on (symbol + behavior).
+3. `Implementation Plan`  
+   - 8 numbered items mapped to the Contract Areas.
+   - for each item include file edits and acceptance criteria.
+4. `Test Plan`  
+   - unit tests, integration tests, determinism tests.
+   - include exact commands to run.
+5. `Risk Register`  
+   - race, replay compatibility, and schema migration risks.
+6. `Evidence Checklist`  
+   - explicit pass/fail outcomes.
 
-Acceptance:
-- Consumers can detect incompatible event schema versions.
-- Replay utilities fail typed when version incompatibility is detected.
+## Verification Language (for each contract area)
 
-### 8) Run Options Preflight Validation API
-Add explicit options validation entrypoint:
-- `validateRunOptions(_:) throws`
-- Typed error granularity:
-  - invalid bounds
-  - unsupported combinations
-  - missing required runtime components (e.g., store for checkpoint policies)
-- Preflight can be used before run/resume/external writes.
+For every contract area, include:
+- expected behavior,
+- success criteria,
+- failure criteria,
+- typed error mapping strategy.
 
-Acceptance:
-- Runtime paths use shared validation logic.
-- No hidden clamping or implicit conversion in critical options.
+## Style Expectations
 
----
+- Keep changes minimal and reviewable.
+- Use deterministic sorting helpers where order affects hashes.
+- Prefer explicit enums/types over stringly-typed payload paths.
+- Preserve existing control flow when possible; do not rewrite unrelated modules.
 
-## Test Requirements (Mandatory)
+## Suggested Internal Sequence
 
-### Unit
-- state snapshot shape and determinism
-- capability detection and unsupported-path errors
-- option preflight validation (valid, invalid, unsupported combinations)
-- event schema version markers and compatibility checks
-- transcript canonicalization + hashing
-
-### Integration
-- run happy path with state snapshot assertions
-- interrupt/resume happy and mismatch/failure paths
-- cancel during checkpoint save
-- external writes valid + invalid + atomicity
-- checkpoint query supported/unsupported behaviors
-- streaming mode variants and event ordering
-
-### Determinism/Soak
-- seeded orchestration workload with:
-  - interruptions/resumes
-  - periodic external writes
-  - cancellation injection points
-- run repeated trials and compare:
-  - transcript hash
-  - final state hash
-- fail on divergence with minimal first-diff output
-
----
-
-## CI Expectations
-Add stable invocation paths:
-- focused contract suite job (fast gate)
-- determinism suite job (repeat runs, required gate)
-- keep full suite job alongside these
-
----
-
-## Deliverables
-1. Runtime API changes + implementation
-2. Tests (unit/integration/determinism)
-3. concise docs update for:
-   - new APIs
-   - guarantees
-   - typed error semantics
-4. execution evidence:
-   - targeted test command + result
-   - full suite command + result
-   - determinism hash evidence
-5. ranked remaining backlog:
-   - severity
-   - user impact
-   - implementation complexity
-   - recommended order
-
-## Quality Bar
-- Production-grade semantics.
-- Deterministic and replay-safe.
-- No silent data loss.
-- No behavior regressions.
-- Explicit typed contracts over implicit behavior.
+1. Capture current state/behavior snapshots from observed facts.
+2. Implement contract area in the narrowest dependency slice.
+3. Add/adjust tests immediately for the new contract boundary.
+4. Validate no regressions in existing event stream and tool-call behavior.
+5. Extend replay/hash checks last, after contract boundaries are stable.

@@ -439,6 +439,476 @@ struct HiveAgentsTests {
         #expect(maxSteps == 0)
     }
 
+    @Test("Run control validateRunOptions rejects invalid bounds")
+    func runControl_validateRunOptions_rejectsInvalidBounds() throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(id: "m", role: .assistant, content: "ok")))
+            ])),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "ok")),
+            checkpointStore: nil
+        )
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let runControl = HiveAgentsRunController(runtime: runtime)
+
+        let thrown = #expect(throws: (any Error).self) {
+            try runControl.validateRunOptions(
+                HiveRunOptions(maxSteps: 2, maxConcurrentTasks: 0, checkpointPolicy: .disabled)
+            )
+        }
+        let runtimeError = try #require(thrown as? HiveRuntimeError)
+        guard case .invalidRunOptions = runtimeError else {
+            Issue.record("Expected invalidRunOptions, got \(runtimeError)")
+            return
+        }
+    }
+
+    @Test("Checkpoint capability discovery reports unavailable/latestOnly/queryable")
+    func checkpointCapabilityDiscovery_reportsExpectedSupport() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
+
+        let noStoreEnv = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(id: "m", role: .assistant, content: "ok")))
+            ])),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "ok")),
+            checkpointStore: nil
+        )
+        let noStoreRuntime = try HiveRuntime(graph: graph, environment: noStoreEnv)
+        let noStoreRunControl = HiveAgentsRunController(runtime: noStoreRuntime)
+        #expect(await noStoreRunControl.checkpointQueryCapability() == .unavailable)
+
+        let nonQueryableStore = InMemoryCheckpointStore<HiveAgents.Schema>()
+        let nonQueryableEnv = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(id: "m2", role: .assistant, content: "ok")))
+            ])),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "ok")),
+            checkpointStore: AnyHiveCheckpointStore(nonQueryableStore)
+        )
+        let nonQueryableRuntime = try HiveRuntime(graph: graph, environment: nonQueryableEnv)
+        let nonQueryableRunControl = HiveAgentsRunController(runtime: nonQueryableRuntime)
+        #expect(await nonQueryableRunControl.checkpointQueryCapability() == .latestOnly)
+
+        let queryableStore = QueryableCheckpointStore<HiveAgents.Schema>()
+        let queryableEnv = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(id: "m3", role: .assistant, content: "ok")))
+            ])),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "ok")),
+            checkpointStore: AnyHiveCheckpointStore(queryableStore)
+        )
+        let queryableRuntime = try HiveRuntime(graph: graph, environment: queryableEnv)
+        let queryableRunControl = HiveAgentsRunController(runtime: queryableRuntime)
+        #expect(await queryableRunControl.checkpointQueryCapability() == .queryable)
+    }
+
+    @Test("Checkpoint history query throws typed unsupported for non-queryable stores")
+    func checkpointHistoryQuery_nonQueryableStore_throwsUnsupported() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(id: "m", role: .assistant, content: "ok")))
+            ])),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "ok")),
+            checkpointStore: AnyHiveCheckpointStore(InMemoryCheckpointStore<HiveAgents.Schema>())
+        )
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let runControl = HiveAgentsRunController(runtime: runtime)
+
+        let thrown = await #expect(throws: (any Error).self) {
+            _ = try await runControl.getCheckpointHistory(threadID: HiveThreadID("query-unsupported"), limit: 1)
+        }
+        let queryError = try #require(thrown as? HiveCheckpointQueryError)
+        #expect(queryError == .unsupported)
+    }
+
+    @Test("getState returns nil for missing thread and deterministic snapshot for existing thread")
+    func getState_missingAndExistingThread_behavesDeterministically() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(id: "m", role: .assistant, content: "done")))
+            ])),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "ok")),
+            checkpointStore: nil
+        )
+
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let runControl = HiveAgentsRunController(runtime: runtime)
+        #expect(try await runtime.getState(threadID: HiveThreadID("missing-thread")) == nil)
+        #expect(try await runControl.getState(threadID: HiveThreadID("missing-thread")) == nil)
+
+        let request = HiveAgentsRunStartRequest(
+            threadID: HiveThreadID("state-thread"),
+            input: "Hello",
+            options: HiveRunOptions(maxSteps: 5, checkpointPolicy: .disabled)
+        )
+        let handle = try await runControl.start(request)
+        _ = try await handle.outcome.value
+
+        let runtimeSnapshot = try #require(try await runtime.getState(threadID: request.threadID))
+        #expect(runtimeSnapshot.threadID == request.threadID)
+        let snapshot = try #require(try await runControl.getState(threadID: request.threadID))
+        #expect(snapshot.threadID == request.threadID)
+        #expect(snapshot.runID == handle.runID)
+        #expect(snapshot.stepIndex != nil)
+        #expect(snapshot.frontier.count >= 0)
+        #expect(snapshot.eventSchemaVersion == HiveAgentsEventSchemaVersion.current)
+        let channelState = try #require(snapshot.channelState)
+        #expect(channelState.entries.count == 5)
+    }
+
+    @Test("External writes validate schema and reject atomically")
+    func externalWrites_validationAndAtomicity() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(id: "m", role: .assistant, content: "ok")))
+            ])),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "ok")),
+            checkpointStore: nil
+        )
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let runControl = HiveAgentsRunController(runtime: runtime)
+        let threadID = HiveThreadID("external-write-thread")
+
+        let seedMessage = message(id: "seed", role: .user, content: "seed")
+        let seeded = try await runControl.applyExternalWrites(
+            HiveAgentsExternalWriteRequest(
+                threadID: threadID,
+                writes: [AnyHiveWrite(HiveAgents.Schema.messagesKey, [seedMessage])],
+                options: HiveRunOptions(maxSteps: 1, checkpointPolicy: .disabled)
+            )
+        )
+        _ = try await seeded.outcome.value
+
+        let unknownKey = HiveChannelKey<HiveAgents.Schema, Int>(HiveChannelID("unknown-channel"))
+        let thrown = await #expect(throws: (any Error).self) {
+            _ = try await runControl.applyExternalWrites(
+                HiveAgentsExternalWriteRequest(
+                    threadID: threadID,
+                    writes: [
+                        AnyHiveWrite(HiveAgents.Schema.finalAnswerKey, Optional("should-not-commit")),
+                        AnyHiveWrite(unknownKey, 1)
+                    ],
+                    options: HiveRunOptions(maxSteps: 1, checkpointPolicy: .disabled)
+                )
+            )
+        }
+        let runtimeError = try #require(thrown as? HiveRuntimeError)
+        guard case let .unknownChannelID(channelID) = runtimeError else {
+            Issue.record("Expected unknownChannelID, got \(runtimeError)")
+            return
+        }
+        #expect(channelID.rawValue == "unknown-channel")
+
+        let store = try #require(await runtime.getLatestStore(threadID: threadID))
+        let messages = try store.get(HiveAgents.Schema.messagesKey)
+        let finalAnswer = try store.get(HiveAgents.Schema.finalAnswerKey)
+        #expect(messages.count == 1)
+        #expect(messages.first?.id == "seed")
+        #expect(finalAnswer == nil)
+    }
+
+    @Test("Resume contract rejects missing interrupt and mismatch interrupt IDs")
+    func resumeContract_missingAndMismatchedInterrupt_areTyped() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let store = InMemoryCheckpointStore<HiveAgents.Schema>()
+
+        let noInterruptContext = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
+        let noInterruptEnvironment = HiveEnvironment<HiveAgents.Schema>(
+            context: noInterruptContext,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(id: "m1", role: .assistant, content: "done")))
+            ])),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "ok")),
+            checkpointStore: AnyHiveCheckpointStore(store)
+        )
+
+        let noInterruptRuntime = try HiveRuntime(graph: graph, environment: noInterruptEnvironment)
+        let noInterruptRunControl = HiveAgentsRunController(runtime: noInterruptRuntime)
+        let noInterruptThread = HiveThreadID("resume-no-interrupt")
+        let noInterruptRun = try await noInterruptRunControl.start(
+            .init(
+                threadID: noInterruptThread,
+                input: "hello",
+                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .everyStep)
+            )
+        )
+        _ = try await noInterruptRun.outcome.value
+
+        let noInterruptThrown = await #expect(throws: (any Error).self) {
+            _ = try await noInterruptRunControl.resume(
+                .init(
+                    threadID: noInterruptThread,
+                    interruptID: HiveInterruptID("wrong"),
+                    payload: .toolApproval(decision: .approved),
+                    options: HiveRunOptions(maxSteps: 5, checkpointPolicy: .everyStep)
+                )
+            )
+        }
+        let noInterruptError = try #require(noInterruptThrown as? HiveRuntimeError)
+        guard case .noInterruptToResume = noInterruptError else {
+            Issue.record("Expected noInterruptToResume, got \(noInterruptError)")
+            return
+        }
+
+        let mismatchStore = InMemoryCheckpointStore<HiveAgents.Schema>()
+        let mismatchContext = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .always)
+        let mismatchEnvironment = HiveEnvironment<HiveAgents.Schema>(
+            context: mismatchContext,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(ScriptedModelClient(script: ModelScript(chunksByInvocation: [
+                [.final(HiveChatResponse(message: message(
+                    id: "mm1",
+                    role: .assistant,
+                    content: "",
+                    toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
+                )))]
+            ]))),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
+            checkpointStore: AnyHiveCheckpointStore(mismatchStore)
+        )
+        let mismatchRuntime = try HiveRuntime(graph: graph, environment: mismatchEnvironment)
+        let mismatchRunControl = HiveAgentsRunController(runtime: mismatchRuntime)
+        let mismatchStart = try await mismatchRunControl.start(
+            .init(
+                threadID: HiveThreadID("resume-mismatch"),
+                input: "hello",
+                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .everyStep)
+            )
+        )
+        let interruption = try requireInterruption(outcome: try await mismatchStart.outcome.value)
+
+        let mismatchThrown = await #expect(throws: (any Error).self) {
+            _ = try await mismatchRunControl.resume(
+                .init(
+                    threadID: HiveThreadID("resume-mismatch"),
+                    interruptID: HiveInterruptID(interruption.interrupt.id.rawValue + "-wrong"),
+                    payload: .toolApproval(decision: .approved),
+                    options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .everyStep)
+                )
+            )
+        }
+        let mismatchError = try #require(mismatchThrown as? HiveRuntimeError)
+        guard case .resumeInterruptMismatch = mismatchError else {
+            Issue.record("Expected resumeInterruptMismatch, got \(mismatchError)")
+            return
+        }
+    }
+
+    @Test("Run events include schema version metadata")
+    func runEvents_includeSchemaVersionMetadata() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(StubModelClient(chunks: [
+                .final(HiveChatResponse(message: message(id: "m", role: .assistant, content: "ok")))
+            ])),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "ok")),
+            checkpointStore: nil
+        )
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let runControl = HiveAgentsRunController(runtime: runtime)
+
+        let handle = try await runControl.start(
+            .init(
+                threadID: HiveThreadID("event-schema-version"),
+                input: "hello",
+                options: HiveRunOptions(maxSteps: 5, checkpointPolicy: .disabled)
+            )
+        )
+        let events = await collectEvents(handle.events)
+        _ = try await handle.outcome.value
+
+        #expect(events.isEmpty == false)
+        #expect(events.allSatisfy { event in
+            event.metadata[HiveAgentsEventSchemaVersion.metadataKey] == HiveAgentsEventSchemaVersion.current
+        })
+    }
+
+    @Test("Determinism utilities produce stable transcript/state hashes and first-diff path")
+    func determinismUtilities_hashesAndFirstDiff() async throws {
+        func runSeededWorkload() async throws -> (
+            transcriptHash: String,
+            stateHash: String,
+            transcript: HiveCanonicalTranscript
+        ) {
+            let graph = try HiveAgents.makeToolUsingChatAgent()
+            let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
+            let environment = HiveEnvironment<HiveAgents.Schema>(
+                context: context,
+                clock: NoopClock(),
+                logger: NoopLogger(),
+                model: AnyHiveModelClient(ScriptedModelClient(script: ModelScript(chunksByInvocation: [
+                    [.final(HiveChatResponse(message: message(
+                        id: "d1",
+                        role: .assistant,
+                        content: "",
+                        toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
+                    )))],
+                    [.final(HiveChatResponse(message: message(id: "d2", role: .assistant, content: "done")))]
+                ]))),
+                modelRouter: nil,
+                tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
+                checkpointStore: nil
+            )
+            let runtime = try HiveRuntime(graph: graph, environment: environment)
+            let runControl = HiveAgentsRunController(runtime: runtime)
+            let threadID = HiveThreadID("seeded-determinism-thread")
+
+            let handle = try await runControl.start(
+                .init(
+                    threadID: threadID,
+                    input: "hello",
+                    options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
+                )
+            )
+            let events = await collectEvents(handle.events)
+            _ = try await handle.outcome.value
+            let state = try #require(try await runControl.getState(threadID: threadID))
+            let transcript = try HiveDeterminism.projectTranscript(events)
+            return (
+                transcriptHash: try HiveDeterminism.transcriptHash(events),
+                stateHash: try HiveDeterminism.finalStateHash(state),
+                transcript: transcript
+            )
+        }
+
+        let first = try await runSeededWorkload()
+        let second = try await runSeededWorkload()
+
+        #expect(first.transcriptHash == second.transcriptHash)
+        #expect(first.stateHash == second.stateHash)
+
+        var mutatedEvents = second.transcript.events
+        let firstEvent = try #require(mutatedEvents.first)
+        mutatedEvents[0] = HiveCanonicalEventRecord(
+            eventIndex: firstEvent.eventIndex,
+            stepIndex: firstEvent.stepIndex,
+            taskOrdinal: firstEvent.taskOrdinal,
+            kind: firstEvent.kind + ".mutated",
+            attributes: firstEvent.attributes,
+            metadata: firstEvent.metadata
+        )
+        let mutatedTranscript = HiveCanonicalTranscript(
+            schemaVersion: second.transcript.schemaVersion,
+            events: mutatedEvents
+        )
+        let diff = HiveDeterminism.firstTranscriptDiff(expected: first.transcript, actual: mutatedTranscript)
+        let firstDiff = try #require(diff)
+        #expect(firstDiff.path == "events[0].kind")
+    }
+
+    @Test("Cancel/checkpoint race is classified deterministically")
+    func cancelCheckpointRace_classifiesDeterministically() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let checkpointStore = SlowCheckpointStore<HiveAgents.Schema>(saveDelayNanoseconds: 150_000_000)
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .never)
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(ScriptedModelClient(script: ModelScript(chunksByInvocation: [
+                [.final(HiveChatResponse(message: message(
+                    id: "r1",
+                    role: .assistant,
+                    content: "",
+                    toolCalls: [HiveToolCall(id: "race-call", name: "calc", argumentsJSON: "{}")]
+                )))],
+                [.final(HiveChatResponse(message: message(id: "r2", role: .assistant, content: "done")))]
+            ]))),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
+            checkpointStore: AnyHiveCheckpointStore(checkpointStore)
+        )
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let runControl = HiveAgentsRunController(runtime: runtime)
+        let handle = try await runControl.start(
+            .init(
+                threadID: HiveThreadID("cancel-race-thread"),
+                input: "hello",
+                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .everyStep)
+            )
+        )
+
+        let cancelTask = Task {
+            await checkpointStore.waitForFirstSaveStart()
+            handle.outcome.cancel()
+        }
+
+        let events = await collectEvents(handle.events)
+        let outcome = try await handle.outcome.value
+        _ = await cancelTask.value
+
+        let resolution = HiveDeterminism.classifyCancelCheckpointRace(events: events, outcome: outcome)
+        guard case .cancelledAfterCheckpointSaved = resolution else {
+            Issue.record("Expected cancelledAfterCheckpointSaved, got \(resolution)")
+            return
+        }
+
+        // Order-independence: classification should not depend on event array ordering.
+        let shuffled = events.shuffled()
+        let shuffledResolution = HiveDeterminism.classifyCancelCheckpointRace(events: shuffled, outcome: outcome)
+        #expect(shuffledResolution == resolution)
+
+        let checkpointIndex = events.firstIndex { event in
+            if case .checkpointSaved = event.kind { return true }
+            return false
+        }
+        let cancelledIndex = events.firstIndex { event in
+            if case .runCancelled = event.kind { return true }
+            return false
+        }
+        let firstCheckpointIndex = try #require(checkpointIndex)
+        let firstCancelledIndex = try #require(cancelledIndex)
+        #expect(firstCheckpointIndex < firstCancelledIndex)
+    }
+
     @Test("HiveBackedAgent preserves ToolCall/ToolResult correlation IDs")
     func hiveBackedAgent_preservesToolCorrelationIDs() async throws {
         let graph = try HiveAgents.makeToolUsingChatAgent()
@@ -834,6 +1304,100 @@ private actor InMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
                 if lhs.stepIndex == rhs.stepIndex { return lhs.id.rawValue < rhs.id.rawValue }
                 return lhs.stepIndex < rhs.stepIndex
             }
+    }
+}
+
+private actor QueryableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQueryableStore {
+    private var checkpoints: [HiveCheckpoint<Schema>] = []
+
+    func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
+        checkpoints.append(checkpoint)
+    }
+
+    func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
+        checkpoints
+            .filter { $0.threadID == threadID }
+            .max { lhs, rhs in
+                if lhs.stepIndex == rhs.stepIndex { return lhs.id.rawValue < rhs.id.rawValue }
+                return lhs.stepIndex < rhs.stepIndex
+            }
+    }
+
+    func listCheckpoints(threadID: HiveThreadID, limit: Int?) async throws -> [HiveCheckpointSummary] {
+        let all = checkpoints
+            .filter { $0.threadID == threadID }
+            .sorted { lhs, rhs in
+                if lhs.stepIndex == rhs.stepIndex { return lhs.id.rawValue < rhs.id.rawValue }
+                return lhs.stepIndex < rhs.stepIndex
+            }
+            .map { checkpoint in
+                HiveCheckpointSummary(
+                    id: checkpoint.id,
+                    threadID: checkpoint.threadID,
+                    runID: checkpoint.runID,
+                    stepIndex: checkpoint.stepIndex,
+                    schemaVersion: checkpoint.schemaVersion,
+                    graphVersion: checkpoint.graphVersion,
+                    createdAt: nil,
+                    backendID: nil
+                )
+            }
+        if let limit, limit >= 0 {
+            return Array(all.suffix(limit))
+        }
+        return all
+    }
+
+    func loadCheckpoint(threadID: HiveThreadID, id: HiveCheckpointID) async throws -> HiveCheckpoint<Schema>? {
+        checkpoints.first { checkpoint in
+            checkpoint.threadID == threadID && checkpoint.id == id
+        }
+    }
+}
+
+private actor SlowCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
+    private var checkpoints: [HiveCheckpoint<Schema>] = []
+    private let saveDelayNanoseconds: UInt64
+    private var didSignalStart = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(saveDelayNanoseconds: UInt64) {
+        self.saveDelayNanoseconds = saveDelayNanoseconds
+    }
+
+    func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
+        if didSignalStart == false {
+            didSignalStart = true
+            let localWaiters = waiters
+            waiters.removeAll()
+            for waiter in localWaiters {
+                waiter.resume()
+            }
+        }
+        do {
+            try await Task.sleep(nanoseconds: saveDelayNanoseconds)
+        } catch {
+            // Keep persistence deterministic even when cancellation overlaps save.
+        }
+        checkpoints.append(checkpoint)
+    }
+
+    func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
+        checkpoints
+            .filter { $0.threadID == threadID }
+            .max { lhs, rhs in
+                if lhs.stepIndex == rhs.stepIndex { return lhs.id.rawValue < rhs.id.rawValue }
+                return lhs.stepIndex < rhs.stepIndex
+            }
+    }
+
+    func waitForFirstSaveStart() async {
+        if didSignalStart {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
     }
 }
 

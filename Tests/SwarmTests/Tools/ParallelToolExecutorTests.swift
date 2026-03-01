@@ -129,7 +129,7 @@ struct ParallelToolExecutorTests {
         let enabledTool = CountingTool(name: "enabled_tool", counter: counter)
         let disabledTool = DisabledTestTool(name: "disabled_tool")
 
-        let registry = await createRegistry(tools: [enabledTool, disabledTool])
+        let registry = try await createRegistry(tools: [enabledTool, disabledTool])
         let executor = ParallelToolExecutor()
         let agent = createMockAgent()
 

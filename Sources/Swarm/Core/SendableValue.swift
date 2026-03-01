@@ -147,7 +147,14 @@ extension SendableValue: CustomStringConvertible {
         case let .string(v): return "\"\(v)\""
         case let .array(v): return "[\(v.map(\.description).joined(separator: ", "))]"
         case let .dictionary(v):
-            let pairs = v.map { "\"\($0)\": \($1.description)" }.joined(separator: ", ")
+            let pairs = v
+                .keys
+                .sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+                .compactMap { key in
+                    guard let value = v[key] else { return nil }
+                    return "\"\(key)\": \(value.description)"
+                }
+                .joined(separator: ", ")
             return "{\(pairs)}"
         }
     }

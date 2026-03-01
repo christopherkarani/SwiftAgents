@@ -806,9 +806,11 @@ public actor AgentRouter: AgentRuntime {
     }
 
     private func areSameRuntime(_ lhs: any AgentRuntime, _ rhs: any AgentRuntime) -> Bool {
-        // Note: ObjectIdentifier(lhs as AnyObject) is unreliable for struct-based runtimes because
-        // casting a struct existential to AnyObject creates a new box each time, yielding
-        // different identifiers for the same value. Use name+type matching instead.
+        if let lhsObj = lhs as? AnyObject, let rhsObj = rhs as? AnyObject {
+            return ObjectIdentifier(lhsObj) == ObjectIdentifier(rhsObj)
+        }
+
+        // Fallback for struct-based runtimes.
         return lhs.name == rhs.name
             && String(describing: type(of: lhs)) == String(describing: type(of: rhs))
     }
