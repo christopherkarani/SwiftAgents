@@ -1,7 +1,9 @@
 import CryptoKit
 import Foundation
-import Testing
 @testable import Swarm
+import Testing
+
+// MARK: - HiveAgentsTests
 
 @Suite("HiveAgents (HiveSwarm) — HiveCore runtime")
 struct HiveAgentsTests {
@@ -65,7 +67,7 @@ struct HiveAgentsTests {
         ]
 
         _ = try await waitOutcome(
-            await runtime.applyExternalWrites(
+            runtime.applyExternalWrites(
                 threadID: threadID,
                 writes: [AnyHiveWrite(HiveAgents.Schema.messagesKey, history)],
                 options: HiveRunOptions(maxSteps: 1, checkpointPolicy: .disabled)
@@ -74,7 +76,7 @@ struct HiveAgentsTests {
 
         // Step 0 runs `preModel` only; compaction must not mutate `messages`.
         let outcome = try await waitOutcome(
-            await runtime.run(
+            runtime.run(
                 threadID: threadID,
                 input: "Hello",
                 options: HiveRunOptions(maxSteps: 1, checkpointPolicy: .disabled)
@@ -290,7 +292,7 @@ struct HiveAgentsTests {
                 options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
             )
         )
-        let interrupted = try requireInterruption(outcome: try await start.outcome.value)
+        let interrupted = try await requireInterruption(outcome: start.outcome.value)
 
         let resumed = try await runControl.resume(
             .init(
@@ -300,7 +302,7 @@ struct HiveAgentsTests {
                 options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
             )
         )
-        let finalStore = try requireFullStore(outcome: try await resumed.outcome.value)
+        let finalStore = try await requireFullStore(outcome: resumed.outcome.value)
         let messages = try finalStore.get(HiveAgents.Schema.messagesKey)
 
         let hasCancellationSystem = messages.contains { message in
@@ -362,7 +364,7 @@ struct HiveAgentsTests {
                 options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
             )
         )
-        let interrupted = try requireInterruption(outcome: try await start.outcome.value)
+        let interrupted = try await requireInterruption(outcome: start.outcome.value)
 
         // Simulated process restart: new runtime/controller using same checkpoint store.
         let runtime2 = try HiveRuntime(graph: graph, environment: makeEnvironment())
@@ -376,7 +378,7 @@ struct HiveAgentsTests {
             )
         )
 
-        let finalStore = try requireFullStore(outcome: try await resumed.outcome.value)
+        let finalStore = try await requireFullStore(outcome: resumed.outcome.value)
         let messages = try finalStore.get(HiveAgents.Schema.messagesKey)
         let toolMessages = messages.filter { message in
             message.role.rawValue == "tool" && message.toolCallID == "c1" && message.content == "42"
@@ -421,7 +423,7 @@ struct HiveAgentsTests {
                 options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
             )
         )
-        let interrupted = try requireInterruption(outcome: try await start.outcome.value)
+        let interrupted = try await requireInterruption(outcome: start.outcome.value)
 
         let resumed = try await runControl.resume(
             .init(
@@ -588,6 +590,67 @@ struct HiveAgentsTests {
         #expect(channelState.entries.count == 5)
     }
 
+    @Test("getState clears stale checkpoint interruption after resume completes")
+    func getState_clearsStaleCheckpointInterruption_afterResumeCompletion() async throws {
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let checkpointStore = InMemoryCheckpointStore<HiveAgents.Schema>()
+        let threadID = HiveThreadID("stale-interruption-thread")
+
+        let context = HiveAgentsContext(modelName: "test-model", toolApprovalPolicy: .always)
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(ScriptedModelClient(script: ModelScript(chunksByInvocation: [
+                [.final(HiveChatResponse(message: message(
+                    id: "m1",
+                    role: .assistant,
+                    content: "",
+                    toolCalls: [HiveToolCall(id: "c1", name: "calc", argumentsJSON: "{}")]
+                )))],
+                [.final(HiveChatResponse(message: message(id: "m2", role: .assistant, content: "done")))],
+                [.final(HiveChatResponse(message: message(id: "m3", role: .assistant, content: "post-write")))]
+            ]))),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(StubToolRegistry(resultContent: "42")),
+            checkpointStore: AnyHiveCheckpointStore(checkpointStore)
+        )
+
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let runControl = HiveAgentsRunController(runtime: runtime)
+
+        let start = try await runControl.start(
+            .init(
+                threadID: threadID,
+                input: "hello",
+                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .everyStep)
+            )
+        )
+        let interruption = try await requireInterruption(outcome: start.outcome.value)
+
+        let resumed = try await runControl.resume(
+            .init(
+                threadID: threadID,
+                interruptID: interruption.interrupt.id,
+                payload: .toolApproval(decision: .approved),
+                options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .disabled)
+            )
+        )
+        _ = try await resumed.outcome.value
+
+        let snapshot = try #require(try await runControl.getState(threadID: threadID))
+        #expect(snapshot.interruption == nil)
+
+        let writeHandle = try await runControl.applyExternalWrites(
+            .init(
+                threadID: threadID,
+                writes: [AnyHiveWrite(HiveAgents.Schema.finalAnswerKey, Optional("seeded"))],
+                options: HiveRunOptions(maxSteps: 1, checkpointPolicy: .disabled)
+            )
+        )
+        _ = try await writeHandle.outcome.value
+    }
+
     @Test("External writes validate schema and reject atomically")
     func externalWrites_validationAndAtomicity() async throws {
         let graph = try HiveAgents.makeToolUsingChatAgent()
@@ -718,7 +781,7 @@ struct HiveAgentsTests {
                 options: HiveRunOptions(maxSteps: 10, checkpointPolicy: .everyStep)
             )
         )
-        let interruption = try requireInterruption(outcome: try await mismatchStart.outcome.value)
+        let interruption = try await requireInterruption(outcome: mismatchStart.outcome.value)
 
         let mismatchThrown = await #expect(throws: (any Error).self) {
             _ = try await mismatchRunControl.resume(
@@ -812,9 +875,9 @@ struct HiveAgentsTests {
             _ = try await handle.outcome.value
             let state = try #require(try await runControl.getState(threadID: threadID))
             let transcript = try HiveDeterminism.projectTranscript(events)
-            return (
-                transcriptHash: try HiveDeterminism.transcriptHash(events),
-                stateHash: try HiveDeterminism.finalStateHash(state),
+            return try (
+                transcriptHash: HiveDeterminism.transcriptHash(events),
+                stateHash: HiveDeterminism.finalStateHash(state),
                 transcript: transcript
             )
         }
@@ -1093,30 +1156,38 @@ private func removeAllMarker() -> HiveChatMessage {
     )
 }
 
+// MARK: - MessageCountTokenizer
+
 private struct MessageCountTokenizer: HiveTokenizer {
     func countTokens(_ messages: [HiveChatMessage]) -> Int { messages.count }
 }
 
+// MARK: - StubModelClient
+
 private struct StubModelClient: HiveModelClient {
     let chunks: [HiveChatStreamChunk]
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_: HiveChatRequest) async throws -> HiveChatResponse {
         for chunk in chunks {
             if case let .final(response) = chunk { return response }
         }
         return HiveChatResponse(message: HiveChatMessage(id: "empty", role: .assistant, content: ""))
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
-            for chunk in chunks { continuation.yield(chunk) }
+            for chunk in chunks {
+                continuation.yield(chunk)
+            }
             continuation.finish()
         }
     }
 }
 
+// MARK: - ModelScript
+
 private actor ModelScript {
-    private var chunksByInvocation: [[HiveChatStreamChunk]]
+    // MARK: Internal
 
     init(chunksByInvocation: [[HiveChatStreamChunk]]) {
         self.chunksByInvocation = chunksByInvocation
@@ -1126,12 +1197,18 @@ private actor ModelScript {
         guard chunksByInvocation.isEmpty == false else { return [] }
         return chunksByInvocation.removeFirst()
     }
+
+    // MARK: Private
+
+    private var chunksByInvocation: [[HiveChatStreamChunk]]
 }
+
+// MARK: - ScriptedModelClient
 
 private struct ScriptedModelClient: HiveModelClient {
     let script: ModelScript
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_: HiveChatRequest) async throws -> HiveChatResponse {
         let chunks = await script.nextChunks()
         for chunk in chunks {
             if case let .final(response) = chunk { return response }
@@ -1139,20 +1216,23 @@ private struct ScriptedModelClient: HiveModelClient {
         throw HiveRuntimeError.modelStreamInvalid("Missing final chunk.")
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 let chunks = await script.nextChunks()
-                for chunk in chunks { continuation.yield(chunk) }
+                for chunk in chunks {
+                    continuation.yield(chunk)
+                }
                 continuation.finish()
             }
         }
     }
 }
 
+// MARK: - ModelInvocationRecorder
+
 private actor ModelInvocationRecorder {
-    private var requests: [HiveChatRequest] = []
-    private var chunksByInvocation: [[HiveChatStreamChunk]]
+    // MARK: Internal
 
     init(chunksByInvocation: [[HiveChatStreamChunk]]) {
         self.chunksByInvocation = chunksByInvocation
@@ -1172,7 +1252,14 @@ private actor ModelInvocationRecorder {
         }
         return chunksByInvocation.removeFirst()
     }
+
+    // MARK: Private
+
+    private var requests: [HiveChatRequest] = []
+    private var chunksByInvocation: [[HiveChatStreamChunk]]
 }
+
+// MARK: - CapturingModelClient
 
 private struct CapturingModelClient: HiveModelClient {
     let recorder: ModelInvocationRecorder
@@ -1202,8 +1289,10 @@ private struct CapturingModelClient: HiveModelClient {
     }
 }
 
+// MARK: - ToolInvocationCounter
+
 private actor ToolInvocationCounter {
-    private var count = 0
+    // MARK: Internal
 
     func increment() {
         count += 1
@@ -1212,7 +1301,13 @@ private actor ToolInvocationCounter {
     func value() -> Int {
         count
     }
+
+    // MARK: Private
+
+    private var count = 0
 }
+
+// MARK: - CountingToolRegistry
 
 private struct CountingToolRegistry: HiveToolRegistry, Sendable {
     let resultContent: String
@@ -1226,13 +1321,18 @@ private struct CountingToolRegistry: HiveToolRegistry, Sendable {
     }
 }
 
+// MARK: - StubToolRegistry
+
 private struct StubToolRegistry: HiveToolRegistry, Sendable {
     let resultContent: String
+
     func listTools() -> [HiveToolDefinition] { [] }
     func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
         HiveToolResult(toolCallID: call.id, content: resultContent)
     }
 }
+
+// MARK: - ListingToolRegistry
 
 private struct ListingToolRegistry: HiveToolRegistry, Sendable {
     let definitions: [HiveToolDefinition]
@@ -1247,6 +1347,8 @@ private struct ListingToolRegistry: HiveToolRegistry, Sendable {
     }
 }
 
+// MARK: - InjectingPreModelHook
+
 private struct InjectingPreModelHook: HiveAgentsPreModelHook {
     func transform(
         messages: [HiveChatMessage],
@@ -1259,11 +1361,15 @@ private struct InjectingPreModelHook: HiveAgentsPreModelHook {
     }
 }
 
+// MARK: - PrefixMessageIDFactory
+
 private struct PrefixMessageIDFactory: HiveAgentsMessageIDFactory {
     func messageID(for role: String, taskID: HiveTaskID, stepIndex: Int) -> String {
         "custom-\(role)-\(taskID.rawValue)-\(stepIndex)"
     }
 }
+
+// MARK: - PrefixToolResultTransformer
 
 private struct PrefixToolResultTransformer: HiveAgentsToolResultTransformer {
     func transform(result: String, toolName: String, tokenEstimate _: Int) async -> String {
@@ -1279,19 +1385,25 @@ private func makeToolDefinition(name: String) -> HiveToolDefinition {
     )
 }
 
+// MARK: - NoopClock
+
 private struct NoopClock: HiveClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
+// MARK: - NoopLogger
+
 private struct NoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
+    func debug(_: String, metadata _: [String: String]) {}
+    func info(_: String, metadata _: [String: String]) {}
+    func error(_: String, metadata _: [String: String]) {}
 }
 
+// MARK: - InMemoryCheckpointStore
+
 private actor InMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
-    private var checkpoints: [HiveCheckpoint<Schema>] = []
+    // MARK: Internal
 
     func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
         checkpoints.append(checkpoint)
@@ -1305,10 +1417,16 @@ private actor InMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
                 return lhs.stepIndex < rhs.stepIndex
             }
     }
+
+    // MARK: Private
+
+    private var checkpoints: [HiveCheckpoint<Schema>] = []
 }
 
+// MARK: - QueryableCheckpointStore
+
 private actor QueryableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQueryableStore {
-    private var checkpoints: [HiveCheckpoint<Schema>] = []
+    // MARK: Internal
 
     func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
         checkpoints.append(checkpoint)
@@ -1353,13 +1471,16 @@ private actor QueryableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQuerya
             checkpoint.threadID == threadID && checkpoint.id == id
         }
     }
+
+    // MARK: Private
+
+    private var checkpoints: [HiveCheckpoint<Schema>] = []
 }
 
+// MARK: - SlowCheckpointStore
+
 private actor SlowCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
-    private var checkpoints: [HiveCheckpoint<Schema>] = []
-    private let saveDelayNanoseconds: UInt64
-    private var didSignalStart = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    // MARK: Internal
 
     init(saveDelayNanoseconds: UInt64) {
         self.saveDelayNanoseconds = saveDelayNanoseconds
@@ -1399,12 +1520,21 @@ private actor SlowCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
             waiters.append(continuation)
         }
     }
+
+    // MARK: Private
+
+    private var checkpoints: [HiveCheckpoint<Schema>] = []
+    private let saveDelayNanoseconds: UInt64
+    private var didSignalStart = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
 }
 
 private func collectEvents(_ stream: AsyncThrowingStream<HiveEvent, Error>) async -> [HiveEvent] {
     var events: [HiveEvent] = []
     do {
-        for try await event in stream { events.append(event) }
+        for try await event in stream {
+            events.append(event)
+        }
     } catch {
         return events
     }
@@ -1419,8 +1549,8 @@ private func waitOutcome<Schema: HiveSchema>(
 
 private func requireFullStore<Schema: HiveSchema>(outcome: HiveRunOutcome<Schema>) throws -> HiveGlobalStore<Schema> {
     switch outcome {
-    case let .finished(output, _),
-         let .cancelled(output, _),
+    case let .cancelled(output, _),
+         let .finished(output, _),
          let .outOfSteps(_, output, _):
         switch output {
         case let .fullStore(store):
@@ -1454,10 +1584,15 @@ private func expectedRoleBasedMessageID(taskID: String, role: String) -> String 
     return "msg:" + hex
 }
 
+// MARK: - TestFailure
+
 private struct TestFailure: Error, CustomStringConvertible {
     let description: String
+
     init(_ description: String) { self.description = description }
 }
+
+// MARK: - DuplicateTestTool
 
 private struct DuplicateTestTool: AnyJSONTool {
     let name: String
@@ -1465,10 +1600,12 @@ private struct DuplicateTestTool: AnyJSONTool {
 
     var parameters: [ToolParameter] { [] }
 
-    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    func execute(arguments _: [String: SendableValue]) async throws -> SendableValue {
         .string("result")
     }
 }
+
+// MARK: - CancellableTestTool
 
 private struct CancellableTestTool: AnyJSONTool {
     let name: String
@@ -1476,7 +1613,7 @@ private struct CancellableTestTool: AnyJSONTool {
 
     var parameters: [ToolParameter] { [] }
 
-    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+    func execute(arguments _: [String: SendableValue]) async throws -> SendableValue {
         throw CancellationError()
     }
 }

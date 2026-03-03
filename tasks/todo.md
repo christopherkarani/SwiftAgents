@@ -1,3 +1,73 @@
+# Task Plan (Review Follow-up Fixes - 2026-03-03)
+- [x] Confirm scope from review findings (P1 AgentRouter identity, P2 HiveRuntimeHardening stale interruption).
+- [x] Add failing regression tests for struct runtime handoff matching and stale interruption clearing.
+- [x] Implement targeted fixes in `AgentRouter` and `HiveRuntimeHardening`.
+- [x] Run focused tests for new regressions and full `swift test`.
+- [x] Document outcomes and verification.
+
+# Review (Review Follow-up Fixes - 2026-03-03)
+- Added failing-first regression coverage:
+- `Tests/SwarmTests/Orchestration/AgentRouterTests.swift`: new struct runtime (`ValueRuntimeRouterAgent`) + test
+  `handoffUsesValueRuntimeIdentityForStructAgents` proving handoff config lookup must work for value-type runtimes.
+- `Tests/HiveSwarmTests/HiveAgentsTests.swift`: new test
+  `getState_clearsStaleCheckpointInterruption_afterResumeCompletion` reproducing stale checkpoint interruption leakage and
+  `interruptPending` on `applyExternalWrites` after successful resume completion.
+
+- Fixed:
+- `Sources/Swarm/Orchestration/AgentRouter.swift`: removed local boxed `AnyObject` runtime comparator and now uses shared
+  `areSameRuntime` identity helper (`AgentRuntime+Identity`) for handoff config matching.
+- `Sources/Swarm/HiveSwarm/HiveRuntimeHardening.swift`: updated `getState` interruption merge strategy to let tracker-cleared
+  interruption state override stale checkpoint interruption summaries when tracker has lifecycle evidence.
+
+- Verification:
+- Red phase:
+  - `swift test --filter AgentRouterHandoffIdentityTests` failed at
+    `handoffUsesValueRuntimeIdentityForStructAgents` (missing filtered handoff input).
+  - `swift test --filter "HiveAgentsTests/getState_clearsStaleCheckpointInterruption_afterResumeCompletion"` failed with
+    stale `snapshot.interruption` + `HiveRuntimeError.interruptPending`.
+- Green phase:
+  - `swift test --filter AgentRouterHandoffIdentityTests` passed.
+  - `swift test --filter "HiveAgentsTests/getState_clearsStaleCheckpointInterruption_afterResumeCompletion"` passed.
+  - `swift test 2>&1 | tail -30` passed (1987 tests, 0 failures).
+
+# Task Plan (Phase 1 Swarm Configuration + Error Improvement - 2026-03-03)
+- [x] Confirm scope from approved `<proposed_plan>` and locked decisions.
+- [x] Add failing tests for Swarm global config and AgentError recovery suggestion.
+- [x] Implement `Swarm` global configuration storage and API surface.
+- [x] Update `AgentError` with `toolCallingRequiresCloudProvider` and recovery suggestion.
+- [x] Update provider resolution chain in `Agent` to async 6-step fallback.
+- [x] Update Foundation Models tool-calling error mapping and impacted tests.
+- [x] Run `swift build`, targeted suites, full `swift test`, and `swiftformat`.
+
+# Review (Phase 1 Swarm Configuration + Error Improvement - 2026-03-03)
+- Added:
+- `Sources/Swarm/Core/SwarmConfiguration.swift` with global `Swarm.configure(provider:)`, `Swarm.configure(cloudProvider:)`, async getters for `defaultProvider` and `cloudProvider`, and `Swarm.reset()` backed by an actor singleton.
+- `Tests/SwarmTests/Core/SwarmConfigurationTests.swift` with 8 TDD cases (including handoff-only cloud-provider resolution regression coverage).
+- `Tests/SwarmTests/Core/AgentErrorTests.swift` with 4 cases for description, recovery suggestion, debug description, and nil suggestion for legacy errors.
+- `Tests/SwarmTests/Mocks/SwarmConfigurationTestIsolation.swift` shared async lock + reset helper to serialize global Swarm config access across suites.
+
+- Updated:
+- `Sources/Swarm/Core/AgentError.swift` with new `toolCallingRequiresCloudProvider` case, description text, debug description, and `recoverySuggestion`.
+- `Sources/Swarm/Providers/LanguageModelSession.swift` to throw `toolCallingRequiresCloudProvider` for tool-call requests and align platform availability annotations.
+- `Sources/Swarm/Agents/Agent.swift` provider resolution to async 6-step chain:
+  explicit > environment > `Swarm.defaultProvider` > `Swarm.cloudProvider` (tool calling required, including handoffs) > Foundation Models > unavailable error.
+- Existing tests aligned to new error semantics:
+  - `Tests/SwarmTests/Agents/AgentDefaultInferenceProviderTests.swift`
+  - `Tests/SwarmTests/Providers/FoundationModelsToolCallingTests.swift`
+  - `Tests/SwarmTests/Core/CoreTests.swift` (`allErrors` list includes new case)
+
+- Verification:
+- Red phase validated: initial new tests failed before implementation (missing `Swarm.configure` / new `AgentError` case).
+- Green phase validated:
+  - `swift build 2>&1 | head -50` passed (package warnings only).
+  - `swift test --filter SwarmConfigurationTests` passed (8/8).
+  - `swift test --filter ToolCallingErrorTests` passed (4/4).
+  - `swift test 2>&1 | tail -30` passed (1985 tests, 0 failures).
+- Formatting:
+  - `swift package plugin --allow-writing-to-package-directory swiftformat` failed because no plugin is registered.
+  - Applied fallback formatting with installed binary:
+    `swiftformat Sources/Swarm/Core/SwarmConfiguration.swift Sources/Swarm/Core/AgentError.swift Sources/Swarm/Providers/LanguageModelSession.swift Sources/Swarm/Agents/Agent.swift Tests/SwarmTests/Core/SwarmConfigurationTests.swift Tests/SwarmTests/Core/AgentErrorTests.swift Tests/SwarmTests/Agents/AgentDefaultInferenceProviderTests.swift Tests/SwarmTests/Providers/FoundationModelsToolCallingTests.swift Tests/SwarmTests/Core/CoreTests.swift`
+
 # Task Plan (Framework Issue Audit - 2026-02-26)
 - [x] Confirm scope: mission-critical bug audit + fix-all + TDD verification + PR.
 - [x] Reproduce baseline failure state with `swift test` and capture blocking errors.

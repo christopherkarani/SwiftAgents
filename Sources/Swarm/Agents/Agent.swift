@@ -20,8 +20,10 @@ import Foundation
 /// Provider resolution order is:
 /// 1. An explicit provider passed to `Agent(...)` (including `Agent(_:)`)
 /// 2. A provider set via `.environment(\.inferenceProvider, ...)`
-/// 3. Apple Foundation Models (on-device), if available
-/// 4. Otherwise, throw `AgentError.inferenceProviderUnavailable`
+/// 3. `Swarm.defaultProvider` (set via `Swarm.configure(provider:)`)
+/// 4. `Swarm.cloudProvider` (set via `Swarm.configure(cloudProvider:)`, if tool calling is required)
+/// 5. Apple Foundation Models (on-device), if available
+/// 6. Otherwise, throw `AgentError.inferenceProviderUnavailable`
 ///
 /// The agent follows a loop-based execution pattern:
 /// 1. Build prompt with system instructions + conversation history
@@ -145,8 +147,8 @@ public actor Agent: AgentRuntime {
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
     /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
-    public init<T: Tool>(
-        tools: [T] = [],
+    public init(
+        tools: [some Tool] = [],
         instructions: String = "",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
@@ -305,6 +307,37 @@ public actor Agent: AgentRuntime {
 
     // MARK: Private
 
+    // MARK: - Conversation History
+
+    private enum ConversationMessage: Sendable {
+        case system(String)
+        case user(String)
+        case assistant(String)
+        case toolResult(toolName: String, result: String)
+
+        var formatted: String {
+            switch self {
+            case let .system(content):
+                "[System]: \(content)"
+            case let .user(content):
+                "[User]: \(content)"
+            case let .assistant(content):
+                "[Assistant]: \(content)"
+            case let .toolResult(toolName, result):
+                "[Tool Result - \(toolName)]: \(result)"
+            }
+        }
+    }
+
+    private let _handoffs: [AnyHandoffConfiguration]
+
+    // MARK: - Internal State
+
+    private var currentTask: Task<AgentResult, any Error>?
+    private var currentRunID: UUID?
+    private var isCancelled: Bool = false
+    private let toolRegistry: ToolRegistry
+
     private func runInternal(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
@@ -402,60 +435,43 @@ public actor Agent: AgentRuntime {
         }
     }
 
-    // MARK: Private
-
-    // MARK: - Conversation History
-
-    private enum ConversationMessage: Sendable {
-        case system(String)
-        case user(String)
-        case assistant(String)
-        case toolResult(toolName: String, result: String)
-
-        var formatted: String {
-            switch self {
-            case let .system(content):
-                "[System]: \(content)"
-            case let .user(content):
-                "[User]: \(content)"
-            case let .assistant(content):
-                "[Assistant]: \(content)"
-            case let .toolResult(toolName, result):
-                "[Tool Result - \(toolName)]: \(result)"
-            }
-        }
-    }
-
-    private let _handoffs: [AnyHandoffConfiguration]
-
-    // MARK: - Internal State
-
-    private var currentTask: Task<AgentResult, any Error>?
-    private var currentRunID: UUID?
-    private var isCancelled: Bool = false
-    private let toolRegistry: ToolRegistry
-
     // MARK: - Inference Provider Resolution
 
-    private func resolvedInferenceProvider() throws -> any InferenceProvider {
+    private func resolvedInferenceProvider() async throws -> any InferenceProvider {
+        // 1. Explicit provider on Agent
         if let inferenceProvider {
             return inferenceProvider
         }
 
+        // 2. TaskLocal via .environment()
         if let environmentProvider = AgentEnvironmentValues.current.inferenceProvider {
             return environmentProvider
         }
 
+        // 3. Swarm.defaultProvider (global)
+        if let globalProvider = await Swarm.defaultProvider {
+            return globalProvider
+        }
+
+        // 4. Swarm.cloudProvider (if tool calling is required)
+        let hasEnabledTools = await !toolRegistry.schemas.isEmpty
+        let needsToolCallingProvider = hasEnabledTools || !_handoffs.isEmpty
+        if needsToolCallingProvider, let cloudProvider = await Swarm.cloudProvider {
+            return cloudProvider
+        }
+
+        // 5. Foundation Models (if available, on Apple platform)
         if let foundationModelsProvider = DefaultInferenceProviderFactory.makeFoundationModelsProviderIfAvailable() {
             return foundationModelsProvider
         }
 
+        // 6. No provider available
         throw AgentError.inferenceProviderUnavailable(
             reason: """
             No inference provider configured and Apple Foundation Models are unavailable.
 
-            Provide an inference provider explicitly (e.g. `Agent(.anthropic(key: \"...\"))`) \
-            or via `.environment(\\.inferenceProvider, ...)`.
+            Configure a provider globally via `await Swarm.configure(provider: ...)` \
+            or pass one explicitly to Agent(...).
             """
         )
     }
@@ -481,7 +497,7 @@ public actor Agent: AgentRuntime {
     ) async throws -> String {
         var iteration = 0
         let startTime = ContinuousClock.now
-        let provider = try resolvedInferenceProvider()
+        let provider = try await resolvedInferenceProvider()
 
         // Retrieve relevant context from memory (enables RAG for VectorMemory)
         let activeMemory = memory ?? AgentEnvironmentValues.current.memory
@@ -734,8 +750,7 @@ public actor Agent: AgentRuntime {
         let activeMemory = memory ?? AgentEnvironmentValues.current.memory
 
         if let membraneAdapter,
-           MembraneInternalTools.isInternalTool(parsedCall.name)
-        {
+           MembraneInternalTools.isInternalTool(parsedCall.name) {
             let call = ToolCall(
                 providerCallId: parsedCall.id,
                 toolName: parsedCall.name,

@@ -2,10 +2,14 @@ import CryptoKit
 import Foundation
 import HiveCore
 
+// MARK: - HiveAgentsEventSchemaVersion
+
 public enum HiveAgentsEventSchemaVersion: Sendable {
     public static let metadataKey = "hive.eventSchemaVersion"
     public static let current = "hsw.v1"
 }
+
+// MARK: - HiveCheckpointQueryCapability
 
 public enum HiveCheckpointQueryCapability: Sendable, Equatable {
     case unavailable
@@ -13,12 +17,16 @@ public enum HiveCheckpointQueryCapability: Sendable, Equatable {
     case queryable
 }
 
+// MARK: - HiveStateSnapshotSource
+
 public enum HiveStateSnapshotSource: Sendable, Equatable {
     case memory
     case checkpoint
     case memoryAndCheckpoint
     case trackerOnly
 }
+
+// MARK: - HiveRuntimeFrontierSummary
 
 public struct HiveRuntimeFrontierSummary: Sendable, Equatable {
     public struct Entry: Sendable, Equatable {
@@ -48,6 +56,8 @@ public struct HiveRuntimeFrontierSummary: Sendable, Equatable {
     }
 }
 
+// MARK: - HiveRuntimeChannelStateSummary
+
 public struct HiveRuntimeChannelStateSummary: Sendable, Equatable {
     public struct Entry: Sendable, Equatable {
         public let channelID: HiveChannelID
@@ -68,6 +78,8 @@ public struct HiveRuntimeChannelStateSummary: Sendable, Equatable {
     }
 }
 
+// MARK: - HiveRuntimeInterruptionSummary
+
 public struct HiveRuntimeInterruptionSummary<Schema: HiveSchema>: Sendable, Equatable {
     public let interruptID: HiveInterruptID
     public let payloadHash: String?
@@ -77,6 +89,8 @@ public struct HiveRuntimeInterruptionSummary<Schema: HiveSchema>: Sendable, Equa
         self.payloadHash = payloadHash
     }
 }
+
+// MARK: - HiveRuntimeStateSnapshot
 
 public struct HiveRuntimeStateSnapshot<Schema: HiveSchema>: Sendable, Equatable {
     public let threadID: HiveThreadID
@@ -112,6 +126,8 @@ public struct HiveRuntimeStateSnapshot<Schema: HiveSchema>: Sendable, Equatable 
     }
 }
 
+// MARK: - HiveCanonicalEventRecord
+
 public struct HiveCanonicalEventRecord: Sendable, Codable, Equatable {
     public let eventIndex: UInt64
     public let stepIndex: Int?
@@ -137,6 +153,8 @@ public struct HiveCanonicalEventRecord: Sendable, Codable, Equatable {
     }
 }
 
+// MARK: - HiveCanonicalTranscript
+
 public struct HiveCanonicalTranscript: Sendable, Codable, Equatable {
     public let schemaVersion: String
     public let events: [HiveCanonicalEventRecord]
@@ -146,6 +164,8 @@ public struct HiveCanonicalTranscript: Sendable, Codable, Equatable {
         self.events = events
     }
 }
+
+// MARK: - HiveDeterminismDiff
 
 public struct HiveDeterminismDiff: Sendable, Equatable {
     public let path: String
@@ -159,10 +179,14 @@ public struct HiveDeterminismDiff: Sendable, Equatable {
     }
 }
 
+// MARK: - HiveTranscriptCompatibilityError
+
 public enum HiveTranscriptCompatibilityError: Error, Sendable, Equatable {
     case missingSchemaVersion(eventIndex: Int)
     case incompatibleSchemaVersion(expected: String, found: String, eventIndex: Int)
 }
+
+// MARK: - HiveCancelCheckpointResolution
 
 public enum HiveCancelCheckpointResolution: Sendable, Equatable {
     case notCancelled
@@ -170,7 +194,11 @@ public enum HiveCancelCheckpointResolution: Sendable, Equatable {
     case cancelledAfterCheckpointSaved(checkpointID: HiveCheckpointID)
 }
 
+// MARK: - HiveDeterminism
+
 public enum HiveDeterminism {
+    // MARK: Public
+
     public static func projectTranscript(
         _ events: [HiveEvent],
         expectedSchemaVersion: String = HiveAgentsEventSchemaVersion.current
@@ -262,8 +290,8 @@ public enum HiveDeterminism {
         return try hashEncodable(projection)
     }
 
-    public static func finalStateHash<Schema: HiveSchema>(
-        _ snapshot: HiveRuntimeStateSnapshot<Schema>,
+    public static func finalStateHash(
+        _ snapshot: HiveRuntimeStateSnapshot<some HiveSchema>,
         includeRuntimeIdentity: Bool = false
     ) throws -> String {
         let canonical = CanonicalStateProjection(
@@ -451,9 +479,9 @@ public enum HiveDeterminism {
         return nil
     }
 
-    public static func classifyCancelCheckpointRace<Schema: HiveSchema>(
+    public static func classifyCancelCheckpointRace(
         events: [HiveEvent],
-        outcome: HiveRunOutcome<Schema>
+        outcome: HiveRunOutcome<some HiveSchema>
     ) -> HiveCancelCheckpointResolution {
         guard case let .cancelled(_, checkpointID) = outcome else {
             return .notCancelled
@@ -471,123 +499,7 @@ public enum HiveDeterminism {
         return .cancelledWithoutCheckpoint(latestCheckpointID: checkpointID)
     }
 
-    private static func canonicalKind(_ kind: HiveEventKind) -> (kind: String, attributes: [String: String]) {
-        switch kind {
-        case .runStarted(let threadID):
-            return ("runStarted", ["threadID": threadID.rawValue])
-        case .runFinished:
-            return ("runFinished", [:])
-        case .runInterrupted:
-            return ("runInterrupted", [:])
-        case .runResumed:
-            return ("runResumed", [:])
-        case .runCancelled:
-            return ("runCancelled", [:])
-        case .stepStarted(let stepIndex, let frontierCount):
-            return ("stepStarted", ["stepIndex": String(stepIndex), "frontierCount": String(frontierCount)])
-        case .stepFinished(let stepIndex, let nextFrontierCount):
-            return ("stepFinished", ["stepIndex": String(stepIndex), "nextFrontierCount": String(nextFrontierCount)])
-        case .taskStarted(let node, _):
-            return ("taskStarted", ["nodeID": node.rawValue])
-        case .taskFinished(let node, _):
-            return ("taskFinished", ["nodeID": node.rawValue])
-        case .taskFailed(let node, _, let errorDescription):
-            return ("taskFailed", ["nodeID": node.rawValue, "errorDescription": errorDescription])
-        case .writeApplied(let channelID, _):
-            // payloadHash includes runtime identity (e.g., message IDs) and is not stable across fresh runtimes.
-            return ("writeApplied", ["channelID": channelID.rawValue])
-        case .checkpointSaved:
-            return ("checkpointSaved", [:])
-        case .checkpointLoaded:
-            return ("checkpointLoaded", [:])
-        case .storeSnapshot(let channelValues):
-            return (
-                "storeSnapshot",
-                [
-                    "channels": canonicalChannelValueSummary(channelValues)
-                ]
-            )
-        case .channelUpdates(let channelValues):
-            return (
-                "channelUpdates",
-                [
-                    "channels": canonicalChannelValueSummary(channelValues)
-                ]
-            )
-        case .modelInvocationStarted(let model):
-            return ("modelInvocationStarted", ["model": model])
-        case .modelToken(let text):
-            return ("modelToken", ["text": text])
-        case .modelInvocationFinished:
-            return ("modelInvocationFinished", [:])
-        case .toolInvocationStarted(let name):
-            return ("toolInvocationStarted", ["name": name])
-        case .toolInvocationFinished(let name, let success):
-            return ("toolInvocationFinished", ["name": name, "success": String(success)])
-        case .streamBackpressure(let droppedModelTokenEvents, let droppedDebugEvents):
-            return (
-                "streamBackpressure",
-                [
-                    "droppedModelTokenEvents": String(droppedModelTokenEvents),
-                    "droppedDebugEvents": String(droppedDebugEvents)
-                ]
-            )
-        case .customDebug(let name):
-            return ("customDebug", ["name": name])
-        }
-    }
-
-    private static func canonicalChannelValueSummary(_ values: [HiveSnapshotValue]) -> String {
-        let items = values
-            .map { value in
-                (value.channelID.rawValue, value.payloadHash)
-            }
-            .sorted { lhs, rhs in
-                lhs.0.utf8.lexicographicallyPrecedes(rhs.0.utf8)
-            }
-            .map { "\($0)|\($1)" }
-        return items.joined(separator: ";")
-    }
-
-    private static func canonicalMetadata(_ metadata: [String: String]) -> [String: String] {
-        Dictionary(uniqueKeysWithValues: metadata.sorted { lhs, rhs in
-            lhs.key.utf8.lexicographicallyPrecedes(rhs.key.utf8)
-        })
-    }
-
-    private static func hashEncodable<T: Encodable>(_ value: T) throws -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.dataEncodingStrategy = .base64
-        return sha256Hex(try encoder.encode(value))
-    }
-
-    private static func sha256Hex(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
-
-    private static func diff<Value>(path: String, _ expected: Value, _ actual: Value) -> HiveDeterminismDiff {
-        HiveDeterminismDiff(path: path, expected: String(describing: expected), actual: String(describing: actual))
-    }
-
-    private static func firstDictionaryDiff(
-        expected: [String: String],
-        actual: [String: String],
-        pathPrefix: String
-    ) -> HiveDeterminismDiff? {
-        let allKeys = Set(expected.keys).union(actual.keys).sorted { lhs, rhs in
-            lhs.utf8.lexicographicallyPrecedes(rhs.utf8)
-        }
-        for key in allKeys {
-            let lhs = expected[key]
-            let rhs = actual[key]
-            if lhs != rhs {
-                return diff(path: "\(pathPrefix).\(key)", lhs, rhs)
-            }
-        }
-        return nil
-    }
+    // MARK: Private
 
     private struct CanonicalStateProjection: Codable {
         let threadID: String
@@ -615,12 +527,134 @@ public enum HiveDeterminism {
         let channelID: String
         let payloadHash: String
     }
+
+    private static func canonicalKind(_ kind: HiveEventKind) -> (kind: String, attributes: [String: String]) {
+        switch kind {
+        case let .runStarted(threadID):
+            ("runStarted", ["threadID": threadID.rawValue])
+        case .runFinished:
+            ("runFinished", [:])
+        case .runInterrupted:
+            ("runInterrupted", [:])
+        case .runResumed:
+            ("runResumed", [:])
+        case .runCancelled:
+            ("runCancelled", [:])
+        case let .stepStarted(stepIndex, frontierCount):
+            ("stepStarted", ["stepIndex": String(stepIndex), "frontierCount": String(frontierCount)])
+        case let .stepFinished(stepIndex, nextFrontierCount):
+            ("stepFinished", ["stepIndex": String(stepIndex), "nextFrontierCount": String(nextFrontierCount)])
+        case let .taskStarted(node, _):
+            ("taskStarted", ["nodeID": node.rawValue])
+        case let .taskFinished(node, _):
+            ("taskFinished", ["nodeID": node.rawValue])
+        case let .taskFailed(node, _, errorDescription):
+            ("taskFailed", ["nodeID": node.rawValue, "errorDescription": errorDescription])
+        case let .writeApplied(channelID, _):
+            // payloadHash includes runtime identity (e.g., message IDs) and is not stable across fresh runtimes.
+            ("writeApplied", ["channelID": channelID.rawValue])
+        case .checkpointSaved:
+            ("checkpointSaved", [:])
+        case .checkpointLoaded:
+            ("checkpointLoaded", [:])
+        case let .storeSnapshot(channelValues):
+            (
+                "storeSnapshot",
+                [
+                    "channels": canonicalChannelValueSummary(channelValues)
+                ]
+            )
+        case let .channelUpdates(channelValues):
+            (
+                "channelUpdates",
+                [
+                    "channels": canonicalChannelValueSummary(channelValues)
+                ]
+            )
+        case let .modelInvocationStarted(model):
+            ("modelInvocationStarted", ["model": model])
+        case let .modelToken(text):
+            ("modelToken", ["text": text])
+        case .modelInvocationFinished:
+            ("modelInvocationFinished", [:])
+        case let .toolInvocationStarted(name):
+            ("toolInvocationStarted", ["name": name])
+        case let .toolInvocationFinished(name, success):
+            ("toolInvocationFinished", ["name": name, "success": String(success)])
+        case let .streamBackpressure(droppedModelTokenEvents, droppedDebugEvents):
+            (
+                "streamBackpressure",
+                [
+                    "droppedModelTokenEvents": String(droppedModelTokenEvents),
+                    "droppedDebugEvents": String(droppedDebugEvents)
+                ]
+            )
+        case let .customDebug(name):
+            ("customDebug", ["name": name])
+        }
+    }
+
+    private static func canonicalChannelValueSummary(_ values: [HiveSnapshotValue]) -> String {
+        let items = values
+            .map { value in
+                (value.channelID.rawValue, value.payloadHash)
+            }
+            .sorted { lhs, rhs in
+                lhs.0.utf8.lexicographicallyPrecedes(rhs.0.utf8)
+            }
+            .map { "\($0)|\($1)" }
+        return items.joined(separator: ";")
+    }
+
+    private static func canonicalMetadata(_ metadata: [String: String]) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: metadata.sorted { lhs, rhs in
+            lhs.key.utf8.lexicographicallyPrecedes(rhs.key.utf8)
+        })
+    }
+
+    private static func hashEncodable(_ value: some Encodable) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.dataEncodingStrategy = .base64
+        return try sha256Hex(encoder.encode(value))
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func diff<Value>(path: String, _ expected: Value, _ actual: Value) -> HiveDeterminismDiff {
+        HiveDeterminismDiff(path: path, expected: String(describing: expected), actual: String(describing: actual))
+    }
+
+    private static func firstDictionaryDiff(
+        expected: [String: String],
+        actual: [String: String],
+        pathPrefix: String
+    ) -> HiveDeterminismDiff? {
+        let allKeys = Set(expected.keys).union(actual.keys).sorted { lhs, rhs in
+            lhs.utf8.lexicographicallyPrecedes(rhs.utf8)
+        }
+        for key in allKeys {
+            let lhs = expected[key]
+            let rhs = actual[key]
+            if lhs != rhs {
+                return diff(path: "\(pathPrefix).\(key)", lhs, rhs)
+            }
+        }
+        return nil
+    }
 }
+
+// MARK: - HiveTranscriptHashProjection
 
 private struct HiveTranscriptHashProjection: Codable, Sendable, Equatable {
     let schemaVersion: String
     let events: [HiveTranscriptHashEventRecord]
 }
+
+// MARK: - HiveTranscriptHashEventRecord
 
 private struct HiveTranscriptHashEventRecord: Codable, Sendable, Equatable {
     let stepIndex: Int?
@@ -647,7 +681,17 @@ private struct HiveTranscriptHashEventRecord: Codable, Sendable, Equatable {
 }
 
 public extension HiveAgentsRunController {
-    public func validateRunOptions(_ options: HiveRunOptions) throws {
+    // MARK: Internal
+
+    static func decorate(event: HiveEvent) -> HiveEvent {
+        var metadata = event.metadata
+        if metadata[HiveAgentsEventSchemaVersion.metadataKey] == nil {
+            metadata[HiveAgentsEventSchemaVersion.metadataKey] = HiveAgentsEventSchemaVersion.current
+        }
+        return HiveEvent(id: event.id, kind: event.kind, metadata: metadata)
+    }
+
+    func validateRunOptions(_ options: HiveRunOptions) throws {
         let environment = runtime.environmentSnapshot
 
         if environment.modelRouter == nil, environment.model == nil {
@@ -676,7 +720,9 @@ public extension HiveAgentsRunController {
         switch options.checkpointPolicy {
         case .disabled:
             break
-        case .everyStep, .every, .onInterrupt:
+        case .every,
+             .everyStep,
+             .onInterrupt:
             if environment.checkpointStore == nil {
                 throw HiveRuntimeError.checkpointStoreMissing
             }
@@ -779,15 +825,7 @@ public extension HiveAgentsRunController {
         )
     }
 
-    static func decorate(event: HiveEvent) -> HiveEvent {
-        var metadata = event.metadata
-        if metadata[HiveAgentsEventSchemaVersion.metadataKey] == nil {
-            metadata[HiveAgentsEventSchemaVersion.metadataKey] = HiveAgentsEventSchemaVersion.current
-        }
-        return HiveEvent(id: event.id, kind: event.kind, metadata: metadata)
-    }
-
-    public func applyExternalWrites(
+    func applyExternalWrites(
         _ request: HiveAgentsExternalWriteRequest
     ) async throws -> HiveRunHandle<HiveAgents.Schema> {
         try validateRunOptions(request.options)
@@ -807,7 +845,7 @@ public extension HiveAgentsRunController {
         return decorate(handle: handle, threadID: request.threadID, eventBufferCapacity: request.options.eventBufferCapacity)
     }
 
-    public func checkpointQueryCapability(
+    func checkpointQueryCapability(
         probeThreadID: HiveThreadID = HiveThreadID("__hive_checkpoint_capability_probe__")
     ) async -> HiveCheckpointQueryCapability {
         guard runtime.environmentSnapshot.checkpointStore != nil else {
@@ -826,34 +864,31 @@ public extension HiveAgentsRunController {
         }
     }
 
-    public func getCheckpointHistory(
+    func getCheckpointHistory(
         threadID: HiveThreadID,
         limit: Int? = nil
     ) async throws -> [HiveCheckpointSummary] {
         try await runtime.getCheckpointHistory(threadID: threadID, limit: limit)
     }
 
-    public func getCheckpoint(
+    func getCheckpoint(
         threadID: HiveThreadID,
         id: HiveCheckpointID
     ) async throws -> HiveCheckpoint<HiveAgents.Schema>? {
         try await runtime.getCheckpoint(threadID: threadID, id: id)
     }
 
-    public func getState(
+    func getState(
         threadID: HiveThreadID
     ) async throws -> HiveRuntimeStateSnapshot<HiveAgents.Schema>? {
         let tracked = await stateTracker.snapshot(threadID: threadID)
         let runtimeSnapshot = try await runtime.getState(threadID: threadID)
 
         if let runtimeSnapshot {
-            let interruption = runtimeSnapshot.interruption ?? {
-                guard let trackedInterruptID = tracked?.interruptID else { return nil }
-                return HiveRuntimeInterruptionSummary<HiveAgents.Schema>(
-                    interruptID: trackedInterruptID,
-                    payloadHash: nil
-                )
-            }()
+            let interruption = Self.resolveInterruptionSummary(
+                runtimeInterruption: runtimeSnapshot.interruption,
+                tracked: tracked
+            )
             return HiveRuntimeStateSnapshot(
                 threadID: runtimeSnapshot.threadID,
                 runID: tracked?.runID ?? runtimeSnapshot.runID,
@@ -888,41 +923,7 @@ public extension HiveAgentsRunController {
         )
     }
 
-    private static func validateExternalWrites(
-        _ writes: [AnyHiveWrite<HiveAgents.Schema>]
-    ) throws {
-        let specsByID = Dictionary(uniqueKeysWithValues: HiveAgents.Schema.channelSpecs.map { ($0.id, $0) })
-        var writeCounts: [HiveChannelID: Int] = [:]
-
-        for write in writes {
-            guard let spec = specsByID[write.channelID] else {
-                throw HiveRuntimeError.unknownChannelID(write.channelID)
-            }
-            guard spec.scope == .global else {
-                throw HiveRuntimeError.taskLocalWriteNotAllowed
-            }
-            let actualValueTypeID = String(reflecting: type(of: write.value))
-            if actualValueTypeID != spec.valueTypeID {
-                throw HiveRuntimeError.channelTypeMismatch(
-                    channelID: write.channelID,
-                    expectedValueTypeID: spec.valueTypeID,
-                    actualValueTypeID: actualValueTypeID
-                )
-            }
-            writeCounts[write.channelID, default: 0] += 1
-        }
-
-        for (channelID, count) in writeCounts {
-            guard let spec = specsByID[channelID] else { continue }
-            if spec.updatePolicy == .single, count > 1 {
-                throw HiveRuntimeError.updatePolicyViolation(
-                    channelID: channelID,
-                    policy: .single,
-                    writeCount: count
-                )
-            }
-        }
-    }
+    // MARK: Fileprivate
 
     fileprivate static func resolveInterruptionSummary(
         checkpoint: HiveCheckpoint<HiveAgents.Schema>?,
@@ -991,7 +992,7 @@ public extension HiveAgentsRunController {
         }
         if let checkpoint {
             let entries = checkpoint.globalDataByChannelID
-                .map { (rawID, payload) in
+                .map { rawID, payload in
                     HiveRuntimeChannelStateSummary.Entry(
                         channelID: HiveChannelID(rawID),
                         payloadHash: sha256Hex(payload)
@@ -1025,26 +1026,26 @@ public extension HiveAgentsRunController {
                 )
             }
 
-        let entries: [HiveRuntimeChannelStateSummary.Entry] = [
+        let entries: [HiveRuntimeChannelStateSummary.Entry] = try [
             HiveRuntimeChannelStateSummary.Entry(
                 channelID: HiveAgents.Schema.messagesKey.id,
-                payloadHash: sha256Hex(try HiveStateSnapshotCodec.messages.encode(canonicalMessages))
+                payloadHash: sha256Hex(HiveStateSnapshotCodec.messages.encode(canonicalMessages))
             ),
             HiveRuntimeChannelStateSummary.Entry(
                 channelID: HiveAgents.Schema.pendingToolCallsKey.id,
-                payloadHash: sha256Hex(try HiveStateSnapshotCodec.pendingToolCalls.encode(store.get(HiveAgents.Schema.pendingToolCallsKey)))
+                payloadHash: sha256Hex(HiveStateSnapshotCodec.pendingToolCalls.encode(store.get(HiveAgents.Schema.pendingToolCallsKey)))
             ),
             HiveRuntimeChannelStateSummary.Entry(
                 channelID: HiveAgents.Schema.finalAnswerKey.id,
-                payloadHash: sha256Hex(try HiveStateSnapshotCodec.finalAnswer.encode(store.get(HiveAgents.Schema.finalAnswerKey)))
+                payloadHash: sha256Hex(HiveStateSnapshotCodec.finalAnswer.encode(store.get(HiveAgents.Schema.finalAnswerKey)))
             ),
             HiveRuntimeChannelStateSummary.Entry(
                 channelID: HiveAgents.Schema.llmInputMessagesKey.id,
-                payloadHash: sha256Hex(try HiveStateSnapshotCodec.llmInputMessages.encode(store.get(HiveAgents.Schema.llmInputMessagesKey)))
+                payloadHash: sha256Hex(HiveStateSnapshotCodec.llmInputMessages.encode(store.get(HiveAgents.Schema.llmInputMessagesKey)))
             ),
             HiveRuntimeChannelStateSummary.Entry(
                 channelID: HiveAgents.Schema.membraneCheckpointDataKey.id,
-                payloadHash: sha256Hex(try HiveStateSnapshotCodec.membraneCheckpointData.encode(store.get(HiveAgents.Schema.membraneCheckpointDataKey)))
+                payloadHash: sha256Hex(HiveStateSnapshotCodec.membraneCheckpointData.encode(store.get(HiveAgents.Schema.membraneCheckpointDataKey)))
             )
         ]
         let sortedEntries = entries.sorted { lhs, rhs in
@@ -1057,12 +1058,81 @@ public extension HiveAgentsRunController {
         )
     }
 
-    fileprivate static func stablePayloadHash<T: Encodable>(_ payload: T) throws -> String {
+    fileprivate static func stablePayloadHash(_ payload: some Encodable) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .iso8601
         encoder.dataEncodingStrategy = .base64
-        return sha256Hex(try encoder.encode(payload))
+        return try sha256Hex(encoder.encode(payload))
+    }
+
+    // MARK: Private
+
+    private static func resolveInterruptionSummary(
+        runtimeInterruption: HiveRuntimeInterruptionSummary<HiveAgents.Schema>?,
+        tracked: HiveTrackedThreadState?
+    ) -> HiveRuntimeInterruptionSummary<HiveAgents.Schema>? {
+        guard let tracked else {
+            return runtimeInterruption
+        }
+
+        if let trackedInterruptID = tracked.interruptID {
+            return HiveRuntimeInterruptionSummary<HiveAgents.Schema>(
+                interruptID: trackedInterruptID,
+                payloadHash: nil
+            )
+        }
+
+        guard let runtimeInterruption else {
+            return nil
+        }
+
+        let hasTrackedLifecycleSignal = tracked.stepIndex != nil
+            || tracked.frontierCount != nil
+            || tracked.checkpointID != nil
+            || tracked.eventSchemaVersion != nil
+
+        if hasTrackedLifecycleSignal {
+            return nil
+        }
+
+        return runtimeInterruption
+    }
+
+    private static func validateExternalWrites(
+        _ writes: [AnyHiveWrite<HiveAgents.Schema>]
+    ) throws {
+        let specsByID = Dictionary(uniqueKeysWithValues: HiveAgents.Schema.channelSpecs.map { ($0.id, $0) })
+        var writeCounts: [HiveChannelID: Int] = [:]
+
+        for write in writes {
+            guard let spec = specsByID[write.channelID] else {
+                throw HiveRuntimeError.unknownChannelID(write.channelID)
+            }
+            guard spec.scope == .global else {
+                throw HiveRuntimeError.taskLocalWriteNotAllowed
+            }
+            let actualValueTypeID = String(reflecting: type(of: write.value))
+            if actualValueTypeID != spec.valueTypeID {
+                throw HiveRuntimeError.channelTypeMismatch(
+                    channelID: write.channelID,
+                    expectedValueTypeID: spec.valueTypeID,
+                    actualValueTypeID: actualValueTypeID
+                )
+            }
+            writeCounts[write.channelID, default: 0] += 1
+        }
+
+        for (channelID, count) in writeCounts {
+            guard let spec = specsByID[channelID] else { continue }
+            if spec.updatePolicy == .single, count > 1 {
+                throw HiveRuntimeError.updatePolicyViolation(
+                    channelID: channelID,
+                    policy: .single,
+                    writeCount: count
+                )
+            }
+        }
     }
 }
 
@@ -1077,20 +1147,19 @@ public extension HiveRuntime where Schema == HiveAgents.Schema {
             return nil
         }
 
-        let source: HiveStateSnapshotSource
-        if store != nil, checkpoint != nil {
-            source = .memoryAndCheckpoint
+        let source: HiveStateSnapshotSource = if store != nil, checkpoint != nil {
+            .memoryAndCheckpoint
         } else if store != nil {
-            source = .memory
+            .memory
         } else {
-            source = .checkpoint
+            .checkpoint
         }
 
-        return HiveRuntimeStateSnapshot(
+        return try HiveRuntimeStateSnapshot(
             threadID: threadID,
             runID: checkpoint?.runID,
             stepIndex: checkpoint?.stepIndex,
-            interruption: try HiveAgentsRunController.resolveInterruptionSummary(
+            interruption: HiveAgentsRunController.resolveInterruptionSummary(
                 checkpoint: checkpoint,
                 trackedInterruptID: nil
             ),
@@ -1099,7 +1168,7 @@ public extension HiveRuntime where Schema == HiveAgents.Schema {
                 checkpoint: checkpoint,
                 fallbackCount: nil
             ),
-            channelState: try HiveAgentsRunController.resolveChannelSummary(
+            channelState: HiveAgentsRunController.resolveChannelSummary(
                 store: store,
                 checkpoint: checkpoint
             ),
@@ -1109,6 +1178,8 @@ public extension HiveRuntime where Schema == HiveAgents.Schema {
     }
 }
 
+// MARK: - HiveAgentsMessageForStateHash
+
 private struct HiveAgentsMessageForStateHash: Codable, Sendable {
     let role: HiveChatRole
     let content: String
@@ -1117,6 +1188,8 @@ private struct HiveAgentsMessageForStateHash: Codable, Sendable {
     let toolCalls: [HiveToolCall]
     let op: HiveChatMessageOp?
 }
+
+// MARK: - HiveStateSnapshotCodec
 
 private enum HiveStateSnapshotCodec {
     static let messages = HiveCodableJSONCodec<[HiveAgentsMessageForStateHash]>()
@@ -1134,8 +1207,10 @@ private func hexLower(_ data: Data) -> String {
     data.map { String(format: "%02x", $0) }.joined()
 }
 
+// MARK: - HiveAgentsStateTracker
+
 actor HiveAgentsStateTracker {
-    private var states: [HiveThreadID: HiveTrackedThreadState] = [:]
+    // MARK: Internal
 
     func markAttemptStarted(threadID: HiveThreadID, runID: HiveRunID) {
         var state = states[threadID] ?? HiveTrackedThreadState()
@@ -1151,19 +1226,19 @@ actor HiveAgentsStateTracker {
         }
 
         switch event.kind {
-        case .stepStarted(let stepIndex, let frontierCount):
+        case let .stepStarted(stepIndex, frontierCount):
             state.stepIndex = stepIndex
             state.frontierCount = frontierCount
-        case .stepFinished(let stepIndex, let nextFrontierCount):
+        case let .stepFinished(stepIndex, nextFrontierCount):
             state.stepIndex = stepIndex + 1
             state.frontierCount = nextFrontierCount
-        case .runInterrupted(let interruptID):
+        case let .runInterrupted(interruptID):
             state.interruptID = interruptID
         case .runResumed:
             state.interruptID = nil
-        case .checkpointSaved(let checkpointID):
+        case let .checkpointSaved(checkpointID):
             state.checkpointID = checkpointID
-        case .checkpointLoaded(let checkpointID):
+        case let .checkpointLoaded(checkpointID):
             state.checkpointID = checkpointID
         default:
             break
@@ -1184,8 +1259,8 @@ actor HiveAgentsStateTracker {
         case let .interrupted(interruption):
             state.interruptID = interruption.interrupt.id
             state.checkpointID = interruption.checkpointID
-        case let .finished(_, checkpointID),
-             let .cancelled(_, checkpointID),
+        case let .cancelled(_, checkpointID),
+             let .finished(_, checkpointID),
              let .outOfSteps(_, _, checkpointID):
             state.interruptID = nil
             if let checkpointID {
@@ -1199,7 +1274,13 @@ actor HiveAgentsStateTracker {
     func snapshot(threadID: HiveThreadID) -> HiveTrackedThreadState? {
         states[threadID]
     }
+
+    // MARK: Private
+
+    private var states: [HiveThreadID: HiveTrackedThreadState] = [:]
 }
+
+// MARK: - HiveTrackedThreadState
 
 struct HiveTrackedThreadState: Sendable {
     var runID: HiveRunID?

@@ -79,6 +79,9 @@ public enum AgentError: Error, Sendable, Equatable {
 
     /// An internal error occurred.
     case internalError(reason: String)
+
+    /// Tool calling was requested but Foundation Models do not support it.
+    case toolCallingRequiresCloudProvider
 }
 
 // MARK: LocalizedError
@@ -128,6 +131,17 @@ extension AgentError: LocalizedError {
             "Agent not found: '\(name)'"
         case let .internalError(reason):
             "Internal error: \(reason)"
+        case .toolCallingRequiresCloudProvider:
+            "Foundation Models do not support tool calling. A cloud provider is required."
+        }
+    }
+
+    public var recoverySuggestion: String? {
+        switch self {
+        case .toolCallingRequiresCloudProvider:
+            "Call `await Swarm.configure(cloudProvider:)` or pass a tool-calling-capable provider explicitly to `Agent(...)`."
+        default:
+            nil
         }
     }
 }
@@ -138,43 +152,45 @@ extension AgentError: CustomDebugStringConvertible {
     public var debugDescription: String {
         switch self {
         case let .invalidInput(reason):
-            return "AgentError.invalidInput(reason: \(reason))"
+            "AgentError.invalidInput(reason: \(reason))"
         case .cancelled:
-            return "AgentError.cancelled"
+            "AgentError.cancelled"
         case let .maxIterationsExceeded(iterations):
-            return "AgentError.maxIterationsExceeded(iterations: \(iterations))"
+            "AgentError.maxIterationsExceeded(iterations: \(iterations))"
         case let .timeout(duration):
-            return "AgentError.timeout(duration: \(duration))"
+            "AgentError.timeout(duration: \(duration))"
         case let .invalidLoop(reason):
-            return "AgentError.invalidLoop(reason: \(reason))"
+            "AgentError.invalidLoop(reason: \(reason))"
         case let .toolNotFound(name):
-            return "AgentError.toolNotFound(name: \(name))"
+            "AgentError.toolNotFound(name: \(name))"
         case let .toolExecutionFailed(toolName, underlyingError):
-            return "AgentError.toolExecutionFailed(toolName: \(toolName), underlyingError: \(underlyingError))"
+            "AgentError.toolExecutionFailed(toolName: \(toolName), underlyingError: \(underlyingError))"
         case let .invalidToolArguments(toolName, reason):
-            return "AgentError.invalidToolArguments(toolName: \(toolName), reason: \(reason))"
+            "AgentError.invalidToolArguments(toolName: \(toolName), reason: \(reason))"
         case let .inferenceProviderUnavailable(reason):
-            return "AgentError.inferenceProviderUnavailable(reason: \(reason))"
+            "AgentError.inferenceProviderUnavailable(reason: \(reason))"
         case let .contextWindowExceeded(tokenCount, limit):
-            return "AgentError.contextWindowExceeded(tokenCount: \(tokenCount), limit: \(limit))"
+            "AgentError.contextWindowExceeded(tokenCount: \(tokenCount), limit: \(limit))"
         case let .guardrailViolation(reason):
-            return "AgentError.guardrailViolation(reason: \(reason))"
+            "AgentError.guardrailViolation(reason: \(reason))"
         case let .contentFiltered(reason):
-            return "AgentError.contentFiltered(reason: \(reason))"
+            "AgentError.contentFiltered(reason: \(reason))"
         case let .unsupportedLanguage(language):
-            return "AgentError.unsupportedLanguage(language: \(language))"
+            "AgentError.unsupportedLanguage(language: \(language))"
         case let .generationFailed(reason):
-            return "AgentError.generationFailed(reason: \(reason))"
+            "AgentError.generationFailed(reason: \(reason))"
         case let .modelNotAvailable(model):
-            return "AgentError.modelNotAvailable(model: \(model))"
+            "AgentError.modelNotAvailable(model: \(model))"
         case let .rateLimitExceeded(retryAfter):
-            return "AgentError.rateLimitExceeded(retryAfter: \(String(describing: retryAfter)))"
+            "AgentError.rateLimitExceeded(retryAfter: \(String(describing: retryAfter)))"
         case let .embeddingFailed(reason):
-            return "AgentError.embeddingFailed(reason: \(reason))"
+            "AgentError.embeddingFailed(reason: \(reason))"
         case let .agentNotFound(name):
-            return "AgentError.agentNotFound(name: \(name))"
+            "AgentError.agentNotFound(name: \(name))"
         case let .internalError(reason):
-            return "AgentError.internalError(reason: \(reason))"
+            "AgentError.internalError(reason: \(reason))"
+        case .toolCallingRequiresCloudProvider:
+            "AgentError.toolCallingRequiresCloudProvider"
         }
     }
 }

@@ -238,6 +238,8 @@ struct AgentConfigurationTests {
     }
 }
 
+// MARK: - InferencePolicyTests
+
 @Suite("InferencePolicy Tests")
 struct InferencePolicyTests {
     @Test("Invalid token budget is dropped instead of crashing")
@@ -497,7 +499,8 @@ struct AgentErrorTests {
             .rateLimitExceeded(retryAfter: 60.0),
             .rateLimitExceeded(retryAfter: nil),
             .embeddingFailed(reason: "test"),
-            .internalError(reason: "test")
+            .internalError(reason: "test"),
+            .toolCallingRequiresCloudProvider
         ]
 
         for error in allErrors {

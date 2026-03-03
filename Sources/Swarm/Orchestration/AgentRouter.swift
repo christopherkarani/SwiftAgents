@@ -5,6 +5,8 @@
 
 import Foundation
 
+// MARK: - SendableRegex
+
 private struct SendableRegex<Output>: @unchecked Sendable {
     let regex: Regex<Output>
 }
@@ -126,7 +128,7 @@ public extension RouteCondition {
     ///
     /// - Parameter regex: The Swift Regex to evaluate against the input.
     /// - Returns: A condition that matches when the regex finds a match.
-    static func matching<Output>(_ regex: Regex<Output>) -> RouteCondition {
+    static func matching(_ regex: Regex<some Any>) -> RouteCondition {
         let wrapped = SendableRegex(regex: regex)
         return RouteCondition { input, _ in
             input.firstMatch(of: wrapped.regex) != nil
@@ -139,7 +141,7 @@ public extension RouteCondition {
     ///   - regex: The Swift Regex to evaluate against the input.
     ///   - key: The context key to store the matched substring. Default: `regex_match`.
     /// - Returns: A condition that matches when the regex finds a match.
-    static func extracting<Output>(_ regex: Regex<Output>, into key: String = "regex_match") -> RouteCondition {
+    static func extracting(_ regex: Regex<some Any>, into key: String = "regex_match") -> RouteCondition {
         let wrapped = SendableRegex(regex: regex)
         return RouteCondition { input, context in
             guard let match = input.firstMatch(of: wrapped.regex) else {
@@ -803,16 +805,6 @@ public actor AgentRouter: AgentRuntime {
         _handoffs.first { config in
             areSameRuntime(config.targetAgent, targetAgent)
         }
-    }
-
-    private func areSameRuntime(_ lhs: any AgentRuntime, _ rhs: any AgentRuntime) -> Bool {
-        if let lhsObj = lhs as? AnyObject, let rhsObj = rhs as? AnyObject {
-            return ObjectIdentifier(lhsObj) == ObjectIdentifier(rhsObj)
-        }
-
-        // Fallback for struct-based runtimes.
-        return lhs.name == rhs.name
-            && String(describing: type(of: lhs)) == String(describing: type(of: rhs))
     }
 }
 
