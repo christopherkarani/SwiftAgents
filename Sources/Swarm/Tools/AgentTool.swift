@@ -47,7 +47,7 @@ public struct AgentTool: AnyJSONTool, Sendable {
                 reason: "Missing required 'input' argument"
             )
         }
-        let result = try await agent.run(input, session: nil, hooks: nil)
+        let result = try await agent.run(input, session: nil, observer: nil)
         return .string(result.output)
     }
 

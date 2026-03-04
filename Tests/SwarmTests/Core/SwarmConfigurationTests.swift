@@ -96,7 +96,7 @@ struct SwarmConfigurationTests {
             let handoffProvider = MockInferenceProvider(responses: ["unused"])
             await Swarm.configure(cloudProvider: cloudMock)
 
-            let handoffTarget = ChatAgent("handoff target", inferenceProvider: handoffProvider)
+            let handoffTarget = try Agent(instructions: "handoff target", inferenceProvider: handoffProvider)
             let agent = try Agent(instructions: "route", handoffAgents: [handoffTarget])
 
             let result = try await agent.run("transfer me")

@@ -21,7 +21,7 @@
 /// import Swarm
 ///
 /// // Create an agent with tools and an inference provider
-/// let agent = ReActAgent(
+/// let agent = Agent(
 ///     tools: [CalculatorTool(), DateTimeTool()],
 ///     instructions: "You are a helpful assistant that can perform calculations.",
 ///     inferenceProvider: myProvider
@@ -32,7 +32,7 @@
 /// print(result.output)
 ///
 /// // Or use the fluent builder API
-/// let agent2 = ReActAgent.Builder()
+/// let agent2 = Agent.Builder()
 ///     .tools([CalculatorTool()])
 ///     .instructions("You are a math assistant.")
 ///     .inferenceProvider(myProvider)

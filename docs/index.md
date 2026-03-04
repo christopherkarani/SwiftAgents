@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: Swarm
-  text: Multi-Agent Orchestration for Swift
+  text: Multi-Agent Workflows for Swift
   tagline: Chain LLMs, tools, and memory into production workflows — with compile-time safety, crash recovery, and on-device inference.
   actions:
     - theme: brand
@@ -15,10 +15,10 @@ hero:
 
 features:
   - icon: 🔗
-    title: Chain Agents in One Line
-    details: Compose agents into pipelines with the --> operator. Three agents, one line, compiled to a DAG.
-    link: /orchestration
-    linkText: Learn orchestration
+    title: Compose Workflows Fluently
+    details: Build sequential, parallel, and routed workflows with `Workflow().step(...).parallel(...).route(...)`.
+    link: /guide/getting-started
+    linkText: Learn workflows
 
   - icon: 🛡️
     title: Data Races Are Compile Errors
@@ -28,8 +28,8 @@ features:
 
   - icon: 💾
     title: Workflows Survive Crashes
-    details: Every orchestration compiles to a Hive DAG with automatic checkpointing. Step 7 of 10 crashes? Resume from step 7.
-    link: /orchestration
+    details: Advanced workflows can checkpoint and resume with explicit checkpoint stores and deterministic IDs.
+    link: /reference/overview
     linkText: Explore checkpointing
 
   - icon: 🧠

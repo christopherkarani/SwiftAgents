@@ -85,11 +85,11 @@ struct ParallelTestMockAgent: AgentRuntime {
         self.handoffs = handoffs
     }
 
-    func run(_: String, session _: (any Session)?, hooks _: (any RunHooks)?) async throws -> AgentResult {
+    func run(_: String, session _: (any Session)?, observer _: (any AgentObserver)?) async throws -> AgentResult {
         AgentResult(output: "Mock result", toolCalls: [], toolResults: [], iterationCount: 1, duration: .zero)
     }
 
-    nonisolated func stream(_: String, session _: (any Session)?, hooks _: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_: String, session _: (any Session)?, observer _: (any AgentObserver)?) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             continuation.finish()
         }

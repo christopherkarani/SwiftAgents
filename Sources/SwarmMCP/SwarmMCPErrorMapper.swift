@@ -29,8 +29,8 @@ enum SwarmMCPErrorMapper {
             return mapTypedError(typedError, toolName: toolName)
         }
 
-        if let orchestrationError = error as? OrchestrationError {
-            return mapOrchestrationError(orchestrationError, toolName: toolName)
+        if let workflowError = error as? WorkflowError {
+            return mapWorkflowError(workflowError, toolName: toolName)
         }
 
         if let guardrailError = error as? GuardrailError {
@@ -124,8 +124,8 @@ enum SwarmMCPErrorMapper {
         }
     }
 
-    private static func mapOrchestrationError(
-        _ error: OrchestrationError,
+    private static func mapWorkflowError(
+        _ error: WorkflowError,
         toolName: String
     ) -> SwarmMCPCallToolOutcome {
         switch error {

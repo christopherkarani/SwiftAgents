@@ -43,7 +43,7 @@ public extension ToolExecutionEngine {
         agent: any AgentRuntime,
         context: AgentContext?,
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)?,
+        observer: (any AgentObserver)?,
         tracing: TracingHelper?,
         stopOnToolError: Bool
     ) async throws -> Outcome {
@@ -55,7 +55,7 @@ public extension ToolExecutionEngine {
             agent: agent,
             context: context,
             resultBuilder: resultBuilder,
-            hooks: hooks,
+            observer: observer,
             tracing: tracing,
             stopOnToolError: stopOnToolError
         )

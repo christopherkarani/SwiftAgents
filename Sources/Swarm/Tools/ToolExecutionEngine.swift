@@ -10,7 +10,7 @@ import Foundation
 /// This standardizes:
 /// - ToolCall + ToolResult creation
 /// - AgentResult.Builder recording
-/// - RunHooks emission
+/// - AgentObserver emission
 /// - ToolRegistry execution wiring
 public struct ToolExecutionEngine: Sendable {
     public init() {}
@@ -28,14 +28,14 @@ public struct ToolExecutionEngine: Sendable {
         agent: any AgentRuntime,
         context: AgentContext?,
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)?,
+        observer: (any AgentObserver)?,
         tracing: TracingHelper?,
         stopOnToolError: Bool
     ) async throws -> Outcome {
         let call = ToolCall(providerCallId: providerCallId, toolName: toolName, arguments: arguments)
         _ = resultBuilder.addToolCall(call)
 
-        await hooks?.onToolStart(context: context, agent: agent, call: call)
+        await observer?.onToolStart(context: context, agent: agent, call: call)
 
         let spanId: UUID? = if let tracing { await tracing.traceToolCall(name: toolName, arguments: arguments) } else { nil }
 
@@ -46,7 +46,7 @@ public struct ToolExecutionEngine: Sendable {
                 arguments: arguments,
                 agent: agent,
                 context: context,
-                hooks: hooks
+                observer: observer
             )
 
             let duration = ContinuousClock.now - startTime
@@ -57,7 +57,7 @@ public struct ToolExecutionEngine: Sendable {
                 await tracing.traceToolResult(spanId: spanId, name: toolName, result: output.description, duration: duration)
             }
 
-            await hooks?.onToolEnd(context: context, agent: agent, result: result)
+            await observer?.onToolEnd(context: context, agent: agent, result: result)
 
             return Outcome(call: call, result: result)
         } catch {
@@ -71,7 +71,7 @@ public struct ToolExecutionEngine: Sendable {
                 await tracing.traceToolError(spanId: spanId, name: toolName, error: error)
             }
 
-            await hooks?.onToolEnd(context: context, agent: agent, result: result)
+            await observer?.onToolEnd(context: context, agent: agent, result: result)
 
             if stopOnToolError {
                 throw AgentError.toolExecutionFailed(toolName: toolName, underlyingError: errorMessage)

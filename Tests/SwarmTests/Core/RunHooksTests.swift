@@ -1,16 +1,16 @@
-// RunHooksTests.swift
+// AgentObserverTests.swift
 // SwarmTests
 //
-// Comprehensive tests for RunHooks lifecycle system.
+// Comprehensive tests for AgentObserver lifecycle system.
 
 import Foundation
 @testable import Swarm
 import Testing
 
-// MARK: - MockAgentForRunHooks
+// MARK: - MockAgentForAgentObserver
 
-/// Mock agent for testing hooks.
-private struct MockAgentForRunHooks: AgentRuntime {
+/// Mock agent for testing observer.
+private struct MockAgentForAgentObserver: AgentRuntime {
     let tools: [any AnyJSONTool] = []
     let instructions: String = "Mock agent"
     let configuration: AgentConfiguration
@@ -19,11 +19,11 @@ private struct MockAgentForRunHooks: AgentRuntime {
         configuration = AgentConfiguration(name: name)
     }
 
-    func run(_ input: String, session _: (any Session)? = nil, hooks _: (any RunHooks)? = nil) async throws -> AgentResult {
+    func run(_ input: String, session _: (any Session)? = nil, observer _: (any AgentObserver)? = nil) async throws -> AgentResult {
         AgentResult(output: "Mock response: \(input)")
     }
 
-    nonisolated func stream(_ input: String, session _: (any Session)? = nil, hooks _: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_ input: String, session _: (any Session)? = nil, observer _: (any AgentObserver)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             continuation.yield(.started(input: input))
             continuation.yield(.completed(result: AgentResult(output: "Mock response")))
@@ -34,10 +34,10 @@ private struct MockAgentForRunHooks: AgentRuntime {
     func cancel() async {}
 }
 
-// MARK: - RecordingHooks
+// MARK: - RecordingObserver
 
 /// Recording hook for testing - captures all events in order.
-private actor RecordingHooks: RunHooks {
+private actor RecordingObserver: AgentObserver {
     var events: [String] = []
 
     func onAgentStart(context _: AgentContext?, agent _: any AgentRuntime, input: String) async {
@@ -88,29 +88,29 @@ private actor RecordingHooks: RunHooks {
     }
 }
 
-// MARK: - RunHooksDefaultImplementationTests
+// MARK: - AgentObserverDefaultImplementationTests
 
-@Suite("RunHooks Default Implementations")
-struct RunHooksDefaultImplementationTests {
+@Suite("AgentObserver Default Implementations")
+struct AgentObserverDefaultImplementationTests {
     @Test("Default implementations are no-op and don't crash")
     func defaultImplementationsAreNoOp() async {
-        // Given: An empty hooks implementation using defaults
-        struct EmptyHooks: RunHooks {}
-        let hooks = EmptyHooks()
-        let agent = MockAgentForRunHooks()
+        // Given: An empty observer implementation using defaults
+        struct EmptyObserver: AgentObserver {}
+        let observer = EmptyObserver()
+        let agent = MockAgentForAgentObserver()
         let tool = MockTool(name: "test_tool")
         let result = AgentResult(output: "test")
 
         // When/Then: All default implementations should complete without crashing
-        await hooks.onAgentStart(context: nil, agent: agent, input: "test")
-        await hooks.onAgentEnd(context: nil, agent: agent, result: result)
-        await hooks.onError(context: nil, agent: agent, error: AgentError.invalidInput(reason: "test"))
-        await hooks.onHandoff(context: nil, fromAgent: agent, toAgent: agent)
-        await hooks.onToolStart(context: nil, agent: agent, call: ToolCall(toolName: "test_tool", arguments: [:]))
-        await hooks.onToolEnd(context: nil, agent: agent, result: ToolResult.success(callId: UUID(), output: .string("result"), duration: .seconds(1)))
-        await hooks.onLLMStart(context: nil, agent: agent, systemPrompt: nil, inputMessages: [])
-        await hooks.onLLMEnd(context: nil, agent: agent, response: "response", usage: nil)
-        await hooks.onGuardrailTriggered(
+        await observer.onAgentStart(context: nil, agent: agent, input: "test")
+        await observer.onAgentEnd(context: nil, agent: agent, result: result)
+        await observer.onError(context: nil, agent: agent, error: AgentError.invalidInput(reason: "test"))
+        await observer.onHandoff(context: nil, fromAgent: agent, toAgent: agent)
+        await observer.onToolStart(context: nil, agent: agent, call: ToolCall(toolName: "test_tool", arguments: [:]))
+        await observer.onToolEnd(context: nil, agent: agent, result: ToolResult.success(callId: UUID(), output: .string("result"), duration: .seconds(1)))
+        await observer.onLLMStart(context: nil, agent: agent, systemPrompt: nil, inputMessages: [])
+        await observer.onLLMEnd(context: nil, agent: agent, response: "response", usage: nil)
+        await observer.onGuardrailTriggered(
             context: nil,
             guardrailName: "test",
             guardrailType: .input,
@@ -122,45 +122,45 @@ struct RunHooksDefaultImplementationTests {
 
     @Test("Default implementations handle nil context")
     func defaultImplementationsHandleNilContext() async {
-        struct EmptyHooks: RunHooks {}
-        let hooks = EmptyHooks()
-        let agent = MockAgentForRunHooks()
+        struct EmptyObserver: AgentObserver {}
+        let observer = EmptyObserver()
+        let agent = MockAgentForAgentObserver()
 
         // When/Then: Should handle nil context gracefully
-        await hooks.onAgentStart(context: nil, agent: agent, input: "test")
-        await hooks.onAgentEnd(context: nil, agent: agent, result: AgentResult(output: "test"))
+        await observer.onAgentStart(context: nil, agent: agent, input: "test")
+        await observer.onAgentEnd(context: nil, agent: agent, result: AgentResult(output: "test"))
     }
 
     @Test("Default implementations handle non-nil context")
     func defaultImplementationsHandleNonNilContext() async {
-        struct EmptyHooks: RunHooks {}
-        let hooks = EmptyHooks()
-        let agent = MockAgentForRunHooks()
+        struct EmptyObserver: AgentObserver {}
+        let observer = EmptyObserver()
+        let agent = MockAgentForAgentObserver()
         let context = AgentContext(input: "test")
 
         // When/Then: Should handle non-nil context gracefully
-        await hooks.onAgentStart(context: context, agent: agent, input: "test")
-        await hooks.onAgentEnd(context: context, agent: agent, result: AgentResult(output: "test"))
+        await observer.onAgentStart(context: context, agent: agent, input: "test")
+        await observer.onAgentEnd(context: context, agent: agent, result: AgentResult(output: "test"))
     }
 }
 
-// MARK: - CompositeRunHooksTests
+// MARK: - CompositeAgentObserverTests
 
-@Suite("CompositeRunHooks Tests")
-struct CompositeRunHooksTests {
-    @Test("CompositeRunHooks calls all registered hooks")
+@Suite("CompositeObserver Tests")
+struct CompositeAgentObserverTests {
+    @Test("CompositeObserver calls all registered observer")
     func compositeCallsAllHooks() async {
-        // Given: Multiple recording hooks
-        let hooks1 = RecordingHooks()
-        let hooks2 = RecordingHooks()
-        let hooks3 = RecordingHooks()
-        let composite = CompositeRunHooks(hooks: [hooks1, hooks2, hooks3])
-        let agent = MockAgentForRunHooks()
+        // Given: Multiple recording observer
+        let hooks1 = RecordingObserver()
+        let hooks2 = RecordingObserver()
+        let hooks3 = RecordingObserver()
+        let composite = CompositeObserver(observers: [hooks1, hooks2, hooks3])
+        let agent = MockAgentForAgentObserver()
 
         // When: Calling onAgentStart
         await composite.onAgentStart(context: nil, agent: agent, input: "test input")
 
-        // Then: All hooks should receive the call
+        // Then: All observer should receive the call
         let events1 = await hooks1.getEvents()
         let events2 = await hooks2.getEvents()
         let events3 = await hooks3.getEvents()
@@ -169,42 +169,42 @@ struct CompositeRunHooksTests {
         #expect(events3.contains("agentStart:test input"))
     }
 
-    @Test("CompositeRunHooks calls all hooks concurrently")
+    @Test("CompositeObserver calls all observer concurrently")
     func compositeCallsAllHooksConcurrently() async {
-        // Given: A composite with multiple hooks
-        let recorder = RecordingHooks()
+        // Given: A composite with multiple observer
+        let recorder = RecordingObserver()
 
-        struct FirstHook: RunHooks {
-            let recorder: RecordingHooks
+        struct FirstHook: AgentObserver {
+            let recorder: RecordingObserver
             func onAgentStart(context: AgentContext?, agent: any AgentRuntime, input _: String) async {
                 await recorder.onAgentStart(context: context, agent: agent, input: "first")
             }
         }
 
-        struct SecondHook: RunHooks {
-            let recorder: RecordingHooks
+        struct SecondHook: AgentObserver {
+            let recorder: RecordingObserver
             func onAgentStart(context: AgentContext?, agent: any AgentRuntime, input _: String) async {
                 await recorder.onAgentStart(context: context, agent: agent, input: "second")
             }
         }
 
-        struct ThirdHook: RunHooks {
-            let recorder: RecordingHooks
+        struct ThirdHook: AgentObserver {
+            let recorder: RecordingObserver
             func onAgentStart(context: AgentContext?, agent: any AgentRuntime, input _: String) async {
                 await recorder.onAgentStart(context: context, agent: agent, input: "third")
             }
         }
 
-        let composite = CompositeRunHooks(hooks: [
+        let composite = CompositeObserver(observers: [
             FirstHook(recorder: recorder),
             SecondHook(recorder: recorder),
             ThirdHook(recorder: recorder)
         ])
 
         // When: Calling a hook method
-        await composite.onAgentStart(context: nil, agent: MockAgentForRunHooks(), input: "test")
+        await composite.onAgentStart(context: nil, agent: MockAgentForAgentObserver(), input: "test")
 
-        // Then: All hooks should be called (order not guaranteed due to concurrent execution)
+        // Then: All observer should be called (order not guaranteed due to concurrent execution)
         let events = await recorder.getEvents()
         #expect(events.count == 3)
         #expect(events.contains("agentStart:first"))
@@ -212,11 +212,11 @@ struct CompositeRunHooksTests {
         #expect(events.contains("agentStart:third"))
     }
 
-    @Test("CompositeRunHooks handles empty hook list")
+    @Test("CompositeObserver handles empty hook list")
     func compositeHandlesEmptyList() async {
-        // Given: A composite with no hooks
-        let composite = CompositeRunHooks(hooks: [])
-        let agent = MockAgentForRunHooks()
+        // Given: A composite with no observer
+        let composite = CompositeObserver(observers: [])
+        let agent = MockAgentForAgentObserver()
 
         // When/Then: Should not crash with empty list
         await composite.onAgentStart(context: nil, agent: agent, input: "test")
@@ -227,12 +227,12 @@ struct CompositeRunHooksTests {
         // No assertions needed - if we get here, all methods completed successfully
     }
 
-    @Test("CompositeRunHooks forwards all hook methods")
+    @Test("CompositeObserver forwards all hook methods")
     func compositeForwardsAllHookMethods() async {
-        // Given: Recording hooks in composite
-        let hooks = RecordingHooks()
-        let composite = CompositeRunHooks(hooks: [hooks])
-        let agent = MockAgentForRunHooks()
+        // Given: Recording observer in composite
+        let observer = RecordingObserver()
+        let composite = CompositeObserver(observers: [observer])
+        let agent = MockAgentForAgentObserver()
         // removed unused tool
         let context = AgentContext(input: "test")
 
@@ -254,7 +254,7 @@ struct CompositeRunHooksTests {
         )
 
         // Then: All events should be recorded
-        let events = await hooks.getEvents()
+        let events = await observer.getEvents()
         #expect(events.contains("agentStart:input"))
         #expect(events.contains("agentEnd:output"))
         #expect(events.contains { $0.starts(with: "error:") })
@@ -267,19 +267,19 @@ struct CompositeRunHooksTests {
     }
 }
 
-// MARK: - LoggingRunHooksTests
+// MARK: - LoggingAgentObserverTests
 
-@Suite("LoggingRunHooks Tests")
-struct LoggingRunHooksTests {
-    @Test("LoggingRunHooks doesn't crash on agent lifecycle")
-    func loggingHooksAgentLifecycle() async {
+@Suite("LoggingObserver Tests")
+struct LoggingAgentObserverTests {
+    @Test("LoggingObserver doesn't crash on agent lifecycle")
+    func loggingObserverAgentLifecycle() async {
         // Given: A logging hook
-        let hooks = LoggingRunHooks()
-        let agent = MockAgentForRunHooks()
+        let observer = LoggingObserver()
+        let agent = MockAgentForAgentObserver()
 
         // When/Then: Should log without crashing
-        await hooks.onAgentStart(context: nil, agent: agent, input: "What is the weather?")
-        await hooks.onAgentEnd(
+        await observer.onAgentStart(context: nil, agent: agent, input: "What is the weather?")
+        await observer.onAgentEnd(
             context: nil,
             agent: agent,
             result: AgentResult(
@@ -291,59 +291,59 @@ struct LoggingRunHooksTests {
         )
     }
 
-    @Test("LoggingRunHooks doesn't crash on errors")
-    func loggingHooksErrors() async {
+    @Test("LoggingObserver doesn't crash on errors")
+    func loggingObserverErrors() async {
         // Given: A logging hook
-        let hooks = LoggingRunHooks()
-        let agent = MockAgentForRunHooks()
+        let observer = LoggingObserver()
+        let agent = MockAgentForAgentObserver()
 
         // When/Then: Should log error without crashing
-        await hooks.onError(
+        await observer.onError(
             context: nil,
             agent: agent,
             error: AgentError.toolExecutionFailed(toolName: "calculator", underlyingError: "Division by zero")
         )
     }
 
-    @Test("LoggingRunHooks doesn't crash on tool events")
-    func loggingHooksToolEvents() async {
+    @Test("LoggingObserver doesn't crash on tool events")
+    func loggingObserverToolEvents() async {
         // Given: A logging hook
-        let hooks = LoggingRunHooks()
-        let agent = MockAgentForRunHooks()
+        let observer = LoggingObserver()
+        let agent = MockAgentForAgentObserver()
         // removed unused tool
 
         // When/Then: Should log tool events without crashing
         let toolCall = ToolCall(toolName: "weather", arguments: ["location": .string("NYC"), "units": .string("F")])
-        await hooks.onToolStart(
+        await observer.onToolStart(
             context: nil,
             agent: agent,
             call: toolCall
         )
-        await hooks.onToolEnd(
+        await observer.onToolEnd(
             context: nil,
             agent: agent,
             result: ToolResult.success(callId: toolCall.id, output: .string("72°F and sunny"), duration: .seconds(1))
         )
     }
 
-    @Test("LoggingRunHooks doesn't crash on LLM events")
-    func loggingHooksLLMEvents() async {
+    @Test("LoggingObserver doesn't crash on LLM events")
+    func loggingObserverLLMEvents() async {
         // Given: A logging hook
-        let hooks = LoggingRunHooks()
-        let agent = MockAgentForRunHooks()
+        let observer = LoggingObserver()
+        let agent = MockAgentForAgentObserver()
         let messages = [
             MemoryMessage(role: .user, content: "Hello"),
             MemoryMessage(role: .assistant, content: "Hi there!")
         ]
 
         // When/Then: Should log LLM events without crashing
-        await hooks.onLLMStart(
+        await observer.onLLMStart(
             context: nil,
             agent: agent,
             systemPrompt: "You are helpful",
             inputMessages: messages
         )
-        await hooks.onLLMEnd(
+        await observer.onLLMEnd(
             context: nil,
             agent: agent,
             response: "I can help with that",
@@ -351,13 +351,13 @@ struct LoggingRunHooksTests {
         )
     }
 
-    @Test("LoggingRunHooks doesn't crash on guardrail events")
-    func loggingHooksGuardrailEvents() async {
+    @Test("LoggingObserver doesn't crash on guardrail events")
+    func loggingObserverGuardrailEvents() async {
         // Given: A logging hook
-        let hooks = LoggingRunHooks()
+        let observer = LoggingObserver()
 
         // When/Then: Should log guardrail events without crashing
-        await hooks.onGuardrailTriggered(
+        await observer.onGuardrailTriggered(
             context: nil,
             guardrailName: "content_filter",
             guardrailType: .input,
@@ -365,58 +365,58 @@ struct LoggingRunHooksTests {
         )
     }
 
-    @Test("LoggingRunHooks handles context with executionId")
-    func loggingHooksWithContext() async {
+    @Test("LoggingObserver handles context with executionId")
+    func loggingObserverWithContext() async {
         // Given: A logging hook and context
-        let hooks = LoggingRunHooks()
-        let agent = MockAgentForRunHooks()
+        let observer = LoggingObserver()
+        let agent = MockAgentForAgentObserver()
         let context = AgentContext(input: "test")
 
         // When/Then: Should log with context ID without crashing
-        await hooks.onAgentStart(context: context, agent: agent, input: "test input")
-        await hooks.onAgentEnd(context: context, agent: agent, result: AgentResult(output: "test output"))
+        await observer.onAgentStart(context: context, agent: agent, input: "test input")
+        await observer.onAgentEnd(context: context, agent: agent, result: AgentResult(output: "test output"))
     }
 
-    @Test("LoggingRunHooks handles long input truncation")
-    func loggingHooksTruncatesLongInput() async {
+    @Test("LoggingObserver handles long input truncation")
+    func loggingObserverTruncatesLongInput() async {
         // Given: A logging hook and very long input
-        let hooks = LoggingRunHooks()
-        let agent = MockAgentForRunHooks()
+        let observer = LoggingObserver()
+        let agent = MockAgentForAgentObserver()
         let longInput = String(repeating: "a", count: 200)
 
         // When/Then: Should log without crashing (truncation happens internally)
-        await hooks.onAgentStart(context: nil, agent: agent, input: longInput)
+        await observer.onAgentStart(context: nil, agent: agent, input: longInput)
     }
 }
 
-// MARK: - RunHooksIntegrationTests
+// MARK: - AgentObserverIntegrationTests
 
-@Suite("RunHooks Integration Tests")
-struct RunHooksIntegrationTests {
-    @Test("Recording hooks captures full agent execution flow")
+@Suite("AgentObserver Integration Tests")
+struct AgentObserverIntegrationTests {
+    @Test("Recording observer captures full agent execution flow")
     func recordingHooksCapturesFullFlow() async {
         // Given: A recording hook
-        let hooks = RecordingHooks()
-        let agent = MockAgentForRunHooks()
+        let observer = RecordingObserver()
+        let agent = MockAgentForAgentObserver()
         // removed unused tool
         let messages = [MemoryMessage(role: .user, content: "Calculate 2+2")]
 
         // When: Simulating a full agent execution
-        await hooks.onAgentStart(context: nil, agent: agent, input: "Calculate 2+2")
-        await hooks.onLLMStart(context: nil, agent: agent, systemPrompt: "You are helpful", inputMessages: messages)
-        await hooks.onLLMEnd(
+        await observer.onAgentStart(context: nil, agent: agent, input: "Calculate 2+2")
+        await observer.onLLMStart(context: nil, agent: agent, systemPrompt: "You are helpful", inputMessages: messages)
+        await observer.onLLMEnd(
             context: nil,
             agent: agent,
             response: "I'll use the calculator",
             usage: InferenceResponse.TokenUsage(inputTokens: 10, outputTokens: 5)
         )
         let toolCall = ToolCall(toolName: "calculator", arguments: ["expression": .string("2+2")])
-        await hooks.onToolStart(context: nil, agent: agent, call: toolCall)
-        await hooks.onToolEnd(context: nil, agent: agent, result: ToolResult.success(callId: toolCall.id, output: .int(4), duration: .seconds(1)))
-        await hooks.onAgentEnd(context: nil, agent: agent, result: AgentResult(output: "The answer is 4"))
+        await observer.onToolStart(context: nil, agent: agent, call: toolCall)
+        await observer.onToolEnd(context: nil, agent: agent, result: ToolResult.success(callId: toolCall.id, output: .int(4), duration: .seconds(1)))
+        await observer.onAgentEnd(context: nil, agent: agent, result: AgentResult(output: "The answer is 4"))
 
         // Then: All events should be recorded in order
-        let events = await hooks.getEvents()
+        let events = await observer.getEvents()
         #expect(events == [
             "agentStart:Calculate 2+2",
             "llmStart:1",
@@ -430,7 +430,7 @@ struct RunHooksIntegrationTests {
     @Test("Hooks receive correct parameters")
     func hooksReceiveCorrectParameters() async {
         // Given: A custom hook that validates parameters
-        struct ValidatingHook: RunHooks {
+        struct ValidatingHook: AgentObserver {
             var validated = false
 
             func onToolStart(
@@ -447,8 +447,8 @@ struct RunHooksIntegrationTests {
             }
         }
 
-        let hooks = ValidatingHook()
-        let agent = MockAgentForRunHooks()
+        let observer = ValidatingHook()
+        let agent = MockAgentForAgentObserver()
         // removed unused tool
         let args: [String: SendableValue] = [
             "location": .string("NYC"),
@@ -457,26 +457,26 @@ struct RunHooksIntegrationTests {
 
         // When: Calling the hook
         let toolCall = ToolCall(toolName: "weather", arguments: args)
-        await hooks.onToolStart(context: nil, agent: agent, call: toolCall)
+        await observer.onToolStart(context: nil, agent: agent, call: toolCall)
 
         // Then: Hook should have validated parameters successfully
         // (validation happens inside the hook method)
     }
 
-    @Test("Multiple hooks in composite don't interfere")
+    @Test("Multiple observer in composite don't interfere")
     func multipleHooksIndependent() async {
-        // Given: Multiple independent hooks
-        let recorder1 = RecordingHooks()
-        let recorder2 = RecordingHooks()
-        let composite = CompositeRunHooks(hooks: [recorder1, recorder2])
-        let agent = MockAgentForRunHooks()
+        // Given: Multiple independent observer
+        let recorder1 = RecordingObserver()
+        let recorder2 = RecordingObserver()
+        let composite = CompositeObserver(observers: [recorder1, recorder2])
+        let agent = MockAgentForAgentObserver()
 
-        // When: Calling hooks multiple times
+        // When: Calling observer multiple times
         await composite.onAgentStart(context: nil, agent: agent, input: "first")
         await composite.onAgentStart(context: nil, agent: agent, input: "second")
         await composite.onAgentEnd(context: nil, agent: agent, result: AgentResult(output: "done"))
 
-        // Then: Both hooks should have recorded all events independently
+        // Then: Both observer should have recorded all events independently
         let events1 = await recorder1.getEvents()
         let events2 = await recorder2.getEvents()
         #expect(events1.count == 3)
@@ -487,30 +487,30 @@ struct RunHooksIntegrationTests {
     @Test("Hooks work with and without context")
     func hooksWorkWithAndWithoutContext() async {
         // Given: Recording hook
-        let hooks = RecordingHooks()
-        let agent = MockAgentForRunHooks()
+        let observer = RecordingObserver()
+        let agent = MockAgentForAgentObserver()
         let context = AgentContext(input: "test")
 
         // When: Calling with and without context
-        await hooks.onAgentStart(context: nil, agent: agent, input: "no context")
-        await hooks.onAgentStart(context: context, agent: agent, input: "with context")
+        await observer.onAgentStart(context: nil, agent: agent, input: "no context")
+        await observer.onAgentStart(context: context, agent: agent, input: "with context")
 
         // Then: Both calls should be recorded
-        let events = await hooks.getEvents()
+        let events = await observer.getEvents()
         #expect(events.count == 2)
         #expect(events[0] == "agentStart:no context")
         #expect(events[1] == "agentStart:with context")
     }
 }
 
-// MARK: - RunHooksConcurrentExecutionTests
+// MARK: - AgentObserverConcurrentExecutionTests
 
-	@Suite("RunHooks Concurrent Execution Tests")
-	struct RunHooksConcurrentExecutionTests {
+	@Suite("AgentObserver Concurrent Execution Tests")
+	struct AgentObserverConcurrentExecutionTests {
 	    @Test("Concurrent hook execution completes in parallel")
 	    func concurrentHookExecution() async throws {
 	        // Create a hook that tracks execution order with delays
-	        actor DelayedHook: RunHooks {
+	        actor DelayedHook: AgentObserver {
 	            var start: ContinuousClock.Instant?
 	            var end: ContinuousClock.Instant?
 
@@ -539,8 +539,8 @@ struct RunHooksIntegrationTests {
         let hook2 = DelayedHook()
         let hook3 = DelayedHook()
 
-        let composite = CompositeRunHooks(hooks: [hook1, hook2, hook3])
-        let mockAgent = MockAgentForRunHooks()
+        let composite = CompositeObserver(observers: [hook1, hook2, hook3])
+        let mockAgent = MockAgentForAgentObserver()
 
         await composite.onAgentStart(context: nil, agent: mockAgent, input: "test")
 
@@ -566,18 +566,18 @@ struct RunHooksIntegrationTests {
         )
 	    }
 
-    @Test("Composite hooks all receive callbacks")
-    func compositeHooksAllReceiveCallbacks() async throws {
-        let hook1 = RecordingHooks()
-        let hook2 = RecordingHooks()
+    @Test("Composite observer all receive callbacks")
+    func compositeObserverAllReceiveCallbacks() async throws {
+        let hook1 = RecordingObserver()
+        let hook2 = RecordingObserver()
 
-        let composite = CompositeRunHooks(hooks: [hook1, hook2])
-        let mockAgent = MockAgentForRunHooks()
+        let composite = CompositeObserver(observers: [hook1, hook2])
+        let mockAgent = MockAgentForAgentObserver()
 
         await composite.onAgentStart(context: nil, agent: mockAgent, input: "test")
         await composite.onAgentEnd(context: nil, agent: mockAgent, result: AgentResult(output: "done"))
 
-        // Both hooks should receive both events
+        // Both observer should receive both events
         let events1 = await hook1.getEvents()
         let events2 = await hook2.getEvents()
 
@@ -590,61 +590,61 @@ struct RunHooksIntegrationTests {
     }
 }
 
-// MARK: - RunHooksEdgeCaseTests
+// MARK: - AgentObserverEdgeCaseTests
 
-@Suite("RunHooks Edge Cases")
-struct RunHooksEdgeCaseTests {
+@Suite("AgentObserver Edge Cases")
+struct AgentObserverEdgeCaseTests {
     @Test("Hooks handle empty strings gracefully")
     func hooksHandleEmptyStrings() async {
-        let hooks = RecordingHooks()
-        let agent = MockAgentForRunHooks()
+        let observer = RecordingObserver()
+        let agent = MockAgentForAgentObserver()
 
-        await hooks.onAgentStart(context: nil, agent: agent, input: "")
-        await hooks.onAgentEnd(context: nil, agent: agent, result: AgentResult(output: ""))
-        await hooks.onLLMEnd(context: nil, agent: agent, response: "", usage: nil)
+        await observer.onAgentStart(context: nil, agent: agent, input: "")
+        await observer.onAgentEnd(context: nil, agent: agent, result: AgentResult(output: ""))
+        await observer.onLLMEnd(context: nil, agent: agent, response: "", usage: nil)
 
-        let events = await hooks.getEvents()
+        let events = await observer.getEvents()
         #expect(events.count == 3)
     }
 
     @Test("Hooks handle empty collections gracefully")
     func hooksHandleEmptyCollections() async {
-        let hooks = RecordingHooks()
-        let agent = MockAgentForRunHooks()
+        let observer = RecordingObserver()
+        let agent = MockAgentForAgentObserver()
         // removed unused tool
 
-        await hooks.onToolStart(context: nil, agent: agent, call: ToolCall(toolName: "tool", arguments: [:]))
-        await hooks.onLLMStart(context: nil, agent: agent, systemPrompt: nil, inputMessages: [])
+        await observer.onToolStart(context: nil, agent: agent, call: ToolCall(toolName: "tool", arguments: [:]))
+        await observer.onLLMStart(context: nil, agent: agent, systemPrompt: nil, inputMessages: [])
 
-        let events = await hooks.getEvents()
+        let events = await observer.getEvents()
         #expect(events.count == 2)
     }
 
     @Test("Hooks handle nil optional values")
     func hooksHandleNilOptionals() async {
-        let hooks = RecordingHooks()
-        let agent = MockAgentForRunHooks()
+        let observer = RecordingObserver()
+        let agent = MockAgentForAgentObserver()
 
-        await hooks.onLLMStart(context: nil, agent: agent, systemPrompt: nil, inputMessages: [])
-        await hooks.onLLMEnd(context: nil, agent: agent, response: "response", usage: nil)
+        await observer.onLLMStart(context: nil, agent: agent, systemPrompt: nil, inputMessages: [])
+        await observer.onLLMEnd(context: nil, agent: agent, response: "response", usage: nil)
 
-        let events = await hooks.getEvents()
+        let events = await observer.getEvents()
         #expect(events.contains("llmStart:0"))
         #expect(events.contains("llmEnd:none"))
     }
 
-    @Test("CompositeRunHooks with single hook")
+    @Test("CompositeObserver with single hook")
     func compositeSingleHook() async {
         // Given: Composite with only one hook
-        let hooks = RecordingHooks()
-        let composite = CompositeRunHooks(hooks: [hooks])
-        let agent = MockAgentForRunHooks()
+        let observer = RecordingObserver()
+        let composite = CompositeObserver(observers: [observer])
+        let agent = MockAgentForAgentObserver()
 
         // When: Using the composite
         await composite.onAgentStart(context: nil, agent: agent, input: "test")
 
         // Then: Should work identically to using the hook directly
-        let events = await hooks.getEvents()
+        let events = await observer.getEvents()
         #expect(events == ["agentStart:test"])
     }
 }

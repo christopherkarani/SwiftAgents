@@ -16,7 +16,7 @@ import Foundation
 /// Usage:
 /// ```swift
 /// func run(_ input: String) async throws -> AgentResult {
-///     let tracing = TracingHelper(tracer: tracer, agentName: "ReActAgent")
+///     let tracing = TracingHelper(tracer: tracer, agentName: "Agent")
 ///     await tracing.traceStart(input: input)
 ///
 ///     // ... agent work ...

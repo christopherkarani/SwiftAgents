@@ -6,33 +6,22 @@ import PlaygroundSupport
 
 PlaygroundSupport.PlaygroundPage.current.needsIndefiniteExecution = true
 
-struct ResearchAgent: Agent {
-    var provider: any InferenceProvider {
-        
-    }
-    
-    var instructions: String {
-        "You are a careful research agent."
-    }
-    
-    
-
-    var loop: some AgentLoop {
-        
-        Generate()
-
-    }
-}
-
-
 Task {
-    print("Starting")
     do {
-        let response = try await ResearchAgent().run("Hello").output
-        print("Agent Response: ", response)
-    } catch {
-        print("Error: \(error)")
-    }
-    var greeting = "Hello, playground"
-}
+        let researcher = try Agent(
+            instructions: "Research the topic and provide key facts."
+        )
+        let writer = try Agent(
+            instructions: "Summarize the research in one short paragraph."
+        )
 
+        let result = try await Workflow()
+            .step(researcher)
+            .step(writer)
+            .run("Swift concurrency")
+
+        print("Workflow output: \(result.output)")
+    } catch {
+        print("Workflow error: \(error)")
+    }
+}

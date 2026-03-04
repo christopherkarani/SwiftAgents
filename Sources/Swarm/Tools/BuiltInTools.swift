@@ -357,7 +357,7 @@ public extension WebSearchTool {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent(tools: BuiltInTools.all)
+/// let agent = Agent(tools: BuiltInTools.all)
 /// ```
 public enum BuiltInTools {
     #if canImport(Darwin)
