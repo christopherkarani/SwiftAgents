@@ -1,29 +1,30 @@
 import Foundation
 import HiveCore
 @testable import Swarm
+import SwarmHive
 import Testing
 
 @Suite("Membrane Hive Checkpoint Integration")
 struct MembraneHiveCheckpointTests {
     @Test("Schema includes checkpointed membrane state channel")
     func schemaIncludesCheckpointedMembraneChannel() {
-        let spec = HiveAgents.Schema.channelSpecs.first { $0.id.rawValue == "membraneCheckpointData" }
+        let spec = ChatGraph.Schema.channelSpecs.first { $0.id.rawValue == "membraneCheckpointData" }
         #expect(spec != nil)
         #expect(spec?.persistence == .checkpointed)
     }
 
     @Test("Pre-model restores membrane checkpoint state before model invocation")
     func preModelRestoresBeforeModelInvocation() async throws {
-        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let graph = try ChatGraph.makeToolUsingChatAgent()
         let adapter = RecordingMembraneAdapter(snapshotData: Data("membrane-v1".utf8))
 
-        let context = HiveAgentsContext(
+        let context = RuntimeContext(
             modelName: "test-model",
             toolApprovalPolicy: .never,
             membraneCheckpointAdapter: adapter
         )
 
-        let environment = HiveEnvironment<HiveAgents.Schema>(
+        let environment = HiveEnvironment<ChatGraph.Schema>(
             context: context,
             clock: NoopClock(),
             logger: NoopLogger(),
@@ -56,16 +57,16 @@ struct MembraneHiveCheckpointTests {
 
     @Test("Checkpoint payload restores across runtime resume path")
     func checkpointPayloadRestoresAcrossResumePath() async throws {
-        let graph = try HiveAgents.makeToolUsingChatAgent()
-        let checkpointStore = InMemoryCheckpointStore<HiveAgents.Schema>()
+        let graph = try ChatGraph.makeToolUsingChatAgent()
+        let checkpointStore = InMemoryCheckpointStore<ChatGraph.Schema>()
 
         let writerAdapter = RecordingMembraneAdapter(snapshotData: Data("state-v1".utf8))
-        let writerContext = HiveAgentsContext(
+        let writerContext = RuntimeContext(
             modelName: "test-model",
             toolApprovalPolicy: .never,
             membraneCheckpointAdapter: writerAdapter
         )
-        let writerEnvironment = HiveEnvironment<HiveAgents.Schema>(
+        let writerEnvironment = HiveEnvironment<ChatGraph.Schema>(
             context: writerContext,
             clock: NoopClock(),
             logger: NoopLogger(),
@@ -92,12 +93,12 @@ struct MembraneHiveCheckpointTests {
         )
 
         let restoredAdapter = RecordingMembraneAdapter(snapshotData: nil)
-        let restoredContext = HiveAgentsContext(
+        let restoredContext = RuntimeContext(
             modelName: "test-model",
             toolApprovalPolicy: .never,
             membraneCheckpointAdapter: restoredAdapter
         )
-        let restoredEnvironment = HiveEnvironment<HiveAgents.Schema>(
+        let restoredEnvironment = HiveEnvironment<ChatGraph.Schema>(
             context: restoredContext,
             clock: NoopClock(),
             logger: NoopLogger(),
@@ -128,7 +129,7 @@ struct MembraneHiveCheckpointTests {
     }
 }
 
-private actor RecordingMembraneAdapter: HiveAgentsMembraneCheckpointAdapter {
+private actor RecordingMembraneAdapter: MembraneCheckpointAdapter {
     private var restored: Data?
     private var restoreCalls: Int = 0
     private let snapshot: Data?

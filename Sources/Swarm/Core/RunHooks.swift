@@ -1,15 +1,15 @@
-// RunHooks.swift
+// AgentObserver.swift
 // Swarm Framework
 //
-// Lifecycle hooks for observing agent execution events.
+// Lifecycle observer for observing agent execution events.
 
 import Foundation
 
-// MARK: - RunHooks
+// MARK: - AgentObserver
 
 /// Protocol for receiving callbacks during agent execution.
 ///
-/// `RunHooks` provides a comprehensive set of lifecycle callbacks that enable
+/// `AgentObserver` provides a comprehensive set of lifecycle callbacks that enable
 /// monitoring, logging, and custom logic at key points during agent execution.
 /// All methods have default no-op implementations, so implementers only need to
 /// override the callbacks they care about.
@@ -23,7 +23,7 @@ import Foundation
 ///
 /// Example:
 /// ```swift
-/// struct MyHooks: RunHooks {
+/// struct MyObserver: AgentObserver {
 ///     func onAgentStart(context: AgentContext?, agent: any AgentRuntime, input: String) async {
 ///         print("Agent started with: \(input)")
 ///     }
@@ -34,13 +34,13 @@ import Foundation
 ///     }
 /// }
 ///
-/// let agent = ReActAgent(
+/// let agent = Agent(
 ///     tools: [...],
 ///     instructions: "...",
-///     runHooks: [MyHooks(), LoggingRunHooks()]
+///     observers: [MyObserver(), LoggingObserver()]
 /// )
 /// ```
-public protocol RunHooks: Sendable {
+public protocol AgentObserver: Sendable {
     /// Called when an agent begins execution.
     ///
     /// - Parameters:
@@ -165,9 +165,9 @@ public protocol RunHooks: Sendable {
     func onIterationEnd(context: AgentContext?, agent: any AgentRuntime, number: Int) async
 }
 
-// MARK: - RunHooks Default Implementations
+// MARK: - AgentObserver Default Implementations
 
-public extension RunHooks {
+public extension AgentObserver {
     /// Default no-op implementation for agent start.
     func onAgentStart(context _: AgentContext?, agent _: any AgentRuntime, input _: String) async {}
 
@@ -214,11 +214,11 @@ public extension RunHooks {
     func onIterationEnd(context _: AgentContext?, agent _: any AgentRuntime, number _: Int) async {}
 }
 
-// MARK: - CompositeRunHooks
+// MARK: - CompositeObserver
 
-/// Composite hook implementation that delegates to multiple hooks.
+/// Composite hook implementation that delegates to multiple observer.
 ///
-/// `CompositeRunHooks` allows combining multiple hook implementations so they
+/// `CompositeObserver` allows combining multiple hook implementations so they
 /// all receive callbacks. Hooks are executed **concurrently** using structured
 /// concurrency for optimal performance.
 ///
@@ -226,40 +226,40 @@ public extension RunHooks {
 ///   Completion order is not guaranteed. For strictly ordered execution, use a single hook
 ///   that coordinates multiple handlers internally.
 /// - Note: Hook implementations must be thread-safe and handle concurrent invocation.
-///   Since `RunHooks` methods are not `throws`, implementations cannot propagate errors.
+///   Since `AgentObserver` methods are not `throws`, implementations cannot propagate errors.
 ///   Any internal errors should be logged rather than thrown.
 ///
 /// Example:
 /// ```swift
-/// let composite = CompositeRunHooks(hooks: [
-///     LoggingRunHooks(),
-///     MetricsRunHooks(),
-///     CustomDebugHooks()
+/// let composite = CompositeObserver(observers: [
+///     LoggingObserver(),
+///     MetricsObserver(),
+///     CustomDebugObserver()
 /// ])
 ///
-/// let agent = ReActAgent(
+/// let agent = Agent(
 ///     tools: [...],
 ///     instructions: "...",
-///     runHooks: [composite]
+///     observers: [composite]
 /// )
 /// ```
-public struct CompositeRunHooks: RunHooks {
+public struct CompositeObserver: AgentObserver {
     // MARK: Public
 
     // MARK: - Initialization
 
-    /// Creates a composite hook that delegates to multiple hooks.
+    /// Creates a composite hook that delegates to multiple observer.
     ///
-    /// - Parameter hooks: The hooks to delegate to.
-    public init(hooks: [any RunHooks]) {
-        self.hooks = hooks
+    /// - Parameter observer: The observer to delegate to.
+    public init(observers: [any AgentObserver]) {
+        self.observers = observers
     }
 
-    // MARK: - RunHooks Implementation
+    // MARK: - AgentObserver Implementation
 
     public func onAgentStart(context: AgentContext?, agent: any AgentRuntime, input: String) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onAgentStart(context: context, agent: agent, input: input)
                 }
@@ -269,7 +269,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onAgentEnd(context: AgentContext?, agent: any AgentRuntime, result: AgentResult) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onAgentEnd(context: context, agent: agent, result: result)
                 }
@@ -279,7 +279,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onError(context: AgentContext?, agent: any AgentRuntime, error: Error) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onError(context: context, agent: agent, error: error)
                 }
@@ -289,7 +289,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onHandoff(context: AgentContext?, fromAgent: any AgentRuntime, toAgent: any AgentRuntime) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onHandoff(context: context, fromAgent: fromAgent, toAgent: toAgent)
                 }
@@ -299,7 +299,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onToolStart(context: AgentContext?, agent: any AgentRuntime, call: ToolCall) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onToolStart(context: context, agent: agent, call: call)
                 }
@@ -309,7 +309,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onToolCallPartial(context: AgentContext?, agent: any AgentRuntime, update: PartialToolCallUpdate) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onToolCallPartial(context: context, agent: agent, update: update)
                 }
@@ -319,7 +319,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onToolEnd(context: AgentContext?, agent: any AgentRuntime, result: ToolResult) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onToolEnd(context: context, agent: agent, result: result)
                 }
@@ -329,7 +329,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onLLMStart(context: AgentContext?, agent: any AgentRuntime, systemPrompt: String?, inputMessages: [MemoryMessage]) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onLLMStart(context: context, agent: agent, systemPrompt: systemPrompt, inputMessages: inputMessages)
                 }
@@ -339,7 +339,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onLLMEnd(context: AgentContext?, agent: any AgentRuntime, response: String, usage: InferenceResponse.TokenUsage?) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onLLMEnd(context: context, agent: agent, response: response, usage: usage)
                 }
@@ -349,7 +349,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onGuardrailTriggered(context: AgentContext?, guardrailName: String, guardrailType: GuardrailType, result: GuardrailResult) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onGuardrailTriggered(context: context, guardrailName: guardrailName, guardrailType: guardrailType, result: result)
                 }
@@ -359,7 +359,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onThinking(context: AgentContext?, agent: any AgentRuntime, thought: String) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onThinking(context: context, agent: agent, thought: thought)
                 }
@@ -369,7 +369,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onThinkingPartial(context: AgentContext?, agent: any AgentRuntime, partialThought: String) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onThinkingPartial(context: context, agent: agent, partialThought: partialThought)
                 }
@@ -379,7 +379,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onOutputToken(context: AgentContext?, agent: any AgentRuntime, token: String) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onOutputToken(context: context, agent: agent, token: token)
                 }
@@ -389,7 +389,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onIterationStart(context: AgentContext?, agent: any AgentRuntime, number: Int) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onIterationStart(context: context, agent: agent, number: number)
                 }
@@ -399,7 +399,7 @@ public struct CompositeRunHooks: RunHooks {
 
     public func onIterationEnd(context: AgentContext?, agent: any AgentRuntime, number: Int) async {
         await withTaskGroup(of: Void.self) { group in
-            for hook in hooks {
+            for hook in observers {
                 group.addTask {
                     await hook.onIterationEnd(context: context, agent: agent, number: number)
                 }
@@ -409,15 +409,15 @@ public struct CompositeRunHooks: RunHooks {
 
     // MARK: Private
 
-    /// The hooks to delegate to.
-    private let hooks: [any RunHooks]
+    /// The observer to delegate to.
+    private let observers: [any AgentObserver]
 }
 
-// MARK: - LoggingRunHooks
+// MARK: - LoggingObserver
 
 /// Hook implementation that logs all agent events using swift-log.
 ///
-/// `LoggingRunHooks` provides comprehensive logging of all agent lifecycle
+/// `LoggingObserver` provides comprehensive logging of all agent lifecycle
 /// events using the `Log.agents` logger. This is useful for debugging,
 /// observability, and understanding agent execution flow.
 ///
@@ -428,13 +428,13 @@ public struct CompositeRunHooks: RunHooks {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent(
+/// let agent = Agent(
 ///     tools: [...],
 ///     instructions: "...",
-///     runHooks: [LoggingRunHooks()]
+///     observers: [LoggingObserver()]
 /// )
 /// ```
-public struct LoggingRunHooks: RunHooks {
+public struct LoggingObserver: AgentObserver {
     // MARK: Public
 
     // MARK: - Initialization
@@ -442,7 +442,7 @@ public struct LoggingRunHooks: RunHooks {
     /// Creates a new logging hook.
     public init() {}
 
-    // MARK: - RunHooks Implementation
+    // MARK: - AgentObserver Implementation
 
     public func onAgentStart(context: AgentContext?, agent _: any AgentRuntime, input: String) async {
         let contextId = if let context {

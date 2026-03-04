@@ -49,39 +49,30 @@ let result = try await agent
 print(result.output) // "Apple (AAPL) is currently trading at $182.50."
 ```
 
-## Multi-Agent Pipeline
+## Multi-Agent Workflow
 
-Chain agents with the `-->` operator:
+Compose multi-agent execution with `Workflow`:
 
 ```swift
-let result = try await (fetchAgent --> analyzeAgent --> writerAgent)
+let result = try await Workflow()
+    .step(fetchAgent)
+    .step(analyzeAgent)
+    .step(writerAgent)
     .run("Summarize the WWDC session on Swift concurrency.")
 ```
 
-This compiles to a Hive DAG with automatic checkpointing. If step 2 crashes, it resumes from step 2.
-
-## Using a Blueprint
-
-For production workflows, use `AgentBlueprint` — a SwiftUI-style declarative API:
+For checkpoint/resume and other power features, use the namespaced advanced API:
 
 ```swift
-struct ResearchPipeline: AgentBlueprint {
-    let researcher = Agent(name: "Researcher", tools: [WebSearch()])
-    let writer = Agent(name: "Writer", instructions: "Write clear summaries.")
-
-    @OrchestrationBuilder var body: some OrchestrationStep {
-        Guard(.input) {
-            InputGuard("no_pii") { input in
-                input.contains("SSN") ? .tripwire(message: "PII detected") : .passed()
-            }
-        }
-        researcher --> writer
-    }
-}
-
-let result = try await ResearchPipeline()
-    .environment(\.inferenceProvider, provider)
-    .run("Latest advances in on-device ML")
+let result = try await Workflow()
+    .step(fetchAgent)
+    .step(analyzeAgent)
+    .advanced
+    .checkpoint(id: "report-v1", policy: .everyStep)
+    .advanced
+    .checkpointStore(.fileSystem(directory: checkpointsURL))
+    .advanced
+    .run("Summarize the WWDC session")
 ```
 
 ## Choosing a Provider
@@ -125,5 +116,5 @@ Foundation Models require iOS 26 / macOS 26. Cloud providers (Anthropic, OpenAI,
 
 - **[Agents](/agents)** — Agent types, configuration, tool calling
 - **[Tools](/tools)** — `@Tool` macro, `FunctionTool`, tool chains
-- **[Orchestration](/orchestration)** — DAGs, parallel execution, routing
+- **Workflow** — Use `Workflow` for sequential, parallel, and routed execution
 - **[Memory](/memory)** — Conversation, vector, summary, persistent

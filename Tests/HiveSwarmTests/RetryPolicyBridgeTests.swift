@@ -1,11 +1,12 @@
 // RetryPolicyBridgeTests.swift
 // HiveSwarm
 //
-// Tests for RetryPolicyBridge and HiveAgents retry behavior.
+// Tests for RetryPolicyBridge and ChatGraph retry behavior.
 
 import Foundation
 import Testing
 @testable import Swarm
+import SwarmHive
 
 @Suite("RetryPolicyBridge — Swarm to Hive mapping")
 struct RetryPolicyBridgeTests {
@@ -108,7 +109,7 @@ struct RetryPolicyBridgeTests {
     }
 }
 
-@Suite("HiveAgents retry behavior")
+@Suite("ChatGraph retry behavior")
 struct HiveAgentsRetryTests {
 
     @Test("Model node retries on transient failure with retry policy")
@@ -117,7 +118,7 @@ struct HiveAgentsRetryTests {
             .final(HiveChatResponse(message: retryAssistantMsg(id: "m1", content: "success")))
         ])
 
-        let context = HiveAgentsContext(
+        let context = RuntimeContext(
             modelName: "test-model",
             toolApprovalPolicy: .never,
             retryPolicy: .exponentialBackoff(
@@ -128,8 +129,8 @@ struct HiveAgentsRetryTests {
             )
         )
 
-        let graph = try HiveAgents.makeToolUsingChatAgent()
-        let environment = HiveEnvironment<HiveAgents.Schema>(
+        let graph = try ChatGraph.makeToolUsingChatAgent()
+        let environment = HiveEnvironment<ChatGraph.Schema>(
             context: context,
             clock: RetryTestClock(),
             logger: RetryTestLogger(),
@@ -151,7 +152,7 @@ struct HiveAgentsRetryTests {
         case .finished(let output, _):
             switch output {
             case .fullStore(let store):
-                let answer = try store.get(HiveAgents.Schema.finalAnswerKey)
+                let answer = try store.get(ChatGraph.Schema.finalAnswerKey)
                 #expect(answer == "success")
             case .channels:
                 Issue.record("Expected fullStore")
@@ -167,14 +168,14 @@ struct HiveAgentsRetryTests {
             .final(HiveChatResponse(message: retryAssistantMsg(id: "m1", content: "success")))
         ])
 
-        let context = HiveAgentsContext(
+        let context = RuntimeContext(
             modelName: "test-model",
             toolApprovalPolicy: .never
             // No retryPolicy — defaults to nil
         )
 
-        let graph = try HiveAgents.makeToolUsingChatAgent()
-        let environment = HiveEnvironment<HiveAgents.Schema>(
+        let graph = try ChatGraph.makeToolUsingChatAgent()
+        let environment = HiveEnvironment<ChatGraph.Schema>(
             context: context,
             clock: RetryTestClock(),
             logger: RetryTestLogger(),

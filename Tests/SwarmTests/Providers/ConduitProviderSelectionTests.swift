@@ -17,7 +17,7 @@ struct ConduitProviderSelectionTests {
     @Test("Builds OpenRouter Conduit provider")
     func buildsOpenRouterProvider() {
         let provider = ConduitProviderSelection
-            .openrouter(apiKey: "test-key", model: "anthropic/claude-3-opus")
+            .openRouter(apiKey: "test-key", model: "anthropic/claude-3-opus")
             .makeProvider()
 
         #expect(provider is ConduitInferenceProvider<OpenAIProvider>)

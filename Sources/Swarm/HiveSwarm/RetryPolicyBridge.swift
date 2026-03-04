@@ -5,6 +5,7 @@
 
 import Foundation
 import HiveCore
+import Swarm
 
 /// Converts between Swarm's `RetryPolicy` and Hive's `HiveRetryPolicy`.
 ///

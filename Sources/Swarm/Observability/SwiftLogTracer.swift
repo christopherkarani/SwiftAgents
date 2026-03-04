@@ -18,7 +18,7 @@ import Logging
 ///
 /// ```swift
 /// let tracer = SwiftLogTracer(minimumLevel: .debug)
-/// let agent = ReActAgent(
+/// let agent = Agent(
 ///     tools: [...],
 ///     instructions: "...",
 ///     tracer: tracer

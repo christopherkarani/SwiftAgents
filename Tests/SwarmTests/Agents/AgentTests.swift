@@ -9,7 +9,7 @@ import Testing
 
 // MARK: - ReActAgentTests
 
-@Suite("ReActAgent Tests")
+@Suite("Agent Tests")
 struct ReActAgentTests {
     @Test("Simple query returns final answer")
     func simpleQuery() async throws {
@@ -19,7 +19,7 @@ struct ReActAgentTests {
         ])
 
         // Create agent with the mock provider
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -49,7 +49,7 @@ struct ReActAgentTests {
         ])
 
         // Create agent with the spy tool
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [spyTool],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -100,7 +100,7 @@ struct ReActAgentTests {
         let config = AgentConfiguration.default
             .modelSettings(ModelSettings.default.toolChoice(.required))
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [spyTool],
             instructions: "You are a helpful assistant.",
             configuration: config,
@@ -130,7 +130,7 @@ struct ReActAgentTests {
 
         // Create agent with maxIterations=1
         let config = AgentConfiguration.default.maxIterations(1)
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             configuration: config,

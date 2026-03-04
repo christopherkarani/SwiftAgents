@@ -18,7 +18,7 @@ public protocol AgentComponent {}
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("You are a helpful assistant.")
 /// }
 /// ```
@@ -40,7 +40,7 @@ public struct Instructions: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Calculator agent.")
 ///     Tools {
 ///         CalculatorTool()
@@ -80,7 +80,7 @@ public struct Tools: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Memory-enabled agent.")
 ///     AgentMemoryComponent(ConversationMemory(maxMessages: 50))
 /// }
@@ -103,7 +103,7 @@ public struct AgentMemoryComponent: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Configured agent.")
 ///     Configuration(.default.maxIterations(5).temperature(0.7))
 /// }
@@ -126,7 +126,7 @@ public struct Configuration: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Custom provider agent.")
 ///     InferenceProviderComponent(myCustomProvider)
 /// }
@@ -156,7 +156,7 @@ public struct InferenceProviderComponent: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Observable agent.")
 ///     TracerComponent(ConsoleTracer())
 /// }
@@ -179,7 +179,7 @@ public struct TracerComponent: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Secure agent.")
 ///     InputGuardrailsComponent(sensitiveDataGuardrail, piiDetectionGuardrail)
 /// }
@@ -209,7 +209,7 @@ public struct InputGuardrailsComponent: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Safe agent.")
 ///     OutputGuardrailsComponent(profanityFilterGuardrail, toxicityGuardrail)
 /// }
@@ -242,7 +242,7 @@ public struct OutputGuardrailsComponent: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Coordinator agent.")
 ///     HandoffsComponent([
 ///         AnyHandoffConfiguration(handoff(to: plannerAgent)),
@@ -290,7 +290,7 @@ public struct HandoffsComponent: AgentComponent, Sendable {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Fast parallel agent.")
 ///     ParallelToolCalls()
 /// }
@@ -316,7 +316,7 @@ public struct ParallelToolCalls: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Continuation agent.")
 ///     PreviousResponseId("resp_abc123")
 /// }
@@ -342,7 +342,7 @@ public struct PreviousResponseId: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Auto-tracking agent.")
 ///     AutoPreviousResponseId()
 /// }
@@ -368,7 +368,7 @@ public struct AutoPreviousResponseId: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Precise agent.")
 ///     ModelSettingsComponent(.precise
 ///         .maxTokens(2000)
@@ -400,7 +400,7 @@ public struct ModelSettingsComponent: AgentComponent {
 /// let mcpClient = MCPClient()
 /// try await mcpClient.addServer(myMCPServer)
 ///
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("MCP-enabled agent.")
 ///     MCPClientComponent(mcpClient)
 /// }
@@ -417,16 +417,16 @@ public struct MCPClientComponent: AgentComponent {
     }
 }
 
-// MARK: - LegacyAgentBuilder
+// MARK: - AgentBuilder
 
-/// A legacy result builder for creating agents declaratively.
+/// A result builder for creating agents declaratively.
 ///
-/// `LegacyAgentBuilder` enables a SwiftUI-like syntax for constructing agents
+/// `AgentBuilder` enables a SwiftUI-like syntax for constructing agents
 /// with their components (instructions, tools, memory, configuration).
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("You are a helpful math assistant.")
 ///
 ///     Tools {
@@ -443,12 +443,8 @@ public struct MCPClientComponent: AgentComponent {
 /// }
 /// ```
 
-/// Preferred name for the agent result builder.
-public typealias AgentBuilder = LegacyAgentBuilder
-
-@available(*, deprecated, renamed: "AgentBuilder")
 @resultBuilder
-public struct LegacyAgentBuilder {
+public struct AgentBuilder {
     // MARK: Public
 
     /// The aggregated components from the builder.
@@ -595,63 +591,17 @@ public struct LegacyAgentBuilder {
         case let mcpClientComponent as MCPClientComponent:
             result.mcpClient = mcpClientComponent.client
         default:
-            break
+            // `AgentComponent` is not designed for external conformance — the builder
+            // only handles the fixed set of built-in components above. If you reach
+            // this branch you have a custom `AgentComponent` conformance whose values
+            // will be silently ignored at runtime.
+            assertionFailure(
+                """
+                AgentBuilder received an unknown AgentComponent conformance: \(type(of: component)).
+                Custom AgentComponent conformances are not supported; only the built-in DSL \
+                components (Instructions, Tools, Configuration, etc.) are processed.
+                """
+            )
         }
-    }
-}
-
-// MARK: - ReActAgent DSL Extension
-
-public extension ReActAgent {
-    /// Creates a ReActAgent using the declarative builder DSL.
-    ///
-    /// Example:
-    /// ```swift
-    /// let agent = ReActAgent {
-    ///     Instructions("You are a helpful assistant.")
-    ///
-    ///     Tools {
-    ///         CalculatorTool()
-    ///         DateTimeTool()
-    ///     }
-    ///
-    ///     AgentMemoryComponent(ConversationMemory(maxMessages: 50))
-    ///
-    ///     Configuration(.default.maxIterations(10))
-    /// }
-    /// ```
-    ///
-    /// - Parameter content: A closure that builds the agent components.
-    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
-    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) throws {
-        let components = content()
-
-        // Build configuration with Phase 5 overrides
-        var config = components.configuration ?? .default
-        if let parallelToolCalls = components.parallelToolCalls {
-            config = config.parallelToolCalls(parallelToolCalls)
-        }
-        if let previousResponseId = components.previousResponseId {
-            config = config.previousResponseId(previousResponseId)
-        }
-        if let autoPreviousResponseId = components.autoPreviousResponseId {
-            config = config.autoPreviousResponseId(autoPreviousResponseId)
-        }
-        // Phase 6: Apply model settings
-        if let modelSettings = components.modelSettings {
-            config = config.modelSettings(modelSettings)
-        }
-
-        try self.init(
-            tools: components.tools,
-            instructions: components.instructions ?? "",
-            configuration: config,
-            memory: components.memory,
-            inferenceProvider: components.inferenceProvider,
-            tracer: components.tracer,
-            inputGuardrails: components.inputGuardrails,
-            outputGuardrails: components.outputGuardrails,
-            handoffs: components.handoffs
-        )
     }
 }

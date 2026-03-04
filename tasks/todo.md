@@ -1,3 +1,88 @@
+# Task Plan (Front-Facing API Simplification + Traits Rollout - 2026-03-03)
+
+## Scope
+- [ ] Complete all identified front-facing API improvements for humans and coding agents.
+- [ ] Preserve lightweight default `Swarm` API while keeping power features opt-in.
+- [ ] Land with deterministic behavior, clean naming, and trait-validated builds.
+
+## Current State Snapshot
+- [x] Naming wave 1 implemented:
+- [x] `Workflow.advanced` -> `Workflow.durable`
+- [x] `checkpointStore(_:)` -> `checkpointing(_:)`
+- [x] `CheckpointPolicy.endOnly` -> `CheckpointPolicy.onCompletion`
+- [x] Durable `run` renamed to `execute` with compatibility alias
+- [x] `ToolRegistryBridge` -> `ToolRegistryAdapter`
+- [x] `RuntimeAgent` -> `GraphAgent`
+- [x] `RuntimeAdapter` -> `GraphRuntimeAdapter`
+- [x] `RunController` -> `GraphRunController`
+- [x] Removed legacy aliases: `openrouter(...)`, `LegacyAgentBuilder`
+- [ ] Build currently blocked by compile error in `WorkflowCheckpointing.swift` (`latest` mutability issue)
+
+## Phase A: Stabilize Build Baseline
+- [x] Fix compile blocker in `WorkflowCheckpointing.swift` (`if let latest {` → `if let existingLatest = latest {` — shadowing `let` made reassignment illegal).
+- [x] Fix compile blocker in `Workflow.swift` (`Advanced.CheckpointPolicy` → `Durable.CheckpointPolicy` from rename wave).
+- [x] Fix compile blocker in `ChatGraph.swift` (`retry(` → `withRetry(` — mismatch with the private static func name).
+- [x] `swift build` — Build complete (9.99s). Note: `swift test` blocked by pre-existing Membrane linker failure (`Membrane.InMemoryPointerStore` unresolved).
+
+## Phase B: Workflow Semantics Hardening
+- [ ] Replace optional route return with explicit routing decision API to avoid nil-driven runtime failures.
+- [ ] Make parallel merge deterministic by preserving submission order (not completion order).
+- [x] Fix misleading `.structured` name: now produces real JSON; add `.indexed` for old labeled-list behavior. Docs updated.
+- [x] Fix `AgentBuilder.merge()` silent `default: break`: replaced with `assertionFailure` naming the unknown type.
+- [x] Fix `Agent.Builder.addTool` API inconsistency: added `some AnyJSONTool` overload matching macro-generated Builder.
+- [ ] Add regression tests for deterministic parallel ordering and route no-match behavior.
+
+## Phase C: Checkpoint Ergonomics + Type Safety
+- [ ] Introduce typed `CheckpointID` instead of raw `String` in durable APIs.
+- [ ] Add top-level workflow convenience wrappers for common durable operations.
+- [ ] Keep `.durable` namespace for expert/extended controls.
+- [ ] Ensure resume/checkpoint APIs remain straightforward for LLM code generation.
+
+## Phase D: Fallback API Clarity
+- [ ] Rename fallback API to clearer action form (`attempt(_:fallbackTo:retries:)`).
+- [ ] Preserve migration path only if explicitly required; otherwise remove old spelling.
+- [ ] Add tests that lock retry semantics and metadata propagation.
+
+## Phase E: Traits-Driven Optional Dependency Pattern
+- [ ] Finalize trait usage pattern for optional integrations beyond DSL.
+- [ ] Trait-gate core code paths that import optional modules directly (`HiveCore`, `Membrane`) where needed.
+- [ ] Ensure default build remains lightweight and does not require optional runtime surfaces.
+- [ ] Document trait-enabled feature matrix and command examples.
+
+## Phase F: CI and Verification Matrix
+- [ ] Add CI matrix to compile and test:
+- [ ] `swift build`
+- [ ] `swift build --traits hive`
+- [ ] `swift build --traits membrane`
+- [ ] `swift build --traits hive,membrane`
+- [ ] `swift test`
+- [ ] `swift test --traits hive`
+- [ ] `swift test --traits membrane`
+- [ ] `swift test --traits hive,membrane`
+
+## Phase G: Public API Documentation + Migration Notes
+- [ ] Update front-facing API docs to reflect durable/checkpoint/fallback/hive naming.
+- [ ] Publish concise migration table old -> new symbols.
+- [ ] Add guidance for coding-agent prompts/examples using the new APIs.
+
+## Acceptance Criteria
+- [ ] Clean `swift build` with no compile errors.
+- [ ] Full `swift test` passes with zero regressions.
+- [ ] Deterministic workflow parallel output order validated by tests.
+- [ ] Route API cannot silently fail due to `nil`.
+- [ ] Durable/checkpoint APIs are typed, discoverable, and documented.
+- [ ] Optional features are trait-gated and verified in CI matrix.
+
+## Risks to Watch
+- [ ] Large rename ripple in Hive tests/docs causing missed references.
+- [ ] Trait scoping mismatches (package-level traits vs product expectations).
+- [ ] Backward compatibility pressure increasing surface complexity.
+
+## Review (to be filled after implementation)
+- [ ] Summary of files changed.
+- [ ] Summary of behavior changes.
+- [ ] Verification output (`swift build`, `swift test`, trait matrix).
+
 # Task Plan (Review Follow-up Fixes - 2026-03-03)
 - [x] Confirm scope from review findings (P1 AgentRouter identity, P2 HiveRuntimeHardening stale interruption).
 - [x] Add failing regression tests for struct runtime handoff matching and stale interruption clearing.
@@ -95,3 +180,17 @@
 - `swift build` passes.
 - `swift test` fails in this sandbox due filesystem exhaustion while compiling dependency test artifacts:
   `No space left on device`.
+
+# Task Plan (Framework-Wide Swift Concurrency Audit - 2026-03-04)
+- [ ] Confirm build settings and concurrency mode across package targets.
+- [ ] Enumerate concurrency-sensitive surfaces (actors, `@MainActor`, `Task`, `nonisolated`, global mutable state).
+- [ ] Run static diagnostics sweep for risky patterns and collect candidate findings.
+- [ ] Perform file-level deep review for top-risk modules and classify findings by severity.
+- [ ] Run verification builds/tests required to validate findings and avoid false positives.
+- [ ] Document final audit report with evidence, residual risks, and recommended fixes.
+
+# Review (Framework-Wide Swift Concurrency Audit - 2026-03-04)
+- [ ] Findings summary (ordered by severity).
+- [ ] Evidence with file references and rationale.
+- [ ] Verification commands and outcomes.
+- [ ] Residual risks and follow-up actions.

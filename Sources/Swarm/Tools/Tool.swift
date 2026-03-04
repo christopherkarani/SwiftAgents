@@ -638,7 +638,7 @@ public actor ToolRegistry {
         arguments: [String: SendableValue],
         agent: (any AgentRuntime)? = nil,
         context: AgentContext? = nil,
-        hooks: (any RunHooks)? = nil
+        observer: (any AgentObserver)? = nil
     ) async throws -> SendableValue {
         // Check for cancellation before proceeding
         try Task.checkCancellation()
@@ -673,9 +673,9 @@ public actor ToolRegistry {
 
             return result
         } catch {
-            // Notify hooks for any error (guardrail, execution, or otherwise)
-            if let agent, let hooks {
-                await hooks.onError(context: context, agent: agent, error: error)
+            // Notify observer for any error (guardrail, execution, or otherwise)
+            if let agent, let observer {
+                await observer.onError(context: context, agent: agent, error: error)
             }
 
             // Re-throw original error or wrap it

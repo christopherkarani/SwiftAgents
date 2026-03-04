@@ -37,10 +37,10 @@ struct AgentReliabilityTests {
         }
     }
 
-    @Test("ReActAgent cancel terminates in-flight run promptly")
+    @Test("Agent cancel terminates in-flight run promptly")
     func reactCancelTerminatesInflightRun() async throws {
         let provider = HangingInferenceProvider(delay: .seconds(2))
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "Cancellation test ReAct agent",
             inferenceProvider: provider
@@ -56,7 +56,7 @@ struct AgentReliabilityTests {
         let completion = await awaitTaskResult(runTask, timeout: .milliseconds(500))
         guard let completion else {
             runTask.cancel()
-            Issue.record("ReActAgent run did not stop promptly after cancel()")
+            Issue.record("Agent run did not stop promptly after cancel()")
             return
         }
 
@@ -73,39 +73,39 @@ struct AgentReliabilityTests {
     @Test("Agent emits onIterationEnd for terminal no-tool return")
     func agentAlwaysEmitsIterationEndOnTerminalReturn() async throws {
         let provider = MockInferenceProvider(responses: ["terminal output"])
-        let hooks = IterationRecordingHooks()
+        let observer = IterationRecordingObserver()
         let agent = try Agent(
             tools: [],
             instructions: "Iteration hook test agent",
             inferenceProvider: provider
         )
 
-        _ = try await agent.run("test", hooks: hooks)
-        let recorded = await hooks.recorded()
+        _ = try await agent.run("test", observer: observer)
+        let recorded = await observer.recorded()
 
         #expect(recorded.started == [1])
         #expect(recorded.ended == [1])
     }
 
-    @Test("ReActAgent emits onIterationEnd for terminal final-answer return")
+    @Test("Agent emits onIterationEnd for terminal final-answer return")
     func reactAlwaysEmitsIterationEndOnTerminalReturn() async throws {
         let provider = MockInferenceProvider(responses: ["Final Answer: done"])
-        let hooks = IterationRecordingHooks()
-        let agent = try ReActAgent(
+        let observer = IterationRecordingObserver()
+        let agent = try Agent(
             tools: [],
             instructions: "Iteration hook test ReAct agent",
             inferenceProvider: provider
         )
 
-        _ = try await agent.run("test", hooks: hooks)
-        let recorded = await hooks.recorded()
+        _ = try await agent.run("test", observer: observer)
+        let recorded = await observer.recorded()
 
         #expect(recorded.started == [1])
         #expect(recorded.ended == [1])
     }
 }
 
-private actor IterationRecordingHooks: RunHooks {
+private actor IterationRecordingObserver: AgentObserver {
     private var started: [Int] = []
     private var ended: [Int] = []
 

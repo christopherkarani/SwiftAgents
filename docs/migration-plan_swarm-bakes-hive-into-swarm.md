@@ -1,5 +1,9 @@
 # Swarm + Hive Migration Plan (Non-Optional, Single-Substrate)
 
+> [!WARNING]
+> Historical migration document. Sections may reference removed orchestration/DSL components.
+> Use the current `Workflow` API and `workflow.advanced` for checkpoint/resume features.
+
 ## Executive summary (<=10 lines)
 - Goal: make Hive the mandatory execution runtime for all Swarm orchestration while keeping Swarm the product layer for agents, memory, tools, prompts, and RAG/tooling.
 - Current code already has a working Hive execution path, but production remains bifurcated with legacy non-Hive loops.
@@ -149,13 +153,13 @@
   - formalize canonical event adapter + deterministic hook boundary.
 - `Sources/Swarm/Orchestration/OrchestrationBuilder.swift`, `Orchestrator.swift`, `SwarmRunner.swift`, `SupervisorAgent.swift`, `AgentRouter.swift`
   - route all execution into the canonical Hive gateway; remove duplicated execution branches.
-- `Sources/Swarm/Agents/ReActAgent.swift`, `PlanAndExecuteAgent.swift`, `LoopAgent.swift`
+- `Sources/Swarm/Agents/Agent.swift`, `Agent.swift`, `LoopAgent.swift`
   - replace local run loops where feasible with canonical builder+runtime invocation.
 - `Sources/Swarm/Tools/SwarmToolRegistry.swift` equivalent layer (ToolExecutionEngine stack)
   - add/verify typed execution contract for Hive adapters.
 - `Sources/Swarm/Tools/ToolBridging.swift`
   - align conversion rules with typed tool adapter and checkpoint-safe payload handling.
-- `Sources/Swarm/Resilience/RetryPolicy.swift`, `ResilientAgent.swift`, `FallbackChain.swift`
+- `Sources/Swarm/Resilience/RetryPolicy.swift`, `Workflow advanced fallback.swift`, `FallbackChain.swift`
   - consume one policy source; eliminate duplicated policy conversion in bridge layer.
 - `Sources/Swarm/Observability/AgentTracer.swift`, `Tracing*.swift`, `TraceEvent.swift`
   - lock one event schema and deterministic lifecycle spans.

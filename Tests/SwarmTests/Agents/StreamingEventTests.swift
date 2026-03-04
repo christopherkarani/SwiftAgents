@@ -10,7 +10,7 @@ import Testing
 @Suite("Streaming Event Tests")
 struct StreamingEventTests {
     
-    @Test("ReActAgent stream emits thinking and tool call events")
+    @Test("Agent stream emits thinking and tool call events")
     func reactAgentStreamEvents() async throws {
         // 1. Setup mock provider for a tool call sequence
         let mockProvider = MockInferenceProvider()
@@ -21,7 +21,7 @@ struct StreamingEventTests {
         
         // 2. Setup agent with a mock tool
         let tool = MockTool(name: "test_tool", description: "Test tool")
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [tool],
             instructions: "You are a test assistant.",
             inferenceProvider: mockProvider
@@ -37,8 +37,8 @@ struct StreamingEventTests {
         // Expected sequence:
         // .started
         // .iterationStarted(1)
-        // .llmStarted (from run hooks)
-        // .llmCompleted (from run hooks)
+        // .llmStarted (from run observer)
+        // .llmCompleted (from run observer)
         // .toolCallStarted
         // .iterationCompleted(1)
         // .iterationStarted(2)
@@ -103,7 +103,7 @@ struct StreamingEventTests {
         #expect(generateCount == 0)
     }
 
-    @Test("ReActAgent streaming uses tool-call generation when tools are available")
+    @Test("Agent streaming uses tool-call generation when tools are available")
     func reactAgentStreamingUsesToolCallGeneration() async throws {
         let mockProvider = MockInferenceProvider()
         await mockProvider.setToolCallResponses([
@@ -111,7 +111,7 @@ struct StreamingEventTests {
         ])
 
         let tool = MockTool(name: "test_tool", description: "Test tool")
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [tool],
             instructions: "You are a test assistant.",
             inferenceProvider: mockProvider

@@ -100,7 +100,7 @@ public extension AsyncThrowingStream where Element == AgentEvent, Failure == Err
     /// ```
     ///
     /// - Note: The factory closure is called once per attempt, allowing proper stream recreation.
-    ///   For simple retry logic, consider using `ResilientAgent` instead.
+    ///   For simple retry logic, consider wrapping the operation with `RetryPolicy`.
     static func retry(
         maxAttempts: Int = 3,
         delay: Duration = .zero,

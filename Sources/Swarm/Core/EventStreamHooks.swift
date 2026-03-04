@@ -1,4 +1,4 @@
-// EventStreamHooks.swift
+// EventStreamObserver.swift
 // Swarm Framework
 //
 // Internal hook implementation that pipes events to a stream continuation.
@@ -9,7 +9,7 @@ import Foundation
 ///
 /// This serves as the bridge between the internal hook-based observation system
 /// and the external stream-based observation API.
-internal struct EventStreamHooks: RunHooks {
+internal struct EventStreamObserver: AgentObserver {
     /// The continuation to yield events to.
     private let continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
     private let toolCallStore = ToolCallStore()
@@ -20,7 +20,7 @@ internal struct EventStreamHooks: RunHooks {
         self.continuation = continuation
     }
 
-    // MARK: - RunHooks Implementation
+    // MARK: - AgentObserver Implementation
 
     func onAgentStart(context _: AgentContext?, agent _: any AgentRuntime, input: String) async {
         continuation.yield(.started(input: input))

@@ -75,7 +75,7 @@ struct MyApp {
 
         
 
-        let agent = ReActAgent.Builder()
+        let agent = Agent.Builder()
             .instructions("Your a deep research Agent, when you dont find something you keep looking ")
             .inferenceProvider(inferenceProvider)
             .addTool(searchTool)

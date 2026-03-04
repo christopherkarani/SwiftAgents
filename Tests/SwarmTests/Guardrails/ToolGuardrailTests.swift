@@ -446,14 +446,14 @@ struct MockAgentForGuardrails: AgentRuntime {
         configuration = AgentConfiguration(name: name)
     }
 
-    func run(_ input: String, session _: (any Session)? = nil, hooks _: (any RunHooks)? = nil) async throws -> AgentResult {
+    func run(_ input: String, session _: (any Session)? = nil, observer _: (any AgentObserver)? = nil) async throws -> AgentResult {
         AgentResult(
             output: "Mock response to: \(input)",
             metadata: [:]
         )
     }
 
-    nonisolated func stream(_ input: String, session _: (any Session)? = nil, hooks _: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_ input: String, session _: (any Session)? = nil, observer _: (any AgentObserver)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             let result = AgentResult(output: "Mock response to: \(input)", metadata: [:])
             continuation.yield(.completed(result: result))
