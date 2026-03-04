@@ -70,7 +70,7 @@ private actor RecordingObserver: AgentObserver {
         events.append("llmStart:\(inputMessages.count)")
     }
 
-    func onLLMEnd(context _: AgentContext?, agent _: any AgentRuntime, response _: String, usage: InferenceResponse.TokenUsage?) async {
+    func onLLMEnd(context _: AgentContext?, agent _: any AgentRuntime, response _: String, usage: TokenUsage?) async {
         let tokens = usage.map { "\($0.inputTokens)/\($0.outputTokens)" } ?? "none"
         events.append("llmEnd:\(tokens)")
     }
@@ -347,7 +347,7 @@ struct LoggingAgentObserverTests {
             context: nil,
             agent: agent,
             response: "I can help with that",
-            usage: InferenceResponse.TokenUsage(inputTokens: 50, outputTokens: 20)
+            usage: TokenUsage(inputTokens: 50, outputTokens: 20)
         )
     }
 
@@ -408,7 +408,7 @@ struct AgentObserverIntegrationTests {
             context: nil,
             agent: agent,
             response: "I'll use the calculator",
-            usage: InferenceResponse.TokenUsage(inputTokens: 10, outputTokens: 5)
+            usage: TokenUsage(inputTokens: 10, outputTokens: 5)
         )
         let toolCall = ToolCall(toolName: "calculator", arguments: ["expression": .string("2+2")])
         await observer.onToolStart(context: nil, agent: agent, call: toolCall)
@@ -526,7 +526,7 @@ struct AgentObserverIntegrationTests {
             func onToolStart(context _: AgentContext?, agent _: any AgentRuntime, call _: ToolCall) async {}
             func onToolEnd(context _: AgentContext?, agent _: any AgentRuntime, result _: ToolResult) async {}
             func onLLMStart(context _: AgentContext?, agent _: any AgentRuntime, systemPrompt _: String?, inputMessages _: [MemoryMessage]) async {}
-            func onLLMEnd(context _: AgentContext?, agent _: any AgentRuntime, response _: String, usage _: InferenceResponse.TokenUsage?) async {}
+            func onLLMEnd(context _: AgentContext?, agent _: any AgentRuntime, response _: String, usage _: TokenUsage?) async {}
             func onGuardrailTriggered(context _: AgentContext?, guardrailName _: String, guardrailType _: GuardrailType, result _: GuardrailResult) async {}
 
             func getInterval() -> (start: ContinuousClock.Instant, end: ContinuousClock.Instant)? {

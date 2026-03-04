@@ -12,15 +12,15 @@ import Foundation
 /// - AgentResult.Builder recording
 /// - AgentObserver emission
 /// - ToolRegistry execution wiring
-public struct ToolExecutionEngine: Sendable {
-    public init() {}
+struct ToolExecutionEngine: Sendable {
+    init() {}
 
-    public struct Outcome: Sendable {
-        public let call: ToolCall
-        public let result: ToolResult
+    struct Outcome: Sendable {
+        let call: ToolCall
+        let result: ToolResult
     }
 
-    public func execute(
+    func execute(
         toolName: String,
         arguments: [String: SendableValue],
         providerCallId: String? = nil,

@@ -70,61 +70,22 @@ public struct AgentResult: Sendable, Equatable {
     }
 }
 
-// MARK: - TokenUsage
-
-/// Token usage statistics for a generation.
-///
-/// Tracks input and output token counts for monitoring
-/// and cost estimation purposes.
-public struct TokenUsage: Sendable, Equatable, Codable {
-    /// Number of tokens in the input/prompt.
-    public let inputTokens: Int
-
-    /// Number of tokens in the output/response.
-    public let outputTokens: Int
-
-    /// Total tokens used (input + output).
-    public var totalTokens: Int {
-        inputTokens + outputTokens
-    }
-
-    /// Creates token usage statistics.
-    /// - Parameters:
-    ///   - inputTokens: Input token count.
-    ///   - outputTokens: Output token count.
-    public init(inputTokens: Int, outputTokens: Int) {
-        self.inputTokens = inputTokens
-        self.outputTokens = outputTokens
-    }
-}
-
 // MARK: - AgentResult.Builder
 
-public extension AgentResult {
+extension AgentResult {
     /// Builder for constructing AgentResult incrementally during execution.
     ///
     /// Use this builder to accumulate results as an agent runs, then
     /// call `build()` to create the final result.
-    ///
-    /// Example:
-    /// ```swift
-    /// let builder = AgentResult.Builder()
-    /// _ = builder.start()
-    /// _ = builder.addToolCall(call)
-    /// _ = builder.setOutput("Final answer")
-    /// let result = builder.build()
-    /// ```
-    final class Builder: @unchecked Sendable {
-        // MARK: Public
+    package final class Builder: @unchecked Sendable {
+        // MARK: Internal
 
         /// Creates a new result builder.
-        public init() {}
+        package init() {}
 
         /// Sets the output text.
-        /// - Parameter value: The output text.
-        /// - Returns: Self for chaining.
         @discardableResult
-        public func setOutput(_ value: String) -> Builder {
+        package func setOutput(_ value: String) -> Builder {
             lock.lock()
             defer { lock.unlock() }
             output = value
@@ -132,10 +93,8 @@ public extension AgentResult {
         }
 
         /// Appends to the output text.
-        /// - Parameter value: Text to append.
-        /// - Returns: Self for chaining.
         @discardableResult
-        public func appendOutput(_ value: String) -> Builder {
+        package func appendOutput(_ value: String) -> Builder {
             lock.lock()
             defer { lock.unlock() }
             output += value
@@ -143,10 +102,8 @@ public extension AgentResult {
         }
 
         /// Adds a tool call.
-        /// - Parameter call: The tool call.
-        /// - Returns: Self for chaining.
         @discardableResult
-        public func addToolCall(_ call: ToolCall) -> Builder {
+        package func addToolCall(_ call: ToolCall) -> Builder {
             lock.lock()
             defer { lock.unlock() }
             toolCalls.append(call)
@@ -154,10 +111,8 @@ public extension AgentResult {
         }
 
         /// Adds a tool result.
-        /// - Parameter result: The tool result.
-        /// - Returns: Self for chaining.
         @discardableResult
-        public func addToolResult(_ result: ToolResult) -> Builder {
+        package func addToolResult(_ result: ToolResult) -> Builder {
             lock.lock()
             defer { lock.unlock() }
             toolResults.append(result)
@@ -165,9 +120,8 @@ public extension AgentResult {
         }
 
         /// Increments the iteration count.
-        /// - Returns: Self for chaining.
         @discardableResult
-        public func incrementIteration() -> Builder {
+        package func incrementIteration() -> Builder {
             lock.lock()
             defer { lock.unlock() }
             iterationCount += 1
@@ -175,9 +129,8 @@ public extension AgentResult {
         }
 
         /// Marks the start time.
-        /// - Returns: Self for chaining.
         @discardableResult
-        public func start() -> Builder {
+        package func start() -> Builder {
             lock.lock()
             defer { lock.unlock() }
             startTime = ContinuousClock.now
@@ -185,10 +138,8 @@ public extension AgentResult {
         }
 
         /// Sets the token usage.
-        /// - Parameter usage: Token usage stats.
-        /// - Returns: Self for chaining.
         @discardableResult
-        public func setTokenUsage(_ usage: TokenUsage) -> Builder {
+        package func setTokenUsage(_ usage: TokenUsage) -> Builder {
             lock.lock()
             defer { lock.unlock() }
             tokenUsage = usage
@@ -196,12 +147,8 @@ public extension AgentResult {
         }
 
         /// Sets a metadata value.
-        /// - Parameters:
-        ///   - key: The metadata key.
-        ///   - value: The metadata value.
-        /// - Returns: Self for chaining.
         @discardableResult
-        public func setMetadata(_ key: String, _ value: SendableValue) -> Builder {
+        package func setMetadata(_ key: String, _ value: SendableValue) -> Builder {
             lock.lock()
             defer { lock.unlock() }
             metadata[key] = value
@@ -209,22 +156,21 @@ public extension AgentResult {
         }
 
         /// Gets the current output.
-        public func getOutput() -> String {
+        package func getOutput() -> String {
             lock.lock()
             defer { lock.unlock() }
             return output
         }
 
         /// Gets the current iteration count.
-        public func getIterationCount() -> Int {
+        package func getIterationCount() -> Int {
             lock.lock()
             defer { lock.unlock() }
             return iterationCount
         }
 
         /// Builds the final AgentResult.
-        /// - Returns: The completed result.
-        public func build() -> AgentResult {
+        package func build() -> AgentResult {
             lock.lock()
             defer { lock.unlock() }
 
@@ -284,10 +230,3 @@ public extension AgentResult {
     }
 }
 
-// MARK: - TokenUsage + CustomStringConvertible
-
-extension TokenUsage: CustomStringConvertible {
-    public var description: String {
-        "TokenUsage(input: \(inputTokens), output: \(outputTokens), total: \(totalTokens))"
-    }
-}

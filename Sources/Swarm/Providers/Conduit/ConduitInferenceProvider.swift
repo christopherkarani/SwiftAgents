@@ -48,7 +48,7 @@ struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: InferenceProvi
         let parsedToolCalls = try ConduitToolCallConverter.toParsedToolCalls(result.toolCalls)
         let finishReason = mapFinishReason(result.finishReason, toolCalls: parsedToolCalls)
         let usage = result.usage.map { usage in
-            InferenceResponse.TokenUsage(
+            TokenUsage(
                 inputTokens: usage.promptTokens,
                 outputTokens: usage.completionTokens
             )
@@ -106,7 +106,7 @@ struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: InferenceProvi
 
                 if let usage = chunk.usage {
                     continuation.yield(.usage(
-                        InferenceResponse.TokenUsage(
+                        TokenUsage(
                             inputTokens: usage.promptTokens,
                             outputTokens: usage.completionTokens
                         )

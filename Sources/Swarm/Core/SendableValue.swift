@@ -322,7 +322,7 @@ public extension SendableValue {
 
     /// Converts a raw JSON value (from JSONSerialization) to SendableValue.
     /// Returns `.null` for unsupported types.
-    static func fromJSONValue(_ value: Any) -> SendableValue {
+    package static func fromJSONValue(_ value: Any) -> SendableValue {
         (try? fromJSONObject(value)) ?? .null
     }
 

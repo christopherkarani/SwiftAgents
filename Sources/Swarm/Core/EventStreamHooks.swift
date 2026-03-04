@@ -97,7 +97,7 @@ internal struct EventStreamObserver: AgentObserver {
         continuation.yield(.llmStarted(model: nil, promptTokens: nil))
     }
 
-    func onLLMEnd(context: AgentContext?, agent: any AgentRuntime, response: String, usage: InferenceResponse.TokenUsage?) async {
+    func onLLMEnd(context: AgentContext?, agent: any AgentRuntime, response: String, usage: TokenUsage?) async {
         continuation.yield(.llmCompleted(
             model: nil, 
             promptTokens: usage?.inputTokens, 

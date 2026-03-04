@@ -21,6 +21,13 @@ coverage/
 # Implementation plans (internal documentation)
 IMPLEMENTATION_PLAN.md
 
+# Git worktrees
+.worktrees/
+
+# API audit working documents
+docs/reference/api-surface-catalog.md
+docs/reference/api-improvement-report.md
+
 # VitePress / Node
 node_modules/
 docs/.vitepress/dist/

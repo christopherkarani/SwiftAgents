@@ -1062,7 +1062,7 @@ public actor Agent: AgentRuntime {
         var content = ""
         content.reserveCapacity(1024)
         var parsedToolCalls: [InferenceResponse.ParsedToolCall] = []
-        var usage: InferenceResponse.TokenUsage?
+        var usage: TokenUsage?
         var stopStreaming = false
 
         let stream = provider.streamWithToolCalls(prompt: prompt, tools: tools, options: options)

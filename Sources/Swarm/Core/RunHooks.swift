@@ -113,7 +113,7 @@ public protocol AgentObserver: Sendable {
     ///   - agent: The agent that made the LLM call.
     ///   - response: The text response from the LLM.
     ///   - usage: Token usage statistics, if available.
-    func onLLMEnd(context: AgentContext?, agent: any AgentRuntime, response: String, usage: InferenceResponse.TokenUsage?) async
+    func onLLMEnd(context: AgentContext?, agent: any AgentRuntime, response: String, usage: TokenUsage?) async
 
     /// Called when a guardrail is triggered during execution.
     ///
@@ -193,7 +193,7 @@ public extension AgentObserver {
     func onLLMStart(context _: AgentContext?, agent _: any AgentRuntime, systemPrompt _: String?, inputMessages _: [MemoryMessage]) async {}
 
     /// Default no-op implementation for LLM end.
-    func onLLMEnd(context _: AgentContext?, agent _: any AgentRuntime, response _: String, usage _: InferenceResponse.TokenUsage?) async {}
+    func onLLMEnd(context _: AgentContext?, agent _: any AgentRuntime, response _: String, usage _: TokenUsage?) async {}
 
     /// Default no-op implementation for guardrail triggered.
     func onGuardrailTriggered(context _: AgentContext?, guardrailName _: String, guardrailType _: GuardrailType, result _: GuardrailResult) async {}
@@ -337,7 +337,7 @@ public struct CompositeObserver: AgentObserver {
         }
     }
 
-    public func onLLMEnd(context: AgentContext?, agent: any AgentRuntime, response: String, usage: InferenceResponse.TokenUsage?) async {
+    public func onLLMEnd(context: AgentContext?, agent: any AgentRuntime, response: String, usage: TokenUsage?) async {
         await withTaskGroup(of: Void.self) { group in
             for hook in observers {
                 group.addTask {
@@ -513,7 +513,7 @@ public struct LoggingObserver: AgentObserver {
         Log.agents.info("LLM call started\(contextId) - messages: \(inputMessages.count)")
     }
 
-    public func onLLMEnd(context: AgentContext?, agent _: any AgentRuntime, response _: String, usage: InferenceResponse.TokenUsage?) async {
+    public func onLLMEnd(context: AgentContext?, agent _: any AgentRuntime, response _: String, usage: TokenUsage?) async {
         let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {

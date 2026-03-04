@@ -25,35 +25,27 @@
     /// try context.save()
     /// ```
     @Model
-    public final class PersistedMessage {
+    final class PersistedMessage {
         /// Unique identifier matching the original MemoryMessage.
-        @Attribute(.unique) public var id: UUID
+        @Attribute(.unique) var id: UUID
 
         /// Message role as string (user, assistant, system, tool).
-        public var role: String
+        var role: String
 
         /// Message content.
-        public var content: String
+        var content: String
 
         /// Creation timestamp.
-        public var timestamp: Date
+        var timestamp: Date
 
         /// Serialized metadata as JSON string.
-        public var metadataJSON: String
+        var metadataJSON: String
 
         /// Conversation/session identifier for grouping messages.
-        @Attribute(.spotlight) public var conversationId: String
+        @Attribute(.spotlight) var conversationId: String
 
         /// Creates a new persisted message.
-        ///
-        /// - Parameters:
-        ///   - id: Unique identifier.
-        ///   - role: Message role as string.
-        ///   - content: Message content.
-        ///   - timestamp: Creation time.
-        ///   - metadataJSON: Metadata as JSON string.
-        ///   - conversationId: Conversation identifier.
-        public init(
+        init(
             id: UUID = UUID(),
             role: String,
             content: String,
@@ -70,11 +62,7 @@
         }
 
         /// Creates a persisted message from a MemoryMessage.
-        ///
-        /// - Parameters:
-        ///   - message: The MemoryMessage to persist.
-        ///   - conversationId: Conversation identifier for grouping.
-        public convenience init(from message: MemoryMessage, conversationId: String = "default") {
+        convenience init(from message: MemoryMessage, conversationId: String = "default") {
             let metadataJSON: String = if let data = try? JSONEncoder().encode(message.metadata),
                                           let json = String(data: data, encoding: .utf8) {
                 json
@@ -93,9 +81,7 @@
         }
 
         /// Converts back to a MemoryMessage.
-        ///
-        /// - Returns: The equivalent MemoryMessage, or nil if conversion fails.
-        public func toMemoryMessage() -> MemoryMessage? {
+        func toMemoryMessage() -> MemoryMessage? {
             guard let messageRole = MemoryMessage.Role(rawValue: role) else {
                 Log.memory.warning(
                     "Failed to deserialize PersistedMessage: invalid role '\(role)' for message id: \(id)"
@@ -128,7 +114,7 @@
 
     // MARK: - Fetch Descriptors
 
-    public extension PersistedMessage {
+    extension PersistedMessage {
         /// Fetch descriptor for all conversations (unique conversation IDs).
         static var allConversationsDescriptor: FetchDescriptor<PersistedMessage> {
             FetchDescriptor<PersistedMessage>(
@@ -137,9 +123,6 @@
         }
 
         /// Fetch descriptor for all messages in a conversation, sorted by timestamp.
-        ///
-        /// - Parameter conversationId: The conversation to fetch.
-        /// - Returns: Configured fetch descriptor.
         static func fetchDescriptor(
             forConversation conversationId: String
         ) -> FetchDescriptor<PersistedMessage> {
@@ -150,11 +133,6 @@
         }
 
         /// Fetch descriptor for recent messages in a conversation.
-        ///
-        /// - Parameters:
-        ///   - conversationId: The conversation to fetch.
-        ///   - limit: Maximum number of messages.
-        /// - Returns: Configured fetch descriptor.
         static func fetchDescriptor(
             forConversation conversationId: String,
             limit: Int
@@ -170,12 +148,8 @@
 
     // MARK: - Model Container Configuration
 
-    public extension PersistedMessage {
+    extension PersistedMessage {
         /// Creates a model container configured for PersistedMessage.
-        ///
-        /// - Parameter inMemory: If true, uses in-memory storage (for testing).
-        /// - Returns: Configured model container.
-        /// - Throws: If container creation fails.
         static func makeContainer(inMemory: Bool = false) throws -> ModelContainer {
             let schema = Schema([PersistedMessage.self])
             let configuration = ModelConfiguration(

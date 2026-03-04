@@ -248,77 +248,40 @@ public extension HandoffReceiver {
 /// let result = try await coordinator.executeHandoff(request, context: context)
 /// print(result.result.output)
 /// ```
-public actor HandoffCoordinator {
-    // MARK: Public
+actor HandoffCoordinator {
+    // MARK: Internal
 
     /// Returns the names of all registered agents.
-    ///
-    /// - Returns: Array of agent names in no particular order.
-    public var registeredAgents: [String] {
+    var registeredAgents: [String] {
         Array(agents.keys)
     }
 
     // MARK: - Initialization
 
     /// Creates a new handoff coordinator.
-    public init() {}
+    init() {}
 
     // MARK: - Agent Registration
 
     /// Registers an agent with a specific name.
-    ///
-    /// The name is used to identify the agent in handoff requests.
-    /// If an agent with the same name already exists, it will be replaced.
-    ///
-    /// - Parameters:
-    ///   - agent: The agent to register.
-    ///   - name: The name to register the agent under.
-    public func register(_ agent: any AgentRuntime, as name: String) {
+    func register(_ agent: any AgentRuntime, as name: String) {
         agents[name] = agent
     }
 
     /// Unregisters an agent by name.
-    ///
-    /// - Parameter name: The name of the agent to unregister.
-    public func unregister(_ name: String) {
+    func unregister(_ name: String) {
         agents.removeValue(forKey: name)
     }
 
     /// Retrieves an agent by name.
-    ///
-    /// - Parameter name: The name of the agent to retrieve.
-    /// - Returns: The agent, or nil if not found.
-    public func agent(named name: String) -> (any AgentRuntime)? {
+    func agent(named name: String) -> (any AgentRuntime)? {
         agents[name]
     }
 
     // MARK: - Handoff Execution
 
     /// Executes a handoff from one agent to another.
-    ///
-    /// This method:
-    /// 1. Looks up the target agent by name
-    /// 2. If the target implements `HandoffReceiver`, calls its `handleHandoff` method
-    /// 3. Otherwise, executes the target agent normally with the handoff input
-    /// 4. Returns a `HandoffResult` with the outcome
-    ///
-    /// - Parameters:
-    ///   - request: The handoff request specifying source, target, and context.
-    ///   - context: The shared orchestration context.
-    /// - Returns: The result of the handoff.
-    /// - Throws: `WorkflowError.agentNotFound` if the target agent is not registered,
-    ///           or `AgentError` if the target agent's execution fails.
-    ///
-    /// Example:
-    /// ```swift
-    /// let request = HandoffRequest(
-    ///     sourceAgentName: "planner",
-    ///     targetAgentName: "executor",
-    ///     input: "Execute plan step 1"
-    /// )
-    /// let result = try await coordinator.executeHandoff(request, context: context)
-    /// ```
-    public func executeHandoff(
+    func executeHandoff(
         _ request: HandoffRequest,
         context: AgentContext
     ) async throws -> HandoffResult {
@@ -361,42 +324,7 @@ public actor HandoffCoordinator {
     }
 
     /// Executes a handoff with configuration callbacks.
-    ///
-    /// This method extends the basic handoff with support for:
-    /// - Dynamic enablement checks via `when` callback
-    /// - Input transformation via `transform` callback
-    /// - Pre-handoff notification via `onTransfer` callback
-    /// - Integration with `AgentObserver` for observability
-    ///
-    /// - Parameters:
-    ///   - request: The handoff request specifying source, target, and context.
-    ///   - context: The shared orchestration context.
-    ///   - configuration: Optional handoff configuration with callbacks.
-    ///   - observer: Optional observer for lifecycle callbacks.
-    /// - Returns: The result of the handoff.
-    /// - Throws: `WorkflowError.agentNotFound` if the target agent is not registered,
-    ///           `WorkflowError.handoffSkipped` if the handoff is disabled,
-    ///           or `AgentError` if the target agent's execution fails.
-    ///
-    /// Example:
-    /// ```swift
-    /// let config = handoff(
-    ///     to: executorAgent,
-    ///     onTransfer: { context, data in
-    ///         Log.agents.info("Handoff: \(data.sourceAgentName) -> \(data.targetAgentName)")
-    ///     },
-    ///     when: { context, agent in
-    ///         await context.get("ready")?.boolValue ?? false
-    ///     }
-    /// )
-    /// let result = try await coordinator.executeHandoff(
-    ///     request,
-    ///     context: context,
-    ///     configuration: AnyHandoffConfiguration(config),
-    ///     observer: myHooks
-    /// )
-    /// ```
-    public func executeHandoff(
+    func executeHandoff(
         _ request: HandoffRequest,
         context: AgentContext,
         configuration: AnyHandoffConfiguration?,
