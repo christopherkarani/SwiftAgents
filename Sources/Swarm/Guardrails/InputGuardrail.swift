@@ -186,18 +186,13 @@ public struct InputGuard: InputGuardrail, Sendable {
 /// - Multiple calls to `.name()` - the last value wins
 /// - Multiple calls to `.validate()` - the last handler wins
 /// - Fluent chaining for readability
-public struct InputGuardrailBuilder: Sendable {
-    // MARK: Public
+struct InputGuardrailBuilder: Sendable {
+    // MARK: Internal
 
     // MARK: - Initialization
 
     /// Creates a new builder instance.
-    ///
-    /// Example:
-    /// ```swift
-    /// let builder = InputGuardrailBuilder()
-    /// ```
-    public init() {
+    init() {
         currentName = nil
         currentHandler = nil
     }
@@ -205,38 +200,14 @@ public struct InputGuardrailBuilder: Sendable {
     // MARK: - Builder Methods
 
     /// Sets the name for the guardrail.
-    ///
-    /// If called multiple times, the last value wins.
-    ///
-    /// - Parameter name: The name to use for the guardrail.
-    /// - Returns: A new builder with the updated name.
-    ///
-    /// Example:
-    /// ```swift
-    /// let builder = InputGuardrailBuilder()
-    ///     .name("MyGuardrail")
-    /// ```
     @discardableResult
-    public func name(_ name: String) -> InputGuardrailBuilder {
+    func name(_ name: String) -> InputGuardrailBuilder {
         InputGuardrailBuilder(name: name, handler: currentHandler)
     }
 
     /// Sets the validation handler for the guardrail.
-    ///
-    /// If called multiple times, the last handler wins.
-    ///
-    /// - Parameter handler: The validation closure.
-    /// - Returns: A new builder with the updated handler.
-    ///
-    /// Example:
-    /// ```swift
-    /// let builder = InputGuardrailBuilder()
-    ///     .validate { input, context in
-    ///         .passed()
-    ///     }
-    /// ```
     @discardableResult
-    public func validate(
+    func validate(
         _ handler: @escaping @Sendable (String, AgentContext?) async throws -> GuardrailResult
     ) -> InputGuardrailBuilder {
         InputGuardrailBuilder(name: currentName, handler: handler)
@@ -245,22 +216,7 @@ public struct InputGuardrailBuilder: Sendable {
     // MARK: - Build
 
     /// Builds the final `ClosureInputGuardrail` instance.
-    ///
-    /// - Returns: A configured `ClosureInputGuardrail`.
-    ///
-    /// Example:
-    /// ```swift
-    /// let guardrail = InputGuardrailBuilder()
-    ///     .name("LengthCheck")
-    ///     .validate { input, context in
-    ///         input.count > 100 ? .tripwire(message: "Too long") : .passed()
-    ///     }
-    ///     .build()
-    /// ```
-    ///
-    /// - Note: If no name is provided, defaults to "UnnamedGuardrail".
-    ///         If no handler is provided, defaults to always passing.
-    public func build() -> ClosureInputGuardrail {
+    func build() -> ClosureInputGuardrail {
         let finalName = currentName ?? "UnnamedGuardrail"
         let finalHandler = currentHandler ?? { _, _ in .passed() }
 

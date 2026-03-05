@@ -30,7 +30,7 @@ import Foundation
 ///     }
 ///
 ///     public func context(for query: String, tokenLimit: Int) async -> String {
-///         formatMessagesForContext(messages, tokenLimit: tokenLimit)
+///         MemoryMessage.formatContext(messages, tokenLimit: tokenLimit)
 ///     }
 ///
 ///     public func allMessages() async -> [MemoryMessage] {
@@ -80,74 +80,76 @@ public protocol Memory: Actor, Sendable {
     func clear() async
 }
 
-// MARK: - Helper Functions
+// MARK: - MemoryMessage Context Formatting
 
-/// Formats messages into a context string within token limits.
-///
-/// Processes messages from most recent to oldest, including as many
-/// as fit within the token budget.
-///
-/// - Parameters:
-///   - messages: Messages to format.
-///   - tokenLimit: Maximum tokens allowed.
-///   - tokenEstimator: Estimator for token counting.
-/// - Returns: Formatted context string with messages joined by double newlines.
-public func formatMessagesForContext(
-    _ messages: [MemoryMessage],
-    tokenLimit: Int,
-    tokenEstimator: any TokenEstimator = CharacterBasedTokenEstimator.shared
-) -> String {
-    var result: [String] = []
-    var currentTokens = 0
+public extension MemoryMessage {
+    /// Formats messages into a context string within token limits.
+    ///
+    /// Processes messages from most recent to oldest, including as many
+    /// as fit within the token budget. Messages are joined with double newlines.
+    ///
+    /// - Parameters:
+    ///   - messages: Messages to format.
+    ///   - tokenLimit: Maximum tokens allowed.
+    ///   - tokenEstimator: Estimator for token counting.
+    /// - Returns: Formatted context string with messages joined by double newlines.
+    static func formatContext(
+        _ messages: [MemoryMessage],
+        tokenLimit: Int,
+        tokenEstimator: any TokenEstimator = CharacterBasedTokenEstimator.shared
+    ) -> String {
+        var result: [String] = []
+        var currentTokens = 0
 
-    // Process messages in reverse (most recent first) then reverse result
-    for message in messages.reversed() {
-        let formatted = message.formattedContent
-        let messageTokens = tokenEstimator.estimateTokens(for: formatted)
+        // Process messages in reverse (most recent first) then reverse result
+        for message in messages.reversed() {
+            let formatted = message.formattedContent
+            let messageTokens = tokenEstimator.estimateTokens(for: formatted)
 
-        if currentTokens + messageTokens <= tokenLimit {
-            result.append(formatted)
-            currentTokens += messageTokens
-        } else {
-            break
+            if currentTokens + messageTokens <= tokenLimit {
+                result.append(formatted)
+                currentTokens += messageTokens
+            } else {
+                break
+            }
         }
+
+        return result.reversed().joined(separator: "\n\n")
     }
 
-    return result.reversed().joined(separator: "\n\n")
-}
+    /// Formats messages into a context string within token limits with a custom separator.
+    ///
+    /// - Parameters:
+    ///   - messages: Messages to format.
+    ///   - tokenLimit: Maximum tokens allowed.
+    ///   - separator: String to join messages.
+    ///   - tokenEstimator: Estimator for token counting.
+    /// - Returns: Formatted context string.
+    static func formatContext(
+        _ messages: [MemoryMessage],
+        tokenLimit: Int,
+        separator: String,
+        tokenEstimator: any TokenEstimator = CharacterBasedTokenEstimator.shared
+    ) -> String {
+        var result: [String] = []
+        var currentTokens = 0
+        let separatorTokens = tokenEstimator.estimateTokens(for: separator)
 
-/// Formats messages with a custom separator.
-///
-/// - Parameters:
-///   - messages: Messages to format.
-///   - tokenLimit: Maximum tokens allowed.
-///   - separator: String to join messages (default: double newline).
-///   - tokenEstimator: Estimator for token counting.
-/// - Returns: Formatted context string.
-public func formatMessagesForContext(
-    _ messages: [MemoryMessage],
-    tokenLimit: Int,
-    separator: String,
-    tokenEstimator: any TokenEstimator = CharacterBasedTokenEstimator.shared
-) -> String {
-    var result: [String] = []
-    var currentTokens = 0
-    let separatorTokens = tokenEstimator.estimateTokens(for: separator)
+        for message in messages.reversed() {
+            let formatted = message.formattedContent
+            let messageTokens = tokenEstimator.estimateTokens(for: formatted)
+            let totalNeeded = messageTokens + (result.isEmpty ? 0 : separatorTokens)
 
-    for message in messages.reversed() {
-        let formatted = message.formattedContent
-        let messageTokens = tokenEstimator.estimateTokens(for: formatted)
-        let totalNeeded = messageTokens + (result.isEmpty ? 0 : separatorTokens)
-
-        if currentTokens + totalNeeded <= tokenLimit {
-            result.append(formatted)
-            currentTokens += totalNeeded
-        } else {
-            break
+            if currentTokens + totalNeeded <= tokenLimit {
+                result.append(formatted)
+                currentTokens += totalNeeded
+            } else {
+                break
+            }
         }
-    }
 
-    return result.reversed().joined(separator: separator)
+        return result.reversed().joined(separator: separator)
+    }
 }
 
 // MARK: - AnyMemory

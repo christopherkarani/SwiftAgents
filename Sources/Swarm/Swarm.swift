@@ -21,7 +21,7 @@
 /// import Swarm
 ///
 /// // Create an agent with tools and an inference provider
-/// let agent = ReActAgent(
+/// let agent = Agent(
 ///     tools: [CalculatorTool(), DateTimeTool()],
 ///     instructions: "You are a helpful assistant that can perform calculations.",
 ///     inferenceProvider: myProvider
@@ -32,7 +32,7 @@
 /// print(result.output)
 ///
 /// // Or use the fluent builder API
-/// let agent2 = ReActAgent.Builder()
+/// let agent2 = Agent.Builder()
 ///     .tools([CalculatorTool()])
 ///     .instructions("You are a math assistant.")
 ///     .inferenceProvider(myProvider)
@@ -49,7 +49,7 @@
 ///
 public enum Swarm {
     /// The current version of the Swarm framework.
-    public static let version = "0.1.0"
+    public static let version = "2.0.0"
 
     /// The minimum macOS platform version required by Swarm.
     public static let minimumMacOSVersion = "15.0"

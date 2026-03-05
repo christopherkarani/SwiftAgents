@@ -102,7 +102,7 @@
 
         public func context(for _: String, tokenLimit: Int) async -> String {
             let messages = await allMessages()
-            return formatMessagesForContext(messages, tokenLimit: tokenLimit, tokenEstimator: tokenEstimator)
+            return MemoryMessage.formatContext(messages, tokenLimit: tokenLimit, tokenEstimator: tokenEstimator)
         }
 
         public func allMessages() async -> [MemoryMessage] {

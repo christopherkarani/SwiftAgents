@@ -40,11 +40,11 @@ struct ToolSchemaIntegrationTests {
         #expect(agent.tools.count == 1)
         #expect(agent.tools.first?.name == "echo")
 
-        let react = try ReActAgent(tools: [tool])
+        let react = try Agent(tools: [tool])
         #expect(react.tools.count == 1)
         #expect(react.tools.first?.name == "echo")
 
-        let planAndExecute = try PlanAndExecuteAgent(tools: [tool])
+        let planAndExecute = try Agent(tools: [tool])
         #expect(planAndExecute.tools.count == 1)
         #expect(planAndExecute.tools.first?.name == "echo")
     }

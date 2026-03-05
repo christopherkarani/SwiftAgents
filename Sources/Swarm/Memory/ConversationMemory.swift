@@ -64,7 +64,7 @@ public actor ConversationMemory: Memory {
     }
 
     public func context(for _: String, tokenLimit: Int) async -> String {
-        formatMessagesForContext(messages, tokenLimit: tokenLimit, tokenEstimator: tokenEstimator)
+        MemoryMessage.formatContext(messages, tokenLimit: tokenLimit, tokenEstimator: tokenEstimator)
     }
 
     public func allMessages() async -> [MemoryMessage] {

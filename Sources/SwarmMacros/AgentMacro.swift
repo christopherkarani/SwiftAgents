@@ -136,7 +136,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
                     public func run(
                         _ input: String,
                         session: (any Session)? = nil,
-                        hooks: (any RunHooks)? = nil
+                        observer: (any AgentObserver)? = nil
                     ) async throws -> AgentResult {
                         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                             throw AgentError.invalidInput(reason: "Input cannot be empty")
@@ -152,7 +152,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
                         )
                         await tracing.traceStart(input: input)
 
-                        await hooks?.onAgentStart(context: nil, agent: self, input: input)
+                        await observer?.onAgentStart(context: nil, agent: self, input: input)
 
                         if let lifecycleMemory {
                             await lifecycleMemory.beginMemorySession()
@@ -211,7 +211,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
                             )
 
                             await tracing.traceComplete(result: result)
-                            await hooks?.onAgentEnd(context: nil, agent: self, result: result)
+                            await observer?.onAgentEnd(context: nil, agent: self, result: result)
 
                             if let lifecycleMemory {
                                 await lifecycleMemory.endMemorySession()
@@ -219,7 +219,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
 
                             return result
                         } catch {
-                            await hooks?.onError(context: nil, agent: self, error: error)
+                            await observer?.onError(context: nil, agent: self, error: error)
                             await tracing.traceError(error)
                             if let lifecycleMemory {
                                 await lifecycleMemory.endMemorySession()
@@ -233,7 +233,7 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
                     public func run(
                         _ input: String,
                         session: (any Session)? = nil,
-                        hooks: (any RunHooks)? = nil
+                        observer: (any AgentObserver)? = nil
                     ) async throws -> AgentResult {
                         throw AgentError.internalError(reason: "No process method implemented")
                     }
@@ -247,12 +247,12 @@ public struct AgentMacro: MemberMacro, ExtensionMacro {
                 nonisolated public func stream(
                     _ input: String,
                     session: (any Session)? = nil,
-                    hooks: (any RunHooks)? = nil
+                    observer: (any AgentObserver)? = nil
                 ) -> AsyncThrowingStream<AgentEvent, Error> {
                     StreamHelper.makeTrackedStream(for: self) { agent, continuation in
                         do {
                             continuation.yield(.started(input: input))
-                            let result = try await agent.run(input, session: session, hooks: hooks)
+                            let result = try await agent.run(input, session: session, observer: observer)
                             continuation.yield(.completed(result: result))
                             continuation.finish()
                         } catch let error as AgentError {

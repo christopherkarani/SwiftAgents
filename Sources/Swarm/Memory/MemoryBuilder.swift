@@ -284,7 +284,7 @@ public actor CompositeMemory: Memory {
 
     public func context(for query: String, tokenLimit: Int) async -> String {
         let messages = await retrieveMessages(for: query, limit: tokenLimit)
-        return formatMessagesForContext(messages, tokenLimit: tokenLimit, tokenEstimator: tokenEstimator)
+        return MemoryMessage.formatContext(messages, tokenLimit: tokenLimit, tokenEstimator: tokenEstimator)
     }
 
     public func allMessages() async -> [MemoryMessage] {

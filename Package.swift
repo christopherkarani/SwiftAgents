@@ -10,6 +10,8 @@ let useLocalDependencies = ProcessInfo.processInfo.environment["SWARM_USE_LOCAL_
 
 var packageProducts: [Product] = [
     .library(name: "Swarm", targets: ["Swarm"]),
+    .library(name: "SwarmHive", targets: ["SwarmHive"]),
+    .library(name: "SwarmMembrane", targets: ["SwarmMembrane"]),
     .library(name: "SwarmMCP", targets: ["SwarmMCP"]),
 ]
 
@@ -77,12 +79,14 @@ var swarmDependencies: [Target.Dependency] = [
     .product(name: "Conduit", package: "Conduit"),
     .product(name: "Wax", package: "Wax"),
     .product(name: "HiveCore", package: "Hive"),
-    .product(name: "Membrane", package: "Membrane"),
-    .product(name: "MembraneHive", package: "Membrane")
+    .product(name: "Membrane", package: "Membrane", condition: .when(traits: ["membrane"])),
+    .product(name: "MembraneHive", package: "Membrane", condition: .when(traits: ["membrane"]))
 ]
 
 var swarmSwiftSettings: [SwiftSetting] = [
-    .enableExperimentalFeature("StrictConcurrency")
+    .enableExperimentalFeature("StrictConcurrency"),
+    .define("SWARM_HIVE", .when(traits: ["hive"])),
+    .define("SWARM_MEMBRANE", .when(traits: ["membrane"]))
 ]
 
 var packageTargets: [Target] = [
@@ -104,6 +108,26 @@ var packageTargets: [Target] = [
     .target(
         name: "Swarm",
         dependencies: swarmDependencies,
+        exclude: [
+            "HiveSwarm",
+        ],
+        swiftSettings: swarmSwiftSettings
+    ),
+    .target(
+        name: "SwarmHive",
+        dependencies: [
+            "Swarm",
+            .product(name: "HiveCore", package: "Hive"),
+        ],
+        path: "Sources/Swarm/HiveSwarm",
+        swiftSettings: swarmSwiftSettings
+    ),
+    .target(
+        name: "SwarmMembrane",
+        dependencies: [
+            "Swarm",
+        ],
+        path: "Sources/SwarmMembrane",
         swiftSettings: swarmSwiftSettings
     ),
     .target(
@@ -120,11 +144,21 @@ var packageTargets: [Target] = [
         name: "SwarmTests",
         dependencies: [
             "Swarm",
+            "SwarmHive",
             "SwarmMCP",
         ],
         resources: [
             .copy("Guardrails/INTEGRATION_TEST_SUMMARY.md"),
             .copy("Guardrails/QUICK_REFERENCE.md")
+        ],
+        swiftSettings: swarmSwiftSettings
+    ),
+    .testTarget(
+        name: "HiveSwarmTests",
+        dependencies: [
+            "Swarm",
+            "SwarmHive",
+            .product(name: "HiveCore", package: "Hive")
         ],
         swiftSettings: swarmSwiftSettings
     ),
@@ -139,16 +173,6 @@ var packageTargets: [Target] = [
         ]
     )
 ]
-
-    packageTargets.append(
-        .testTarget(
-            name: "HiveSwarmTests",
-            dependencies: ["Swarm"],
-            swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency")
-            ]
-        )
-    )
 
 if includeDemo {
     packageTargets.append(
@@ -183,6 +207,16 @@ let package = Package(
         .tvOS(.v26),
     ],
     products: packageProducts,
+    traits: [
+        .trait(
+            name: "hive",
+            description: "Enable Hive-backed workflow and runtime integration features."
+        ),
+        .trait(
+            name: "membrane",
+            description: "Enable Membrane-based planning and tool output transformations."
+        ),
+    ],
     dependencies: packageDependencies,
     targets: packageTargets
 )

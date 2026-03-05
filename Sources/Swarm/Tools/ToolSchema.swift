@@ -5,11 +5,6 @@
 
 import Foundation
 
-/// JSON-like value used at the tool-calling boundary.
-///
-/// Swarm uses `SendableValue` as its canonical JSON value representation.
-public typealias JSONValue = SendableValue
-
 /// Describes a tool interface in a provider-friendly, schema-first format.
 ///
 /// This is the public-facing schema type used across providers and agents.

@@ -4,20 +4,20 @@ import HiveCore
 /// Deterministic JSON codec for Hive checkpointing and task hashing.
 ///
 /// - Important: Only use for types whose JSON encoding is deterministic under `JSONEncoder(outputFormatting: .sortedKeys)`.
-public struct HiveCodableJSONCodec<Value: Codable & Sendable>: HiveCodec, Sendable {
-    public let id: String
+struct HiveCodableJSONCodec<Value: Codable & Sendable>: HiveCodec, Sendable {
+    let id: String
 
-    public init(id: String? = nil) {
+    init(id: String? = nil) {
         self.id = id ?? "HiveSwarm.HiveCodableJSONCodec<\(String(describing: Value.self))>"
     }
 
-    public func encode(_ value: Value) throws -> Data {
+    func encode(_ value: Value) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return try encoder.encode(value)
     }
 
-    public func decode(_ data: Data) throws -> Value {
+    func decode(_ data: Data) throws -> Value {
         try JSONDecoder().decode(Value.self, from: data)
     }
 }

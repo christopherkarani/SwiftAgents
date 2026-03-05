@@ -1,5 +1,9 @@
 # Swarm API Redesign — Implementation Plan
 
+> [!WARNING]
+> Historical planning document. Parts of this file reference removed DSL/orchestration APIs and superseded method names.
+> Current API: `Workflow` core surface plus namespaced power features under `workflow.advanced`.
+
 **Date**: 2026-03-02 (Updated 2026-03-03)
 **Status**: Draft
 **Thesis**: Swarm makes it effortless to add AI reasoning to your Apple platform app.

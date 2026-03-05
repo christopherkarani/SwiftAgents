@@ -5,6 +5,7 @@
 
 import Foundation
 import HiveCore
+import Swarm
 
 /// Converts between Swarm's `RetryPolicy` and Hive's `HiveRetryPolicy`.
 ///
@@ -18,13 +19,13 @@ import HiveCore
 /// let hivePolicy = RetryPolicyBridge.toHive(swarmPolicy)
 /// // .exponentialBackoff(initialNanoseconds: 1_000_000_000, factor: 2.0, maxAttempts: 3, ...)
 /// ```
-public enum RetryPolicyBridge {
+enum RetryPolicyBridge {
 
     /// Converts a Swarm `RetryPolicy` to a `HiveRetryPolicy`.
     ///
     /// - Parameter policy: The Swarm retry policy to convert.
     /// - Returns: The equivalent `HiveRetryPolicy` for deterministic execution.
-    public static func toHive(_ policy: RetryPolicy) -> HiveRetryPolicy {
+    static func toHive(_ policy: RetryPolicy) -> HiveRetryPolicy {
         if policy.maxAttempts <= 0 {
             return .none
         }

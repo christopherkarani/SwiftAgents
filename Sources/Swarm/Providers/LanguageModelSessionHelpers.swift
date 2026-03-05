@@ -120,10 +120,10 @@ enum LanguageModelSessionToolParser {
 
             // Extract arguments
             var arguments: [String: SendableValue] = [:]
-            if let argsObject = jsonObject["arguments"] as? [String: Any] {
-                for (key, value) in argsObject {
-                    arguments[key] = SendableValue.fromJSONValue(value)
-                }
+            if let argsObject = jsonObject["arguments"] as? [String: Any],
+               let argsData = try? JSONSerialization.data(withJSONObject: argsObject),
+               let decoded = try? JSONDecoder().decode([String: SendableValue].self, from: argsData) {
+                arguments = decoded
             }
 
             // Extract optional call ID

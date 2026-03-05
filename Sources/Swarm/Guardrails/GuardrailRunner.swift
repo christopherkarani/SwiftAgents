@@ -166,8 +166,8 @@ public actor GuardrailRunner {
     /// The configuration controlling execution behavior.
     public let configuration: GuardrailRunnerConfiguration
 
-    /// Optional hooks for emitting guardrail events.
-    public let hooks: (any RunHooks)?
+    /// Optional observer for emitting guardrail events.
+    public let observer: (any AgentObserver)?
 
     // MARK: - Initialization
 
@@ -175,15 +175,15 @@ public actor GuardrailRunner {
     ///
     /// - Parameters:
     ///   - configuration: The execution configuration. Default: .default
-    ///   - hooks: Optional hooks for emitting guardrail events. Default: nil
-    public init(configuration: GuardrailRunnerConfiguration = .default, hooks: (any RunHooks)? = nil) {
+    ///   - observer: Optional observer for emitting guardrail events. Default: nil
+    public init(configuration: GuardrailRunnerConfiguration = .default, observer: (any AgentObserver)? = nil) {
         self.configuration = configuration
-        self.hooks = hooks
+        self.observer = observer
     }
 
     // MARK: - Private Helpers
 
-    /// Emits a guardrail triggered event via hooks if available.
+    /// Emits a guardrail triggered event via observer if available.
     private func emitGuardrailEvent(
         guardrailName: String,
         guardrailType: GuardrailType,
@@ -191,7 +191,7 @@ public actor GuardrailRunner {
         context: AgentContext?
     ) async {
         guard result.tripwireTriggered else { return }
-        await hooks?.onGuardrailTriggered(
+        await observer?.onGuardrailTriggered(
             context: context,
             guardrailName: guardrailName,
             guardrailType: guardrailType,

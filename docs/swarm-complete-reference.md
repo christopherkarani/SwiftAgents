@@ -1,8 +1,13 @@
 # Swarm Framework — Complete API Reference
 
+> [!WARNING]
+> This reference contains legacy sections from the removed DSL/orchestration APIs.
+> Use `Workflow` as the canonical composition API. Advanced checkpoint/resume APIs are under `workflow.advanced`.
+> Prefer `README.md` + `docs/guide/getting-started.md` + `docs/reference/overview.md` for current API usage.
+
 > **Version**: 1.0 · **Swift**: 6.2+ · **Platforms**: macOS 26+, iOS 26+, Linux (Ubuntu 22.04+)
 >
-> A Swift-native multi-agent orchestration framework — "LangChain for Apple platforms."
+> A Swift-native multi-agent workflow framework — "LangChain for Apple platforms."
 
 ---
 
@@ -54,7 +59,7 @@ Swarm is a Swift 6.2 framework for building multi-agent AI applications on Apple
 │  Transform · Pipeline · Loop · ParallelGroup · Chain     │
 ├─────────────────────────────────────────────────────────┤
 │              AgentRuntime Protocol                        │
-│  Agent · ReActAgent · PlanAndExecuteAgent · Supervisor   │
+│  Agent · Agent · Agent · Supervisor   │
 ├──────────────┬──────────────┬───────────────────────────┤
 │    Tools     │   Memory     │   Guardrails & Resilience  │
 │  @Tool macro │ Conversation │   Input/Output/Tool guards │
@@ -256,12 +261,12 @@ public actor Agent: AgentRuntime {
 
 `Agent` implements a **tool-calling loop**: it calls the LLM, checks if tools were requested, executes them, feeds results back, and repeats until the LLM produces a final text response or hits the iteration limit.
 
-### `ReActAgent` — Reasoning + Acting
+### `Agent` — Reasoning + Acting
 
 ```swift
-public actor ReActAgent: AgentRuntime {
+public actor Agent: AgentRuntime {
     public init(
-        name: String = "ReActAgent",
+        name: String = "Agent",
         tools: [any AnyJSONTool],
         instructions: String = "",
         inferenceProvider: (any InferenceProvider)? = nil,
@@ -277,12 +282,12 @@ public actor ReActAgent: AgentRuntime {
 
 Implements the **ReAct pattern** (Reasoning + Acting): the agent explicitly reasons about what to do, takes an action (tool call), observes the result, and repeats. Each iteration produces a visible "thought" before acting.
 
-### `PlanAndExecuteAgent` — Strategic Planning
+### `Agent` — Strategic Planning
 
 ```swift
-public actor PlanAndExecuteAgent: AgentRuntime {
+public actor Agent: AgentRuntime {
     public init(
-        name: String = "PlanAndExecuteAgent",
+        name: String = "Agent",
         tools: [any AnyJSONTool],
         instructions: String = "",
         inferenceProvider: (any InferenceProvider)? = nil,
@@ -902,8 +907,8 @@ All 11 step types and user-defined steps conform to this protocol.
 ### DSL Operators
 
 ```swift
-// Sequential chaining: a --> b --> c
-public func --> (lhs: any OrchestrationStep, rhs: any OrchestrationStep) -> Sequential
+// Legacy operator removed.
+// Use Workflow().step(a).step(b).step(c) instead.
 
 // Type-safe pipeline: a >>> b >>> c
 public func >>> <A, B>(lhs: Pipeline<A, B>, rhs: Pipeline<B, C>) -> Pipeline<A, C>
@@ -2215,10 +2220,10 @@ public actor RateLimiter {
 }
 ```
 
-### `ResilientAgent` — Composed Resilience
+### `Workflow advanced fallback` — Composed Resilience
 
 ```swift
-public actor ResilientAgent: AgentRuntime {
+public actor Workflow advanced fallback: AgentRuntime {
     public init(
         base: any AgentRuntime,
         retryPolicy: RetryPolicy? = nil,
@@ -3378,7 +3383,7 @@ public struct AutoApproveHandler: HumanApprovalHandler { ... }
 
 ### Actors (54)
 
-`Agent`, `AgentContext`, `AgentRouter`, `AgentSequence`, `AnyMemory`, `AnyTracer`, `BlueprintAgent`, `BufferedTracer`, `ChannelBagStorage`, `ChatAgent`, `CircuitBreaker`, `CircuitBreakerRegistry`, `CompositeMemory`, `CompositeTracer`, `ConditionalFallback`, `ConsoleTracer`, `ConversationMemory`, `FileSystemWorkflowCheckpointStore`, `GuardrailRunner`, `HandoffCoordinator`, `HTTPMCPServer`, `HybridMemory`, `InferenceProviderSummarizer`, `InMemoryBackend`, `InMemorySession`, `InMemoryWorkflowCheckpointStore`, `LoopAgent`, `MCPClient`, `MCPToolBridge`, `MetricsCollector`, `MultiProvider`, `NoOpTracer`, `OpenRouterProvider`, `ParallelComposition`, `ParallelGroup`, `ParallelToolExecutor`, `PerformanceTracker`, `PersistentMemory`, `PlanAndExecuteAgent`, `PrettyConsoleTracer`, `RateLimiter`, `ReActAgent`, `ResilientAgent`, `ResponseTracker`, `SequentialChain`, `SlidingWindowMemory`, `SummaryMemory`, `SupervisorAgent`, `SwarmRunner`, `SwiftLogTracer`, `ToolRegistry`, `TraceContext`, `VectorMemory`, `WaxMemory`
+`Agent`, `AgentContext`, `AgentRouter`, `AgentSequence`, `AnyMemory`, `AnyTracer`, `BlueprintAgent`, `BufferedTracer`, `ChannelBagStorage`, `ChatAgent`, `CircuitBreaker`, `CircuitBreakerRegistry`, `CompositeMemory`, `CompositeTracer`, `ConditionalFallback`, `ConsoleTracer`, `ConversationMemory`, `FileSystemWorkflowCheckpointStore`, `GuardrailRunner`, `HandoffCoordinator`, `HTTPMCPServer`, `HybridMemory`, `InferenceProviderSummarizer`, `InMemoryBackend`, `InMemorySession`, `InMemoryWorkflowCheckpointStore`, `LoopAgent`, `MCPClient`, `MCPToolBridge`, `MetricsCollector`, `MultiProvider`, `NoOpTracer`, `OpenRouterProvider`, `ParallelComposition`, `ParallelGroup`, `ParallelToolExecutor`, `PerformanceTracker`, `PersistentMemory`, `Agent`, `PrettyConsoleTracer`, `RateLimiter`, `Agent`, `Workflow advanced fallback`, `ResponseTracker`, `SequentialChain`, `SlidingWindowMemory`, `SummaryMemory`, `SupervisorAgent`, `SwarmRunner`, `SwiftLogTracer`, `ToolRegistry`, `TraceContext`, `VectorMemory`, `WaxMemory`
 
 ### Structs (170+)
 

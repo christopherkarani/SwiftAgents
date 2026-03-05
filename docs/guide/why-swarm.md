@@ -4,7 +4,7 @@ Most agent frameworks are Python-first, stringly-typed, and assume every workflo
 
 ## Data Races Are Compile Errors
 
-Swift 6.2's `StrictConcurrency` is enabled across every Swarm target — agents, memory, orchestrators, macros, and tests. Non-`Sendable` types crossing actor boundaries is a **build failure**, not a runtime crash.
+Swift 6.2's `StrictConcurrency` is enabled across every Swarm target — agents, memory, workflows, macros, and tests. Non-`Sendable` types crossing actor boundaries is a **build failure**, not a runtime crash.
 
 ```swift
 // ❌ Compile error — caught before it ships
@@ -24,33 +24,30 @@ actor ResponseCache {
 
 ## Workflows Survive Crashes
 
-Every orchestration compiles to a [Hive](https://github.com/christopherkarani/Hive) DAG with automatic checkpointing. A pipeline that crashes on step 7 of 10 resumes from step 7 — not from the beginning.
+Advanced workflows can use [Hive](https://github.com/christopherkarani/Hive) checkpointing. You can persist state, then resume from a checkpoint ID without restarting from the beginning.
 
 ```swift
-let store = FileSystemWorkflowCheckpointStore(
-    directory: .applicationSupportDirectory.appending(path: "checkpoints")
-)
+let result = try await Workflow()
+    .step(fetchAgent)
+    .step(analyzeAgent)
+    .advanced
+    .checkpoint(id: "weekly-report", policy: .everyStep)
+    .advanced
+    .checkpointStore(.fileSystem(directory: checkpointsURL))
+    .advanced
+    .run("Create this week report")
 ```
 
-## Orchestration Is a DSL
+## Workflow Is Fluent
 
-Eleven composable step types in a SwiftUI-style `@resultBuilder`:
+Compose sequential, parallel, and routed flows with a small default API:
 
 ```swift
-// Sequential chain
-fetchAgent --> analyzeAgent --> writerAgent
-
-// Type-safe pipeline
-Pipeline<String, [String]> { $0.components(separatedBy: "\n") }
-    >>> Pipeline<[String], String> { $0.joined(separator: "• ") }
-
-// Dependency DAG
-DAGWorkflow(nodes: [
-    DAGNode("fetch", agent: fetchAgent),
-    DAGNode("refs", agent: refsAgent),
-    DAGNode("analyze", agent: analyzeAgent).dependsOn("fetch", "refs"),
-    DAGNode("write", agent: writerAgent).dependsOn("analyze"),
-])
+let result = try await Workflow()
+    .step(fetchAgent)
+    .parallel([bullAgent, bearAgent])
+    .route { input in input.contains("risk") ? riskAgent : summaryAgent }
+    .run("Analyze this quarter")
 ```
 
 ## On-Device and Cloud — Same API

@@ -15,29 +15,15 @@ public enum ContextMode: Sendable, Equatable {
     case strict4k
 }
 
-/// Runtime execution mode for orchestration.
-public enum SwarmRuntimeMode: Sendable, Equatable {
-    /// Execute orchestration using the Hive runtime.
-    case hive
-
-    /// Deprecated: Legacy mode selector, now same as `.hive`.
-    @available(*, deprecated, renamed: "hive")
-    case swift
-
-    /// Deprecated: Alias for `.hive`.
-    @available(*, deprecated, renamed: "hive")
-    case requireHive
-}
-
 /// Optional Hive run options override for orchestration execution.
-public struct SwarmHiveRunOptionsOverride: Sendable, Equatable {
-    public var maxSteps: Int?
-    public var maxConcurrentTasks: Int?
-    public var debugPayloads: Bool?
-    public var deterministicTokenStreaming: Bool?
-    public var eventBufferCapacity: Int?
+struct SwarmHiveRunOptionsOverride: Sendable, Equatable {
+    var maxSteps: Int?
+    var maxConcurrentTasks: Int?
+    var debugPayloads: Bool?
+    var deterministicTokenStreaming: Bool?
+    var eventBufferCapacity: Int?
 
-    public init(
+    init(
         maxSteps: Int? = nil,
         maxConcurrentTasks: Int? = nil,
         debugPayloads: Bool? = nil,
@@ -190,7 +176,7 @@ public struct AgentConfiguration: Sendable, Equatable {
     /// Optional Hive run options override used by orchestration runs in Hive mode.
     ///
     /// Default: `nil` (engine defaults are used).
-    public var hiveRunOptionsOverride: SwarmHiveRunOptionsOverride?
+    var hiveRunOptionsOverride: SwarmHiveRunOptionsOverride?
 
     /// Inference routing policy hints.
     ///
@@ -295,7 +281,6 @@ public struct AgentConfiguration: Sendable, Equatable {
     ///   - sessionHistoryLimit: Maximum session history messages to load. Default: 50
     ///   - contextMode: Context envelope mode. Default: `.adaptive`
     ///   - contextProfile: Context budgeting profile. Default: `.platformDefault`
-    ///   - hiveRunOptionsOverride: Optional Hive run options override for orchestration. Default: nil
     ///   - inferencePolicy: Inference routing policy hints. Default: nil
     ///   - parallelToolCalls: Enable parallel tool execution. Default: false
     ///   - previousResponseId: Previous response ID for continuation. Default: nil
@@ -310,7 +295,6 @@ public struct AgentConfiguration: Sendable, Equatable {
         stopSequences: [String] = [],
         modelSettings: ModelSettings? = nil,
         contextProfile: ContextProfile = .platformDefault,
-        hiveRunOptionsOverride: SwarmHiveRunOptionsOverride? = nil,
         inferencePolicy: InferencePolicy? = nil,
         enableStreaming: Bool = true,
         includeToolCallDetails: Bool = true,
@@ -340,7 +324,7 @@ public struct AgentConfiguration: Sendable, Equatable {
         self.stopSequences = stopSequences
         self.modelSettings = modelSettings
         self.contextProfile = contextProfile
-        self.hiveRunOptionsOverride = hiveRunOptionsOverride
+        self.hiveRunOptionsOverride = nil
         self.inferencePolicy = inferencePolicy
         self.enableStreaming = enableStreaming
         self.includeToolCallDetails = includeToolCallDetails

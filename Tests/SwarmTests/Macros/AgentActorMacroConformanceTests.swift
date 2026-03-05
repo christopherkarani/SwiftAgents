@@ -35,12 +35,12 @@ actor MacroEchoAgent {
 
 @Suite("AgentActor macro conformance")
 struct AgentActorMacroConformanceTests {
-    @Test("Conforms to AgentRuntime and supports session/hooks signatures")
+    @Test("Conforms to AgentRuntime and supports session/observer signatures")
     func runSupportsSessionAndHooks() async throws {
         let agent: any AgentRuntime = MacroEchoAgent()
         let session = InMemorySession()
 
-        let result = try await agent.run("hi", session: session, hooks: nil)
+        let result = try await agent.run("hi", session: session, observer: nil)
         #expect(result.output == "Echo: hi")
 
         let items = try await session.getItems(limit: nil)
@@ -56,7 +56,7 @@ struct AgentActorMacroConformanceTests {
         let agent: any AgentRuntime = MacroEchoAgent()
 
         var completed: AgentResult?
-        for try await event in agent.stream("hello", session: nil, hooks: nil) {
+        for try await event in agent.stream("hello", session: nil, observer: nil) {
             if case let .completed(result) = event {
                 completed = result
             }

@@ -4,15 +4,14 @@ The complete API reference covers every public type, protocol, and API in the Sw
 
 ## Complete Reference
 
-The **[Complete API Reference](/swarm-complete-reference)** is a single document covering all 15 subsystems:
+The **[Complete API Reference](/swarm-complete-reference)** is a single document covering all subsystems:
 
 1. **Overview & Architecture** — What Swarm is, layer diagram, platform requirements
 2. **Quick Start** — Minimal working example
 3. **Agents** — All agent types, `AgentRuntime` protocol, configuration
 4. **Tools** — `@Tool` macro, `FunctionTool`, tool chaining, parallel execution
-5. **DSL & Blueprints** — `AgentBlueprint`, `OrchestrationBuilder`, modifiers
-6. **Orchestration** — All 11 step types, operators, context
-7. **Handoffs & Routing** — `HandoffConfiguration`, `SupervisorAgent`, routing
+5. **Workflow** — Fluent core API (`step`, `parallel`, `route`, `repeatUntil`, `timeout`) plus namespaced advanced APIs (`workflow.advanced`)
+6. **Handoffs** — `HandoffConfiguration` and handoff coordination
 8. **Memory** — All memory types, sessions, backends, embeddings
 9. **Guardrails** — Input/output/tool guardrails, tripwire modes
 10. **Resilience** — Retry, circuit breaker, fallback, timeout
@@ -28,9 +27,8 @@ The **[Complete API Reference](/swarm-complete-reference)** is a single document
 |---|---|
 | [Agents](/agents) | Agent types, configuration, `@AgentActor` macro |
 | [Tools](/tools) | `@Tool` macro, `FunctionTool`, runtime toggling |
-| [DSL & Blueprints](/dsl) | `AgentBlueprint`, `@OrchestrationBuilder`, modifiers |
-| [Orchestration](/orchestration) | DAG, parallel, chains, human-in-the-loop |
-| [Handoffs](/Handoffs) | Agent handoffs, routing, `SupervisorAgent` |
+| [Workflow](/guide/getting-started) | Fluent workflow composition and execution |
+| [Handoffs](/Handoffs) | Agent handoffs and routing between runtime agents |
 | [Memory](/memory) | Conversation, Vector, Summary, SwiftData backends |
 | [Streaming](/streaming) | `AgentEvent` streaming, SwiftUI integration |
 | [Guardrails](/guardrails) | Input/output validation, tripwires |

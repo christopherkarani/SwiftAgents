@@ -169,7 +169,7 @@ public actor VectorMemory: Memory {
         } catch {
             Log.memory.error("Failed to embed query: \(error.localizedDescription)")
             // Fallback to simple recency-based context
-            return formatMessagesForContext(
+            return MemoryMessage.formatContext(
                 embeddedMessages.map(\.message),
                 tokenLimit: tokenLimit,
                 tokenEstimator: tokenEstimator
@@ -393,47 +393,35 @@ public struct VectorMemoryDiagnostics: Sendable {
 // MARK: - VectorMemoryBuilder
 
 /// Builder for fluent VectorMemory configuration.
-public struct VectorMemoryBuilder: Sendable {
-    // MARK: Public
+struct VectorMemoryBuilder: Sendable {
+    // MARK: Internal
 
     /// Creates a new vector memory builder.
-    public init() {}
+    init() {}
 
     /// Sets the embedding provider.
-    ///
-    /// - Parameter provider: The embedding provider to use.
-    /// - Returns: Updated builder.
-    public func embeddingProvider(_ provider: any EmbeddingProvider) -> VectorMemoryBuilder {
+    func embeddingProvider(_ provider: any EmbeddingProvider) -> VectorMemoryBuilder {
         var copy = self
         copy.embeddingProvider = provider
         return copy
     }
 
     /// Sets the similarity threshold.
-    ///
-    /// - Parameter threshold: Minimum similarity for results (0-1).
-    /// - Returns: Updated builder.
-    public func similarityThreshold(_ threshold: Float) -> VectorMemoryBuilder {
+    func similarityThreshold(_ threshold: Float) -> VectorMemoryBuilder {
         var copy = self
         copy.similarityThreshold = threshold
         return copy
     }
 
     /// Sets the maximum number of results.
-    ///
-    /// - Parameter max: Maximum results to return from search.
-    /// - Returns: Updated builder.
-    public func maxResults(_ max: Int) -> VectorMemoryBuilder {
+    func maxResults(_ max: Int) -> VectorMemoryBuilder {
         var copy = self
         copy.maxResults = max
         return copy
     }
 
     /// Sets the token estimator.
-    ///
-    /// - Parameter estimator: Token estimator for context retrieval.
-    /// - Returns: Updated builder.
-    public func tokenEstimator(_ estimator: any TokenEstimator) -> VectorMemoryBuilder {
+    func tokenEstimator(_ estimator: any TokenEstimator) -> VectorMemoryBuilder {
         var copy = self
         copy.tokenEstimator = estimator
         return copy
@@ -443,7 +431,7 @@ public struct VectorMemoryBuilder: Sendable {
     ///
     /// - Returns: Configured VectorMemory.
     /// - Throws: `VectorMemoryError.missingEmbeddingProvider` if no provider was set.
-    public func build() throws -> VectorMemory {
+    func build() throws -> VectorMemory {
         guard let provider = embeddingProvider else {
             throw VectorMemoryError.missingEmbeddingProvider
         }

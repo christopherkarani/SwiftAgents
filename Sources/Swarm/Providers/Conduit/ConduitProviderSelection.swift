@@ -36,18 +36,6 @@ public enum ConduitProviderSelection: Sendable, InferenceProvider {
         model: String,
         routing: OpenRouterRouting? = nil
     ) -> ConduitProviderSelection {
-        openrouter(apiKey: apiKey, model: model, routing: routing)
-    }
-
-    /// Creates a Conduit-backed OpenRouter provider.
-    ///
-    /// - Note: OpenRouter expects full `provider/model` strings.
-    @available(*, deprecated, renamed: "openRouter(apiKey:model:routing:)")
-    public static func openrouter(
-        apiKey: String,
-        model: String,
-        routing: OpenRouterRouting? = nil
-    ) -> ConduitProviderSelection {
         var configuration = OpenAIConfiguration.openRouter(apiKey: apiKey)
         if let routing {
             configuration = configuration.routing(routing.toConduit())

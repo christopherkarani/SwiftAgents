@@ -94,7 +94,7 @@ public actor SlidingWindowMemory: Memory {
 
     public func context(for _: String, tokenLimit: Int) async -> String {
         let effectiveLimit = min(tokenLimit, maxTokens)
-        return formatMessagesForContext(messages, tokenLimit: effectiveLimit, tokenEstimator: tokenEstimator)
+        return MemoryMessage.formatContext(messages, tokenLimit: effectiveLimit, tokenEstimator: tokenEstimator)
     }
 
     public func allMessages() async -> [MemoryMessage] {

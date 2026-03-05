@@ -10,7 +10,10 @@
 **The agent framework Swift has been missing.** Chain LLMs, tools, and memory into production workflows — with compile-time safety, crash recovery, and on-device inference.
 
 ```swift
-let result = try await (fetchAgent --> reasonAgent --> writerAgent)
+let result = try await Workflow()
+    .step(fetchAgent)
+    .step(reasonAgent)
+    .step(writerAgent)
     .run("Summarize the WWDC session on Swift concurrency.")
 ```
 
@@ -58,7 +61,7 @@ let result = try await agent
 print(result.output) // "Apple (AAPL) is currently trading at $182.50."
 ```
 
-That's a working agent with tool calling. Keep reading for multi-agent orchestration, memory, guardrails, and more.
+That's a working agent with tool calling. Keep reading for multi-agent workflow composition, memory, guardrails, and more.
 
 ---
 
@@ -70,16 +73,26 @@ Swift 6.2 `StrictConcurrency` is enabled on **every** target. Non-`Sendable` typ
 
 ### Workflows survive crashes
 
-Every orchestration compiles to a [Hive](https://github.com/christopherkarani/Hive) DAG with automatic checkpointing. A 10-step pipeline that crashes on step 7 resumes from step 7.
-
-### Orchestration is a DSL, not glue code
-
-Eleven composable step types in a SwiftUI-style result builder:
+Advanced workflows can use [Hive](https://github.com/christopherkarani/Hive) checkpointing for resume support, including explicit checkpoint stores and checkpoint IDs.
 
 ```swift
-fetchAgent --> analyzeAgent --> writerAgent          // Sequential chain
-Pipeline<String, [String]> { ... } >>> Pipeline { }  // Type-safe pipeline
-DAGNode("write", agent: w).dependsOn("fetch", "ref") // Dependency graph
+let workflow = Workflow()
+    .step(monitor)
+    .advanced.checkpoint(id: "monitor-v1", policy: .everyStep)
+    .advanced.checkpointStore(.fileSystem(directory: checkpointsURL))
+
+let resumed = try await workflow.advanced.run("watch", resumeFrom: "monitor-v1")
+```
+
+### Workflow composition is fluent, not glue code
+
+Compose multi-agent execution with a single fluent API:
+
+```swift
+Workflow().step(fetchAgent).step(analyzeAgent).step(writerAgent)
+Workflow().parallel([bullAgent, bearAgent, analystAgent])
+Workflow().route { input in input.contains("bill") ? billingAgent : generalAgent }
+Workflow().step(monitor).advanced.checkpoint(id: "monitor-v1", policy: .everyStep)
 ```
 
 ### Run on-device or in the cloud — same code
@@ -99,22 +112,18 @@ agent.environment(\.inferenceProvider, .anthropic(key: k)) // Cloud
 <summary><strong>Multi-agent pipeline with guardrails</strong></summary>
 
 ```swift
-struct ResearchPipeline: AgentBlueprint {
-    let researcher = Agent(name: "Researcher", tools: [WebSearch()])
-    let writer     = Agent(name: "Writer", instructions: "Write clear summaries.")
+let researcher = try Agent(
+    instructions: "Research the topic and extract key facts.",
+    inferenceProvider: provider
+)
+let writer = try Agent(
+    instructions: "Write a concise summary from the research.",
+    inferenceProvider: provider
+)
 
-    @OrchestrationBuilder var body: some OrchestrationStep {
-        Guard(.input) {
-            InputGuard("no_pii") { input in
-                input.contains("SSN") ? .tripwire(message: "PII detected") : .passed()
-            }
-        }
-        researcher --> writer
-    }
-}
-
-let result = try await ResearchPipeline()
-    .environment(\.inferenceProvider, provider)
+let result = try await Workflow()
+    .step(researcher)
+    .step(writer)
     .run("Latest advances in on-device ML")
 ```
 
@@ -159,20 +168,16 @@ let context = await memory.context(for: "When is this due?", tokenLimit: 1_200)
 </details>
 
 <details>
-<summary><strong>Supervisor routing — LLM picks the right agent</strong></summary>
+<summary><strong>Workflow routing — choose the right agent</strong></summary>
 
 ```swift
-let supervisor = SupervisorAgent(
-    agents: [
-        (name: "math",    agent: mathAgent,    description: "Arithmetic and calculations"),
-        (name: "weather", agent: weatherAgent, description: "Weather forecasts"),
-        (name: "code",    agent: codeAgent,    description: "Programming help"),
-    ],
-    routingStrategy: LLMRoutingStrategy(inferenceProvider: provider)
-)
-
-let result = try await supervisor.run("What is 15% of $240?")
-// Automatically routes to mathAgent
+let result = try await Workflow()
+    .route { input in
+        if input.contains("%") || input.contains("$") { return mathAgent }
+        if input.contains("weather") { return weatherAgent }
+        return codeAgent
+    }
+    .run("What is 15% of $240?")
 ```
 
 </details>
@@ -194,7 +199,10 @@ let agent = myAgent
 <summary><strong>Streaming — real-time token output</strong></summary>
 
 ```swift
-for try await event in (fetchAgent --> writerAgent).stream("Summarise the changelog.") {
+for try await event in Workflow()
+    .step(fetchAgent)
+    .step(writerAgent)
+    .stream("Summarise the changelog.") {
     switch event {
     case .outputToken(let token):  print(token, terminator: "")
     case .toolCalling(let call):   print("\n[tool: \(call.toolName)]")
@@ -227,8 +235,8 @@ for try await event in (fetchAgent --> writerAgent).stream("Summarise the change
 
 | | |
 |---|---|
-| **Agents** | Tool-calling `Agent`, `ReActAgent`, `PlanAndExecuteAgent`, `SupervisorAgent`, `ChatAgent` |
-| **Orchestration** | 11 step types: Sequential, Parallel, DAG, Router, Branch, Guard, Transform, Pipeline, RepeatWhile, SequentialChain, ParallelGroup |
+| **Agents** | Tool-calling `Agent`, `ReActAgent`, `PlanAndExecuteAgent` |
+| **Workflow** | Fluent composition: `.step`, `.parallel`, `.route`, `.repeatUntil`, `.timeout`, `.observed` |
 | **Memory** | Conversation, Vector (SIMD/Accelerate), Summary (LLM-compressed), Hybrid, Persistent (SwiftData) |
 | **Tools** | `@Tool` macro with auto-generated JSON schema, `FunctionTool`, `ToolChain`, parallel execution |
 | **Guardrails** | Input, output, tool-input, tool-output validators with tripwire and warning modes |
@@ -247,18 +255,13 @@ for try await event in (fetchAgent --> writerAgent).stream("Summarise the change
 │                      Your Application                        │
 │          iOS 26+ · macOS 26+ · Linux (Ubuntu 22.04+)        │
 ├─────────────────────────────────────────────────────────────┤
-│          AgentBlueprint · .run() · .stream()                 │
-├──────────────────────┬──────────────────────────────────────┤
-│   Orchestration DSL  │  Step Types                          │
-│   @resultBuilder     │  Sequential · Parallel · DAGWorkflow │
-│   --> · >>>          │  Router · RepeatWhile · Branch       │
-│   .dependsOn()       │  Guard · Transform · HumanApproval   │
-├──────────────────────┴──────────────────────────────────────┤
+│            Workflow · .run() · .stream()                     │
+├─────────────────────────────────────────────────────────────┤
 │     Agents              Memory              Tools            │
 │  Agent (tool-call)   Conversation        @Tool macro        │
 │  ReActAgent          VectorMemory        FunctionTool       │
 │  PlanAndExecute      SummaryMemory       AnyJSONTool ABI    │
-│  SupervisorAgent     HybridMemory        ToolChain          │
+│                    HybridMemory          ToolChain          │
 ├─────────────────────────────────────────────────────────────┤
 │     Guardrails · Resilience · Observability · MCP           │
 ├─────────────────────────────────────────────────────────────┤
@@ -279,9 +282,8 @@ for try await event in (fetchAgent --> writerAgent).stream("Summarise the change
 | **[Complete API Reference](docs/swarm-complete-reference.md)** | **Every type, protocol, and API — with examples** |
 | [Agents](docs/agents.md) | Agent types, configuration, `@AgentActor` macro |
 | [Tools](docs/tools.md) | `@Tool` macro, `FunctionTool`, runtime toggling |
-| [DSL & Blueprints](docs/dsl.md) | `AgentBlueprint`, `@OrchestrationBuilder`, modifiers |
-| [Orchestration](docs/orchestration.md) | DAG, parallel, chains, human-in-the-loop |
-| [Handoffs](docs/Handoffs.md) | Agent handoffs, routing, `SupervisorAgent` |
+| [Workflow](docs/guide/getting-started.md) | Fluent workflow composition and execution |
+| [Handoffs](docs/Handoffs.md) | Agent handoffs and routing between runtime agents |
 | [Memory](docs/memory.md) | Conversation, Vector, Summary, SwiftData backends |
 | [Streaming](docs/streaming.md) | `AgentEvent` streaming, SwiftUI integration |
 | [Guardrails](docs/guardrails.md) | Input/output validation, tripwires |
