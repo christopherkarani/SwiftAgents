@@ -121,6 +121,7 @@ public struct DAG: OrchestrationStep, Sendable {
     /// The nodes comprising this DAG.
     public let nodes: [DAGNode]
 
+
     /// Topologically sorted nodes, cached at init time to avoid recomputing on every execute() call.
     private let sortedNodes: [DAGNode]
 
@@ -129,10 +130,12 @@ public struct DAG: OrchestrationStep, Sendable {
 
     /// Creates a new DAG workflow from a builder closure.
     ///
-    /// Validates the graph structure at construction time.
+    /// Validates the graph structure at construction time. Throws if the graph
+    /// is empty, contains duplicate node names, has missing dependencies, or contains cycles.
     ///
     /// - Parameter content: A builder closure producing DAG nodes.
-    public init(@DAGBuilder _ content: () -> [DAGNode]) {
+    /// - Throws: `OrchestrationError.invalidGraph` if the graph is structurally invalid.
+    public init(@DAGBuilder _ content: () -> [DAGNode]) throws {
         let builtNodes = content()
         let validationError = DAG.validate(builtNodes)
         self.validationError = validationError

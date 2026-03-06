@@ -48,7 +48,7 @@ actor IntegrationTestMCPServer: MCPServer {
     func listResources() async throws -> [MCPResource] { [] }
 
     func readResource(uri: String) async throws -> MCPResourceContent {
-        MCPResourceContent(uri: uri)
+        try MCPResourceContent(uri: uri, text: "resource-content-for-\(uri)")
     }
 
     func close() async throws {}
