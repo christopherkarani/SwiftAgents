@@ -522,3 +522,11 @@ extension OpenRouterConfiguration: CustomStringConvertible {
         "OpenRouterConfiguration(model: \(model.identifier), baseURL: \(baseURL), maxTokens: \(maxTokens))"
     }
 }
+
+// MARK: CustomDebugStringConvertible
+
+extension OpenRouterConfiguration: CustomDebugStringConvertible {
+    public var debugDescription: String {
+        "OpenRouterConfiguration(model: \(model.identifier), apiKey: <redacted>, baseURL: \(baseURL), maxTokens: \(maxTokens))"
+    }
+}

@@ -59,7 +59,7 @@ public func --> (lhs: SequentialChain, rhs: any AgentRuntime) -> SequentialChain
 /// Example:
 /// ```swift
 /// let chain = agentA --> agentB
-/// let configured = chain.withTransformer(after: 0, .withMetadata)
+/// let configured = chain.withTransformer(after: 0, transformer: .withMetadata)
 /// ```
 public struct OutputTransformer: Sendable {
     // MARK: Public
@@ -123,7 +123,7 @@ public struct OutputTransformer: Sendable {
 /// You can customize output transformation between agents:
 /// ```swift
 /// let chain = agentA --> agentB
-/// let configured = chain.withTransformer(after: 0, .withMetadata)
+/// let configured = chain.withTransformer(after: 0, transformer: .withMetadata)
 /// ```
 public actor SequentialChain: AgentRuntime {
     // MARK: Public
@@ -134,7 +134,11 @@ public actor SequentialChain: AgentRuntime {
     // MARK: - Chain Properties (nonisolated)
 
     /// The agents in execution order.
+    @available(*, deprecated, renamed: "agents")
     nonisolated public let chainedAgents: [any AgentRuntime]
+
+    /// The agents in execution order.
+    nonisolated public var agents: [any AgentRuntime] { chainedAgents }
 
     // MARK: - Agent Protocol Properties (nonisolated)
 
@@ -193,9 +197,9 @@ public actor SequentialChain: AgentRuntime {
     /// let chain = agentA --> agentB --> agentC
     /// let configured = chain
     ///     .withTransformer(after: 0, .withMetadata)
-    ///     .withTransformer(after: 1, .passthrough)
+    ///     .withTransformer(after: 1, transformer: .passthrough)
     /// ```
-    nonisolated public func withTransformer(after index: Int, _ transformer: OutputTransformer) -> SequentialChain {
+    nonisolated public func withTransformer(after index: Int, transformer: OutputTransformer) -> SequentialChain {
         var newTransformers = transformers
         newTransformers[index] = transformer
         return SequentialChain(
@@ -537,9 +541,11 @@ public actor SequentialChain: AgentRuntime {
     }
 
     private func areSameRuntime(_ lhs: any AgentRuntime, _ rhs: any AgentRuntime) -> Bool {
-        // Note: ObjectIdentifier(lhs as AnyObject) is unreliable for struct-based runtimes because
-        // casting a struct existential to AnyObject creates a new box each time, yielding
-        // different identifiers for the same value. Use name+type matching instead.
+        if let lhsObj = lhs as? AnyObject, let rhsObj = rhs as? AnyObject {
+            return ObjectIdentifier(lhsObj) == ObjectIdentifier(rhsObj)
+        }
+
+        // Fallback for struct-based runtimes.
         return lhs.name == rhs.name
             && String(describing: type(of: lhs)) == String(describing: type(of: rhs))
     }

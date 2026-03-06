@@ -48,6 +48,14 @@ public protocol HiveAgentsToolResultTransformer: Sendable {
     func transform(result: String, toolName: String, tokenEstimate: Int) async -> String
 }
 
+public protocol HiveAgentsMembraneCheckpointAdapter: Sendable {
+    /// Restore adapter state from checkpointed membrane payload before model invocation.
+    func restore(checkpointData: Data?) async throws
+
+    /// Snapshot adapter state for deterministic checkpoint persistence.
+    func snapshotCheckpointData() async throws -> Data?
+}
+
 public struct HiveAgentsNoopPreModelHook: HiveAgentsPreModelHook {
     public init() {}
 
@@ -188,23 +196,29 @@ public struct HiveCompactionPolicy: Sendable {
 
 public struct HiveAgentsContext: Sendable {
     public let modelName: String
+    public let systemPrompt: String?
     public let toolApprovalPolicy: HiveAgentsToolApprovalPolicy
     public let compactionPolicy: HiveCompactionPolicy?
     public let tokenizer: (any HiveTokenizer)?
     public let retryPolicy: HiveRetryPolicy?
+    public let membraneCheckpointAdapter: (any HiveAgentsMembraneCheckpointAdapter)?
 
     public init(
         modelName: String,
-        toolApprovalPolicy: HiveAgentsToolApprovalPolicy,
+        systemPrompt: String? = nil,
+        toolApprovalPolicy: HiveAgentsToolApprovalPolicy = .never,
         compactionPolicy: HiveCompactionPolicy? = nil,
         tokenizer: (any HiveTokenizer)? = nil,
-        retryPolicy: HiveRetryPolicy? = nil
+        retryPolicy: HiveRetryPolicy? = nil,
+        membraneCheckpointAdapter: (any HiveAgentsMembraneCheckpointAdapter)? = nil
     ) {
         self.modelName = modelName
+        self.systemPrompt = systemPrompt
         self.toolApprovalPolicy = toolApprovalPolicy
         self.compactionPolicy = compactionPolicy
         self.tokenizer = tokenizer
         self.retryPolicy = retryPolicy
+        self.membraneCheckpointAdapter = membraneCheckpointAdapter
     }
 }
 
@@ -249,52 +263,94 @@ public struct HiveAgentsRunResumeRequest: Sendable {
     }
 }
 
+public struct HiveAgentsExternalWriteRequest: Sendable {
+    public var threadID: HiveThreadID
+    public var writes: [AnyHiveWrite<HiveAgents.Schema>]
+    public var options: HiveRunOptions
+
+    public init(
+        threadID: HiveThreadID,
+        writes: [AnyHiveWrite<HiveAgents.Schema>],
+        options: HiveRunOptions
+    ) {
+        self.threadID = threadID
+        self.writes = writes
+        self.options = options
+    }
+}
+
 public struct HiveAgentsRunController: Sendable {
     public let runtime: HiveRuntime<HiveAgents.Schema>
+    let stateTracker: HiveAgentsStateTracker
 
     public init(
         runtime: HiveRuntime<HiveAgents.Schema>
     ) {
         self.runtime = runtime
+        self.stateTracker = HiveAgentsStateTracker()
     }
 
+    @available(*, deprecated, message: "Use start(threadID:input:options:) instead.")
     public func start(_ request: HiveAgentsRunStartRequest) async throws -> HiveRunHandle<HiveAgents.Schema> {
-        try Self.preflight(environment: runtime.environmentSnapshot)
-        return await runtime.run(
+        try validateRunOptions(request.options)
+        let handle = await runtime.run(
             threadID: request.threadID,
             input: request.input,
             options: request.options
         )
+        await stateTracker.markAttemptStarted(threadID: request.threadID, runID: handle.runID)
+        return decorate(handle: handle, threadID: request.threadID, eventBufferCapacity: request.options.eventBufferCapacity)
     }
 
+    @available(*, deprecated, message: "Use resume(threadID:interruptID:payload:options:) instead.")
     public func resume(_ request: HiveAgentsRunResumeRequest) async throws -> HiveRunHandle<HiveAgents.Schema> {
-        try Self.preflight(environment: runtime.environmentSnapshot)
-        return await runtime.resume(
+        try validateRunOptions(request.options)
+        try await validateResumeRequest(request)
+        let handle = await runtime.resume(
             threadID: request.threadID,
             interruptID: request.interruptID,
             payload: request.payload,
             options: request.options
         )
+        await stateTracker.markAttemptStarted(threadID: request.threadID, runID: handle.runID)
+        return decorate(handle: handle, threadID: request.threadID, eventBufferCapacity: request.options.eventBufferCapacity)
     }
 
-    private static func preflight(environment: HiveEnvironment<HiveAgents.Schema>) throws {
-        if environment.modelRouter == nil, environment.model == nil {
-            throw HiveRuntimeError.modelClientMissing
-        }
-        if environment.tools == nil {
-            throw HiveRuntimeError.toolRegistryMissing
-        }
-        if environment.context.toolApprovalPolicy != .never, environment.checkpointStore == nil {
-            throw HiveRuntimeError.checkpointStoreMissing
-        }
-        if let policy = environment.context.compactionPolicy {
-            guard environment.context.tokenizer != nil else {
-                throw HiveRuntimeError.invalidRunOptions("Compaction policy requires a tokenizer.")
-            }
-            if policy.maxTokens < 1 || policy.preserveLastMessages < 0 {
-                throw HiveRuntimeError.invalidRunOptions("Invalid compaction policy bounds.")
-            }
-        }
+    /// Convenience overload — pass parameters directly without constructing a request struct.
+    public func start(
+        threadID: HiveThreadID,
+        input: String,
+        options: HiveRunOptions = HiveRunOptions()
+    ) async throws -> HiveRunHandle<HiveAgents.Schema> {
+        try validateRunOptions(options)
+        let handle = await runtime.run(threadID: threadID, input: input, options: options)
+        await stateTracker.markAttemptStarted(threadID: threadID, runID: handle.runID)
+        return decorate(handle: handle, threadID: threadID, eventBufferCapacity: options.eventBufferCapacity)
+    }
+
+    /// Convenience overload — pass parameters directly without constructing a request struct.
+    public func resume(
+        threadID: HiveThreadID,
+        interruptID: HiveInterruptID,
+        payload: HiveAgents.Resume,
+        options: HiveRunOptions = HiveRunOptions()
+    ) async throws -> HiveRunHandle<HiveAgents.Schema> {
+        let request = HiveAgentsRunResumeRequest(
+            threadID: threadID,
+            interruptID: interruptID,
+            payload: payload,
+            options: options
+        )
+        try validateRunOptions(options)
+        try await validateResumeRequest(request)
+        let handle = await runtime.resume(
+            threadID: threadID,
+            interruptID: interruptID,
+            payload: payload,
+            options: options
+        )
+        await stateTracker.markAttemptStarted(threadID: threadID, runID: handle.runID)
+        return decorate(handle: handle, threadID: threadID, eventBufferCapacity: options.eventBufferCapacity)
     }
 }
 
@@ -309,6 +365,7 @@ public extension HiveAgents {
         public static let pendingToolCallsKey = HiveChannelKey<Self, [HiveToolCall]>(HiveChannelID("pendingToolCalls"))
         public static let finalAnswerKey = HiveChannelKey<Self, String?>(HiveChannelID("finalAnswer"))
         public static let llmInputMessagesKey = HiveChannelKey<Self, [HiveChatMessage]?>(HiveChannelID("llmInputMessages"))
+        public static let membraneCheckpointDataKey = HiveChannelKey<Self, Data?>(HiveChannelID("membraneCheckpointData"))
 
         public static var channelSpecs: [AnyHiveChannelSpec<Self>] {
             [
@@ -355,6 +412,17 @@ public extension HiveAgents {
                         codec: HiveAnyCodec(HiveCodableJSONCodec<[HiveChatMessage]?>()),
                         persistence: .checkpointed
                     )
+                ),
+                AnyHiveChannelSpec(
+                    HiveChannelSpec(
+                        key: membraneCheckpointDataKey,
+                        scope: .global,
+                        reducer: .lastWriteWins(),
+                        updatePolicy: .single,
+                        initial: { Optional<Data>.none },
+                        codec: HiveAnyCodec(HiveCodableJSONCodec<Data?>()),
+                        persistence: .checkpointed
+                    )
                 )
             ]
         }
@@ -363,7 +431,7 @@ public extension HiveAgents {
             _ input: String,
             inputContext: HiveInputContext
         ) throws -> [AnyHiveWrite<Self>] {
-            let messageID = try MessageID.user(runID: inputContext.runID, stepIndex: inputContext.stepIndex)
+            let messageID = try MessageID.user(threadID: inputContext.threadID, stepIndex: inputContext.stepIndex)
             let message = HiveChatMessage(
                 id: messageID,
                 role: .user,
@@ -476,13 +544,14 @@ extension HiveAgents {
     }
 
     enum MessageID {
-        static func user(runID: HiveRunID, stepIndex: Int) throws -> String {
+        static func user(threadID: HiveThreadID, stepIndex: Int) throws -> String {
             guard let stepIndexValue = UInt32(exactly: stepIndex) else {
                 throw HiveRuntimeError.invalidRunOptions("Invalid stepIndex.")
             }
             var data = Data()
             data.append(contentsOf: Array("HMSG1".utf8))
-            data.append(contentsOf: runID.rawValue.bytes)
+            data.append(contentsOf: Array(threadID.rawValue.utf8))
+            data.append(0x00)
             data.append(contentsOf: stepIndexValue.bigEndianBytes)
             data.append(contentsOf: Array("user".utf8))
             data.append(contentsOf: UInt32(0).bigEndianBytes)
@@ -518,6 +587,19 @@ extension HiveAgents {
             let messages = try input.store.get(Schema.messagesKey)
             // Ensure llmInputMessages channel is initialized before reading messages.
             _ = try input.store.get(Schema.llmInputMessagesKey)
+            // Ensure membrane checkpoint payload channel is initialized before invocation.
+            let membraneCheckpointData = try input.store.get(Schema.membraneCheckpointDataKey)
+
+            var membraneCheckpointWrite: Data?
+            var shouldWriteMembraneCheckpoint = false
+            if let adapter = input.context.membraneCheckpointAdapter {
+                try await adapter.restore(checkpointData: membraneCheckpointData)
+                let snapshot = try await adapter.snapshotCheckpointData()
+                if snapshot != membraneCheckpointData {
+                    membraneCheckpointWrite = snapshot
+                    shouldWriteMembraneCheckpoint = true
+                }
+            }
 
             var preModelMessages = messages
 
@@ -540,24 +622,10 @@ extension HiveAgents {
                 }
             }
 
-            guard policy.maxTokens >= 1, policy.preserveLastMessages >= 0 else {
-                // Defense-in-depth: preflight() validates these, but builtInPreModel
-                // guards independently in case it's used outside the standard run path.
-                throw HiveRuntimeError.invalidRunOptions("Invalid compaction policy bounds.")
-            }
-
-            guard let tokenizer = input.context.tokenizer else {
-                throw HiveRuntimeError.invalidRunOptions("Compaction policy requires a tokenizer.")
-            }
-
-            if tokenizer.countTokens(messages) <= policy.maxTokens {
-                return HiveNodeOutput(writes: [AnyHiveWrite(Schema.llmInputMessagesKey, Optional<[HiveChatMessage]>.none)])
-            }
-
-            let trimmed = compactMessages(
-                history: messages,
-                policy: policy,
-                tokenizer: tokenizer
+            let transformed = await preModelHook.transform(
+                messages: preModelMessages,
+                systemPrompt: input.context.systemPrompt ?? "",
+                context: input.context
             )
 
             let llmInputMessages = Self.preModelSystemPromptInjection(
@@ -570,11 +638,23 @@ extension HiveAgents {
                 !messagesStructurallyEqual(transformed.messages, preModelMessages) ||
                 !messagesStructurallyEqual(llmInputMessages, preModelMessages)
 
-            if shouldWrite == false {
-                return HiveNodeOutput(writes: [AnyHiveWrite(Schema.llmInputMessagesKey, Optional<[HiveChatMessage]>.none)])
+            if shouldWrite == false, shouldWriteMembraneCheckpoint == false {
+                return HiveNodeOutput(writes: [
+                    AnyHiveWrite(Schema.llmInputMessagesKey, Optional<[HiveChatMessage]>.none),
+                ])
             }
 
-            return HiveNodeOutput(writes: [AnyHiveWrite(Schema.llmInputMessagesKey, Optional(llmInputMessages))])
+            var writes: [AnyHiveWrite<Schema>] = []
+            writes.append(
+                AnyHiveWrite(
+                    Schema.llmInputMessagesKey,
+                    shouldWrite ? Optional(llmInputMessages) : Optional<[HiveChatMessage]>.none
+                )
+            )
+            if shouldWriteMembraneCheckpoint {
+                writes.append(AnyHiveWrite(Schema.membraneCheckpointDataKey, membraneCheckpointWrite))
+            }
+            return HiveNodeOutput(writes: writes)
         }
     }
 
@@ -596,7 +676,7 @@ extension HiveAgents {
                 }
                 tools = registry.listTools()
             }
-            let sortedTools = registry.listTools().sorted(by: HiveDeterministicSort.byName)
+            let sortedTools = tools.sorted(by: HiveDeterministicSort.byName)
 
             let request = HiveChatRequest(
                 model: input.context.modelName,
@@ -790,11 +870,17 @@ extension HiveAgents {
                             ) {
                                 try await registry.invoke(call)
                             }
+                            let tokenEstimate = CharacterBasedTokenEstimator.shared.estimateTokens(for: result.content)
+                            let transformed = await transformer.transform(
+                                result: result.content,
+                                toolName: call.name,
+                                tokenEstimate: tokenEstimate
+                            )
                             input.emitStream(.toolInvocationFinished(name: call.name, success: true), metadata)
                             return (index, HiveChatMessage(
                                 id: "tool:" + call.id,
                                 role: .tool,
-                                content: result.content,
+                                content: transformed,
                                 toolCallID: call.id,
                                 toolCalls: [],
                                 op: nil
@@ -899,15 +985,50 @@ extension HiveAgents {
         return kept
     }
 
-}
+    /// Injects a system prompt into the messages array as a system message.
+    /// - Parameters:
+    ///   - systemPrompt: The system prompt to inject.
+    ///   - messages: The existing messages.
+    ///   - taskID: The task ID for generating the message ID.
+    /// - Returns: The messages array with the system prompt injected at the beginning.
+    private static func preModelSystemPromptInjection(
+        _ systemPrompt: String,
+        into messages: [HiveChatMessage],
+        taskID: HiveTaskID
+    ) -> [HiveChatMessage] {
+        guard !systemPrompt.isEmpty else { return messages }
+        
+        // Check if first message is already a system message
+        if let first = messages.first, first.role == .system {
+            return messages
+        }
+        
+        let systemMessage = HiveChatMessage(
+            id: MessageID.system(taskID: taskID),
+            role: .system,
+            content: systemPrompt,
+            toolCallID: nil,
+            toolCalls: [],
+            op: nil
+        )
+        return [systemMessage] + messages
+    }
 
-/// Typed constants for HiveChatRole to avoid raw string comparisons.
-/// Declared as internal so they can be shared across the HiveSwarm module
-/// without duplicating the definitions in each file.
-extension HiveChatRole {
-    static let system = Self(rawValue: "system")
-    static let tool = Self(rawValue: "tool")
-    static let assistant = Self(rawValue: "assistant")
+    /// Compares two message arrays for structural equality (role + content).
+    /// Returns true if both arrays have the same messages in the same order.
+    private static func messagesStructurallyEqual(
+        _ lhs: [HiveChatMessage],
+        _ rhs: [HiveChatMessage]
+    ) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        for (l, r) in zip(lhs, rhs) {
+            if l.role != r.role || l.content != r.content {
+                return false
+            }
+        }
+        return true
+    }
+
 }
 
 /// Deterministic sorting utilities to ensure reproducible message ordering.
@@ -921,10 +1042,6 @@ private enum HiveDeterministicSort {
             return lhs.id.utf8.lexicographicallyPrecedes(rhs.id.utf8)
         }
         return lhs.name.utf8.lexicographicallyPrecedes(rhs.name.utf8)
-    }
-
-    static func strings(_ lhs: String, _ rhs: String) -> Bool {
-        lhs.utf8.lexicographicallyPrecedes(rhs.utf8)
     }
 }
 

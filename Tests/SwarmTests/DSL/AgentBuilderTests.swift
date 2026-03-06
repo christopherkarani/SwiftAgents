@@ -15,7 +15,7 @@ struct AgentBuilderTests {
 
     @Test("Build agent with instructions")
     func buildAgentWithInstructions() async throws {
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("You are a helpful assistant.")
         }
 
@@ -24,7 +24,7 @@ struct AgentBuilderTests {
 
     @Test("Build agent with single tool")
     func buildAgentWithSingleTool() async throws {
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("You are a calculator.")
             Tools {
                 MockTool(name: "calculator")
@@ -37,7 +37,7 @@ struct AgentBuilderTests {
 
     @Test("Build agent with multiple tools")
     func buildAgentWithMultipleTools() async throws {
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("You are a multi-tool assistant.")
             Tools {
                 MockTool(name: "calculator")
@@ -52,7 +52,7 @@ struct AgentBuilderTests {
 
     @Test("Build agent with memory")
     func buildAgentWithMemory() async throws {
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("You remember conversations.")
             AgentMemoryComponent(ConversationMemory(maxMessages: 50))
         }
@@ -62,7 +62,7 @@ struct AgentBuilderTests {
 
     @Test("Build agent with configuration")
     func buildAgentWithConfiguration() async throws {
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("Configured agent.")
             Configuration(.default.maxIterations(5).temperature(0.5))
         }
@@ -77,7 +77,7 @@ struct AgentBuilderTests {
     func buildCompleteAgent() async throws {
         let mockProvider = MockInferenceProvider()
 
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("You are a complete assistant.")
 
             Tools {
@@ -109,7 +109,7 @@ struct AgentBuilderTests {
     func buildAgentWithConditionalTools() async throws {
         let includeDebugTool = true
 
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("Conditional tools agent.")
             Tools {
                 MockTool(name: "required_tool")
@@ -127,7 +127,7 @@ struct AgentBuilderTests {
     func buildAgentWithoutConditionalTool() async throws {
         let includeDebugTool = false
 
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("Conditional tools agent.")
             Tools {
                 MockTool(name: "required_tool")
@@ -146,7 +146,7 @@ struct AgentBuilderTests {
     #if canImport(Darwin)
         @Test("Tools block builds array of tools")
         func toolsBlockBuildsArray() async throws {
-            let agent = ReActAgent {
+            let agent = try ReActAgent {
                 Instructions("Multi-tool agent.")
                 Tools {
                     CalculatorTool()
@@ -163,7 +163,7 @@ struct AgentBuilderTests {
     func toolsBlockWithLoop() async throws {
         let toolNames = ["a", "b", "c"]
 
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("Loop-based tools.")
             Tools {
                 for name in toolNames {
@@ -180,7 +180,7 @@ struct AgentBuilderTests {
 
     @Test("Build agent with hybrid memory")
     func buildAgentWithHybridMemory() async throws {
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("Hybrid memory agent.")
             AgentMemoryComponent(HybridMemory(
                 configuration: .init(
@@ -197,7 +197,7 @@ struct AgentBuilderTests {
 
     @Test("Configuration uses fluent API in builder")
     func configurationFluentAPIInBuilder() async throws {
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("Fluent config agent.")
             Configuration(
                 AgentConfiguration.default
@@ -218,7 +218,7 @@ struct AgentBuilderTests {
     func builderEnforcesComponentTypes() async throws {
         // This test verifies type safety at compile time
         // Invalid components would fail to compile
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("Type-safe agent.")
             // Only valid components compile
         }
@@ -231,7 +231,7 @@ struct AgentBuilderTests {
     @Test("Component order doesn't matter")
     func componentOrderDoesntMatter() async throws {
         // Tools before Instructions
-        let agent1 = ReActAgent {
+        let agent1 = try ReActAgent {
             Tools {
                 MockTool(name: "tool1")
             }
@@ -239,7 +239,7 @@ struct AgentBuilderTests {
         }
 
         // Instructions before Tools
-        let agent2 = ReActAgent {
+        let agent2 = try ReActAgent {
             Instructions("Agent 2")
             Tools {
                 MockTool(name: "tool1")
@@ -253,7 +253,7 @@ struct AgentBuilderTests {
 
     @Test("Build agent with no tools")
     func buildAgentWithNoTools() async throws {
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("No tools agent.")
         }
 
@@ -268,7 +268,7 @@ struct AgentBuilderTests {
             "Final Answer: Built successfully"
         ])
 
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("Executable agent.")
             InferenceProviderComponent(mockProvider)
         }

@@ -73,15 +73,18 @@ enum SwarmMCPErrorMapper {
         case .array, .dictionary:
             let resultValue = SwarmMCPValueMapper.mcpValue(from: value)
             let jsonText = jsonText(from: resultValue) ?? "{}"
-            return CallTool.Result(
-                content: [
-                    .text(jsonText),
-                    .resource(
+            let content: [MCP.Tool.Content] = [
+                .text(jsonText),
+                .resource(
+                    resource: .text(
+                        jsonText,
                         uri: "swarm://mcp/tool-result",
-                        mimeType: "application/json",
-                        text: jsonText
-                    ),
-                ],
+                        mimeType: "application/json"
+                    )
+                ),
+            ]
+            return CallTool.Result(
+                content: content,
                 isError: false
             )
         }
@@ -241,16 +244,19 @@ enum SwarmMCPErrorMapper {
 
         let metadataValue = Value.object(metadata)
         let metadataText = jsonText(from: metadataValue) ?? "{}"
+        let content: [MCP.Tool.Content] = [
+            .text(message),
+            .resource(
+                resource: .text(
+                    metadataText,
+                    uri: "swarm://mcp/errors/\(code)",
+                    mimeType: "application/json"
+                )
+            ),
+        ]
 
         return CallTool.Result(
-            content: [
-                .text(message),
-                .resource(
-                    uri: "swarm://mcp/errors/\(code)",
-                    mimeType: "application/json",
-                    text: metadataText
-                ),
-            ],
+            content: content,
             isError: true
         )
     }

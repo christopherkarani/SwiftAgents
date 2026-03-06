@@ -47,18 +47,32 @@ public actor SwarmMCPServerService {
     private var hasStarted = false
     private var handlersRegistered = false
 
+    // Rate limiting state
+    private let maxRequestsPerSecond: Double
+    private let maxConcurrentRequests: Int
+    private var availableTokens: Double
+    private var lastRefillTime: ContinuousClock.Instant
+    private var activeRequests: Int
+
     public init(
         name: String = "swarm-mcp-server",
         version: String = Swarm.version,
         instructions: String? = nil,
         toolCatalog: some SwarmMCPToolCatalog,
         toolExecutor: some SwarmMCPToolExecutor,
-        configuration: Server.Configuration = .strict
+        configuration: Server.Configuration = .strict,
+        maxRequestsPerSecond: Double = 10,
+        maxConcurrentRequests: Int = 50
     ) {
         self.name = name
         self.version = version
         self.toolCatalog = toolCatalog
         self.toolExecutor = toolExecutor
+        self.maxRequestsPerSecond = maxRequestsPerSecond
+        self.maxConcurrentRequests = maxConcurrentRequests
+        self.availableTokens = maxRequestsPerSecond
+        self.lastRefillTime = .now
+        self.activeRequests = 0
         server = Server(
             name: name,
             version: version,
@@ -144,7 +158,42 @@ public actor SwarmMCPServerService {
         handlersRegistered = true
     }
 
+    private func checkRateLimit() throws {
+        let now = ContinuousClock.now
+        let elapsed = now - lastRefillTime
+        let elapsedSeconds = Double(elapsed.components.seconds)
+            + Double(elapsed.components.attoseconds) / 1e18
+
+        // Refill tokens based on elapsed time
+        availableTokens = min(
+            maxRequestsPerSecond,
+            availableTokens + elapsedSeconds * maxRequestsPerSecond
+        )
+        lastRefillTime = now
+
+        // Check if token is available
+        guard availableTokens >= 1 else {
+            throw MCP.MCPError.invalidRequest("Rate limit exceeded: too many requests")
+        }
+
+        // Check concurrent request limit
+        guard activeRequests < maxConcurrentRequests else {
+            throw MCP.MCPError.invalidRequest("Rate limit exceeded: too many concurrent requests")
+        }
+
+        // Consume token and increment active requests
+        availableTokens -= 1
+        activeRequests += 1
+    }
+
+    private func releaseRateLimit() {
+        activeRequests = max(0, activeRequests - 1)
+    }
+
     private func handleListTools() async throws -> ListTools.Result {
+        try checkRateLimit()
+        defer { releaseRateLimit() }
+
         let schemas = try await toolCatalog.listTools()
         let tools = SwarmMCPToolMapper.mapSchemas(schemas)
 
@@ -160,6 +209,9 @@ public actor SwarmMCPServerService {
     }
 
     private func handleCallTool(params: CallTool.Parameters) async throws -> CallTool.Result {
+        try checkRateLimit()
+        defer { releaseRateLimit() }
+
         let start = ContinuousClock.now
         metrics.callToolRequests += 1
 
@@ -231,9 +283,9 @@ public actor SwarmMCPServerService {
     private func firstJSONMetadataObject(in content: [MCP.Tool.Content]) -> [String: Value]? {
         let decoder = JSONDecoder()
         for entry in content {
-            guard case let .resource(_, mimeType, text) = entry,
-                  mimeType == "application/json",
-                  let text,
+            guard case let .resource(resource: resourceContent, annotations: _, _meta: _) = entry,
+                  resourceContent.mimeType == "application/json",
+                  let text = resourceContent.text,
                   let data = text.data(using: .utf8),
                   let decoded = try? decoder.decode(Value.self, from: data),
                   case let .object(object) = decoded

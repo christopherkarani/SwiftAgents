@@ -363,6 +363,8 @@ extension ArithmeticParser.ParserError: LocalizedError {
             "Missing closing parenthesis"
         case let .invalidNumber(value):
             "Invalid number: \(value)"
+        case .nestingDepthExceeded:
+            "Expression nesting depth exceeded"
         }
     }
 }

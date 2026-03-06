@@ -57,8 +57,8 @@ public struct SwarmToolRegistry: HiveToolRegistry, Sendable {
             let output = try await registry.execute(toolNamed: call.name, arguments: arguments)
             let content = try Self.encodeJSONFragment(output)
             return HiveToolResult(toolCallID: call.id, content: content)
-        } catch is CancellationError {
-            throw
+        } catch let error as CancellationError {
+            throw error
         } catch let error as AgentError {
             switch error {
             case let .toolNotFound(name):
@@ -93,7 +93,12 @@ extension SwarmToolRegistry {
             throw SwarmToolRegistryError.invalidArgumentsJSON
         }
 
-        let jsonObject = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        let jsonObject: Any
+        do {
+            jsonObject = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        } catch {
+            throw SwarmToolRegistryError.invalidArgumentsJSON
+        }
         guard let dict = jsonObject as? [String: Any] else {
             throw SwarmToolRegistryError.argumentsMustBeJSONObject
         }
@@ -106,6 +111,9 @@ extension SwarmToolRegistry {
     }
 
     private static func encodeJSONFragment(_ value: SendableValue) throws -> String {
+        if case let .string(s) = value {
+            return s
+        }
         let object = value.toJSONObject()
         let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .fragmentsAllowed])
         guard let json = String(data: data, encoding: .utf8) else {

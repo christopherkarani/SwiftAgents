@@ -301,4 +301,60 @@ struct RetryPolicyTests {
         #expect(policy.maxAttempts == 5)
         #expect(policy.backoff == .exponentialWithJitter(base: 0.5, multiplier: 2.0, maxDelay: 30.0))
     }
+
+    @Test("Invalid backoff delay values do not crash and retries exhaust")
+    func invalidBackoffDelayValuesAreIgnored() async throws {
+        let counter = TestCounter()
+        let policy = RetryPolicy(
+            maxAttempts: 2,
+            backoff: .custom { attempt in
+                switch attempt {
+                case 1: return -.infinity
+                case 2: return .nan
+                default: return 0
+                }
+            }
+        )
+
+        do {
+            _ = try await policy.execute {
+                _ = await counter.increment()
+                throw TestError.transient
+            }
+            Issue.record("Expected retriesExhausted")
+        } catch let error as ResilienceError {
+            if case let .retriesExhausted(attempts, _) = error {
+                #expect(attempts == 3)
+            } else {
+                Issue.record("Expected retriesExhausted, got \(error)")
+            }
+        }
+
+        #expect(await counter.get() == 3)
+    }
+
+    @Test("Infinite backoff delay is clamped to avoid overflow")
+    func infiniteBackoffDelayIsSafe() async throws {
+        let counter = TestCounter()
+        let policy = RetryPolicy(
+            maxAttempts: 1,
+            backoff: .custom { _ in .infinity }
+        )
+
+        do {
+            _ = try await policy.execute {
+                _ = await counter.increment()
+                throw TestError.transient
+            }
+            Issue.record("Expected retriesExhausted")
+        } catch let error as ResilienceError {
+            if case let .retriesExhausted(attempts, _) = error {
+                #expect(attempts == 2)
+            } else {
+                Issue.record("Expected retriesExhausted, got \(error)")
+            }
+        }
+
+        #expect(await counter.get() == 2)
+    }
 }

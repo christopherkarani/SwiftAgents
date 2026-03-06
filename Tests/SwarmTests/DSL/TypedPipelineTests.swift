@@ -26,7 +26,7 @@ struct TypedPipelineTests {
     @Test("Create pipeline from agent")
     func createPipelineFromAgent() async throws {
         let mockProvider = MockInferenceProvider(responses: ["Final Answer: Processed"])
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "Process input",
             inferenceProvider: mockProvider
@@ -223,8 +223,8 @@ struct TypedPipelineTests {
         let mockProvider1 = MockInferenceProvider(responses: ["Final Answer: Step 1 complete"])
         let mockProvider2 = MockInferenceProvider(responses: ["Final Answer: Step 2 complete"])
 
-        let agent1 = ReActAgent(tools: [], instructions: "Agent 1", inferenceProvider: mockProvider1)
-        let agent2 = ReActAgent(tools: [], instructions: "Agent 2", inferenceProvider: mockProvider2)
+        let agent1 = try ReActAgent(tools: [], instructions: "Agent 1", inferenceProvider: mockProvider1)
+        let agent2 = try ReActAgent(tools: [], instructions: "Agent 2", inferenceProvider: mockProvider2)
 
         let pipeline1 = agent1.asPipeline()
         let outputExtractor = Pipeline<AgentResult, String> { $0.output }

@@ -3,6 +3,7 @@
 //
 // Bridge adapter that exposes a Hive-native agent graph as a Swarm `AgentRuntime`.
 
+import CryptoKit
 import Foundation
 import HiveCore
 
@@ -154,6 +155,22 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         hooks: (any RunHooks)? = nil
     ) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream { [self] continuation in
+            actor FinishGate {
+                private var finished = false
+
+                func isFinished() -> Bool {
+                    finished
+                }
+
+                func markFinished() -> Bool {
+                    if finished { return false }
+                    finished = true
+                    return true
+                }
+            }
+
+            let finishGate = FinishGate()
+
             guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 let error = AgentError.invalidInput(reason: "Input cannot be empty")
                 continuation.yield(.failed(error: error))
@@ -188,9 +205,19 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
                             }
                         }
                     } catch {
-                        if !Task.isCancelled {
-                            Log.agents.debug("Hive event stream ended: \(error.localizedDescription)")
+                        if Task.isCancelled { return }
+                        guard await finishGate.markFinished() else { return }
+
+                        let mapped: AgentError
+                        if let hiveError = error as? HiveRuntimeError {
+                            mapped = mapHiveError(hiveError)
+                        } else {
+                            mapped = AgentError.internalError(reason: "Hive event stream failed: \(error.localizedDescription)")
                         }
+                        await hooks?.onError(context: nil, agent: self, error: mapped)
+                        continuation.yield(.failed(error: mapped))
+                        continuation.finish(throwing: mapped)
+                        handle.outcome.cancel()
                     }
                 }
 
@@ -204,18 +231,22 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
 
                 // Wait for all events to be consumed before building the result.
                 await eventsTask.value
+                if await finishGate.isFinished() { return }
 
                 let result = try buildResult(from: outcome, builder: resultBuilder)
 
                 await hooks?.onAgentEnd(context: nil, agent: self, result: result)
                 continuation.yield(.completed(result: result))
+                _ = await finishGate.markFinished()
                 continuation.finish()
             } catch let error as HiveRuntimeError {
+                guard await finishGate.markFinished() else { return }
                 let agentError = mapHiveError(error)
                 await hooks?.onError(context: nil, agent: self, error: agentError)
                 continuation.yield(.failed(error: agentError))
                 continuation.finish(throwing: agentError)
             } catch {
+                guard await finishGate.markFinished() else { return }
                 await hooks?.onError(context: nil, agent: self, error: error)
                 let wrapped = AgentError.internalError(reason: error.localizedDescription)
                 continuation.yield(.failed(error: wrapped))
@@ -235,6 +266,21 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
     /// that have no meaningful Swarm equivalent (e.g., checkpoint, write-applied).
     private static func mapHiveEvent(_ event: HiveEvent) -> AgentEvent? {
         switch event.kind {
+        case .runResumed(let interruptID):
+            return .decision(
+                decision: "hive.runResumed",
+                options: [interruptID.rawValue]
+            )
+
+        case .runInterrupted(let interruptID):
+            return .decision(
+                decision: "hive.runInterrupted",
+                options: [interruptID.rawValue]
+            )
+
+        case .runCancelled:
+            return .cancelled
+
         case .modelInvocationStarted(let model):
             return .llmStarted(model: model, promptTokens: nil)
 
@@ -245,11 +291,11 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
             return .llmCompleted(model: nil, promptTokens: nil, completionTokens: nil, duration: 0)
 
         case .toolInvocationStarted(let name):
-            let call = ToolCall(toolName: name, arguments: [:])
+            let call = toolCall(from: event, toolName: name)
             return .toolCallStarted(call: call)
 
         case .toolInvocationFinished(let name, let success):
-            let call = ToolCall(toolName: name, arguments: [:])
+            let call = toolCall(from: event, toolName: name)
             if success {
                 let result = ToolResult(callId: call.id, isSuccess: true, output: .null, duration: .zero)
                 return .toolCallCompleted(call: call, result: result)
@@ -264,9 +310,54 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
         case .stepFinished(let stepIndex, _):
             return .iterationCompleted(number: stepIndex + 1)
 
+        case .checkpointSaved(let checkpointID):
+            return .decision(
+                decision: "hive.checkpointSaved",
+                options: [checkpointID.rawValue]
+            )
+
+        case .checkpointLoaded(let checkpointID):
+            return .decision(
+                decision: "hive.checkpointLoaded",
+                options: [checkpointID.rawValue]
+            )
+
+        case .writeApplied(let channelID, let payloadHash):
+            return .decision(
+                decision: "hive.writeApplied.\(channelID.rawValue)",
+                options: [payloadHash]
+            )
+
         default:
             return nil
         }
+    }
+
+    private static func toolCall(from event: HiveEvent, toolName: String) -> ToolCall {
+        let providerCallId = event.metadata["toolCallID"]
+        let stableID = stableUUID(
+            for: providerCallId ?? "\(event.id.eventIndex)|\(event.id.stepIndex.map(String.init) ?? "nil")|\(toolName)"
+        )
+        return ToolCall(
+            id: stableID,
+            providerCallId: providerCallId,
+            toolName: toolName,
+            arguments: [:],
+            timestamp: Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    private static func stableUUID(for input: String) -> UUID {
+        let digest = SHA256.hash(data: Data(input.utf8))
+        let bytes = Array(digest)
+        precondition(bytes.count >= 16)
+        return UUID(uuid: (
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5],
+            bytes[6], bytes[7],
+            bytes[8], bytes[9],
+            bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+        ))
     }
 
     // MARK: - Private Methods
@@ -349,8 +440,8 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
                 if let existing = hiveToSwarmID[hiveCallID] {
                     callID = existing
                 } else {
-                    // Preserve ToolCall/ToolResult linkage for replayed or partial histories.
-                    let syntheticID = UUID()
+                    // Preserve ToolCall/ToolResult linkage deterministically using a stable UUID.
+                    let syntheticID = Self.stableUUID(for: hiveCallID)
                     hiveToSwarmID[hiveCallID] = syntheticID
                     let syntheticCall = ToolCall(
                         id: syntheticID,
@@ -404,20 +495,100 @@ public struct HiveBackedAgent: AgentRuntime, Sendable {
     /// Maps a `HiveRuntimeError` to an appropriate `AgentError`.
     private func mapHiveError(_ error: HiveRuntimeError) -> AgentError {
         switch error {
+        case let .invalidRunOptions(reason):
+            return .invalidInput(reason: "Invalid Hive run options: \(reason)")
+        case let .stepIndexOutOfRange(stepIndex):
+            return .internalError(reason: "Hive stepIndex out of range: \(stepIndex)")
+        case let .taskOrdinalOutOfRange(ordinal):
+            return .internalError(reason: "Hive task ordinal out of range: \(ordinal)")
+        case let .invalidTaskLocalFingerprintLength(expected, actual):
+            return .internalError(
+                reason: "Hive task-local fingerprint invalid length (expected \(expected), got \(actual))."
+            )
+
         case .modelClientMissing:
             return .inferenceProviderUnavailable(reason: "Hive model client is not configured.")
         case .toolRegistryMissing:
             return .internalError(reason: "Hive tool registry is not configured.")
         case .checkpointStoreMissing:
             return .internalError(reason: "Hive checkpoint store required for tool approval policy.")
-        case let .invalidRunOptions(reason):
-            return .invalidInput(reason: "Invalid Hive run options: \(reason)")
+        case let .checkpointOverrideNotCheckpointed(channelID):
+            return .internalError(
+                reason: "Hive output projection override includes non-checkpointed channel '\(channelID.rawValue)'."
+            )
+        case let .checkpointVersionMismatch(expectedSchema, expectedGraph, foundSchema, foundGraph):
+            return .internalError(
+                reason: """
+                Hive checkpoint version mismatch.
+                expected(schema=\(expectedSchema), graph=\(expectedGraph))
+                found(schema=\(foundSchema), graph=\(foundGraph))
+                """
+            )
+        case let .checkpointDecodeFailed(channelID, errorDescription):
+            return .internalError(
+                reason: "Hive checkpoint decode failed for channel '\(channelID.rawValue)': \(errorDescription)"
+            )
+        case let .checkpointEncodeFailed(channelID, errorDescription):
+            return .internalError(
+                reason: "Hive checkpoint encode failed for channel '\(channelID.rawValue)': \(errorDescription)"
+            )
+        case let .checkpointCorrupt(field, errorDescription):
+            return .internalError(reason: "Hive checkpoint corrupt at '\(field)': \(errorDescription)")
+        case let .interruptPending(interruptID):
+            return .invalidInput(reason: "Hive interrupt pending: \(interruptID.rawValue)")
+        case .noCheckpointToResume:
+            return .invalidInput(reason: "Hive resume requested with no checkpoint to resume.")
+        case .noInterruptToResume:
+            return .invalidInput(reason: "Hive resume requested with no pending interrupt.")
+        case let .resumeInterruptMismatch(expected, found):
+            return .invalidInput(
+                reason: "Hive resume interrupt mismatch (expected \(expected.rawValue), found \(found.rawValue))."
+            )
+
+        case let .unknownNodeID(nodeID):
+            return .internalError(reason: "Hive unknown node ID: \(nodeID.rawValue)")
+        case let .unknownChannelID(channelID):
+            return .invalidInput(reason: "Hive unknown channel ID: \(channelID.rawValue)")
+        case let .storeValueMissing(channelID):
+            return .internalError(reason: "Hive store value missing for channel: \(channelID.rawValue)")
+        case let .channelTypeMismatch(channelID, expectedValueTypeID, actualValueTypeID):
+            return .invalidInput(
+                reason: """
+                Hive channel type mismatch for '\(channelID.rawValue)'.
+                expected '\(expectedValueTypeID)', got '\(actualValueTypeID)'.
+                """
+            )
+        case let .scopeMismatch(channelID, expected, actual):
+            return .internalError(
+                reason: "Hive scope mismatch for channel '\(channelID.rawValue)' (expected \(expected), actual \(actual))."
+            )
+        case let .missingCodec(channelID):
+            return .internalError(reason: "Hive missing codec for channel '\(channelID.rawValue)'.")
+        case let .taskLocalFingerprintEncodeFailed(channelID, errorDescription):
+            return .internalError(
+                reason: """
+                Hive task-local fingerprint encode failed for channel '\(channelID.rawValue)': \(errorDescription)
+                """
+            )
+
+        case let .updatePolicyViolation(channelID, policy, writeCount):
+            return .invalidInput(
+                reason: """
+                Hive update policy violation for '\(channelID.rawValue)' (\(policy)); writeCount=\(writeCount).
+                """
+            )
+        case .taskLocalWriteNotAllowed:
+            return .invalidInput(reason: "Hive task-local writes are not allowed for this operation.")
         case let .modelStreamInvalid(reason):
             return .generationFailed(reason: "Hive model stream error: \(reason)")
         case .invalidMessagesUpdate:
             return .internalError(reason: "Hive messages channel received invalid update.")
-        default:
-            return .internalError(reason: "Hive runtime error: \(error)")
+        case let .missingTaskLocalValue(channelID):
+            return .internalError(reason: "Hive missing task-local value for channel '\(channelID.rawValue)'.")
+        case let .modelToolLoopMaxModelInvocationsExceeded(maxModelInvocations):
+            return .maxIterationsExceeded(iterations: maxModelInvocations)
+        case let .internalInvariantViolation(reason):
+            return .internalError(reason: "Hive internal invariant violation: \(reason)")
         }
     }
 }

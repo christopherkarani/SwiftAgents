@@ -30,7 +30,7 @@ struct HiveOnlyRuntimeContractTests {
 
         let config = AgentConfiguration.default
 
-        let agent = Agent(
+        let agent = try Agent(
             tools: [MockTool(name: "lookup", result: .string("resolved"))],
             instructions: "Use tools when needed.",
             configuration: config,
@@ -49,7 +49,7 @@ struct HiveOnlyRuntimeContractTests {
 
         let config = AgentConfiguration.default
 
-        let agent = Agent(
+        let agent = try Agent(
             tools: [],
             instructions: "Return final answer.",
             configuration: config,
@@ -75,7 +75,7 @@ struct HiveOnlyRuntimeContractTests {
 
         let config = AgentConfiguration.default
 
-        let react = ReActAgent(
+        let react = try ReActAgent(
             tools: [MockTool(name: "lookup", result: .string("resolved"))],
             instructions: "Use tools when needed.",
             configuration: config,
@@ -94,7 +94,7 @@ struct HiveOnlyRuntimeContractTests {
 
         let config = AgentConfiguration.default
 
-        let react = ReActAgent(
+        let react = try ReActAgent(
             tools: [],
             instructions: "Return a final answer.",
             configuration: config,
@@ -158,13 +158,13 @@ struct HiveOnlyRuntimeContractTests {
     func allCoreAgentRuntimesReportHiveInStreamCompletionMetadata() async throws {
         let config = AgentConfiguration.default
 
-        let agent = Agent(
+        let agent = try Agent(
             tools: [],
             instructions: "Agent",
             configuration: config,
             inferenceProvider: MockInferenceProvider(responses: ["agent-out"])
         )
-        let react = ReActAgent(
+        let react = try ReActAgent(
             tools: [],
             instructions: "ReAct",
             configuration: config,

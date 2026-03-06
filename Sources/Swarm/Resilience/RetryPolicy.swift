@@ -111,7 +111,12 @@ public enum BackoffStrategy: Sendable {
     /// No delay between retries.
     case immediate
 
-    /// Custom delay calculation.
+    /// Custom delay calculation using a closure.
+    ///
+    /// - Important: Two `.custom` values are **never equal** (`==` always returns `false`)
+    ///   because Swift cannot compare closures for equality. Avoid using `.custom` in
+    ///   contexts where `Equatable` equality is load-bearing (e.g., `Set`, `Dictionary` keys,
+    ///   or equality-checked retry policy comparisons).
     case custom(@Sendable (Int) -> TimeInterval)
 }
 
@@ -145,6 +150,10 @@ extension BackoffStrategy: Equatable {
 
 /// Configurable retry policy with backoff strategies.
 public struct RetryPolicy: Sendable {
+    // MARK: Private
+
+    private static let maxBackoffNanoseconds: UInt64 = 3_600_000_000_000 // 1 hour
+
     // MARK: - Static Conveniences
 
     /// No retry policy - fails immediately on first error.
@@ -204,7 +213,6 @@ public struct RetryPolicy: Sendable {
     public func execute<T: Sendable>(
         _ operation: @Sendable () async throws -> T
     ) async throws -> T {
-        var attempt = 1
         var retryCount = 0
         var lastError: Error?
 
@@ -224,24 +232,36 @@ public struct RetryPolicy: Sendable {
                 }
 
                 retryCount += 1
-                attempt = retryCount + 1
 
                 // Invoke retry callback
                 await onRetry?(retryCount, error)
 
                 // Calculate and apply backoff delay
-                let delay = backoff.delay(forAttempt: retryCount)
+                let delay = sanitizeBackoffDelay(backoff.delay(forAttempt: retryCount))
                 if delay > 0 {
-                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    try await Task.sleep(nanoseconds: delay)
                 }
             }
         }
 
         // All retries exhausted
         throw ResilienceError.retriesExhausted(
-            attempts: retryCount,
+            attempts: retryCount + 1,
             lastError: lastError?.localizedDescription ?? "Unknown error"
         )
+    }
+
+    private func sanitizeBackoffDelay(_ delaySeconds: TimeInterval) -> UInt64 {
+        guard delaySeconds.isFinite, delaySeconds > 0 else {
+            return 0
+        }
+
+        let nanoseconds = delaySeconds * 1_000_000_000
+        guard nanoseconds.isFinite, nanoseconds > 0 else {
+            return 0
+        }
+
+        return min(UInt64(nanoseconds), Self.maxBackoffNanoseconds)
     }
 }
 

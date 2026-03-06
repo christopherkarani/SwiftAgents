@@ -76,7 +76,9 @@ struct SwarmMCPTestHarness {
             name: "swarm-mcp-test-server",
             version: "1.0.0",
             toolCatalog: catalog,
-            toolExecutor: executor
+            toolExecutor: executor,
+            maxRequestsPerSecond: 10_000,
+            maxConcurrentRequests: 1_000
         )
         let client = Client(name: "swarm-mcp-test-client", version: "1.0.0")
         let transports = await InMemoryTransport.createConnectedPair()

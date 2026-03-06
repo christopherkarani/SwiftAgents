@@ -42,8 +42,6 @@ public actor ReActAgent: AgentRuntime {
     nonisolated public let inputGuardrails: [any InputGuardrail]
     nonisolated public let outputGuardrails: [any OutputGuardrail]
     nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
-    /// Optional MCP client for dynamic tool discovery from connected MCP servers.
-    nonisolated public let mcpClient: MCPClient?
 
     /// Configured handoffs for this agent.
     nonisolated public var handoffs: [AnyHandoffConfiguration] { _handoffs }
@@ -73,8 +71,7 @@ public actor ReActAgent: AgentRuntime {
         inputGuardrails: [any InputGuardrail] = [],
         outputGuardrails: [any OutputGuardrail] = [],
         guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
-        handoffs: [AnyHandoffConfiguration] = [],
-        mcpClient: MCPClient? = nil
+        handoffs: [AnyHandoffConfiguration] = []
     ) throws {
         self.tools = tools
         self.instructions = instructions
@@ -86,7 +83,6 @@ public actor ReActAgent: AgentRuntime {
         self.outputGuardrails = outputGuardrails
         self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
         _handoffs = handoffs
-        self.mcpClient = mcpClient
         toolRegistry = try ToolRegistry(tools: tools)
     }
 
@@ -203,6 +199,7 @@ public actor ReActAgent: AgentRuntime {
         currentTask?.cancel()
     }
 
+
     // MARK: Private
 
     private func runInternal(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
@@ -232,8 +229,7 @@ public actor ReActAgent: AgentRuntime {
             let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
             _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
-            // Reset cancellation flag and create result builder
-            isCancelled = false
+            // Reset cancellation state and create result builder
             let resultBuilder = AgentResult.Builder()
             _ = resultBuilder.start()
 
@@ -289,51 +285,15 @@ public actor ReActAgent: AgentRuntime {
         }
     }
 
-    /// Streams the agent's execution, yielding events as they occur.
-    /// - Parameters:
-    ///   - input: The user's input/query.
-    ///   - session: Optional session for conversation history management.
-    ///   - hooks: Optional hooks for observing agent execution events.
-    /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
-        StreamHelper.makeTrackedStream(for: self) { agent, continuation in
-            // Create event bridge hooks
-            let streamHooks = EventStreamHooks(continuation: continuation)
-
-            // Combine with user-provided hooks
-            let combinedHooks: any RunHooks
-            if let userHooks = hooks {
-                combinedHooks = CompositeRunHooks(hooks: [userHooks, streamHooks])
-            } else {
-                combinedHooks = streamHooks
-            }
-
-            do {
-                _ = try await agent.run(input, session: session, hooks: combinedHooks)
-                continuation.finish()
-            } catch {
-                // Error is handled by EventStreamHooks.onError
-                continuation.finish(throwing: error)
-            }
-        }
-    }
-
-    /// Cancels any ongoing execution.
-    ///
-    /// Sets a cancellation flag that the execution loop checks at each iteration boundary.
-    /// The next iteration will throw `CancellationError` and unwind cleanly.
-    public func cancel() async {
-        isCancelled = true
-    }
-
     // MARK: Private
 
     private let _handoffs: [AnyHandoffConfiguration]
 
     // MARK: - Internal State
 
-    /// Cancellation flag set by `cancel()` and checked at each iteration boundary.
-    private var isCancelled = false
+    private var currentTask: Task<AgentResult, any Error>?
+    private var currentRunID: UUID?
+    private var isCancelled: Bool = false
     private let toolRegistry: ToolRegistry
 
     // MARK: - ReAct Loop Implementation
@@ -348,22 +308,7 @@ public actor ReActAgent: AgentRuntime {
         var iteration = 0
         var scratchpad = "" // Accumulates Thought-Action-Observation history
         let startTime = ContinuousClock.now
-
-        // Register MCP tools at the start of each execution if an MCPClient is configured.
-        // Duplicate registrations (on repeat runs) are silently ignored.
-        if let mcpClient {
-            do {
-                let mcpTools = try await mcpClient.getAllTools()
-                for tool in mcpTools {
-                    try? await toolRegistry.register(tool)
-                }
-            } catch {
-                Log.agents.warning("MCPClient tool discovery failed: \(error.localizedDescription)")
-            }
-        }
-
-        // Build tool schemas from the registry (includes both static and MCP-discovered tools)
-        let toolSchemas = await toolRegistry.schemas
+        let toolSchemas = tools.map(\.schema)
 
         // Retrieve relevant context from memory once at the start
         // This enables RAG-style retrieval for VectorMemory or summarization for SummaryMemory
@@ -375,10 +320,7 @@ public actor ReActAgent: AgentRuntime {
         }
 
         while iteration < configuration.maxIterations {
-            // Check for cancellation via cancel() flag and structured task cancellation
-            if isCancelled {
-                throw CancellationError()
-            }
+            // Check for cancellation using standard Swift concurrency pattern
             try Task.checkCancellation()
 
             // Check timeout
@@ -595,19 +537,10 @@ public actor ReActAgent: AgentRuntime {
             return updatedScratchpad
         }
 
-        // Parallel execution: execute tool calls concurrently with a concurrency cap,
-        // then append observations in order. The cap prevents unbounded task creation
-        // when a response contains many tool calls.
-        let maxConcurrentToolCalls = 10
+        // Parallel execution: execute tool calls concurrently, then append observations in order.
         let engine = ToolExecutionEngine()
         let outcomes = try await withThrowingTaskGroup(of: (Int, ToolExecutionEngine.Outcome).self) { group in
-            var inFlight = 0
-            var callIterator = calls.enumerated().makeIterator()
-            var results: [(Int, ToolExecutionEngine.Outcome)] = []
-            results.reserveCapacity(calls.count)
-
-            // Seed the group up to maxConcurrentToolCalls tasks
-            while inFlight < maxConcurrentToolCalls, let (index, call) = callIterator.next() {
+            for (index, call) in calls.enumerated() {
                 group.addTask { [toolRegistry, resultBuilder, hooks, tracing] in
                     let outcome = try await engine.execute(
                         call,
@@ -621,29 +554,12 @@ public actor ReActAgent: AgentRuntime {
                     )
                     return (index, outcome)
                 }
-                inFlight += 1
             }
 
-            // Drain completed tasks and enqueue the next pending call
+            var results: [(Int, ToolExecutionEngine.Outcome)] = []
+            results.reserveCapacity(calls.count)
             for try await result in group {
                 results.append(result)
-                inFlight -= 1
-                if let (index, call) = callIterator.next() {
-                    group.addTask { [toolRegistry, resultBuilder, hooks, tracing] in
-                        let outcome = try await engine.execute(
-                            call,
-                            registry: toolRegistry,
-                            agent: self,
-                            context: nil,
-                            resultBuilder: resultBuilder,
-                            hooks: hooks,
-                            tracing: tracing,
-                            stopOnToolError: false
-                        )
-                        return (index, outcome)
-                    }
-                    inFlight += 1
-                }
             }
 
             results.sort { $0.0 < $1.0 }
@@ -721,7 +637,7 @@ public actor ReActAgent: AgentRuntime {
         5. Use parameter types shown in the tool list (quote strings; keep numbers/booleans unquoted).
         \(conversationContext.isEmpty ? "" : "\nConversation History:\n\(conversationContext)")\(memorySection)
 
-        User Query: \(input)
+        User Query: \(sanitizeUserInput(input))
         """
 
         if scratchpad.isEmpty {
@@ -729,6 +645,14 @@ public actor ReActAgent: AgentRuntime {
         } else {
             return basePrompt + "\n\nPrevious steps:" + scratchpad + "\n\nContinue with your next step:"
         }
+    }
+
+    private func sanitizeUserInput(_ input: String) -> String {
+        let escaped = input
+            .replacingOccurrences(of: "Thought:", with: "[Thought:]")
+            .replacingOccurrences(of: "Action:", with: "[Action:]")
+            .replacingOccurrences(of: "Final Answer:", with: "[Final Answer:]")
+        return "<user_input>\(escaped)</user_input>"
     }
 
     private func buildConversationContext(from sessionHistory: [MemoryMessage]) -> String {
@@ -872,7 +796,14 @@ public actor ReActAgent: AgentRuntime {
     }
 
     private func formatArguments(_ arguments: [String: SendableValue]) -> String {
-        arguments.map { "\($0.key): \($0.value.description)" }.joined(separator: ", ")
+        arguments
+            .keys
+            .sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+            .compactMap { key in
+                guard let value = arguments[key] else { return nil }
+                return "\(key): \(value.description)"
+            }
+            .joined(separator: ", ")
     }
 }
 

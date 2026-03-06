@@ -21,7 +21,7 @@ struct StreamingEventTests {
         
         // 2. Setup agent with a mock tool
         let tool = MockTool(name: "test_tool", description: "Test tool")
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [tool],
             instructions: "You are a test assistant.",
             inferenceProvider: mockProvider
@@ -60,7 +60,7 @@ struct StreamingEventTests {
         await mockProvider.setResponses(["Final answer directly"])
         
         // 2. Setup agent
-        let agent = Agent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a test assistant.",
             inferenceProvider: mockProvider
@@ -86,7 +86,7 @@ struct StreamingEventTests {
         ])
 
         let tool = MockTool(name: "test_tool", description: "Test tool")
-        let agent = Agent(
+        let agent = try Agent(
             tools: [tool],
             instructions: "You are a test assistant.",
             inferenceProvider: mockProvider
@@ -111,7 +111,7 @@ struct StreamingEventTests {
         ])
 
         let tool = MockTool(name: "test_tool", description: "Test tool")
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [tool],
             instructions: "You are a test assistant.",
             inferenceProvider: mockProvider

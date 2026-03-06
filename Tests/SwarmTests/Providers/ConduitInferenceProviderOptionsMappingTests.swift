@@ -269,4 +269,8 @@ struct ConduitInferenceProviderOptionsMappingTests {
         let config = box.lastStreamWithMetadataConfig
         #expect(config?.toolChoice == .auto)
     }
+
+
+    // TODO: Restore mapsProviderSettingsRuntimeFeatures and mapsProviderSettingsRuntimePolicy
+    // once Conduit ships ProviderRuntimeFeatureConfiguration and ProviderRuntimePolicyOverride.
 }

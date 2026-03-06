@@ -38,3 +38,4 @@ The **[Complete API Reference](/swarm-complete-reference)** is a single document
 | [Observability](/observability) | Tracing, `OSLogTracer`, `SwiftLogTracer`, metrics |
 | [MCP](/mcp) | Model Context Protocol client and server |
 | [Providers](/providers) | Inference providers, `MultiProvider` routing |
+| [Hive Swarm Hardening](/hive-swarm-nonfork-hardening) | Non-fork run control, checkpoint capability, deterministic transcript/state hashing |

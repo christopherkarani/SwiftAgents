@@ -19,7 +19,7 @@ struct ReActAgentTests {
         ])
 
         // Create agent with the mock provider
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -49,7 +49,7 @@ struct ReActAgentTests {
         ])
 
         // Create agent with the spy tool
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [spyTool],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -100,7 +100,7 @@ struct ReActAgentTests {
         let config = AgentConfiguration.default
             .modelSettings(ModelSettings.default.toolChoice(.required))
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [spyTool],
             instructions: "You are a helpful assistant.",
             configuration: config,
@@ -123,14 +123,14 @@ struct ReActAgentTests {
     }
 
     @Test("Max iterations exceeded")
-    func maxIterationsExceeded() async {
+    func maxIterationsExceeded() async throws {
         // Create mock provider that never provides a final answer
         let mockProvider = MockInferenceProvider()
         await mockProvider.configureInfiniteThinking(thoughts: ["Still thinking..."])
 
         // Create agent with maxIterations=1
         let config = AgentConfiguration.default.maxIterations(1)
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: "You are a helpful assistant.",
             configuration: config,
@@ -213,7 +213,7 @@ struct BuiltInToolsTests {
 @Suite("Tool Registry Tests")
 struct ToolRegistryTests {
     @Test("Register and lookup tools")
-    func registerAndLookup() async {
+    func registerAndLookup() async throws {
         // Create an empty registry
         let registry = ToolRegistry()
 
@@ -223,7 +223,7 @@ struct ToolRegistryTests {
 
         // Create and register a mock tool
         let mockTool = MockTool(name: "test_tool", description: "A test tool")
-        await registry.register(mockTool)
+        try await registry.register(mockTool)
 
         // Verify the tool was registered
         let afterRegisterCount = await registry.count

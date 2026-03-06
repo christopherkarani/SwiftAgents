@@ -20,8 +20,10 @@ import Foundation
 /// Provider resolution order is:
 /// 1. An explicit provider passed to `Agent(...)` (including `Agent(_:)`)
 /// 2. A provider set via `.environment(\.inferenceProvider, ...)`
-/// 3. Apple Foundation Models (on-device), if available
-/// 4. Otherwise, throw `AgentError.inferenceProviderUnavailable`
+/// 3. `Swarm.defaultProvider` (set via `Swarm.configure(provider:)`)
+/// 4. `Swarm.cloudProvider` (set via `Swarm.configure(cloudProvider:)`, if tool calling is required)
+/// 5. Apple Foundation Models (on-device), if available
+/// 6. Otherwise, throw `AgentError.inferenceProviderUnavailable`
 ///
 /// The agent follows a loop-based execution pattern:
 /// 1. Build prompt with system instructions + conversation history
@@ -145,8 +147,8 @@ public actor Agent: AgentRuntime {
     ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - handoffs: Handoff configurations for multi-agent orchestration. Default: []
     /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
-    public init<T: Tool>(
-        tools: [T] = [],
+    public init(
+        tools: [some Tool] = [],
         instructions: String = "",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
@@ -305,6 +307,37 @@ public actor Agent: AgentRuntime {
 
     // MARK: Private
 
+    // MARK: - Conversation History
+
+    private enum ConversationMessage: Sendable {
+        case system(String)
+        case user(String)
+        case assistant(String)
+        case toolResult(toolName: String, result: String)
+
+        var formatted: String {
+            switch self {
+            case let .system(content):
+                "[System]: \(content)"
+            case let .user(content):
+                "[User]: \(content)"
+            case let .assistant(content):
+                "[Assistant]: \(content)"
+            case let .toolResult(toolName, result):
+                "[Tool Result - \(toolName)]: \(result)"
+            }
+        }
+    }
+
+    private let _handoffs: [AnyHandoffConfiguration]
+
+    // MARK: - Internal State
+
+    private var currentTask: Task<AgentResult, any Error>?
+    private var currentRunID: UUID?
+    private var isCancelled: Bool = false
+    private let toolRegistry: ToolRegistry
+
     private func runInternal(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
@@ -334,8 +367,7 @@ public actor Agent: AgentRuntime {
             let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
             _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
-            // Reset cancellation flag and create result builder
-            isCancelled = false
+            // Reset cancellation state and create result builder
             let resultBuilder = AgentResult.Builder()
             _ = resultBuilder.start()
 
@@ -343,6 +375,13 @@ public actor Agent: AgentRuntime {
             var sessionHistory: [MemoryMessage] = []
             if let session {
                 sessionHistory = try await session.getItems(limit: configuration.sessionHistoryLimit)
+            }
+
+            // Seed memory with session history once (only if memory is empty).
+            if let activeMemory, !sessionHistory.isEmpty, await activeMemory.isEmpty {
+                for message in sessionHistory {
+                    await activeMemory.add(message)
+                }
             }
 
             // Create user message for this turn
@@ -396,97 +435,55 @@ public actor Agent: AgentRuntime {
         }
     }
 
-    /// Streams the agent's execution, yielding events as they occur.
-    /// - Parameters:
-    ///   - input: The user's input/query.
-    ///   - session: Optional session for conversation history management.
-    ///   - hooks: Optional run hooks for observing agent execution events.
-    /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
-        StreamHelper.makeTrackedStream(for: self) { agent, continuation in
-            // Create event bridge hooks
-            let streamHooks = EventStreamHooks(continuation: continuation)
-
-            // Combine with user-provided hooks
-            let combinedHooks: any RunHooks = if let userHooks = hooks {
-                CompositeRunHooks(hooks: [userHooks, streamHooks])
-            } else {
-                streamHooks
-            }
-
-            do {
-                _ = try await agent.run(input, session: session, hooks: combinedHooks)
-                continuation.finish()
-            } catch {
-                // Error is handled by EventStreamHooks.onError
-                continuation.finish(throwing: error)
-            }
-        }
-    }
-
-    /// Cancels any ongoing execution.
-    ///
-    /// Sets a cancellation flag that the execution loop checks at each iteration boundary.
-    /// The next iteration will throw `CancellationError` and unwind cleanly.
-    public func cancel() async {
-        isCancelled = true
-    }
-
-    // MARK: Private
-
-    // MARK: - Conversation History
-
-    private enum ConversationMessage: Sendable {
-        case system(String)
-        case user(String)
-        case assistant(String)
-        case toolResult(toolName: String, result: String)
-
-        var formatted: String {
-            switch self {
-            case let .system(content):
-                "[System]: \(content)"
-            case let .user(content):
-                "[User]: \(content)"
-            case let .assistant(content):
-                "[Assistant]: \(content)"
-            case let .toolResult(toolName, result):
-                "[Tool Result - \(toolName)]: \(result)"
-            }
-        }
-    }
-
-    private let _handoffs: [AnyHandoffConfiguration]
-
-    // MARK: - Internal State
-
-    /// Cancellation flag set by `cancel()` and checked at each iteration boundary.
-    private var isCancelled = false
-    private let toolRegistry: ToolRegistry
-
     // MARK: - Inference Provider Resolution
 
-    private func resolvedInferenceProvider() throws -> any InferenceProvider {
+    private func resolvedInferenceProvider() async throws -> any InferenceProvider {
+        // 1. Explicit provider on Agent
         if let inferenceProvider {
             return inferenceProvider
         }
 
+        // 2. TaskLocal via .environment()
         if let environmentProvider = AgentEnvironmentValues.current.inferenceProvider {
             return environmentProvider
         }
 
+        // 3. Swarm.defaultProvider (global)
+        if let globalProvider = await Swarm.defaultProvider {
+            return globalProvider
+        }
+
+        // 4. Swarm.cloudProvider (if tool calling is required)
+        let hasEnabledTools = await !toolRegistry.schemas.isEmpty
+        let needsToolCallingProvider = hasEnabledTools || !_handoffs.isEmpty
+        if needsToolCallingProvider, let cloudProvider = await Swarm.cloudProvider {
+            return cloudProvider
+        }
+
+        // 5. Foundation Models (if available, on Apple platform)
         if let foundationModelsProvider = DefaultInferenceProviderFactory.makeFoundationModelsProviderIfAvailable() {
             return foundationModelsProvider
         }
 
+        // 6. No provider available
         throw AgentError.inferenceProviderUnavailable(
             reason: """
             No inference provider configured and Apple Foundation Models are unavailable.
 
-            Provide an inference provider explicitly (e.g. `Agent(.anthropic(key: \"...\"))`) \
-            or via `.environment(\\.inferenceProvider, ...)`.
+            Configure a provider globally via `await Swarm.configure(provider: ...)` \
+            or pass one explicitly to Agent(...).
             """
         )
+    }
+
+    private func resolvedMembraneAdapter() -> (any MembraneAgentAdapter)? {
+        guard let membrane = AgentEnvironmentValues.current.membrane, membrane.isEnabled else {
+            return nil
+        }
+        if let adapter = membrane.adapter {
+            return adapter
+        }
+        return DefaultMembraneAgentAdapter(configuration: membrane.configuration)
     }
 
     // MARK: - Tool Calling Loop Implementation
@@ -500,7 +497,7 @@ public actor Agent: AgentRuntime {
     ) async throws -> String {
         var iteration = 0
         let startTime = ContinuousClock.now
-        let provider = try resolvedInferenceProvider()
+        let provider = try await resolvedInferenceProvider()
 
         // Retrieve relevant context from memory (enables RAG for VectorMemory)
         let activeMemory = memory ?? AgentEnvironmentValues.current.memory
@@ -521,6 +518,7 @@ public actor Agent: AgentRuntime {
         let enableStreaming = configuration.enableStreaming && hooks != nil
         let toolStreamingProvider = provider as? any ToolCallStreamingInferenceProvider
         let useToolStreaming = enableStreaming && toolStreamingProvider != nil
+        let membraneAdapter = resolvedMembraneAdapter()
 
         while iteration < configuration.maxIterations {
             iteration += 1
@@ -530,11 +528,34 @@ public actor Agent: AgentRuntime {
             do {
                 try checkCancellationAndTimeout(startTime: startTime)
 
+                let rawPrompt = buildPrompt(from: conversationHistory)
+                let unplannedSchemas = await buildToolSchemasWithHandoffs()
+                var plannedPrompt = rawPrompt
+                var plannedSchemas = MembraneInternalTools.sortedSchemas(unplannedSchemas)
+
+                if let membraneAdapter {
+                    do {
+                        let plan = try await membraneAdapter.plan(
+                            prompt: rawPrompt,
+                            toolSchemas: unplannedSchemas,
+                            profile: configuration.effectiveContextProfile
+                        )
+                        plannedPrompt = plan.prompt
+                        plannedSchemas = MembraneInternalTools.sortedSchemas(plan.toolSchemas)
+                        _ = resultBuilder.setMetadata("membrane.mode", .string(plan.mode))
+                    } catch {
+                        _ = resultBuilder.setMetadata("membrane.fallback.used", .bool(true))
+                        _ = resultBuilder.setMetadata("membrane.fallback.error", .string(fallbackDiagnosticMessage(for: error)))
+                        plannedPrompt = rawPrompt
+                        plannedSchemas = MembraneInternalTools.sortedSchemas(unplannedSchemas)
+                    }
+                }
+
                 let prompt = PromptEnvelope.enforce(
-                    prompt: buildPrompt(from: conversationHistory),
+                    prompt: plannedPrompt,
                     profile: configuration.effectiveContextProfile
                 )
-                let toolSchemas = await buildToolSchemasWithHandoffs()
+                let toolSchemas = MembraneInternalTools.sortedSchemas(plannedSchemas)
 
                 // If no tools defined, generate without tool calling
                 if toolSchemas.isEmpty {
@@ -575,7 +596,8 @@ public actor Agent: AgentRuntime {
                         conversationHistory: &conversationHistory,
                         resultBuilder: resultBuilder,
                         hooks: hooks,
-                        tracing: tracing
+                        tracing: tracing,
+                        membraneAdapter: membraneAdapter
                     )
                     // If a handoff occurred, return the target agent's result
                     if let handoffOutput = handoffResult {
@@ -625,10 +647,8 @@ public actor Agent: AgentRuntime {
 
     /// Checks for cancellation and timeout conditions.
     private func checkCancellationAndTimeout(startTime: ContinuousClock.Instant) throws {
-        // Check explicit cancellation via cancel() and structured task cancellation
-        if isCancelled {
-            throw CancellationError()
-        }
+        // Use Task.checkCancellation() for reliable cancellation detection
+        // This is the standard Swift concurrency pattern
         try Task.checkCancellation()
 
         let elapsed = ContinuousClock.now - startTime
@@ -645,6 +665,20 @@ public actor Agent: AgentRuntime {
             return agentError
         }
         return error
+    }
+
+    private func fallbackDiagnosticMessage(for error: Error) -> String {
+        let described = String(describing: error)
+        if described != String(describing: type(of: error)) {
+            return described
+        }
+
+        let localized = error.localizedDescription
+        if !localized.isEmpty {
+            return localized
+        }
+
+        return String(describing: type(of: error))
     }
 
     /// Generates a response without tool calling.
@@ -686,7 +720,8 @@ public actor Agent: AgentRuntime {
         conversationHistory: inout [ConversationMessage],
         resultBuilder: AgentResult.Builder,
         hooks: (any RunHooks)?,
-        tracing: TracingHelper?
+        tracing: TracingHelper?,
+        membraneAdapter: (any MembraneAgentAdapter)?
     ) async throws {
         let toolCallSummary = response.toolCalls.map { "Calling tool: \($0.name)" }.joined(separator: ", ")
         conversationHistory.append(.assistant(response.content ?? toolCallSummary))
@@ -697,7 +732,8 @@ public actor Agent: AgentRuntime {
                 conversationHistory: &conversationHistory,
                 resultBuilder: resultBuilder,
                 hooks: hooks,
-                tracing: tracing
+                tracing: tracing,
+                membraneAdapter: membraneAdapter
             )
         }
     }
@@ -708,9 +744,70 @@ public actor Agent: AgentRuntime {
         conversationHistory: inout [ConversationMessage],
         resultBuilder: AgentResult.Builder,
         hooks: (any RunHooks)?,
-        tracing: TracingHelper?
+        tracing: TracingHelper?,
+        membraneAdapter: (any MembraneAgentAdapter)?
     ) async throws {
         let activeMemory = memory ?? AgentEnvironmentValues.current.memory
+
+        if let membraneAdapter,
+           MembraneInternalTools.isInternalTool(parsedCall.name) {
+            let call = ToolCall(
+                providerCallId: parsedCall.id,
+                toolName: parsedCall.name,
+                arguments: parsedCall.arguments
+            )
+            _ = resultBuilder.addToolCall(call)
+            await hooks?.onToolStart(context: nil, agent: self, call: call)
+
+            let spanID = await tracing?.traceToolCall(name: parsedCall.name, arguments: parsedCall.arguments)
+            let startTime = ContinuousClock.now
+
+            do {
+                let output = try await membraneAdapter.handleInternalToolCall(
+                    name: parsedCall.name,
+                    arguments: parsedCall.arguments
+                ) ?? "ok"
+
+                let duration = ContinuousClock.now - startTime
+                let result = ToolResult.success(callId: call.id, output: .string(output), duration: duration)
+                _ = resultBuilder.addToolResult(result)
+                conversationHistory.append(.toolResult(toolName: parsedCall.name, result: output))
+                if let activeMemory {
+                    await activeMemory.add(.tool(output, toolName: parsedCall.name))
+                }
+                if let spanID {
+                    await tracing?.traceToolResult(
+                        spanId: spanID,
+                        name: parsedCall.name,
+                        result: output,
+                        duration: duration
+                    )
+                }
+                await hooks?.onToolEnd(context: nil, agent: self, result: result)
+                return
+            } catch {
+                let duration = ContinuousClock.now - startTime
+                let message = error.localizedDescription
+                let result = ToolResult.failure(callId: call.id, error: message, duration: duration)
+                _ = resultBuilder.addToolResult(result)
+                if let spanID {
+                    await tracing?.traceToolError(spanId: spanID, name: parsedCall.name, error: error)
+                }
+                await hooks?.onToolEnd(context: nil, agent: self, result: result)
+                if configuration.stopOnToolError {
+                    throw AgentError.toolExecutionFailed(toolName: parsedCall.name, underlyingError: message)
+                }
+                conversationHistory.append(.toolResult(
+                    toolName: parsedCall.name,
+                    result: "[TOOL ERROR] Execution failed: \(message). Please try a different approach or tool."
+                ))
+                if let activeMemory {
+                    await activeMemory.add(.tool("Error - \(message)", toolName: parsedCall.name))
+                }
+                return
+            }
+        }
+
         let engine = ToolExecutionEngine()
         let outcome = try await engine.execute(
             parsedCall,
@@ -724,9 +821,27 @@ public actor Agent: AgentRuntime {
         )
 
         if outcome.result.isSuccess {
-            conversationHistory.append(.toolResult(toolName: parsedCall.name, result: outcome.result.output.description))
+            var toolOutputText = outcome.result.output.description
+            if let membraneAdapter {
+                do {
+                    let transformed = try await membraneAdapter.transformToolResult(
+                        toolName: parsedCall.name,
+                        output: toolOutputText
+                    )
+                    toolOutputText = transformed.textForConversation
+                    if let pointerID = transformed.pointerID {
+                        _ = resultBuilder.setMetadata("membrane.pointerized", .bool(true))
+                        _ = resultBuilder.setMetadata("membrane.pointer.last_id", .string(pointerID))
+                    }
+                } catch {
+                    _ = resultBuilder.setMetadata("membrane.fallback.used", .bool(true))
+                    _ = resultBuilder.setMetadata("membrane.fallback.error", .string(fallbackDiagnosticMessage(for: error)))
+                }
+            }
+
+            conversationHistory.append(.toolResult(toolName: parsedCall.name, result: toolOutputText))
             if let activeMemory {
-                await activeMemory.add(.tool(outcome.result.output.description, toolName: parsedCall.name))
+                await activeMemory.add(.tool(toolOutputText, toolName: parsedCall.name))
             }
         } else {
             let errorMessage = outcome.result.errorMessage ?? "Unknown error"
@@ -769,7 +884,7 @@ public actor Agent: AgentRuntime {
             schemas.append(handoffSchema)
         }
 
-        return schemas
+        return MembraneInternalTools.sortedSchemas(schemas)
     }
 
     /// Processes tool calls, handling both regular tools and handoff tools.
@@ -782,7 +897,8 @@ public actor Agent: AgentRuntime {
         conversationHistory: inout [ConversationMessage],
         resultBuilder: AgentResult.Builder,
         hooks: (any RunHooks)?,
-        tracing: TracingHelper?
+        tracing: TracingHelper?,
+        membraneAdapter: (any MembraneAgentAdapter)?
     ) async throws -> String? {
         let handoffMap = Dictionary(
             uniqueKeysWithValues: _handoffs.map { ($0.effectiveToolName, $0) }
@@ -843,7 +959,8 @@ public actor Agent: AgentRuntime {
                 conversationHistory: &conversationHistory,
                 resultBuilder: resultBuilder,
                 hooks: hooks,
-                tracing: tracing
+                tracing: tracing,
+                membraneAdapter: membraneAdapter
             )
         }
 
@@ -907,7 +1024,8 @@ public actor Agent: AgentRuntime {
         hooks: (any RunHooks)? = nil,
         emitOutputTokens: Bool = false
     ) async throws -> InferenceResponse {
-        let options = configuration.inferenceOptions
+        var options = configuration.inferenceOptions
+        options = optionsWithMembraneRuntimeSettings(options)
 
         // Notify hooks of LLM start
         await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
@@ -936,7 +1054,8 @@ public actor Agent: AgentRuntime {
         systemPrompt: String,
         hooks: (any RunHooks)? = nil
     ) async throws -> InferenceResponse {
-        let options = configuration.inferenceOptions
+        var options = configuration.inferenceOptions
+        options = optionsWithMembraneRuntimeSettings(options)
 
         await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
 
@@ -978,6 +1097,37 @@ public actor Agent: AgentRuntime {
             finishReason: parsedToolCalls.isEmpty ? .completed : .toolCall,
             usage: usage
         )
+    }
+
+    private func optionsWithMembraneRuntimeSettings(_ base: InferenceOptions) -> InferenceOptions {
+        guard let membrane = AgentEnvironmentValues.current.membrane, membrane.isEnabled else {
+            return base
+        }
+
+        let flags = membrane.configuration.runtimeFeatureFlags
+        let allowlist = membrane.configuration.runtimeModelAllowlist
+
+        if flags.isEmpty, allowlist.isEmpty {
+            return base
+        }
+
+        var updated = base
+        var settings = updated.providerSettings ?? [:]
+
+        for (key, isEnabled) in flags {
+            let prefix = "conduit.runtime."
+            guard key.hasPrefix(prefix) else { continue }
+            let feature = String(key.dropFirst(prefix.count))
+            settings["conduit.runtime.policy.\(feature).enabled"] = .bool(isEnabled)
+        }
+
+        if !allowlist.isEmpty {
+            let uniqueSorted = Array(Set(allowlist)).sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+            settings["conduit.runtime.policy.model_allowlist"] = .array(uniqueSorted.map { .string($0) })
+        }
+
+        updated.providerSettings = settings.isEmpty ? nil : settings
+        return updated
     }
 }
 

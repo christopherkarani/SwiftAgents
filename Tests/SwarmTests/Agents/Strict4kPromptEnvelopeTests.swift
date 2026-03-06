@@ -35,7 +35,7 @@ struct Strict4kPromptEnvelopeTests {
         let memory = MockAgentMemory(context: longBlock("memory", lines: 420))
         let session = try await makeLargeSession()
 
-        let agent = Agent(
+        let agent = try Agent(
             tools: [],
             instructions: longBlock("instructions", lines: 220),
             configuration: strict4kConfig(),
@@ -61,7 +61,7 @@ struct Strict4kPromptEnvelopeTests {
         let memory = MockAgentMemory(context: longBlock("memory", lines: 420))
         let session = try await makeLargeSession()
 
-        let agent = ReActAgent(
+        let agent = try ReActAgent(
             tools: [],
             instructions: longBlock("instructions", lines: 220),
             configuration: strict4kConfig(),

@@ -73,9 +73,10 @@ struct SwarmRunnerTests {
             messages: [.user("hello")]
         )
 
-        #expect(response.messages.contains(where: { message in
-            message.role == .tool && message.toolName == "mock_tool"
-        }))
+        let hasToolMessage = response.messages.contains { message in
+            message.role == .tool && message.metadata["tool_name"] == "mock_tool"
+        }
+        #expect(hasToolMessage)
     }
 
     @Test("initial context is preserved in response after tool execution")
@@ -214,7 +215,7 @@ private final class ScriptedSwarmToolCallProvider: InferenceProvider, InferenceS
         options _: InferenceOptions
     ) -> AsyncThrowingStream<InferenceStreamEvent, Error> {
         StreamHelper.makeTrackedStream { continuation in
-            let updates = nextScript()
+            let updates = self.nextScript()
             for update in updates {
                 continuation.yield(update)
             }

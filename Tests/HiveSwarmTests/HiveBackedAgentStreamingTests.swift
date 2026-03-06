@@ -72,16 +72,22 @@ struct HiveBackedAgentStreamingTests {
             events.append(event)
         }
 
-        let toolStarted = events.contains { event in
-            if case .toolCallStarted = event { return true }
-            return false
-        }
-        let toolCompleted = events.contains { event in
-            if case .toolCallCompleted = event { return true }
-            return false
-        }
-        #expect(toolStarted)
-        #expect(toolCompleted)
+        let startedCall = events.compactMap { event -> ToolCall? in
+            if case let .toolCallStarted(call) = event { return call }
+            return nil
+        }.first
+        let completed = events.compactMap { event -> (ToolCall, ToolResult)? in
+            if case let .toolCallCompleted(call, result) = event { return (call, result) }
+            return nil
+        }.first
+
+        let start = try #require(startedCall)
+        let (endCall, endResult) = try #require(completed)
+
+        // Streaming bridge should provide stable correlation across started/completed.
+        #expect(start.id == endCall.id)
+        #expect(endResult.callId == endCall.id)
+        #expect(endCall.providerCallId == "c1")
     }
 
     @Test("stream yields iterationStarted and iterationCompleted")

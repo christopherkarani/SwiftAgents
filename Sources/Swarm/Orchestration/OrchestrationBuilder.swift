@@ -64,10 +64,12 @@ public extension OrchestrationStepContext {
     }
 
     private func areSameRuntime(_ lhs: any AgentRuntime, _ rhs: any AgentRuntime) -> Bool {
-        let lhsObject = lhs as AnyObject
-        let rhsObject = rhs as AnyObject
-        if ObjectIdentifier(lhsObject) == ObjectIdentifier(rhsObject) {
-            return true
+        if type(of: lhs) is AnyObject.Type, type(of: rhs) is AnyObject.Type {
+            let lhsObject = lhs as AnyObject
+            let rhsObject = rhs as AnyObject
+            if ObjectIdentifier(lhsObject) == ObjectIdentifier(rhsObject) {
+                return true
+            }
         }
 
         return lhs.name == rhs.name
@@ -162,9 +164,6 @@ public extension OrchestrationStep {
         return try await execute(input, context: context)
     }
 
-    func execute(_ input: String, context: OrchestrationStepContext) async throws -> AgentResult {
-        try await execute(input, hooks: context.hooks)
-    }
 }
 
 // MARK: - OrchestrationGroup

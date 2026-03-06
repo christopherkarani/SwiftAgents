@@ -213,7 +213,7 @@ struct ModelSettingsIntegrationTests {
 struct AgentBuilderIntegrationTests {
     @Test("AgentBuilder with ModelSettingsComponent works")
     func agentBuilderWithModelSettings() async throws {
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("Precise agent.")
             ModelSettingsComponent(.precise.maxTokens(1500))
         }
@@ -225,7 +225,7 @@ struct AgentBuilderIntegrationTests {
 
     @Test("AgentBuilder configuration merge works correctly")
     func agentBuilderConfigurationMerge() async throws {
-        let agent = ReActAgent {
+        let agent = try ReActAgent {
             Instructions("Merged settings agent.")
             Configuration(.default.maxIterations(15))
             ModelSettingsComponent(.balanced.parallelToolCalls(true))

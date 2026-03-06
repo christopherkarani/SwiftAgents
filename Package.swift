@@ -32,7 +32,17 @@ if useLocalDependencies {
     }) ?? "../Wax"
 
     packageDependencies.append(.package(path: waxPath))
-    packageDependencies.append(.package(path: "../Conduit"))
+    packageDependencies.append(
+        .package(
+            path: "../Conduit",
+            traits: [
+                .trait(name: "OpenAI"),
+                .trait(name: "OpenRouter"),
+                .trait(name: "Anthropic"),
+            ]
+        )
+    )
+    packageDependencies.append(.package(path: "../Membrane"))
 } else {
     packageDependencies.append(
         .package(
@@ -40,7 +50,23 @@ if useLocalDependencies {
             from: "0.1.3"
         )
     )
-    packageDependencies.append(.package(url: "https://github.com/christopherkarani/Conduit", from: "0.3.1"))
+    packageDependencies.append(
+        .package(
+            url: "https://github.com/christopherkarani/Conduit",
+            exact: "0.3.5",
+            traits: [
+                .trait(name: "OpenAI"),
+                .trait(name: "OpenRouter"),
+                .trait(name: "Anthropic"),
+            ]
+        )
+    )
+    packageDependencies.append(
+        .package(
+            url: "https://github.com/christopherkarani/Membrane",
+            .branch("main")
+        )
+    )
 }
 
 packageDependencies.append(.package(url: "https://github.com/christopherkarani/Hive", from: "0.1.0"))
@@ -49,15 +75,11 @@ var swarmDependencies: [Target.Dependency] = [
     "SwarmMacros",
     .product(name: "Logging", package: "swift-log"),
     .product(name: "Conduit", package: "Conduit"),
-    .product(name: "Wax", package: "Wax")
+    .product(name: "Wax", package: "Wax"),
+    .product(name: "HiveCore", package: "Hive"),
+    .product(name: "Membrane", package: "Membrane"),
+    .product(name: "MembraneHive", package: "Membrane")
 ]
-
-swarmDependencies.append(
-    .product(
-        name: "HiveCore",
-        package: "Hive"
-    )
-)
 
 var swarmSwiftSettings: [SwiftSetting] = [
     .enableExperimentalFeature("StrictConcurrency")

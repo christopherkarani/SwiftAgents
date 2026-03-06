@@ -62,6 +62,41 @@ final class TestAgent: AgentRuntime, @unchecked Sendable {
     func cancel() async {}
 }
 
+// MARK: - ValueRuntimeRouterAgent
+
+private struct ValueRuntimeRouterAgent: AgentRuntime, AgentRuntimeIdentifiable {
+    let id: String
+    let responsePrefix: String
+    let tools: [any AnyJSONTool] = []
+    let configuration: AgentConfiguration = .default
+
+    var runtimeIdentity: String { id }
+    var name: String { "value-agent-\(id)" }
+    var instructions: String { "Value runtime agent \(id)" }
+
+    func run(
+        _ input: String,
+        session _: (any Session)? = nil,
+        hooks _: (any RunHooks)? = nil
+    ) async throws -> AgentResult {
+        AgentResult(output: "\(responsePrefix): \(input)")
+    }
+
+    nonisolated func stream(
+        _ input: String,
+        session _: (any Session)? = nil,
+        hooks _: (any RunHooks)? = nil
+    ) -> AsyncThrowingStream<AgentEvent, Error> {
+        StreamHelper.makeTrackedStream { continuation in
+            continuation.yield(.started(input: input))
+            continuation.yield(.completed(result: AgentResult(output: "\(responsePrefix): \(input)")))
+            continuation.finish()
+        }
+    }
+
+    func cancel() async {}
+}
+
 // MARK: - AgentRouterInitializationTests
 
 @Suite("AgentRouter - Initialization")
@@ -526,8 +561,7 @@ struct AgentRouterStreamingTests {
         do {
             for try await event in router.stream("sports news") {
                 if case let .failed(error) = event,
-                   case let .internalError(reason) = error
-                {
+                   case let .internalError(reason) = error {
                     #expect(reason.contains("no fallback") || reason.contains("No route matched"))
                     hasFailed = true
                 }
@@ -609,6 +643,49 @@ struct AgentRouterHandoffIdentityTests {
     func handoffUsesRuntimeIdentityForSameTypeAgents() async throws {
         let first = TestAgent(name: "first", responsePrefix: "First")
         let second = TestAgent(name: "second", responsePrefix: "Second")
+
+        let firstConfig = AnyHandoffConfiguration(handoff(
+            to: first,
+            inputFilter: { data in
+                var updated = data
+                updated = HandoffInputData(
+                    sourceAgentName: data.sourceAgentName,
+                    targetAgentName: data.targetAgentName,
+                    input: "first-filter::\(data.input)",
+                    context: data.context,
+                    metadata: data.metadata
+                )
+                return updated
+            }
+        ))
+        let secondConfig = AnyHandoffConfiguration(handoff(
+            to: second,
+            inputFilter: { data in
+                var updated = data
+                updated = HandoffInputData(
+                    sourceAgentName: data.sourceAgentName,
+                    targetAgentName: data.targetAgentName,
+                    input: "second-filter::\(data.input)",
+                    context: data.context,
+                    metadata: data.metadata
+                )
+                return updated
+            }
+        ))
+
+        let router = AgentRouter(
+            routes: [Route(condition: .always, agent: second, name: "SecondRoute")],
+            handoffs: [firstConfig, secondConfig]
+        )
+
+        let result = try await router.run("hello")
+        #expect(result.output == "Second: second-filter::hello")
+    }
+
+    @Test("Handoff input filter matches struct runtimes using stable identity")
+    func handoffUsesValueRuntimeIdentityForStructAgents() async throws {
+        let first = ValueRuntimeRouterAgent(id: "first", responsePrefix: "First")
+        let second = ValueRuntimeRouterAgent(id: "second", responsePrefix: "Second")
 
         let firstConfig = AnyHandoffConfiguration(handoff(
             to: first,

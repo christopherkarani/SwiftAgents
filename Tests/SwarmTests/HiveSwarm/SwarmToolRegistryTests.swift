@@ -30,7 +30,7 @@ struct SwarmToolRegistryTests {
         let result = try await registry.invoke(call)
 
         #expect(result.toolCallID == "call_1")
-        #expect(result.content == #""hi""#)
+        #expect(result.content == "hi")
     }
 
     @Test("invoke rejects non-object arguments")

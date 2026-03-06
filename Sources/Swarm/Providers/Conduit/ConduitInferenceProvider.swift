@@ -166,7 +166,69 @@ public struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: Inferen
             updated = updated.parallelToolCalls(parallelToolCalls)
         }
 
+        if let providerSettings = options.providerSettings, !providerSettings.isEmpty {
+            updated = applyProviderRuntimeSettings(providerSettings, to: updated)
+        }
+
         return updated
+    }
+
+    private func applyProviderRuntimeSettings(
+        _ providerSettings: [String: SendableValue],
+        to config: Conduit.GenerateConfig
+    ) -> Conduit.GenerateConfig {
+        // TODO: Map providerSettings keys (conduit.runtime.*) into
+        // Conduit.ProviderRuntimeFeatureConfiguration and
+        // Conduit.ProviderRuntimePolicyOverride once Conduit ships those types.
+        return config
+    }
+
+
+    private func firstBool(
+        for keys: [String],
+        in providerSettings: [String: SendableValue]
+    ) -> Bool? {
+        for key in keys {
+            if let value = providerSettings[key]?.boolValue {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func firstInt(
+        for keys: [String],
+        in providerSettings: [String: SendableValue]
+    ) -> Int? {
+        for key in keys {
+            if let value = providerSettings[key]?.intValue {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func firstDouble(
+        for keys: [String],
+        in providerSettings: [String: SendableValue]
+    ) -> Double? {
+        for key in keys {
+            if let value = providerSettings[key]?.doubleValue {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func firstStringSet(
+        for keys: [String],
+        in providerSettings: [String: SendableValue]
+    ) -> Set<String>? {
+        for key in keys {
+            guard let elements = providerSettings[key]?.arrayValue else { continue }
+            return Set(elements.compactMap(\.stringValue))
+        }
+        return nil
     }
 
     private func mapFinishReason(

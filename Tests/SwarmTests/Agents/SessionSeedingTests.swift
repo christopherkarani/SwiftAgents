@@ -57,7 +57,7 @@ struct SessionSeedingTests {
             .assistant("history-assistant")
         ])
 
-        let agent = PlanAndExecuteAgent(
+        let agent = try PlanAndExecuteAgent(
             instructions: "You are a planning agent.",
             memory: memory,
             inferenceProvider: provider

@@ -70,7 +70,7 @@ struct AgentConduitProviderSelectionStreamingTests {
         let provider = ScriptedStreamingProvider()
         let wrapped: ConduitProviderSelection = .provider(provider)
 
-        let agent = Agent(
+        let agent = try Agent(
             tools: [EchoTool()],
             configuration: .default.maxIterations(3),
             inferenceProvider: wrapped
