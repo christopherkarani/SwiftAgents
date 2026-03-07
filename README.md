@@ -62,33 +62,313 @@ That's a working agent with tool calling. Keep reading for multi-agent orchestra
 
 ---
 
-## What Makes Swarm Different
+## Why Swarm
 
-### Data races are compile errors, not 3 AM incidents
-
-Swift 6.2 `StrictConcurrency` is enabled on **every** target. Non-`Sendable` types crossing actor boundaries won't build. Period.
-
-### Workflows survive crashes
-
-Every orchestration compiles to a [Hive](https://github.com/christopherkarani/Hive) DAG with automatic checkpointing. A 10-step pipeline that crashes on step 7 resumes from step 7.
-
-### Orchestration is a DSL, not glue code
-
-Eleven composable step types in a SwiftUI-style result builder:
-
-```swift
-fetchAgent --> analyzeAgent --> writerAgent          // Sequential chain
-Pipeline<String, [String]> { ... } >>> Pipeline { }  // Type-safe pipeline
-DAGNode("write", agent: w).dependsOn("fetch", "ref") // Dependency graph
+```
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                    THE SWARM ADVANTAGE                          │
+  │                                                                 │
+  │   Python Frameworks              Swarm (Swift 6.2)              │
+  │   ─────────────────              ─────────────────              │
+  │                                                                 │
+  │   Data races?                    Caught at COMPILE time         │
+  │   ╳ Runtime crash at 3 AM        ✓ Won't even build             │
+  │                                                                 │
+  │   Crash recovery?               Automatic checkpoints          │
+  │   ╳ Start over from scratch      ✓ Resume from last step        │
+  │                                                                 │
+  │   On-device LLM?                Apple Foundation Models         │
+  │   ╳ Cloud-only                   ✓ Private, zero latency        │
+  │                                                                 │
+  │   Tool schemas?                  @Tool macro                    │
+  │   ╳ Runtime decorators           ✓ Compiler-verified JSON       │
+  │                                                                 │
+  │   Type safety?                   End-to-end generics            │
+  │   ╳ dict["key"] maybe?           ✓ Pipeline<In, Out>            │
+  │                                                                 │
+  │   iOS / macOS native?            First-class citizen            │
+  │   ╳ Not supported                ✓ SwiftUI, Combine, async/await│
+  └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Run on-device or in the cloud — same code
+---
 
-Foundation Models, Anthropic, OpenAI, Ollama, Gemini, MLX. Swap providers with one line:
+## Feature Highlights
+
+### 1. Compile-Time Concurrency Safety
+
+```
+  ┌────────────────────────────────────────────────────────────────┐
+  │                                                                │
+  │    Your Code          Swift 6.2 Compiler          Runtime      │
+  │   ┌──────────┐       ┌────────────────┐       ┌──────────┐   │
+  │   │  Agent A  │──────▶│  StrictConcur- │──────▶│  ZERO    │   │
+  │   │  Agent B  │       │  rency Check   │       │  data    │   │
+  │   │  Agent C  │──────▶│                │──────▶│  races   │   │
+  │   └──────────┘       │  ╳ Non-Sendable │       │          │   │
+  │                       │    = BUILD ERROR│       │  Sleep   │   │
+  │                       └────────────────┘       │  soundly │   │
+  │                                                 └──────────┘   │
+  │                                                                │
+  │    Every target. Every type. Every actor boundary. Checked.    │
+  └────────────────────────────────────────────────────────────────┘
+```
+
+### 2. Crash-Resumable Orchestration via Hive DAG
+
+Every orchestration compiles to a directed acyclic graph with automatic checkpointing.
+
+```
+       Step 1       Step 2       Step 3       Step 4       Step 5
+      ┌──────┐     ┌──────┐     ┌──────┐     ┌──────┐     ┌──────┐
+      │Fetch │────▶│Parse │────▶│Reason│────▶│Write │────▶│Email │
+      │  ✓   │     │  ✓   │     │  ✓   │     │  ✓   │     │  ✗   │
+      └──────┘     └──────┘     └──────┘     └──────┘     └──┬───┘
+        saved        saved        saved        saved      CRASH│
+                                                               │
+      ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+      │  On restart:
+      │  Steps 1-4 SKIPPED (checkpointed)
+      ▼
+      ┌──────┐
+      │Email │  ◀── resumes here, not from the beginning
+      │  ✓   │
+      └──────┘
+```
+
+### 3. SwiftUI-Style Orchestration DSL
+
+Eleven composable step types. One `@resultBuilder`. Infinite combinations.
+
+```
+  ┌────────────────────────────────────────────────────────────────┐
+  │                    ORCHESTRATION STEPS                          │
+  │                                                                │
+  │  FLOW                LOGIC               COMPOSITION           │
+  │  ────                ─────               ───────────           │
+  │  Sequential          Router              Pipeline              │
+  │  A ──▶ B ──▶ C       ┌─▶ Agent1          In ══▶ Transform     │
+  │                    ┌──┤                        ══▶ Out         │
+  │  Parallel           │  ├─▶ Agent2                              │
+  │  ┌─▶ A              │  └─▶ Agent3         DAGWorkflow          │
+  │  ├─▶ B              │                     A ──┐                │
+  │  └─▶ C              │  Branch              B ──┼──▶ D          │
+  │    ╰── merge         │  condition?          C ──┘               │
+  │                      │  ├─ yes ──▶ X                            │
+  │  RepeatWhile         │  └─ no  ──▶ Y       Guard               │
+  │  ┌─▶ A ──┐           │                     ▶ validate           │
+  │  └── ◀──┘            │  Transform           ├─ pass ──▶ run    │
+  │  until done          │  map(input)           └─ trip ──▶ halt   │
+  └────────────────────────────────────────────────────────────────┘
+
+  // Build with operators:
+  fetchAgent --> analyzeAgent --> writerAgent           // Sequential
+  Pipeline<String, [Item]> { ... } >>> Pipeline { ... } // Type-safe
+  DAGNode("write", agent: w).dependsOn("fetch", "ref")  // DAG edges
+```
+
+### 4. Plug Any LLM — On-Device or Cloud
+
+```
+                          ┌──────────────────┐
+                          │   Your Agent     │
+                          │                  │
+                          │  .environment(   │
+                          │    \.inference,  │
+                          │    provider      │
+                          │  )              │
+                          └────────┬─────────┘
+                                   │
+                    ┌──────────────┼──────────────┐
+                    │              │              │
+              ┌─────▼─────┐ ┌─────▼─────┐ ┌─────▼─────┐
+              │ On-Device  │ │   Cloud    │ │  Local    │
+              ├───────────┤ ├───────────┤ ├───────────┤
+              │ Foundation │ │ Anthropic  │ │  Ollama   │
+              │ Models     │ │ OpenAI     │ │  MLX      │
+              │            │ │ Gemini     │ │           │
+              │ Private    │ │ OpenRouter │ │ Self-host │
+              │ Zero-lat   │ │            │ │           │
+              └───────────┘ └───────────┘ └───────────┘
+
+  // Same code, different provider — one line change:
+  .environment(\.inferenceProvider, .foundationModels)  // On-device
+  .environment(\.inferenceProvider, .anthropic(key: k)) // Cloud
+  .environment(\.inferenceProvider, .ollama())           // Local
+```
+
+### 5. Five Memory Systems
+
+```
+  ┌────────────────────────────────────────────────────────────────┐
+  │                       MEMORY LAYER                             │
+  │                                                                │
+  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
+  │  │ Conversation │  │   Vector     │  │      Summary         │ │
+  │  │   Memory     │  │   Memory     │  │      Memory          │ │
+  │  ├──────────────┤  ├──────────────┤  ├──────────────────────┤ │
+  │  │ Rolling      │  │ SIMD cosine  │  │ LLM-compressed      │ │
+  │  │ token-limited│  │ similarity   │  │ history — keeps      │ │
+  │  │ buffer       │  │ via Accelerate│  │ meaning, drops noise │ │
+  │  │              │  │ No cloud API │  │                      │ │
+  │  └──────────────┘  └──────────────┘  └──────────────────────┘ │
+  │                                                                │
+  │  ┌──────────────┐  ┌──────────────────────────────────────┐   │
+  │  │   Sliding    │  │           Persistent                 │   │
+  │  │   Window     │  │           Memory                     │   │
+  │  ├──────────────┤  ├──────────────────────────────────────┤   │
+  │  │ Fixed message│  │ SwiftData-backed durable storage     │   │
+  │  │ count window │  │ Survives app restarts                │   │
+  │  └──────────────┘  └──────────────────────────────────────┘   │
+  │                                                                │
+  │  All memory types: Actor-isolated, Sendable, composable        │
+  └────────────────────────────────────────────────────────────────┘
+```
+
+### 6. Production Resilience — Built In
+
+```
+                        Request
+                           │
+                    ┌──────▼──────┐
+                    │   Timeout   │  30s max
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐     ┌─────────────┐
+                    │   Retry     │────▶│ 7 backoff   │
+                    │             │     │ strategies   │
+                    └──────┬──────┘     └─────────────┘
+                           │
+                    ┌──────▼──────┐
+                    │  Circuit    │  trips after N failures
+                    │  Breaker    │  auto-resets after cooldown
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+                    │  Fallback   │  graceful degradation
+                    │  Chain      │  to backup agent
+                    └──────┬──────┘
+                           │
+                        Response
+
+  let agent = myAgent
+      .withRetry(.exponentialBackoff(maxAttempts: 3))
+      .withCircuitBreaker(threshold: 5, resetTimeout: .seconds(60))
+      .withFallback(backupAgent)
+      .withTimeout(.seconds(30))
+```
+
+### 7. Guardrails at Every Boundary
+
+```
+      INPUT                    AGENT                    OUTPUT
+   ┌─────────┐            ┌───────────┐            ┌──────────┐
+   │  User   │            │           │            │  Result   │
+   │  Query  │──▶ GUARD ──▶│  Process  │──▶ GUARD ──▶│          │
+   └─────────┘    │    │   │           │    │    │   └──────────┘
+                  │    │   │  ┌─────┐  │    │    │
+              Validate │   │  │Tools│  │  Validate
+              PII check│   │  └──┬──┘  │  Toxicity
+              Injection│   │     │     │  Format
+                       │   │  GUARD    │
+                       │   │  ├ args   │
+                       │   │  └ result │
+                       │   └───────────┘
+                       │
+               .passed()  or  .tripwire(message:)  or  .warning(message:)
+```
+
+### 8. MCP — Both Directions
+
+```
+  ┌─────────────────────────────────────────────────────────────┐
+  │                                                             │
+  │        MCP CLIENT                    MCP SERVER             │
+  │   (consume external tools)     (expose Swarm tools)        │
+  │                                                             │
+  │   ┌───────────┐                ┌───────────────────┐       │
+  │   │   Swarm   │ ──requests──▶  │  External MCP     │       │
+  │   │   Agent   │ ◀──tools────   │  Server           │       │
+  │   └───────────┘                └───────────────────┘       │
+  │                                                             │
+  │   ┌───────────────────┐        ┌───────────┐               │
+  │   │  External MCP     │ ──req─▶│   Swarm   │               │
+  │   │  Client           │ ◀tools─│   Server  │               │
+  │   └───────────────────┘        └───────────┘               │
+  │                                                             │
+  │   Your agents consume AND expose tools via the standard     │
+  │   Model Context Protocol.                                   │
+  └─────────────────────────────────────────────────────────────┘
+```
+
+### 9. Streaming — Real-Time Token Output
 
 ```swift
-agent.environment(\.inferenceProvider, .foundationModels) // On-device, private
-agent.environment(\.inferenceProvider, .anthropic(key: k)) // Cloud
+for try await event in (fetchAgent --> writerAgent).stream("Summarise the changelog.") {
+    switch event {
+    case .outputToken(let token):  print(token, terminator: "")
+    case .toolCalling(let call):   print("\n[tool: \(call.toolName)]")
+    case .completed(let result):   print("\nDone in \(result.duration)")
+    default: break
+    }
+}
+```
+
+### 10. Agent Types for Every Pattern
+
+```
+  ┌────────────────────────────────────────────────────────────────┐
+  │                                                                │
+  │  Agent (tool-calling)         ReActAgent                       │
+  │  ─────────────────────        ──────────                       │
+  │  LLM picks tools from a      Reason ──▶ Act ──▶ Observe       │
+  │  schema, executes them,         ▲                    │         │
+  │  returns structured output      └────────────────────┘         │
+  │                                 Loop until answer found        │
+  │                                                                │
+  │  PlanAndExecuteAgent          SupervisorAgent                  │
+  │  ───────────────────          ────────────────                  │
+  │  1. Plan (break into steps)   Routes to the right agent:       │
+  │  2. Execute (step by step)    ┌─▶ mathAgent                    │
+  │  3. Replan if needed          ├─▶ codeAgent                    │
+  │                               └─▶ weatherAgent                 │
+  │                                                                │
+  │  ChatAgent                    HiveBackedAgent                   │
+  │  ─────────                    ──────────────                    │
+  │  Stateful conversation        Any AgentRuntime wrapped         │
+  │  with memory persistence      as a Hive DAG node               │
+  └────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Architecture
+
+```
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                       YOUR APPLICATION                          │
+  │             iOS 26+ · macOS 26+ · Linux (Ubuntu 22.04+)        │
+  ├─────────────────────────────────────────────────────────────────┤
+  │              AgentBlueprint · .run() · .stream()                │
+  ├─────────────────────┬───────────────────────────────────────────┤
+  │  Orchestration DSL  │  Sequential · Parallel · DAG · Router    │
+  │  @resultBuilder     │  Branch · Guard · Transform · Pipeline   │
+  │  --> · >>> operators │  RepeatWhile · ParallelGroup · Chain     │
+  ├─────────────────────┴───────────────────────────────────────────┤
+  │   Agents              │  Memory             │  Tools            │
+  │   Agent (tool-call)   │  ConversationMemory │  @Tool macro      │
+  │   ReActAgent          │  VectorMemory       │  FunctionTool     │
+  │   PlanAndExecute      │  SummaryMemory      │  ToolChain        │
+  │   SupervisorAgent     │  Persistent (SwiftData)                 │
+  ├─────────────────────────────────────────────────────────────────┤
+  │      Guardrails · Resilience · Observability · MCP              │
+  ├─────────────────────────────────────────────────────────────────┤
+  │                     Hive Runtime (HiveCore)                     │
+  │      Compiled DAG · Checkpointing · Deterministic retry         │
+  ├─────────────────────────────────────────────────────────────────┤
+  │               InferenceProvider (pluggable via Conduit)         │
+  │  Foundation Models · Anthropic · OpenAI · Ollama · Gemini · MLX │
+  └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -176,99 +456,6 @@ let result = try await supervisor.run("What is 15% of $240?")
 ```
 
 </details>
-
-<details>
-<summary><strong>Production resilience — retry, circuit breaker, fallback, timeout</strong></summary>
-
-```swift
-let agent = myAgent
-    .withRetry(.exponentialBackoff(maxAttempts: 3, baseDelay: .seconds(1)))
-    .withCircuitBreaker(threshold: 5, resetTimeout: .seconds(60))
-    .withFallback(Agent(instructions: "Service temporarily unavailable."))
-    .withTimeout(.seconds(30))
-```
-
-</details>
-
-<details>
-<summary><strong>Streaming — real-time token output</strong></summary>
-
-```swift
-for try await event in (fetchAgent --> writerAgent).stream("Summarise the changelog.") {
-    switch event {
-    case .outputToken(let token):  print(token, terminator: "")
-    case .toolCalling(let call):   print("\n[tool: \(call.toolName)]")
-    case .completed(let result):   print("\nDone in \(result.duration)")
-    default: break
-    }
-}
-```
-
-</details>
-
----
-
-## How Swarm Compares
-
-| | **Swarm** | LangChain | AutoGen |
-|---|---|---|---|
-| **Language** | Swift 6.2 | Python | Python |
-| **Data race safety** | Compile-time | Runtime | Runtime |
-| **On-device LLM** | Foundation Models | — | — |
-| **Execution engine** | Compiled DAG (Hive) | Loop-based | Loop-based |
-| **Crash recovery** | Automatic checkpoints | — | Partial |
-| **Type-safe tools** | `@Tool` macro (compile-time) | Decorators (runtime) | Runtime |
-| **Streaming** | `AsyncThrowingStream` | Callbacks | Callbacks |
-| **iOS / macOS native** | First-class | — | — |
-
----
-
-## Everything Included
-
-| | |
-|---|---|
-| **Agents** | Tool-calling `Agent`, `ReActAgent`, `PlanAndExecuteAgent`, `SupervisorAgent`, `ChatAgent` |
-| **Orchestration** | 11 step types: Sequential, Parallel, DAG, Router, Branch, Guard, Transform, Pipeline, RepeatWhile, SequentialChain, ParallelGroup |
-| **Memory** | Conversation, Vector (SIMD/Accelerate), Summary (LLM-compressed), Hybrid, Persistent (SwiftData) |
-| **Tools** | `@Tool` macro with auto-generated JSON schema, `FunctionTool`, `ToolChain`, parallel execution |
-| **Guardrails** | Input, output, tool-input, tool-output validators with tripwire and warning modes |
-| **Resilience** | Retry (7 backoff strategies), circuit breaker, fallback chains, rate limiting, timeouts |
-| **Observability** | `OSLogTracer`, `SwiftLogTracer`, span-based tracing, per-agent token metrics |
-| **MCP** | Model Context Protocol — both client (consume tools) and server (expose tools) |
-| **Providers** | Foundation Models, Anthropic, OpenAI, Ollama, Gemini, OpenRouter, MLX via [Conduit](https://github.com/christopherkarani/Conduit) |
-| **Macros** | `@Tool`, `@Parameter`, `@AgentActor`, `@Traceable`, `#Prompt`, `@Builder` |
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Your Application                        │
-│          iOS 26+ · macOS 26+ · Linux (Ubuntu 22.04+)        │
-├─────────────────────────────────────────────────────────────┤
-│          AgentBlueprint · .run() · .stream()                 │
-├──────────────────────┬──────────────────────────────────────┤
-│   Orchestration DSL  │  Step Types                          │
-│   @resultBuilder     │  Sequential · Parallel · DAGWorkflow │
-│   --> · >>>          │  Router · RepeatWhile · Branch       │
-│   .dependsOn()       │  Guard · Transform · HumanApproval   │
-├──────────────────────┴──────────────────────────────────────┤
-│     Agents              Memory              Tools            │
-│  Agent (tool-call)   Conversation        @Tool macro        │
-│  ReActAgent          VectorMemory        FunctionTool       │
-│  PlanAndExecute      SummaryMemory       AnyJSONTool ABI    │
-│  SupervisorAgent     HybridMemory        ToolChain          │
-├─────────────────────────────────────────────────────────────┤
-│     Guardrails · Resilience · Observability · MCP           │
-├─────────────────────────────────────────────────────────────┤
-│                    Hive Runtime (HiveCore)                   │
-│   Compiled DAG · Checkpointing · Deterministic retry        │
-├─────────────────────────────────────────────────────────────┤
-│              InferenceProvider (pluggable)                   │
-│   Foundation Models · Anthropic · OpenAI · Ollama · MLX     │
-└─────────────────────────────────────────────────────────────┘
-```
 
 ---
 
