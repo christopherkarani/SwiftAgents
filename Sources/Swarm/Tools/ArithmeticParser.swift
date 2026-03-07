@@ -220,7 +220,7 @@ struct ArithmeticParser: Sendable {
         // MARK: Internal
 
         /// Maximum allowed parenthesis nesting depth to prevent stack overflow DoS.
-        static let maxNestingDepth = 200
+        static let maxNestingDepth = 50
 
         init(tokens: [Token]) {
             self.tokens = tokens

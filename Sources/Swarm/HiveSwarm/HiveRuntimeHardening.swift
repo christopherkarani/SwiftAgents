@@ -738,7 +738,7 @@ public extension HiveAgentsRunController {
         }
 
         if let outputProjection = options.outputProjectionOverride {
-            let specsByID = Dictionary(uniqueKeysWithValues: HiveAgents.Schema.channelSpecs.map { ($0.id, $0) })
+            let specsByID = Dictionary(HiveAgents.Schema.channelSpecs.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
             if case let .channels(ids) = outputProjection {
                 for id in ids {
                     guard let spec = specsByID[id] else {

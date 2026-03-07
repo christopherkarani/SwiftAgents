@@ -196,7 +196,7 @@ public struct DAG: OrchestrationStep, Sendable {
     /// Returns the sorted nodes. If the returned array's count is less than the
     /// input count, a cycle exists in the graph.
     private static func topologicalSort(_ nodes: [DAGNode]) -> [DAGNode] {
-        let nameToNode = Dictionary(uniqueKeysWithValues: nodes.map { ($0.name, $0) })
+        let nameToNode = nodes.reduce(into: [String: DAGNode]()) { $0[$1.name] = $1 }
         var inDegree: [String: Int] = [:]
         var adjacency: [String: [String]] = [:]
 
@@ -250,7 +250,7 @@ public struct DAG: OrchestrationStep, Sendable {
             }
         }
 
-        let nameToNode = Dictionary(uniqueKeysWithValues: nodes.map { ($0.name, $0) })
+        let nameToNode = nodes.reduce(into: [String: DAGNode]()) { $0[$1.name] = $1 }
 
         try await withThrowingTaskGroup(of: (String, AgentResult).self) { group in
             // Launch root nodes (no dependencies) immediately

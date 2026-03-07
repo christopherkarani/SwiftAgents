@@ -97,9 +97,10 @@ public actor OpenRouterProvider: InferenceProvider, InferenceStreamingProvider {
                 do {
                     chatResponse = try decoder.decode(OpenRouterResponse.self, from: data)
                 } catch {
-                    // Log the raw response for debugging
-                    let rawResponse = String(data: data, encoding: .utf8) ?? "Unable to decode response as UTF-8"
-                    throw AgentError.generationFailed(reason: "Failed to decode response: \(error.localizedDescription). Raw response: \(rawResponse.prefix(500))")
+                    // Log raw response internally only — never expose to callers
+                    let rawResponse = String(data: data, encoding: .utf8) ?? "<non-UTF8>"
+                    Log.agents.error("OpenRouter decode failed: \(error). Raw response (truncated): \(rawResponse.prefix(500))")
+                    throw AgentError.generationFailed(reason: "Failed to decode response from provider")
                 }
 
                 guard let content = chatResponse.choices.first?.message.content else {

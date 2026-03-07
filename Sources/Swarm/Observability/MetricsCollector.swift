@@ -123,17 +123,19 @@ public struct MetricsSnapshot: Sendable, Codable, Equatable {
 
     /// 95th percentile execution duration in seconds.
     public var p95ExecutionDuration: TimeInterval? {
-        guard !executionDurations.isEmpty else { return nil }
-        let sorted = executionDurations.sorted()
-        let index = Int(Double(sorted.count) * 0.95)
-        return sorted[min(index, sorted.count - 1)]
+        percentile(0.95)
     }
 
     /// 99th percentile execution duration in seconds.
     public var p99ExecutionDuration: TimeInterval? {
+        percentile(0.99)
+    }
+
+    /// Computes a percentile from execution durations.
+    private func percentile(_ p: Double) -> TimeInterval? {
         guard !executionDurations.isEmpty else { return nil }
         let sorted = executionDurations.sorted()
-        let index = Int(Double(sorted.count) * 0.99)
+        let index = Int(Double(sorted.count) * p)
         return sorted[min(index, sorted.count - 1)]
     }
 
@@ -500,8 +502,12 @@ public struct JSONMetricsReporter: MetricsReporter {
         let data = try encoder.encode(snapshot)
 
         if let outputPath {
-            // Write to file
-            let url = URL(fileURLWithPath: outputPath)
+            // Validate path: block traversal attempts
+            let resolved = (outputPath as NSString).standardizingPath
+            guard !resolved.contains("..") else {
+                throw AgentError.invalidInput(reason: "Path traversal not allowed in metrics output path")
+            }
+            let url = URL(fileURLWithPath: resolved)
             try data.write(to: url, options: .atomic)
         } else {
             // Print to console

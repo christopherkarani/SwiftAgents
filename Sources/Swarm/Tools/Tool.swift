@@ -138,12 +138,15 @@ public extension AnyJSONTool {
 private enum ToolArgumentProcessor {
     // MARK: Internal
 
+    /// Maximum recursion depth for nested object/array parameters to prevent stack overflow.
+    static let maxDepth = 50
+
     static func validate(
         toolName: String,
         parameters: [ToolParameter],
         arguments: [String: SendableValue]
     ) throws {
-        try validate(toolName: toolName, parameters: parameters, arguments: arguments, pathPrefix: nil)
+        try validate(toolName: toolName, parameters: parameters, arguments: arguments, pathPrefix: nil, depth: 0)
     }
 
     static func normalize(
@@ -151,7 +154,7 @@ private enum ToolArgumentProcessor {
         parameters: [ToolParameter],
         arguments: [String: SendableValue]
     ) throws -> [String: SendableValue] {
-        try normalize(toolName: toolName, parameters: parameters, arguments: arguments, pathPrefix: nil)
+        try normalize(toolName: toolName, parameters: parameters, arguments: arguments, pathPrefix: nil, depth: 0)
     }
 
     // MARK: Private
@@ -160,8 +163,16 @@ private enum ToolArgumentProcessor {
         toolName: String,
         parameters: [ToolParameter],
         arguments: [String: SendableValue],
-        pathPrefix: String?
+        pathPrefix: String?,
+        depth: Int
     ) throws {
+        guard depth < maxDepth else {
+            throw AgentError.invalidToolArguments(
+                toolName: toolName,
+                reason: "Maximum nesting depth (\(maxDepth)) exceeded at path: \(pathPrefix ?? "root")"
+            )
+        }
+
         for param in parameters where param.isRequired {
             guard arguments[param.name] != nil else {
                 let fullPath = join(pathPrefix, param.name)
@@ -175,7 +186,7 @@ private enum ToolArgumentProcessor {
         for param in parameters {
             guard let value = arguments[param.name] else { continue }
             let fullPath = join(pathPrefix, param.name)
-            try validateValue(toolName: toolName, value: value, expected: param.type, path: fullPath)
+            try validateValue(toolName: toolName, value: value, expected: param.type, path: fullPath, depth: depth)
         }
     }
 
@@ -183,8 +194,16 @@ private enum ToolArgumentProcessor {
         toolName: String,
         parameters: [ToolParameter],
         arguments: [String: SendableValue],
-        pathPrefix: String?
+        pathPrefix: String?,
+        depth: Int
     ) throws -> [String: SendableValue] {
+        guard depth < maxDepth else {
+            throw AgentError.invalidToolArguments(
+                toolName: toolName,
+                reason: "Maximum nesting depth (\(maxDepth)) exceeded at path: \(pathPrefix ?? "root")"
+            )
+        }
+
         var normalized = arguments
 
         // Apply default values
@@ -198,11 +217,11 @@ private enum ToolArgumentProcessor {
         for param in parameters {
             guard let value = normalized[param.name] else { continue }
             let fullPath = join(pathPrefix, param.name)
-            normalized[param.name] = try coerceValue(toolName: toolName, value: value, expected: param.type, path: fullPath)
+            normalized[param.name] = try coerceValue(toolName: toolName, value: value, expected: param.type, path: fullPath, depth: depth)
         }
 
         // Validate after applying defaults + coercion
-        try validate(toolName: toolName, parameters: parameters, arguments: normalized, pathPrefix: pathPrefix)
+        try validate(toolName: toolName, parameters: parameters, arguments: normalized, pathPrefix: pathPrefix, depth: depth)
         return normalized
     }
 
@@ -210,7 +229,8 @@ private enum ToolArgumentProcessor {
         toolName: String,
         value: SendableValue,
         expected: ToolParameter.ParameterType,
-        path: String
+        path: String,
+        depth: Int = 0
     ) throws {
         switch expected {
         case .any:
@@ -256,7 +276,8 @@ private enum ToolArgumentProcessor {
                     toolName: toolName,
                     value: element,
                     expected: elementType,
-                    path: "\(path)[\(index)]"
+                    path: "\(path)[\(index)]",
+                    depth: depth + 1
                 )
             }
 
@@ -264,7 +285,7 @@ private enum ToolArgumentProcessor {
             guard case let .dictionary(dict) = value else {
                 throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
             }
-            try validate(toolName: toolName, parameters: properties, arguments: dict, pathPrefix: path)
+            try validate(toolName: toolName, parameters: properties, arguments: dict, pathPrefix: path, depth: depth + 1)
 
         case let .oneOf(options):
             guard case let .string(s) = value else {
@@ -283,7 +304,8 @@ private enum ToolArgumentProcessor {
         toolName: String,
         value: SendableValue,
         expected: ToolParameter.ParameterType,
-        path: String
+        path: String,
+        depth: Int = 0
     ) throws -> SendableValue {
         switch expected {
         case .any:
@@ -353,7 +375,8 @@ private enum ToolArgumentProcessor {
                     toolName: toolName,
                     value: element,
                     expected: elementType,
-                    path: "\(path)[\(index)]"
+                    path: "\(path)[\(index)]",
+                    depth: depth + 1
                 )
             }
             return .array(coerced)
@@ -362,7 +385,7 @@ private enum ToolArgumentProcessor {
             guard case let .dictionary(dict) = value else {
                 throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
             }
-            let coerced = try normalize(toolName: toolName, parameters: properties, arguments: dict, pathPrefix: path)
+            let coerced = try normalize(toolName: toolName, parameters: properties, arguments: dict, pathPrefix: path, depth: depth + 1)
             return .dictionary(coerced)
 
         case let .oneOf(options):

@@ -507,18 +507,16 @@ public actor MCPClient {
             throw singleFailure.error
         }
 
-        let errorDetails = nonNotFoundFailures.map { failure in
-            "\(failure.serverName): \(failure.error.localizedDescription)"
+        // Log detailed error info internally; expose only opaque message to callers
+        for failure in nonNotFoundFailures {
+            Log.agents.error("MCP readResource failed on server '\(failure.serverName)': \(failure.error)")
         }
         throw MCPError(
             code: MCPError.internalErrorCode,
             message: "Failed to read resource '\(uri)' from \(nonNotFoundFailures.count) server(s)",
             data: .dictionary([
                 "uri": .string(uri),
-                "attemptedServers": .array(attemptedServers.map { .string($0) }),
-                "notFoundServers": .array(notFoundServers.map { .string($0) }),
-                "failedServers": .array(nonNotFoundFailures.map { .string($0.serverName) }),
-                "details": .array(errorDetails.map { .string($0) })
+                "failureCount": .int(nonNotFoundFailures.count)
             ])
         )
     }
@@ -680,13 +678,18 @@ public actor MCPClient {
         }
 
         var suffix = 2
-        while true {
+        let maxSuffix = 10_000
+        while suffix <= maxSuffix {
             let candidate = "\(serverName).\(baseName)#\(suffix)"
             if usedNames.insert(candidate).inserted {
                 return candidate
             }
             suffix += 1
         }
+        // Fallback: use UUID to guarantee uniqueness
+        let fallback = "\(serverName).\(baseName)#\(UUID().uuidString)"
+        usedNames.insert(fallback)
+        return fallback
     }
 
     private func isResourceNotFound(_ error: Error) -> Bool {

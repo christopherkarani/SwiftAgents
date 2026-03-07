@@ -143,7 +143,10 @@ public actor MultiProvider: InferenceProvider {
     ///
     /// - Parameter model: The model identifier to use.
     public func setModel(_ model: String) {
-        currentModel = model
+        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Sanitize: strip control characters (newlines, null bytes) to prevent header injection
+        let sanitized = String(trimmed.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
+        currentModel = String(sanitized.prefix(256))
     }
 
     /// Clears the current model selection.

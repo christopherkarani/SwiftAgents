@@ -335,8 +335,14 @@ public actor HandoffCoordinator {
             result = try await handoffReceiver.handleHandoff(request, context: context)
         } else {
             // Agent doesn't implement HandoffReceiver, use standard execution
-            // Merge context manually
+            // Merge context manually, filtering out reserved keys to prevent injection
+            let reservedPrefixes = ["auth", "user_id", "authorization", "session", "internal."]
             for (key, value) in request.context {
+                let lowerKey = key.lowercased()
+                guard !reservedPrefixes.contains(where: { lowerKey.hasPrefix($0) }) else {
+                    Log.agents.warning("Handoff context key '\(key)' blocked: matches reserved prefix")
+                    continue
+                }
                 await context.set(key, value: value)
             }
 

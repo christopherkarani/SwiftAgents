@@ -131,7 +131,7 @@ extension SendableValue: ExpressibleByArrayLiteral {
 
 extension SendableValue: ExpressibleByDictionaryLiteral {
     public init(dictionaryLiteral elements: (String, SendableValue)...) {
-        self = .dictionary(Dictionary(uniqueKeysWithValues: elements))
+        self = .dictionary(elements.reduce(into: [String: SendableValue]()) { $0[$1.0] = $1.1 })
     }
 }
 

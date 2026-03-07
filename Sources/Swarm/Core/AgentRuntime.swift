@@ -176,7 +176,10 @@ public extension AgentRuntime {
         let result = try await run(input, session: session, hooks: hooks)
 
         // Create lookup dictionary for O(1) access instead of O(n²)
-        let toolCallsById = Dictionary(uniqueKeysWithValues: result.toolCalls.map { ($0.id, $0) })
+        // Use reduce(into:) instead of uniqueKeysWithValues to avoid crash on duplicate IDs
+        let toolCallsById = result.toolCalls.reduce(into: [UUID: ToolCall]()) { dict, call in
+            dict[call.id] = call
+        }
 
         // Convert ToolResults to ToolCallRecords
         let toolCallRecords: [ToolCallRecord] = result.toolResults.compactMap { toolResult in

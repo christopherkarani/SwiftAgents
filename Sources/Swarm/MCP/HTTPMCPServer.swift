@@ -218,8 +218,13 @@ public actor HTTPMCPServer: MCPServer {
             throw MCPError.invalidParams("URI scheme '\(scheme)' not allowed")
         }
 
-        // Block path traversal
-        guard !uri.contains("..") else {
+        // Block path traversal: check both raw and percent-decoded forms
+        let decodedURI = uri.removingPercentEncoding ?? uri
+        guard !decodedURI.contains("..") else {
+            throw MCPError.invalidParams("Path traversal not allowed")
+        }
+        // Also check resolved path components for ".." to catch normalized forms
+        if url.pathComponents.contains("..") {
             throw MCPError.invalidParams("Path traversal not allowed")
         }
 

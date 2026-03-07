@@ -72,6 +72,14 @@ public struct WebSearchTool {
                 underlyingError: "Missing API Key. Initialize WebSearchTool with a valid Tavily API key."
             )
         }
+
+        // Validate query length to prevent abuse
+        guard query.count <= 2000 else {
+            throw AgentError.invalidToolArguments(
+                toolName: "websearch",
+                reason: "Query too long (max 2000 characters)"
+            )
+        }
         
         // Prepare URL
         guard let url = URL(string: "https://api.tavily.com/search") else {
@@ -107,10 +115,12 @@ public struct WebSearchTool {
         }
         
         guard httpResponse.statusCode == 200 else {
-            let errorDetail = String(data: data, encoding: .utf8) ?? "No error details"
+            // Log details internally, expose only status code to caller
+            let errorDetail = String(data: data, encoding: .utf8) ?? "<no body>"
+            Log.agents.error("WebSearchTool API error (HTTP \(httpResponse.statusCode)): \(errorDetail.prefix(500))")
             throw AgentError.toolExecutionFailed(
                 toolName: "websearch",
-                underlyingError: "API Request failed (Status: \(httpResponse.statusCode)). Details: \(errorDetail)"
+                underlyingError: "API request failed (HTTP \(httpResponse.statusCode))"
             )
         }
         
