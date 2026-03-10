@@ -7,7 +7,7 @@ struct SwarmMCPServerDemo {
     static func main() async throws {
         Log.bootstrap()
 
-        let registry = ToolRegistry(
+        let registry = try ToolRegistry(
             tools: [
                 DateTimeTool(),
                 StringTool(),
