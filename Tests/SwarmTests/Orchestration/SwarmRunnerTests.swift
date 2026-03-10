@@ -35,7 +35,9 @@ struct SwarmRunnerTests {
 
         let producerStopped = await waitUntil(timeout: .seconds(2)) {
             let snapshot = await provider.snapshot()
-            return snapshot.terminationCount > 0 && snapshot.cancelRequestCount > 0
+            return snapshot.terminationCount > 0
+                && snapshot.cancelRequestCount > 0
+                && snapshot.activeStreamCount == 0
         }
 
         let snapshotAfterCancellation = await provider.snapshot()
@@ -46,7 +48,8 @@ struct SwarmRunnerTests {
         #expect(producerStopped)
         #expect(snapshotAfterCancellation.terminationCount > 0)
         #expect(snapshotAfterCancellation.cancelRequestCount > 0)
-        #expect(stabilizedSnapshot.producedTokenCount - snapshotAfterCancellation.producedTokenCount <= 1)
+        #expect(stabilizedSnapshot.activeStreamCount == 0)
+        #expect(stabilizedSnapshot.producedTokenCount == snapshotAfterCancellation.producedTokenCount)
     }
 
     @Test("runStream accepts empty tool call arguments")
@@ -268,6 +271,7 @@ private actor EndlessStreamingProvider: InferenceProvider {
     private var terminationCount: Int = 0
     private var cancelRequestCount: Int = 0
     private var producedTokenCount: Int = 0
+    private var activeStreamCount: Int = 0
     private var producers: [UUID: Task<Void, Never>] = [:]
 
     func generate(prompt _: String, options _: InferenceOptions) async throws -> String {
@@ -310,8 +314,13 @@ private actor EndlessStreamingProvider: InferenceProvider {
         return InferenceResponse(content: content, finishReason: .completed)
     }
 
-    func snapshot() -> (terminationCount: Int, cancelRequestCount: Int, producedTokenCount: Int) {
-        (terminationCount, cancelRequestCount, producedTokenCount)
+    func snapshot() -> (
+        terminationCount: Int,
+        cancelRequestCount: Int,
+        producedTokenCount: Int,
+        activeStreamCount: Int
+    ) {
+        (terminationCount, cancelRequestCount, producedTokenCount, activeStreamCount)
     }
 
     func stopAllStreams() {
@@ -321,10 +330,12 @@ private actor EndlessStreamingProvider: InferenceProvider {
     }
 
     private func streamStarted(id: UUID, producer: Task<Void, Never>) {
+        activeStreamCount += 1
         producers[id] = producer
     }
 
     private func streamStopped(id: UUID) {
+        activeStreamCount = max(0, activeStreamCount - 1)
         producers[id] = nil
     }
 

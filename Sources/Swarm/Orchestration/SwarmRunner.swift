@@ -335,43 +335,60 @@ public actor SwarmRunner {
 
         if profile.configuration.enableStreaming {
             if !toolSchemas.isEmpty, let streamingProvider = provider as? any InferenceStreamingProvider {
-                var accumulator = ToolCallAccumulator()
-                var content = ""
+                let streamTask = Task { () throws -> (String, [InferenceResponse.ParsedToolCall]?) in
+                    var accumulator = ToolCallAccumulator()
+                    var content = ""
 
-                for try await event in streamingProvider.streamWithToolCalls(
-                    prompt: prompt,
-                    tools: toolSchemas,
-                    options: options
-                ) {
-                    try Task.checkCancellation()
-                    switch event {
-                    case let .textDelta(text):
-                        content += text
-                        continuation.yield(SwarmStreamChunk(content: text, agentName: profile.name))
-                    case let .toolCallDelta(index, id, name, arguments):
-                        accumulator.accumulate(index: index, id: id, name: name, arguments: arguments)
-                        continuation.yield(SwarmStreamChunk(
-                            toolCallDelta: SwarmToolCallDelta(index: index, id: id, name: name, arguments: arguments),
-                            agentName: profile.name
-                        ))
-                    case .finishReason, .usage:
-                        break
-                    case .done:
-                        break
+                    for try await event in streamingProvider.streamWithToolCalls(
+                        prompt: prompt,
+                        tools: toolSchemas,
+                        options: options
+                    ) {
+                        try Task.checkCancellation()
+                        switch event {
+                        case let .textDelta(text):
+                            content += text
+                            continuation.yield(SwarmStreamChunk(content: text, agentName: profile.name))
+                        case let .toolCallDelta(index, id, name, arguments):
+                            accumulator.accumulate(index: index, id: id, name: name, arguments: arguments)
+                            continuation.yield(SwarmStreamChunk(
+                                toolCallDelta: SwarmToolCallDelta(index: index, id: id, name: name, arguments: arguments),
+                                agentName: profile.name
+                            ))
+                        case .finishReason, .usage:
+                            break
+                        case .done:
+                            break
+                        }
                     }
+
+                    let toolCalls = try accumulator.completedCalls()
+                    return (content, toolCalls.isEmpty ? nil : toolCalls)
                 }
 
-                let toolCalls = try accumulator.completedCalls()
-                return (content, toolCalls.isEmpty ? nil : toolCalls)
+                return try await withTaskCancellationHandler {
+                    try await streamTask.value
+                } onCancel: {
+                    streamTask.cancel()
+                }
             }
 
             // Fallback to text-only streaming when tool-call streaming is not supported.
             if toolSchemas.isEmpty {
-                var content = ""
-                for try await token in provider.stream(prompt: prompt, options: options) {
-                    try Task.checkCancellation()
-                    content += token
-                    continuation.yield(SwarmStreamChunk(content: token, agentName: profile.name))
+                let streamTask = Task { () throws -> String in
+                    var content = ""
+                    for try await token in provider.stream(prompt: prompt, options: options) {
+                        try Task.checkCancellation()
+                        content += token
+                        continuation.yield(SwarmStreamChunk(content: token, agentName: profile.name))
+                    }
+                    return content
+                }
+
+                let content = try await withTaskCancellationHandler {
+                    try await streamTask.value
+                } onCancel: {
+                    streamTask.cancel()
                 }
                 return (content, nil)
             }

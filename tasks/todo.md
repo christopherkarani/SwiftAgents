@@ -95,3 +95,29 @@
 - `swift build` passes.
 - `swift test` fails in this sandbox due filesystem exhaustion while compiling dependency test artifacts:
   `No space left on device`.
+
+# Task Plan (Framework Issue Audit - 2026-03-10)
+- [x] Read automation memory + prior audit notes and define current run scope.
+- [x] Run baseline `swift build` and `swift test` to identify concrete failures.
+- [x] Add failing regression tests first for each correctness issue identified.
+- [x] Implement minimal production-grade fixes in `Sources/Swarm`.
+- [x] Re-run targeted tests, then full `swift test` and `swift build`.
+- [ ] Commit with detailed message, push branch, and open PR.
+
+# Review (Framework Issue Audit - 2026-03-10)
+- Identified one mission-critical correctness/quality issue under full-suite load:
+  - `Tests/SwarmTests/Orchestration/SwarmRunnerTests.swift` intermittently failed
+    `runStream cancellation propagates to producer and provider stream` during full `swift test`.
+  - Root cause was a cancellation propagation timing gap in `SwarmRunner.streamCompletion` where provider stream draining depended on task unwind timing, plus brittle test synchronization.
+- Production fix (`Sources/Swarm/Orchestration/SwarmRunner.swift`):
+  - Wrapped both streaming branches (`streamWithToolCalls` and text-only `stream`) in child tasks.
+  - Added `withTaskCancellationHandler` to deterministically cancel those child tasks when parent run stream is cancelled.
+  - This makes provider stream termination predictable under scheduler pressure.
+- Regression hardening (`Tests/SwarmTests/Orchestration/SwarmRunnerTests.swift`):
+  - Extended `EndlessStreamingProvider.snapshot` with `activeStreamCount`.
+  - Updated cancellation assertion to require `terminationCount > 0`, `cancelRequestCount > 0`, and `activeStreamCount == 0`.
+  - Replaced fragile token-growth threshold assertion with strict post-cancel stabilization (`producedTokenCount` unchanged and `activeStreamCount == 0`).
+- Verification:
+  - `swift test --filter SwarmRunnerTests` passed.
+  - `swift test` passed (1987 tests, 0 failures).
+  - `swift build` passed.
