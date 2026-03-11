@@ -928,6 +928,7 @@ extension HiveAgents {
 
             var lastError: (any Error)?
             var delay = initialNs
+            let safeFactor = factor.isFinite && factor > 0 ? factor : 1.0
 
             for attempt in 0 ..< maxAttempts {
                 do {
@@ -939,7 +940,7 @@ extension HiveAgents {
                         if sleepNs > 0 {
                             try await clock.sleep(nanoseconds: sleepNs)
                         }
-                        delay = UInt64(Double(delay) * factor)
+                        delay = scaledDelay(delay, factor: safeFactor, cap: maxNs)
                     }
                 }
             }
@@ -949,6 +950,17 @@ extension HiveAgents {
                 throw HiveRuntimeError.invalidRunOptions("Retry policy exhausted with no error recorded")
             }
         }
+    }
+
+    private static func scaledDelay(_ current: UInt64, factor: Double, cap: UInt64) -> UInt64 {
+        guard current > 0 else { return 0 }
+        let scaled = Double(current) * factor
+        let upperBound = cap > 0 ? cap : UInt64.max
+        guard scaled.isFinite else { return upperBound }
+        if scaled >= Double(upperBound) {
+            return upperBound
+        }
+        return min(UInt64(scaled), upperBound)
     }
 
     private static func compactMessages(

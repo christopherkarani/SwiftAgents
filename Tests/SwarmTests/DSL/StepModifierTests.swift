@@ -159,6 +159,16 @@ struct RetryModifierTests {
         let modifier = RetryModifier(maxAttempts: 1, initialDelay: .milliseconds(10), backoffMultiplier: -.infinity)
         #expect(modifier.backoffMultiplier == 1.0)
     }
+
+    @Test("Huge retry delay growth is clamped instead of overflowing")
+    func retryClampsHugeDelayGrowth() async throws {
+        let step = AlwaysFailStep()
+            .retry(maxAttempts: 2, delay: .milliseconds(1), backoff: .greatestFiniteMagnitude)
+
+        await #expect(throws: AgentError.self) {
+            try await step.execute("input", context: makeTestContext())
+        }
+    }
 }
 
 // MARK: - TimeoutModifier Tests

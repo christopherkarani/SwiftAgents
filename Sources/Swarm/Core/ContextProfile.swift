@@ -361,7 +361,25 @@ public struct ContextProfile: Sendable, Equatable {
         self.outputReserveTokens = safeOutputReserveTokens
         self.protocolOverheadReserveTokens = safeProtocolOverheadTokens
         self.safetyMarginTokens = safeSafetyMarginTokens
-        self.bucketCaps = bucketCaps
+        if preset == .strict4k, let bucketCaps {
+            let clampedMemory = min(bucketCaps.memory, self.maxContextTokens)
+            let clampedToolIO = min(bucketCaps.toolIO, max(0, self.maxContextTokens - clampedMemory))
+            if clampedMemory != bucketCaps.memory || clampedToolIO != bucketCaps.toolIO {
+                Log.agents.warning(
+                    """
+                    ContextProfile.strict4k: bucketCaps.memory/toolIO exceed maxContextTokens; clamped memory=\(bucketCaps.memory)->\(clampedMemory), toolIO=\(bucketCaps.toolIO)->\(clampedToolIO)
+                    """
+                )
+            }
+            self.bucketCaps = ContextBucketCaps(
+                system: bucketCaps.system,
+                history: bucketCaps.history,
+                memory: clampedMemory,
+                toolIO: clampedToolIO
+            )
+        } else {
+            self.bucketCaps = bucketCaps
+        }
     }
 
     // MARK: Derived Budgets
@@ -375,10 +393,7 @@ public struct ContextProfile: Sendable, Equatable {
         if preset == .strict4k, let bucketCaps {
             memoryTokens = bucketCaps.memory
             toolIOTokens = bucketCaps.toolIO
-
-            let strictWorkingTokens = maxContextTokens - memoryTokens - toolIOTokens
-            precondition(strictWorkingTokens >= 0, "strict4k bucket caps cannot exceed maxContextTokens")
-            workingTokens = strictWorkingTokens
+            workingTokens = max(0, maxContextTokens - memoryTokens - toolIOTokens)
         } else {
             workingTokens = Int(Double(maxContextTokens) * workingTokenRatio)
             memoryTokens = Int(Double(maxContextTokens) * memoryTokenRatio)

@@ -159,8 +159,25 @@ public struct RetryModifier: StepModifier {
                     try await Task.sleep(for: currentDelay)
                     let seconds = Double(currentDelay.components.seconds)
                         + Double(currentDelay.components.attoseconds) / 1e18
-                    let newSeconds = seconds * backoffMultiplier
-                    currentDelay = .nanoseconds(Int64(newSeconds * 1e9))
+                    let sanitizedSeconds = seconds.isFinite && seconds > 0 ? seconds : 0
+                    let scaledSeconds = sanitizedSeconds * backoffMultiplier
+                    let maxSeconds = Double(Int64.max) / 1e9
+                    let boundedSeconds: Double
+                    if !scaledSeconds.isFinite {
+                        boundedSeconds = maxSeconds
+                    } else {
+                        boundedSeconds = min(max(scaledSeconds, 0), maxSeconds)
+                    }
+                    let scaledNanoseconds = boundedSeconds * 1e9
+                    let clampedNanoseconds: UInt64
+                    if !scaledNanoseconds.isFinite || scaledNanoseconds >= Double(Int64.max) {
+                        clampedNanoseconds = UInt64(Int64.max)
+                    } else if scaledNanoseconds <= 0 {
+                        clampedNanoseconds = 0
+                    } else {
+                        clampedNanoseconds = UInt64(scaledNanoseconds)
+                    }
+                    currentDelay = .nanoseconds(Int64(clamping: clampedNanoseconds))
                 }
             }
         }

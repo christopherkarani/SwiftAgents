@@ -106,6 +106,22 @@ struct RetryPolicyBridgeTests {
             Issue.record("Expected .exponentialBackoff for negative maxDelay, got \(hive)")
         }
     }
+
+    @Test("Non-finite and huge delays are clamped safely")
+    func bridge_nonFiniteAndHugeDelaysAreClamped() {
+        let swarm = RetryPolicy(
+            maxAttempts: 3,
+            backoff: .exponential(base: .infinity, multiplier: 2.0, maxDelay: .greatestFiniteMagnitude)
+        )
+        let hive = RetryPolicyBridge.toHive(swarm)
+        switch hive {
+        case .exponentialBackoff(let initialNs, _, _, let maxNs):
+            #expect(initialNs == UInt64.max)
+            #expect(maxNs == UInt64.max)
+        default:
+            Issue.record("Expected .exponentialBackoff for huge delays, got \(hive)")
+        }
+    }
 }
 
 @Suite("HiveAgents retry behavior")
@@ -193,6 +209,56 @@ struct HiveAgentsRetryTests {
 
         await #expect(throws: (any Error).self) {
             _ = try await handle.outcome.value
+        }
+    }
+
+    @Test("Invalid retry factor does not crash and still retries deterministically")
+    func modelNode_invalidRetryFactor_doesNotCrash() async throws {
+        let script = RetryModelScript(failCount: 1, successChunks: [
+            .final(HiveChatResponse(message: retryAssistantMsg(id: "m-nan", content: "success")))
+        ])
+
+        let context = HiveAgentsContext(
+            modelName: "test-model",
+            toolApprovalPolicy: .never,
+            retryPolicy: .exponentialBackoff(
+                initialNanoseconds: 1_000,
+                factor: .nan,
+                maxAttempts: 3,
+                maxNanoseconds: 1_000_000
+            )
+        )
+
+        let graph = try HiveAgents.makeToolUsingChatAgent()
+        let environment = HiveEnvironment<HiveAgents.Schema>(
+            context: context,
+            clock: RetryTestClock(),
+            logger: RetryTestLogger(),
+            model: AnyHiveModelClient(RetryScriptedModelClient(script: script)),
+            modelRouter: nil,
+            tools: AnyHiveToolRegistry(RetryStubToolRegistry(resultContent: "ok")),
+            checkpointStore: nil
+        )
+
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let handle = await runtime.run(
+            threadID: HiveThreadID("retry-invalid-factor"),
+            input: "Hello",
+            options: HiveRunOptions(maxSteps: 5, checkpointPolicy: .disabled)
+        )
+
+        let outcome = try await handle.outcome.value
+        switch outcome {
+        case .finished(let output, _):
+            switch output {
+            case .fullStore(let store):
+                let answer = try store.get(HiveAgents.Schema.finalAnswerKey)
+                #expect(answer == "success")
+            case .channels:
+                Issue.record("Expected fullStore")
+            }
+        default:
+            Issue.record("Expected finished outcome, got \(outcome)")
         }
     }
 }

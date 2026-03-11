@@ -184,4 +184,28 @@ struct ContextProfileStrict4kTests {
         #expect(budget.bucketCaps?.memory == 900)
         #expect(budget.bucketCaps?.toolIO == 500)
     }
+
+    @Test("strict4k oversized bucket caps are clamped to avoid negative working budget")
+    func strict4kOversizedBucketCapsAreClamped() {
+        let profile = ContextProfile(
+            preset: .strict4k,
+            maxContextTokens: 10,
+            workingTokenRatio: 0.55,
+            memoryTokenRatio: 0.30,
+            toolIOTokenRatio: 0.15,
+            summaryTokenRatio: 0.5,
+            maxToolOutputTokens: 128,
+            maxRetrievedItems: 3,
+            maxRetrievedItemTokens: 64,
+            summaryCadenceTurns: 2,
+            summaryTriggerUtilization: 0.8,
+            bucketCaps: ContextBucketCaps(system: 1, history: 1, memory: 8, toolIO: 8)
+        )
+        let budget = profile.budget
+
+        #expect(budget.workingTokens >= 0)
+        #expect(budget.workingTokens + budget.memoryTokens + budget.toolIOTokens == budget.maxInputTokens)
+        #expect(budget.bucketCaps?.memory == 8)
+        #expect(budget.bucketCaps?.toolIO == 2)
+    }
 }

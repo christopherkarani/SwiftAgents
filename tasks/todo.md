@@ -108,17 +108,36 @@
 - `Sources/Swarm/Tools/Tool.swift`
   - Hardened `.double` validation/coercion to reject non-finite values (`nan`, `inf`, `-inf`) with explicit `invalidToolArguments`.
   - Replaced fragile integer-from-double checks with safe conversion (`Int(exactly:)`) to avoid overflow/trap risk at large numeric boundaries.
+- `Sources/Swarm/HiveSwarm/RetryPolicyBridge.swift`
+  - Hardened `secondsToNanoseconds` conversion to handle `+infinity`, huge finite values, and invalid/non-finite inputs without `Int64` conversion traps.
+- `Sources/Swarm/HiveSwarm/HiveAgents.swift`
+  - Hardened retry delay scaling in `withRetry` to sanitize invalid factors and clamp delay growth safely under a max cap.
+- `Sources/Swarm/DSL/Modifiers/StepModifiers.swift`
+  - Hardened `RetryModifier` delay growth path to avoid `Double -> Int64` overflow traps under extreme backoff growth.
+- `Sources/Swarm/Core/ContextProfile.swift`
+  - Removed strict4k crash path by clamping oversized `bucketCaps.memory/toolIO` at initialization, eliminating negative working-budget precondition failures.
 
 - Added tests (failing-first):
 - `Tests/SwarmTests/Tools/ToolParameterTests.swift`
   - `normalizeArgumentsRejectsNaNStringForDouble`
   - `normalizeArgumentsRejectsNonFiniteDoubleValues`
   - Both tests failed in red phase before the fix (`thrownError == nil`), then passed after hardening numeric coercion.
+- `Tests/HiveSwarmTests/RetryPolicyBridgeTests.swift`
+  - `bridge_nonFiniteAndHugeDelaysAreClamped`
+  - `modelNode_invalidRetryFactor_doesNotCrash`
+- `Tests/SwarmTests/DSL/StepModifierTests.swift`
+  - `retryClampsHugeDelayGrowth`
+- `Tests/SwarmTests/Core/ContextProfileTests.swift`
+  - `strict4kOversizedBucketCapsAreClamped`
 
 - Verification:
 - `swift test --filter ToolParameterTests` ✅
-- `swift build` ✅
-- `swift test` ✅ (1989 tests, 0 failures)
+- `swift test --scratch-path /tmp/swarm-verify-20260311 --filter RetryModifierTests` ✅
+- `swift test --scratch-path /tmp/swarm-verify-20260311 --filter ContextProfileStrict4kTests` ✅
+- `swift test --scratch-path /tmp/swarm-verify-20260311 --filter RetryPolicyBridgeTests` ✅
+- `swift test --scratch-path /tmp/swarm-verify-20260311 --filter HiveAgentsRetryTests` ✅
+- `swift build --scratch-path /tmp/swarm-verify-20260311` ✅
+- `swift test --scratch-path /tmp/swarm-verify-20260311` ✅ (1993 tests, 0 failures)
 - Delivery:
 - Commit: `a8107a1` (`Harden tool numeric argument coercion`)
 - Branch pushed: `automation/check-frameworks-audit-20260311`
