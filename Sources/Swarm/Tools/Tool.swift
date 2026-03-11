@@ -225,9 +225,10 @@ private enum ToolArgumentProcessor {
             switch value {
             case .int:
                 return
-            case let .double(d) where d.truncatingRemainder(dividingBy: 1) == 0
-                && d >= Double(Int.min)
-                && d <= Double(Int.max):
+            case let .double(d):
+                guard intFromDouble(d) != nil else {
+                    throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+                }
                 return
             default:
                 throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
@@ -235,8 +236,12 @@ private enum ToolArgumentProcessor {
 
         case .double:
             switch value {
-            case .double,
-                 .int:
+            case let .double(d):
+                guard d.isFinite else {
+                    throw invalidNonFiniteNumber(toolName: toolName, path: path)
+                }
+                return
+            case .int:
                 return
             default:
                 throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
@@ -299,10 +304,11 @@ private enum ToolArgumentProcessor {
             switch value {
             case .int:
                 return value
-            case let .double(d) where d.truncatingRemainder(dividingBy: 1) == 0
-                && d >= Double(Int.min)
-                && d <= Double(Int.max):
-                return .int(Int(d))
+            case let .double(d):
+                guard let i = intFromDouble(d) else {
+                    throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+                }
+                return .int(i)
             case let .string(s):
                 if let i = Int(s.trimmingCharacters(in: .whitespacesAndNewlines)) {
                     return .int(i)
@@ -315,14 +321,21 @@ private enum ToolArgumentProcessor {
         case .double:
             switch value {
             case let .double(d):
+                guard d.isFinite else {
+                    throw invalidNonFiniteNumber(toolName: toolName, path: path)
+                }
                 return .double(d)
             case let .int(i):
                 return .double(Double(i))
             case let .string(s):
-                if let d = Double(s.trimmingCharacters(in: .whitespacesAndNewlines)) {
-                    return .double(d)
+                let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let d = Double(trimmed) else {
+                    throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
                 }
-                throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
+                guard d.isFinite else {
+                    throw invalidNonFiniteNumber(toolName: toolName, path: path)
+                }
+                return .double(d)
             default:
                 throw invalidType(toolName: toolName, path: path, expected: expected, actual: value)
             }
@@ -389,6 +402,18 @@ private enum ToolArgumentProcessor {
             toolName: toolName,
             reason: "Invalid type for parameter: \(path). Expected \(expected.description), got \(jsonTypeDescription(actual))"
         )
+    }
+
+    private static func invalidNonFiniteNumber(toolName: String, path: String) -> AgentError {
+        AgentError.invalidToolArguments(
+            toolName: toolName,
+            reason: "Invalid value for parameter: \(path). Expected finite number"
+        )
+    }
+
+    private static func intFromDouble(_ value: Double) -> Int? {
+        guard value.isFinite else { return nil }
+        return Int(exactly: value)
     }
 
     private static func join(_ prefix: String?, _ key: String) -> String {

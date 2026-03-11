@@ -502,6 +502,62 @@ struct ToolProtocolExtensionTests {
         #expect(caughtError)
     }
 
+    @Test("normalizeArguments rejects NaN string for double parameters")
+    func normalizeArgumentsRejectsNaNStringForDouble() {
+        let tool = MockTool(
+            name: "stats",
+            parameters: [
+                ToolParameter(name: "ratio", description: "Ratio value", type: .double, isRequired: true)
+            ]
+        )
+
+        let arguments: [String: SendableValue] = [
+            "ratio": .string("nan")
+        ]
+
+        var thrownError: AgentError?
+        do {
+            _ = try tool.normalizeArguments(arguments)
+        } catch let error as AgentError {
+            thrownError = error
+        } catch {
+            #expect(Bool(false), "Expected AgentError")
+        }
+
+        #expect(thrownError == .invalidToolArguments(
+            toolName: "stats",
+            reason: "Invalid value for parameter: ratio. Expected finite number"
+        ))
+    }
+
+    @Test("normalizeArguments rejects non-finite double values")
+    func normalizeArgumentsRejectsNonFiniteDoubleValues() {
+        let tool = MockTool(
+            name: "stats",
+            parameters: [
+                ToolParameter(name: "ratio", description: "Ratio value", type: .double, isRequired: true)
+            ]
+        )
+
+        let arguments: [String: SendableValue] = [
+            "ratio": .double(.infinity)
+        ]
+
+        var thrownError: AgentError?
+        do {
+            _ = try tool.normalizeArguments(arguments)
+        } catch let error as AgentError {
+            thrownError = error
+        } catch {
+            #expect(Bool(false), "Expected AgentError")
+        }
+
+        #expect(thrownError == .invalidToolArguments(
+            toolName: "stats",
+            reason: "Invalid value for parameter: ratio. Expected finite number"
+        ))
+    }
+
     // MARK: - requiredString
 
     @Test("requiredString extracts string value")

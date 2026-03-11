@@ -95,3 +95,27 @@
 - `swift build` passes.
 - `swift test` fails in this sandbox due filesystem exhaustion while compiling dependency test artifacts:
   `No space left on device`.
+
+# Task Plan (Framework Issue Audit - 2026-03-11)
+- [x] Reconfirm scope from automation memory and run baseline red phase.
+- [x] Add failing tests for numeric argument-safety regressions in tool argument normalization.
+- [x] Implement safe numeric coercion/validation in `ToolArgumentProcessor`.
+- [x] Run targeted tests, then `swift build` + `swift test` (or document environment blockers).
+- [ ] Document review outcomes, commit with detailed message, and attempt push/PR.
+
+# Review (Framework Issue Audit - 2026-03-11)
+- Findings fixed:
+- `Sources/Swarm/Tools/Tool.swift`
+  - Hardened `.double` validation/coercion to reject non-finite values (`nan`, `inf`, `-inf`) with explicit `invalidToolArguments`.
+  - Replaced fragile integer-from-double checks with safe conversion (`Int(exactly:)`) to avoid overflow/trap risk at large numeric boundaries.
+
+- Added tests (failing-first):
+- `Tests/SwarmTests/Tools/ToolParameterTests.swift`
+  - `normalizeArgumentsRejectsNaNStringForDouble`
+  - `normalizeArgumentsRejectsNonFiniteDoubleValues`
+  - Both tests failed in red phase before the fix (`thrownError == nil`), then passed after hardening numeric coercion.
+
+- Verification:
+- `swift test --filter ToolParameterTests` ✅
+- `swift build` ✅
+- `swift test` ✅ (1989 tests, 0 failures)
