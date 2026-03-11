@@ -139,7 +139,10 @@
 - `swift build --scratch-path /tmp/swarm-verify-20260311` ✅
 - `swift test --scratch-path /tmp/swarm-verify-20260311` ✅ (1993 tests, 0 failures)
 - Delivery:
-- Commit: `a8107a1` (`Harden tool numeric argument coercion`)
+- Commits:
+  - `a8107a1` (`Harden tool numeric argument coercion`)
+  - `9e39309` (`Document automation verification and PR blocker`)
+  - `797961d` (`Harden retry and strict4k crash boundaries`)
 - Branch pushed: `automation/check-frameworks-audit-20260311`
 - PR creation blocked in this environment:
   - `error connecting to api.github.com`
