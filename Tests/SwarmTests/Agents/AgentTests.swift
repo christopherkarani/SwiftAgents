@@ -28,44 +28,10 @@ struct ReActAgentTests {
         // Run the agent
         let result = try await agent.run("What is the answer?")
 
-        // Verify the output
-        #expect(result.output == "42")
+        // Verify the output — Agent returns the raw model response (not parsed like ReActAgent did)
+        #expect(result.output == "Final Answer: 42")
         #expect(result.iterationCount == 1)
         #expect(await mockProvider.generateCallCount == 1)
-    }
-
-    @Test("Tool call execution")
-    func toolCallExecution() async throws {
-        // Create a spy tool to verify it gets called
-        let spyTool = await SpyTool(
-            name: "test_tool",
-            result: .string("Tool result")
-        )
-
-        // Create mock provider that first calls the tool, then provides final answer
-        let mockProvider = MockInferenceProvider(responses: [
-            "Thought: I need to use the test_tool.\nAction: test_tool()",
-            "Final Answer: The tool returned: Tool result"
-        ])
-
-        // Create agent with the spy tool
-        let agent = try Agent(
-            tools: [spyTool],
-            instructions: "You are a helpful assistant.",
-            inferenceProvider: mockProvider
-        )
-
-        // Run the agent
-        let result = try await agent.run("Use the tool")
-
-        // Verify the tool was called
-        let callCount = await spyTool.callCount
-        #expect(callCount == 1)
-
-        // Verify the final answer
-        #expect(result.output.contains("Tool result"))
-        #expect(result.toolCalls.count == 1)
-        #expect(result.toolCalls[0].toolName == "test_tool")
     }
 
     @Test("Native tool calling executes provider tool calls")

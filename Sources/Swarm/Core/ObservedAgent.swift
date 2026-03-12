@@ -23,7 +23,7 @@ struct ObservedAgent<Wrapped: AgentRuntime>: AgentRuntime {
     func run(_ input: String, session: (any Session)?, observer additionalObserver: (any AgentObserver)?) async throws -> AgentResult {
         await observer.onAgentStart(context: nil, agent: wrapped, input: input)
         do {
-            let result = try await wrapped.run(input, session: session, observer: additionalObserver ?? observer)
+            let result = try await wrapped.run(input, session: session, observer: additionalObserver)
             await observer.onAgentEnd(context: nil, agent: wrapped, result: result)
             return result
         } catch {
@@ -37,7 +37,7 @@ struct ObservedAgent<Wrapped: AgentRuntime>: AgentRuntime {
         session: (any Session)?,
         observer additionalObserver: (any AgentObserver)?
     ) -> AsyncThrowingStream<AgentEvent, Error> {
-        wrapped.stream(input, session: session, observer: additionalObserver ?? observer)
+        wrapped.stream(input, session: session, observer: additionalObserver)
     }
 
     func runWithResponse(
@@ -45,7 +45,7 @@ struct ObservedAgent<Wrapped: AgentRuntime>: AgentRuntime {
         session: (any Session)?,
         observer additionalObserver: (any AgentObserver)?
     ) async throws -> AgentResponse {
-        try await wrapped.runWithResponse(input, session: session, observer: additionalObserver ?? observer)
+        try await wrapped.runWithResponse(input, session: session, observer: additionalObserver)
     }
 }
 
