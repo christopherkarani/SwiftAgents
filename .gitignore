@@ -13,13 +13,37 @@ DerivedData/
 .build/coverage/
 coverage/
 
-# Claude Code configuration
+# Claude Code / AI development configuration
 .claude/
 .mcp.json
 .agent_context.md
+CLAUDE.md
+AGENTS.md
 
-# Implementation plans (internal documentation)
+# Internal development artifacts
 IMPLEMENTATION_PLAN.md
+HIVE_EXTENSIBILITY_INTEGRATION_PLAN.md
+PRODUCTION_READINESS_AUDIT.md
+tasks/
+scripts/
+
+# Internal documentation (plans, prompts, work packages, validation)
+docs/plans/
+docs/prompts/
+docs/work-packages/
+docs/validation/
+docs/migration-plan_*.md
+docs/subagent-context-findings.md
+
+# Build & dev tool artifacts
+.build-audit/
+.worktrees/
+.home/
+.vscode/
+Swarm.xcworkspace/
+
+# Website (separate project)
+website/
 
 # VitePress / Node
 node_modules/
