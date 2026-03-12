@@ -67,16 +67,13 @@ struct MyApp {
             inferenceProvider = provider
         #endif
 
-       
-
         let input = "Conduct deep research on the war on ukraine and its impact on global security. Provide a detailed report with findings, potential implications, and recommendations."
 
 
-        
         let agent: ReActAgent
         do {
             agent = try ReActAgent.Builder()
-                .instructions("Your a deep research Agent, when you dont find something you keep looking ")
+                .instructions("You're a deep research agent. When you don't find something, you keep looking.")
                 .inferenceProvider(inferenceProvider)
                 .addTool(searchTool)
                 .addTool(StringTool())
@@ -87,59 +84,85 @@ struct MyApp {
             fatalError("Failed to build ReActAgent: \(error)")
         }
 
-       
-   //     let age = SupervisorAgent(agents: [planAgent, agent], routingStrategy: session)
+        do {
+            for try await event in agent.stream(input) {
+                switch event {
+                // Lifecycle
+                case .started(input: let input):
+                    print("Agent started with input: \(input.prefix(80))...")
+                case .completed(result: let result):
+                    print("🏁 Finished with reason: \(result.output)")
+                case .failed(error: let error):
+                    print("❌ Agent failed: \(error)")
+                case .cancelled:
+                    print("⚠️ Agent cancelled")
 
-     
-            do {
-                for try await event in agent.stream(input) {
-                    switch event {
-                    case .started:
-                        break
-                    case .thinking(thought: let text):
-                        print(text, terminator: "")
-                    case .thinkingPartial(partialThought: let text):
-                        print(text, terminator: "")
-                    case .toolCallStarted(call: let tool):
-                        print("""
-                        ✅ Tool \"\(tool.toolName)\" returned:
-                        \(tool.description)
-                        """)
-                    case .toolCallPartial:
-                        break
-                    case .toolCallCompleted(call: let tool, result: let result):
-                        print("""
-                        ✅ Tool \"\(tool.toolName)\" returned:
-                        \(result.output)
-                        """)
-                    case .toolCallFailed(call: let tool, error: let error):
-                        print("❌ Tool \"\(tool.toolName)\" failed: \(error)")
-                    case .outputToken:
-                        break
-                    case .outputChunk(chunk: let chunk):
-                        print(chunk, terminator: "")
-                    case .iterationStarted, .iterationCompleted:
-                        break
-                    case .llmStarted, .llmCompleted:
-                        break
-                    case .completed(result: let result):
-                        print("""
-                        🏁 Finished with reason: \(result.output)
-                        """)
-                    case .failed(error: let error):
-                        print("❌ Agent failed: \(error)")
-                    case .cancelled:
-                        print("⚠️ Agent cancelled")
-                    case .guardrailFailed(error: let error):
-                        print("❌ Guardrail failed: \(error)")
-                    default:
-                        print("⚠️ Unhandled event: \(event)")
-                    }
+                // Thinking
+                case .thinking(thought: let text):
+                    print(text, terminator: "")
+                case .thinkingPartial(partialThought: let text):
+                    print(text, terminator: "")
+
+                // Tool calls
+                case .toolCallStarted(call: let call):
+                    print("-> Calling \"\(call.toolName)\" with \(call.arguments)")
+                case .toolCallPartial:
+                    break
+                case .toolCallCompleted(call: let tool, result: let result):
+                    print("✅ Tool \"\(tool.toolName)\" returned: \(result.output)")
+                case .toolCallFailed(call: let tool, error: let error):
+                    print("❌ Tool \"\(tool.toolName)\" failed: \(error)")
+
+                // Output streaming
+                case .outputToken:
+                    break
+                case .outputChunk(chunk: let chunk):
+                    print(chunk, terminator: "")
+
+                // Iteration tracking
+                case .iterationStarted, .iterationCompleted:
+                    break
+
+                // LLM lifecycle
+                case .llmStarted, .llmCompleted:
+                    break
+
+                // Decision and planning
+                case .decision(decision: let decision, options: _):
+                    print("Decision: \(decision)")
+                case .planUpdated(plan: let plan, stepCount: let steps):
+                    print("Plan updated (\(steps) steps): \(plan.prefix(80))...")
+
+                // Handoffs
+                case .handoffRequested(fromAgent: let from, toAgent: let to, reason: let reason):
+                    print("Handoff requested: \(from) -> \(to) (\(reason ?? "no reason"))")
+                case .handoffStarted(from: let from, to: let to, input: _):
+                    print("Handoff started: \(from) -> \(to)")
+                case .handoffCompleted(fromAgent: let from, toAgent: let to):
+                    print("Handoff completed: \(from) -> \(to)")
+                case .handoffCompletedWithResult(from: let from, to: let to, result: _):
+                    print("Handoff completed with result: \(from) -> \(to)")
+                case .handoffSkipped(from: let from, to: let to, reason: let reason):
+                    print("Handoff skipped: \(from) -> \(to) (\(reason))")
+
+                // Guardrails
+                case .guardrailFailed(error: let error):
+                    print("❌ Guardrail failed: \(error)")
+                case .guardrailStarted(name: let name, type: _):
+                    print("Guardrail started: \(name)")
+                case .guardrailPassed(name: let name, type: _):
+                    print("Guardrail passed: \(name)")
+                case .guardrailTriggered(name: let name, type: _, message: let msg):
+                    print("⚠️ Guardrail triggered: \(name) — \(msg ?? "")")
+
+                // Memory
+                case .memoryAccessed(operation: let op, count: let count):
+                    print("Memory \(op): \(count) items")
                 }
-
-            } catch {
-                print("Error: \(error)")
             }
+        } catch {
+            print("Error: \(error)")
+        }
         
     }
 }
