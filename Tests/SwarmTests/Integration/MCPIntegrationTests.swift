@@ -48,7 +48,7 @@ actor IntegrationTestMCPServer: MCPServer {
     func listResources() async throws -> [MCPResource] { [] }
 
     func readResource(uri: String) async throws -> MCPResourceContent {
-        MCPResourceContent(uri: uri)
+        try MCPResourceContent(uri: uri, text: "")
     }
 
     func close() async throws {}
@@ -213,7 +213,7 @@ struct ModelSettingsIntegrationTests {
 struct AgentBuilderIntegrationTests {
     @Test("AgentBuilder with ModelSettingsComponent works")
     func agentBuilderWithModelSettings() async throws {
-        let agent = try ReActAgent {
+        let agent = try Agent {
             Instructions("Precise agent.")
             ModelSettingsComponent(.precise.maxTokens(1500))
         }
@@ -225,7 +225,7 @@ struct AgentBuilderIntegrationTests {
 
     @Test("AgentBuilder configuration merge works correctly")
     func agentBuilderConfigurationMerge() async throws {
-        let agent = try ReActAgent {
+        let agent = try Agent {
             Instructions("Merged settings agent.")
             Configuration(.default.maxIterations(15))
             ModelSettingsComponent(.balanced.parallelToolCalls(true))

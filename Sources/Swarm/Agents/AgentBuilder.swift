@@ -18,7 +18,7 @@ public protocol AgentComponent {}
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("You are a helpful assistant.")
 /// }
 /// ```
@@ -40,7 +40,7 @@ public struct Instructions: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Calculator agent.")
 ///     Tools {
 ///         CalculatorTool()
@@ -74,18 +74,18 @@ public struct Tools: AgentComponent {
     }
 }
 
-// MARK: - AgentMemoryComponent
+// MARK: - AgentMemory
 
 /// Memory component for agent context management.
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Memory-enabled agent.")
-///     AgentMemoryComponent(ConversationMemory(maxMessages: 50))
+///     AgentMemory(ConversationMemory(maxMessages: 50))
 /// }
 /// ```
-public struct AgentMemoryComponent: AgentComponent {
+public struct AgentMemory: AgentComponent {
     /// The memory system.
     public let memory: any Memory
 
@@ -97,13 +97,16 @@ public struct AgentMemoryComponent: AgentComponent {
     }
 }
 
+@available(*, deprecated, renamed: "AgentMemory")
+public typealias AgentMemoryComponent = AgentMemory
+
 // MARK: - Configuration
 
 /// Configuration component for agent settings.
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Configured agent.")
 ///     Configuration(.default.maxIterations(5).temperature(0.7))
 /// }
@@ -126,7 +129,7 @@ public struct Configuration: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Custom provider agent.")
 ///     InferenceProviderComponent(myCustomProvider)
 /// }
@@ -150,18 +153,18 @@ public struct InferenceProviderComponent: AgentComponent {
     }
 }
 
-// MARK: - TracerComponent
+// MARK: - TracerConfig
 
 /// Tracer component for agent observability.
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Observable agent.")
-///     TracerComponent(ConsoleTracer())
+///     TracerConfig(ConsoleTracer())
 /// }
 /// ```
-public struct TracerComponent: AgentComponent {
+public struct TracerConfig: AgentComponent {
     /// The tracer.
     public let tracer: any Tracer
 
@@ -173,18 +176,21 @@ public struct TracerComponent: AgentComponent {
     }
 }
 
-// MARK: - InputGuardrailsComponent
+@available(*, deprecated, renamed: "TracerConfig")
+public typealias TracerComponent = TracerConfig
+
+// MARK: - InputGuardrails
 
 /// Input guardrails component for validating agent inputs.
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Secure agent.")
-///     InputGuardrailsComponent(sensitiveDataGuardrail, piiDetectionGuardrail)
+///     InputGuardrails(sensitiveDataGuardrail, piiDetectionGuardrail)
 /// }
 /// ```
-public struct InputGuardrailsComponent: AgentComponent {
+public struct InputGuardrails: AgentComponent {
     /// The input guardrails.
     public let guardrails: [any InputGuardrail]
 
@@ -203,18 +209,21 @@ public struct InputGuardrailsComponent: AgentComponent {
     }
 }
 
-// MARK: - OutputGuardrailsComponent
+@available(*, deprecated, renamed: "InputGuardrails")
+public typealias InputGuardrailsComponent = InputGuardrails
+
+// MARK: - OutputGuardrails
 
 /// Output guardrails component for validating agent outputs.
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Safe agent.")
-///     OutputGuardrailsComponent(profanityFilterGuardrail, toxicityGuardrail)
+///     OutputGuardrails(profanityFilterGuardrail, toxicityGuardrail)
 /// }
 /// ```
-public struct OutputGuardrailsComponent: AgentComponent {
+public struct OutputGuardrails: AgentComponent {
     /// The output guardrails.
     public let guardrails: [any OutputGuardrail]
 
@@ -233,7 +242,10 @@ public struct OutputGuardrailsComponent: AgentComponent {
     }
 }
 
-// MARK: - HandoffsComponent
+@available(*, deprecated, renamed: "OutputGuardrails")
+public typealias OutputGuardrailsComponent = OutputGuardrails
+
+// MARK: - Handoffs
 
 /// Component providing handoff configurations for an agent.
 ///
@@ -242,15 +254,15 @@ public struct OutputGuardrailsComponent: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Coordinator agent.")
-///     HandoffsComponent([
+///     Handoffs([
 ///         AnyHandoffConfiguration(handoff(to: plannerAgent)),
 ///         AnyHandoffConfiguration(handoff(to: executorAgent))
 ///     ])
 /// }
 /// ```
-public struct HandoffsComponent: AgentComponent, Sendable {
+public struct Handoffs: AgentComponent, Sendable {
     /// The handoff configurations.
     public let handoffs: [AnyHandoffConfiguration]
 
@@ -281,6 +293,9 @@ public struct HandoffsComponent: AgentComponent, Sendable {
     }
 }
 
+@available(*, deprecated, renamed: "Handoffs")
+public typealias HandoffsComponent = Handoffs
+
 // MARK: - ParallelToolCalls
 
 /// Enables parallel tool call execution.
@@ -290,7 +305,7 @@ public struct HandoffsComponent: AgentComponent, Sendable {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Fast parallel agent.")
 ///     ParallelToolCalls()
 /// }
@@ -316,7 +331,7 @@ public struct ParallelToolCalls: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Continuation agent.")
 ///     PreviousResponseId("resp_abc123")
 /// }
@@ -342,7 +357,7 @@ public struct PreviousResponseId: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Auto-tracking agent.")
 ///     AutoPreviousResponseId()
 /// }
@@ -368,7 +383,7 @@ public struct AutoPreviousResponseId: AgentComponent {
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("Precise agent.")
 ///     ModelSettingsComponent(.precise
 ///         .maxTokens(2000)
@@ -388,7 +403,7 @@ public struct ModelSettingsComponent: AgentComponent {
     }
 }
 
-// MARK: - MCPClientComponent
+// MARK: - MCPClientConfig
 
 /// MCP client component for dynamic tool discovery.
 ///
@@ -400,12 +415,12 @@ public struct ModelSettingsComponent: AgentComponent {
 /// let mcpClient = MCPClient()
 /// try await mcpClient.addServer(myMCPServer)
 ///
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("MCP-enabled agent.")
-///     MCPClientComponent(mcpClient)
+///     MCPClientConfig(mcpClient)
 /// }
 /// ```
-public struct MCPClientComponent: AgentComponent {
+public struct MCPClientConfig: AgentComponent {
     /// The MCP client for tool discovery.
     public let client: MCPClient
 
@@ -417,16 +432,19 @@ public struct MCPClientComponent: AgentComponent {
     }
 }
 
-// MARK: - LegacyAgentBuilder
+@available(*, deprecated, renamed: "MCPClientConfig")
+public typealias MCPClientComponent = MCPClientConfig
 
-/// A legacy result builder for creating agents declaratively.
+// MARK: - AgentBuilder
+
+/// A result builder for creating agents declaratively.
 ///
-/// `LegacyAgentBuilder` enables a SwiftUI-like syntax for constructing agents
+/// `AgentBuilder` enables a SwiftUI-like syntax for constructing agents
 /// with their components (instructions, tools, memory, configuration).
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent {
+/// let agent = Agent {
 ///     Instructions("You are a helpful math assistant.")
 ///
 ///     Tools {
@@ -434,7 +452,7 @@ public struct MCPClientComponent: AgentComponent {
 ///         DateTimeTool()
 ///     }
 ///
-///     AgentMemoryComponent(ConversationMemory(maxMessages: 100))
+///     AgentMemory(ConversationMemory(maxMessages: 100))
 ///
 ///     Configuration(.default
 ///         .maxIterations(10)
@@ -443,12 +461,8 @@ public struct MCPClientComponent: AgentComponent {
 /// }
 /// ```
 
-/// Preferred name for the agent result builder.
-public typealias AgentBuilder = LegacyAgentBuilder
-
-@available(*, deprecated, renamed: "AgentBuilder")
 @resultBuilder
-public struct LegacyAgentBuilder {
+public struct AgentBuilder {
     // MARK: Public
 
     /// The aggregated components from the builder.
@@ -568,19 +582,19 @@ public struct LegacyAgentBuilder {
             result.instructions = instructions.text
         case let tools as Tools:
             result.tools.append(contentsOf: tools.tools)
-        case let memory as AgentMemoryComponent:
+        case let memory as AgentMemory:
             result.memory = memory.memory
         case let config as Configuration:
             result.configuration = config.configuration
         case let provider as InferenceProviderComponent:
             result.inferenceProvider = provider.provider
-        case let tracerComponent as TracerComponent:
+        case let tracerComponent as TracerConfig:
             result.tracer = tracerComponent.tracer
-        case let inputGuardrails as InputGuardrailsComponent:
+        case let inputGuardrails as InputGuardrails:
             result.inputGuardrails.append(contentsOf: inputGuardrails.guardrails)
-        case let outputGuardrails as OutputGuardrailsComponent:
+        case let outputGuardrails as OutputGuardrails:
             result.outputGuardrails.append(contentsOf: outputGuardrails.guardrails)
-        case let handoffsComponent as HandoffsComponent:
+        case let handoffsComponent as Handoffs:
             result.handoffs.append(contentsOf: handoffsComponent.handoffs)
         // Phase 5 components
         case let parallelToolCalls as ParallelToolCalls:
@@ -592,66 +606,20 @@ public struct LegacyAgentBuilder {
         // Phase 6 components
         case let modelSettingsComponent as ModelSettingsComponent:
             result.modelSettings = modelSettingsComponent.settings
-        case let mcpClientComponent as MCPClientComponent:
+        case let mcpClientComponent as MCPClientConfig:
             result.mcpClient = mcpClientComponent.client
         default:
-            break
+            // `AgentComponent` is not designed for external conformance — the builder
+            // only handles the fixed set of built-in components above. If you reach
+            // this branch you have a custom `AgentComponent` conformance whose values
+            // will be silently ignored at runtime.
+            assertionFailure(
+                """
+                AgentBuilder received an unknown AgentComponent conformance: \(type(of: component)).
+                Custom AgentComponent conformances are not supported; only the built-in DSL \
+                components (Instructions, Tools, Configuration, etc.) are processed.
+                """
+            )
         }
-    }
-}
-
-// MARK: - ReActAgent DSL Extension
-
-public extension ReActAgent {
-    /// Creates a ReActAgent using the declarative builder DSL.
-    ///
-    /// Example:
-    /// ```swift
-    /// let agent = ReActAgent {
-    ///     Instructions("You are a helpful assistant.")
-    ///
-    ///     Tools {
-    ///         CalculatorTool()
-    ///         DateTimeTool()
-    ///     }
-    ///
-    ///     AgentMemoryComponent(ConversationMemory(maxMessages: 50))
-    ///
-    ///     Configuration(.default.maxIterations(10))
-    /// }
-    /// ```
-    ///
-    /// - Parameter content: A closure that builds the agent components.
-    /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
-    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) throws {
-        let components = content()
-
-        // Build configuration with Phase 5 overrides
-        var config = components.configuration ?? .default
-        if let parallelToolCalls = components.parallelToolCalls {
-            config = config.parallelToolCalls(parallelToolCalls)
-        }
-        if let previousResponseId = components.previousResponseId {
-            config = config.previousResponseId(previousResponseId)
-        }
-        if let autoPreviousResponseId = components.autoPreviousResponseId {
-            config = config.autoPreviousResponseId(autoPreviousResponseId)
-        }
-        // Phase 6: Apply model settings
-        if let modelSettings = components.modelSettings {
-            config = config.modelSettings(modelSettings)
-        }
-
-        try self.init(
-            tools: components.tools,
-            instructions: components.instructions ?? "",
-            configuration: config,
-            memory: components.memory,
-            inferenceProvider: components.inferenceProvider,
-            tracer: components.tracer,
-            inputGuardrails: components.inputGuardrails,
-            outputGuardrails: components.outputGuardrails,
-            handoffs: components.handoffs
-        )
     }
 }

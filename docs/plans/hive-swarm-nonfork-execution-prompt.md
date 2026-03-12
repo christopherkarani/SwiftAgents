@@ -16,7 +16,7 @@ Your mission is to implement and verify the non-fork Hive hardening contract for
 - `Sources/Swarm/HiveSwarm/HiveAgents.swift`
 - `Sources/Swarm/HiveSwarm/HiveBackedAgent.swift`
 - `Sources/Swarm/Agents/Chat.swift`
-- `Sources/Swarm/Agents/ReActAgent.swift`
+- `Sources/Swarm/Agents/Agent.swift`
 - `Sources/Swarm/Core/PromptEnvelope.swift`
 - `Sources/Swarm/Core/AgentError.swift`
 
@@ -39,7 +39,7 @@ Your mission is to implement and verify the non-fork Hive hardening contract for
 5. Existing mapping in `HiveBackedAgent.mapHiveEvent(_:)` is partial:
    - checkpoint and write-applied style events currently yield `nil`.
 6. `HiveAgents.Schema.inputWrites(...)` currently seeds `messagesKey` and resets `finalAnswerKey`.
-7. `ChatAgent` and `ReActAgent` build prompts using plain string concatenation and call `PromptEnvelope.enforce(...)` prior to model invocation.
+7. `ChatAgent` and `Agent` build prompts using plain string concatenation and call `PromptEnvelope.enforce(...)` prior to model invocation.
 
 You should **not** assume behavior outside this list unless you locate direct evidence in the source files above.
 

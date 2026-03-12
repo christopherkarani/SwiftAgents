@@ -35,7 +35,7 @@ struct MembraneIntegrationTests {
             )
         )
 
-        _ = try await agent.run("needle-user-input", session: session, hooks: nil)
+        _ = try await agent.run("needle-user-input", session: session, observer: nil)
 
         let lastCall = await provider.toolCallCalls.last
         let prompt = try #require(lastCall?.prompt)

@@ -19,11 +19,11 @@ struct SessionIntegrationTests {
         // Setup
         let session = InMemorySession()
         let mockProvider = MockInferenceProvider(responses: [
-            "Final Answer: Hello! How can I help you?",
-            "Final Answer: I'm doing great, thank you for asking!"
+            "Hello! How can I help you?",
+            "I'm doing great, thank you for asking!"
         ])
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -57,11 +57,11 @@ struct SessionIntegrationTests {
         // Setup
         let session = InMemorySession()
         let mockProvider = MockInferenceProvider(responses: [
-            "Final Answer: Nice to meet you, Alice!",
-            "Final Answer: Of course, Alice! I remember you."
+            "Nice to meet you, Alice!",
+            "Of course, Alice! I remember you."
         ])
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -77,10 +77,10 @@ struct SessionIntegrationTests {
         let generateCalls = await mockProvider.generateCalls
         #expect(generateCalls.count == 2)
 
-        // The second prompt should contain conversation history
+        // The second prompt should contain conversation history with the user's previous input
         let secondPrompt = generateCalls[1].prompt
         #expect(secondPrompt.contains("Alice"))
-        #expect(secondPrompt.contains("User:") || secondPrompt.contains("Conversation History"))
+        #expect(secondPrompt.contains("My name is Alice"))
     }
 
     // MARK: - Multiple Agents Sharing Session Tests
@@ -92,9 +92,9 @@ struct SessionIntegrationTests {
 
         // First agent
         let mockProvider1 = MockInferenceProvider(responses: [
-            "Final Answer: I understand you want to calculate something."
+            "I understand you want to calculate something."
         ])
-        let agent1 = try ReActAgent(
+        let agent1 = try Agent(
             tools: [],
             instructions: "You are a math assistant.",
             inferenceProvider: mockProvider1
@@ -102,9 +102,9 @@ struct SessionIntegrationTests {
 
         // Second agent
         let mockProvider2 = MockInferenceProvider(responses: [
-            "Final Answer: Based on the previous context, I can help with that calculation."
+            "Based on the previous context, I can help with that calculation."
         ])
-        let agent2 = try ReActAgent(
+        let agent2 = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider2
@@ -167,10 +167,10 @@ struct SessionIntegrationTests {
         // Setup
         let session = InMemorySession()
         let mockProvider = MockInferenceProvider(responses: [
-            "Final Answer: Hello! I'm ready to help."
+            "Hello! I'm ready to help."
         ])
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -196,10 +196,10 @@ struct SessionIntegrationTests {
     func agentWorksWithoutSession() async throws {
         // Setup
         let mockProvider = MockInferenceProvider(responses: [
-            "Final Answer: Hello, world!"
+            "Hello, world!"
         ])
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -217,10 +217,10 @@ struct SessionIntegrationTests {
     func agentWorksWithExplicitNilSession() async throws {
         // Setup
         let mockProvider = MockInferenceProvider(responses: [
-            "Final Answer: Response without session"
+            "Response without session"
         ])
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -242,12 +242,12 @@ struct SessionIntegrationTests {
         let session2 = InMemorySession(sessionId: "session-2")
 
         let mockProvider = MockInferenceProvider(responses: [
-            "Final Answer: Response for session 1",
-            "Final Answer: Response for session 2",
-            "Final Answer: Second response for session 1"
+            "Response for session 1",
+            "Response for session 2",
+            "Second response for session 1"
         ])
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -284,13 +284,13 @@ struct SessionIntegrationTests {
         let sessionBob = InMemorySession(sessionId: "bob-session")
 
         let mockProvider = MockInferenceProvider(responses: [
-            "Final Answer: Hello Alice!",
-            "Final Answer: Hello Bob!",
-            "Final Answer: Yes, you are Alice.",
-            "Final Answer: Yes, you are Bob."
+            "Hello Alice!",
+            "Hello Bob!",
+            "Yes, you are Alice.",
+            "Yes, you are Bob."
         ])
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant that remembers names.",
             inferenceProvider: mockProvider
@@ -335,12 +335,30 @@ struct SessionIntegrationTests {
             result: .string("4")
         )
 
-        let mockProvider = MockInferenceProvider(responses: [
-            "Thought: I need to calculate.\nAction: calculator(expression: 2+2)",
-            "Final Answer: The result is 4"
+        let mockProvider = MockInferenceProvider()
+        // Use native tool calling: first response triggers the tool, second returns text
+        await mockProvider.setToolCallResponses([
+            InferenceResponse(
+                content: nil,
+                toolCalls: [
+                    InferenceResponse.ParsedToolCall(
+                        id: "call_calc",
+                        name: "calculator",
+                        arguments: ["expression": .string("2+2")]
+                    )
+                ],
+                finishReason: .toolCall,
+                usage: nil
+            ),
+            InferenceResponse(
+                content: "The result is 4",
+                toolCalls: [],
+                finishReason: .completed,
+                usage: nil
+            )
         ])
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [mockTool],
             instructions: "You are a math assistant.",
             inferenceProvider: mockProvider
@@ -371,9 +389,9 @@ struct SessionIntegrationTests {
         // First agent instance
         do {
             let mockProvider = MockInferenceProvider(responses: [
-                "Final Answer: First agent response"
+                "First agent response"
             ])
-            let agent = try ReActAgent(
+            let agent = try Agent(
                 tools: [],
                 instructions: "First agent",
                 inferenceProvider: mockProvider
@@ -384,9 +402,9 @@ struct SessionIntegrationTests {
         // Second agent instance (first one goes out of scope)
         do {
             let mockProvider = MockInferenceProvider(responses: [
-                "Final Answer: Second agent response"
+                "Second agent response"
             ])
-            let agent = try ReActAgent(
+            let agent = try Agent(
                 tools: [],
                 instructions: "Second agent",
                 inferenceProvider: mockProvider
@@ -413,11 +431,11 @@ struct SessionIntegrationTests {
         let session = InMemorySession()
         var responses: [String] = []
         for i in 1...10 {
-            responses.append("Final Answer: Response \(i)")
+            responses.append("Response \(i)")
         }
         let mockProvider = MockInferenceProvider(responses: responses)
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -445,10 +463,10 @@ struct SessionIntegrationTests {
         let session = InMemorySession()
         let specialInput = "Hello! <script>alert('test')</script> & unicode: \u{1F600}"
         let mockProvider = MockInferenceProvider(responses: [
-            "Final Answer: Response with special chars: <>&\""
+            "Response with special chars: <>&\""
         ])
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -471,11 +489,11 @@ struct SessionIntegrationTests {
         let turnCount = 25
         var responses: [String] = []
         for i in 1...turnCount {
-            responses.append("Final Answer: Response \(i)")
+            responses.append("Response \(i)")
         }
         let mockProvider = MockInferenceProvider(responses: responses)
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider

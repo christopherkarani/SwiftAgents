@@ -5,8 +5,8 @@ import Foundation
 ///
 /// This adapter keeps tool execution in Swarm by returning tool calls
 /// upstream, avoiding Conduit's internal ToolExecutor.
-public struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: InferenceProvider, ToolCallStreamingInferenceProvider {
-    public init(
+struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: InferenceProvider, ToolCallStreamingInferenceProvider {
+    init(
         provider: Provider,
         model: Provider.ModelID,
         baseConfig: Conduit.GenerateConfig = .default
@@ -16,17 +16,17 @@ public struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: Inferen
         self.baseConfig = baseConfig
     }
 
-    public func generate(prompt: String, options: InferenceOptions) async throws -> String {
+    func generate(prompt: String, options: InferenceOptions) async throws -> String {
         let config = apply(options: options, to: baseConfig)
         return try await provider.generate(prompt, model: model, config: config)
     }
 
-    public func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
+    func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
         let config = apply(options: options, to: baseConfig)
         return provider.stream(prompt, model: model, config: config)
     }
 
-    public func generateWithToolCalls(
+    func generateWithToolCalls(
         prompt: String,
         tools: [ToolSchema],
         options: InferenceOptions
@@ -48,7 +48,7 @@ public struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: Inferen
         let parsedToolCalls = try ConduitToolCallConverter.toParsedToolCalls(result.toolCalls)
         let finishReason = mapFinishReason(result.finishReason, toolCalls: parsedToolCalls)
         let usage = result.usage.map { usage in
-            InferenceResponse.TokenUsage(
+            TokenUsage(
                 inputTokens: usage.promptTokens,
                 outputTokens: usage.completionTokens
             )
@@ -62,7 +62,7 @@ public struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: Inferen
         )
     }
 
-    public func streamWithToolCalls(
+    func streamWithToolCalls(
         prompt: String,
         tools: [ToolSchema],
         options: InferenceOptions
@@ -106,7 +106,7 @@ public struct ConduitInferenceProvider<Provider: Conduit.TextGenerator>: Inferen
 
                 if let usage = chunk.usage {
                     continuation.yield(.usage(
-                        InferenceResponse.TokenUsage(
+                        TokenUsage(
                             inputTokens: usage.promptTokens,
                             outputTokens: usage.completionTokens
                         )

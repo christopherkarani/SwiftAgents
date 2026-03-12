@@ -9,7 +9,7 @@ import Foundation
 
 /// An agent that uses structured LLM tool calling APIs for reliable tool invocation.
 ///
-/// Unlike ReActAgent which parses tool calls from text output, Agent
+/// Unlike Agent which parses tool calls from text output, Agent
 /// leverages the LLM's native tool calling capabilities via `generateWithToolCalls()`
 /// for more reliable and type-safe tool invocation.
 ///
@@ -239,13 +239,13 @@ public actor Agent: AgentRuntime {
     /// - Parameters:
     ///   - input: The user's input/query.
     ///   - session: Optional session for conversation history management.
-    ///   - hooks: Optional run hooks for observing agent execution events.
+    ///   - observer: Optional run observer for observing agent execution events.
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
-    public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    public func run(_ input: String, session: (any Session)? = nil, observer: (any AgentObserver)? = nil) async throws -> AgentResult {
         let runID = UUID()
         let task = Task { [self] in
-            try await runInternal(input, session: session, hooks: hooks)
+            try await runInternal(input, session: session, observer: observer)
         }
         currentTask = task
         currentRunID = runID
@@ -275,25 +275,25 @@ public actor Agent: AgentRuntime {
     /// - Parameters:
     ///   - input: The user's input/query.
     ///   - session: Optional session for conversation history management.
-    ///   - hooks: Optional run hooks for observing agent execution events.
+    ///   - observer: Optional run observer for observing agent execution events.
     /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, session: (any Session)? = nil, observer: (any AgentObserver)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { agent, continuation in
-            // Create event bridge hooks
-            let streamHooks = EventStreamHooks(continuation: continuation)
+            // Create event bridge observer
+            let streamObserver = EventStreamObserver(continuation: continuation)
 
-            // Combine with user-provided hooks
-            let combinedHooks: any RunHooks = if let userHooks = hooks {
-                CompositeRunHooks(hooks: [userHooks, streamHooks])
+            // Combine with user-provided observer
+            let combinedObserver: any AgentObserver = if let userObserver = observer {
+                CompositeObserver(observers: [userObserver, streamObserver])
             } else {
-                streamHooks
+                streamObserver
             }
 
             do {
-                _ = try await agent.run(input, session: session, hooks: combinedHooks)
+                _ = try await agent.run(input, session: session, observer: combinedObserver)
                 continuation.finish()
             } catch {
-                // Error is handled by EventStreamHooks.onError
+                // Error is handled by EventStreamObserver.onError
                 continuation.finish(throwing: error)
             }
         }
@@ -338,7 +338,7 @@ public actor Agent: AgentRuntime {
     private var isCancelled: Bool = false
     private let toolRegistry: ToolRegistry
 
-    private func runInternal(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    private func runInternal(_ input: String, session: (any Session)? = nil, observer: (any AgentObserver)? = nil) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
@@ -355,16 +355,16 @@ public actor Agent: AgentRuntime {
         )
         await tracing.traceStart(input: input)
 
-        // Notify hooks of agent start
-        await hooks?.onAgentStart(context: nil, agent: self, input: input)
+        // Notify observer of agent start
+        await observer?.onAgentStart(context: nil, agent: self, input: input)
 
         if let lifecycleMemory {
             await lifecycleMemory.beginMemorySession()
         }
 
         do {
-            // Run input guardrails (with hooks for event emission)
-            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, hooks: hooks)
+            // Run input guardrails (with observer for event emission)
+            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration, observer: observer)
             _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
             // Reset cancellation state and create result builder
@@ -392,7 +392,7 @@ public actor Agent: AgentRuntime {
                 input: input,
                 sessionHistory: sessionHistory,
                 resultBuilder: resultBuilder,
-                hooks: hooks,
+                observer: observer,
                 tracing: tracing
             )
 
@@ -416,8 +416,8 @@ public actor Agent: AgentRuntime {
             let result = resultBuilder.build()
             await tracing.traceComplete(result: result)
 
-            // Notify hooks of agent completion
-            await hooks?.onAgentEnd(context: nil, agent: self, result: result)
+            // Notify observer of agent completion
+            await observer?.onAgentEnd(context: nil, agent: self, result: result)
 
             if let lifecycleMemory {
                 await lifecycleMemory.endMemorySession()
@@ -425,8 +425,8 @@ public actor Agent: AgentRuntime {
             return result
         } catch {
             let normalizedError = normalizeCancellation(error)
-            // Notify hooks of error
-            await hooks?.onError(context: nil, agent: self, error: normalizedError)
+            // Notify observer of error
+            await observer?.onError(context: nil, agent: self, error: normalizedError)
             await tracing.traceError(normalizedError)
             if let lifecycleMemory {
                 await lifecycleMemory.endMemorySession()
@@ -492,7 +492,7 @@ public actor Agent: AgentRuntime {
         input: String,
         sessionHistory: [MemoryMessage] = [],
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)? = nil,
+        observer: (any AgentObserver)? = nil,
         tracing: TracingHelper? = nil
     ) async throws -> String {
         var iteration = 0
@@ -515,7 +515,7 @@ public actor Agent: AgentRuntime {
         )
         let systemMessage = buildSystemMessage(memory: activeMemory, memoryContext: memoryContext)
 
-        let enableStreaming = configuration.enableStreaming && hooks != nil
+        let enableStreaming = configuration.enableStreaming && observer != nil
         let toolStreamingProvider = provider as? any ToolCallStreamingInferenceProvider
         let useToolStreaming = enableStreaming && toolStreamingProvider != nil
         let membraneAdapter = resolvedMembraneAdapter()
@@ -523,7 +523,7 @@ public actor Agent: AgentRuntime {
         while iteration < configuration.maxIterations {
             iteration += 1
             _ = resultBuilder.incrementIteration()
-            await hooks?.onIterationStart(context: nil, agent: self, number: iteration)
+            await observer?.onIterationStart(context: nil, agent: self, number: iteration)
 
             do {
                 try checkCancellationAndTimeout(startTime: startTime)
@@ -564,9 +564,9 @@ public actor Agent: AgentRuntime {
                         prompt: prompt,
                         systemPrompt: systemMessage,
                         enableStreaming: enableStreaming,
-                        hooks: hooks
+                        observer: observer
                     )
-                    await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
+                    await observer?.onIterationEnd(context: nil, agent: self, number: iteration)
                     return output
                 }
 
@@ -577,7 +577,7 @@ public actor Agent: AgentRuntime {
                         prompt: prompt,
                         tools: toolSchemas,
                         systemPrompt: systemMessage,
-                        hooks: hooks
+                        observer: observer
                     )
                 } else {
                     try await generateWithTools(
@@ -585,7 +585,7 @@ public actor Agent: AgentRuntime {
                         prompt: prompt,
                         tools: toolSchemas,
                         systemPrompt: systemMessage,
-                        hooks: hooks,
+                        observer: observer,
                         emitOutputTokens: enableStreaming
                     )
                 }
@@ -595,26 +595,26 @@ public actor Agent: AgentRuntime {
                         response: response,
                         conversationHistory: &conversationHistory,
                         resultBuilder: resultBuilder,
-                        hooks: hooks,
+                        observer: observer,
                         tracing: tracing,
                         membraneAdapter: membraneAdapter
                     )
                     // If a handoff occurred, return the target agent's result
                     if let handoffOutput = handoffResult {
-                        await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
+                        await observer?.onIterationEnd(context: nil, agent: self, number: iteration)
                         return handoffOutput
                     }
                 } else {
                     guard let content = response.content else {
                         throw AgentError.generationFailed(reason: "Model returned no content or tool calls")
                     }
-                    await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
+                    await observer?.onIterationEnd(context: nil, agent: self, number: iteration)
                     return content
                 }
 
-                await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
+                await observer?.onIterationEnd(context: nil, agent: self, number: iteration)
             } catch {
-                await hooks?.onIterationEnd(context: nil, agent: self, number: iteration)
+                await observer?.onIterationEnd(context: nil, agent: self, number: iteration)
                 throw normalizeCancellation(error)
             }
         }
@@ -687,9 +687,9 @@ public actor Agent: AgentRuntime {
         prompt: String,
         systemPrompt: String,
         enableStreaming: Bool = false,
-        hooks: (any RunHooks)?
+        observer: (any AgentObserver)?
     ) async throws -> String {
-        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
+        await observer?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
 
         let content: String
         if enableStreaming {
@@ -700,7 +700,7 @@ public actor Agent: AgentRuntime {
                 if !token.isEmpty {
                     streamedContent += token
                 }
-                await hooks?.onOutputToken(context: nil, agent: self, token: token)
+                await observer?.onOutputToken(context: nil, agent: self, token: token)
             }
             content = streamedContent
         } else {
@@ -710,7 +710,7 @@ public actor Agent: AgentRuntime {
             )
         }
 
-        await hooks?.onLLMEnd(context: nil, agent: self, response: content, usage: nil)
+        await observer?.onLLMEnd(context: nil, agent: self, response: content, usage: nil)
         return content
     }
 
@@ -719,7 +719,7 @@ public actor Agent: AgentRuntime {
         response: InferenceResponse,
         conversationHistory: inout [ConversationMessage],
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)?,
+        observer: (any AgentObserver)?,
         tracing: TracingHelper?,
         membraneAdapter: (any MembraneAgentAdapter)?
     ) async throws {
@@ -731,7 +731,7 @@ public actor Agent: AgentRuntime {
                 parsedCall: parsedCall,
                 conversationHistory: &conversationHistory,
                 resultBuilder: resultBuilder,
-                hooks: hooks,
+                observer: observer,
                 tracing: tracing,
                 membraneAdapter: membraneAdapter
             )
@@ -743,7 +743,7 @@ public actor Agent: AgentRuntime {
         parsedCall: InferenceResponse.ParsedToolCall,
         conversationHistory: inout [ConversationMessage],
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)?,
+        observer: (any AgentObserver)?,
         tracing: TracingHelper?,
         membraneAdapter: (any MembraneAgentAdapter)?
     ) async throws {
@@ -757,7 +757,7 @@ public actor Agent: AgentRuntime {
                 arguments: parsedCall.arguments
             )
             _ = resultBuilder.addToolCall(call)
-            await hooks?.onToolStart(context: nil, agent: self, call: call)
+            await observer?.onToolStart(context: nil, agent: self, call: call)
 
             let spanID = await tracing?.traceToolCall(name: parsedCall.name, arguments: parsedCall.arguments)
             let startTime = ContinuousClock.now
@@ -783,7 +783,7 @@ public actor Agent: AgentRuntime {
                         duration: duration
                     )
                 }
-                await hooks?.onToolEnd(context: nil, agent: self, result: result)
+                await observer?.onToolEnd(context: nil, agent: self, result: result)
                 return
             } catch {
                 let duration = ContinuousClock.now - startTime
@@ -793,7 +793,7 @@ public actor Agent: AgentRuntime {
                 if let spanID {
                     await tracing?.traceToolError(spanId: spanID, name: parsedCall.name, error: error)
                 }
-                await hooks?.onToolEnd(context: nil, agent: self, result: result)
+                await observer?.onToolEnd(context: nil, agent: self, result: result)
                 if configuration.stopOnToolError {
                     throw AgentError.toolExecutionFailed(toolName: parsedCall.name, underlyingError: message)
                 }
@@ -815,7 +815,7 @@ public actor Agent: AgentRuntime {
             agent: self,
             context: nil,
             resultBuilder: resultBuilder,
-            hooks: hooks,
+            observer: observer,
             tracing: tracing,
             stopOnToolError: false
         )
@@ -896,7 +896,7 @@ public actor Agent: AgentRuntime {
         response: InferenceResponse,
         conversationHistory: inout [ConversationMessage],
         resultBuilder: AgentResult.Builder,
-        hooks: (any RunHooks)?,
+        observer: (any AgentObserver)?,
         tracing: TracingHelper?,
         membraneAdapter: (any MembraneAgentAdapter)?
     ) async throws -> String? {
@@ -927,7 +927,7 @@ public actor Agent: AgentRuntime {
                     reason.isEmpty ? "Continue the conversation" : reason
                 }
 
-                let result = try await targetAgent.run(handoffInput, session: nil, hooks: hooks)
+                let result = try await targetAgent.run(handoffInput, session: nil, observer: observer)
 
                 if let spanId {
                     let handoffDuration = ContinuousClock.now - handoffStart
@@ -958,7 +958,7 @@ public actor Agent: AgentRuntime {
                 parsedCall: parsedCall,
                 conversationHistory: &conversationHistory,
                 resultBuilder: resultBuilder,
-                hooks: hooks,
+                observer: observer,
                 tracing: tracing,
                 membraneAdapter: membraneAdapter
             )
@@ -1021,14 +1021,14 @@ public actor Agent: AgentRuntime {
         prompt: String,
         tools: [ToolSchema],
         systemPrompt: String,
-        hooks: (any RunHooks)? = nil,
+        observer: (any AgentObserver)? = nil,
         emitOutputTokens: Bool = false
     ) async throws -> InferenceResponse {
         var options = configuration.inferenceOptions
         options = optionsWithMembraneRuntimeSettings(options)
 
-        // Notify hooks of LLM start
-        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
+        // Notify observer of LLM start
+        await observer?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
 
         let response = try await provider.generateWithToolCalls(
             prompt: prompt,
@@ -1037,12 +1037,12 @@ public actor Agent: AgentRuntime {
         )
 
         if emitOutputTokens, response.toolCalls.isEmpty, let content = response.content, !content.isEmpty {
-            await hooks?.onOutputToken(context: nil, agent: self, token: content)
+            await observer?.onOutputToken(context: nil, agent: self, token: content)
         }
 
-        // Notify hooks of LLM end
+        // Notify observer of LLM end
         let responseContent = response.content ?? ""
-        await hooks?.onLLMEnd(context: nil, agent: self, response: responseContent, usage: response.usage)
+        await observer?.onLLMEnd(context: nil, agent: self, response: responseContent, usage: response.usage)
 
         return response
     }
@@ -1052,17 +1052,17 @@ public actor Agent: AgentRuntime {
         prompt: String,
         tools: [ToolSchema],
         systemPrompt: String,
-        hooks: (any RunHooks)? = nil
+        observer: (any AgentObserver)? = nil
     ) async throws -> InferenceResponse {
         var options = configuration.inferenceOptions
         options = optionsWithMembraneRuntimeSettings(options)
 
-        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
+        await observer?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
 
         var content = ""
         content.reserveCapacity(1024)
         var parsedToolCalls: [InferenceResponse.ParsedToolCall] = []
-        var usage: InferenceResponse.TokenUsage?
+        var usage: TokenUsage?
         var stopStreaming = false
 
         let stream = provider.streamWithToolCalls(prompt: prompt, tools: tools, options: options)
@@ -1071,10 +1071,10 @@ public actor Agent: AgentRuntime {
             switch update {
             case let .outputChunk(chunk):
                 if !chunk.isEmpty { content += chunk }
-                await hooks?.onOutputToken(context: nil, agent: self, token: chunk)
+                await observer?.onOutputToken(context: nil, agent: self, token: chunk)
 
             case let .toolCallPartial(partial):
-                await hooks?.onToolCallPartial(context: nil, agent: self, update: partial)
+                await observer?.onToolCallPartial(context: nil, agent: self, update: partial)
 
             case let .toolCallsCompleted(calls):
                 parsedToolCalls = calls
@@ -1089,7 +1089,7 @@ public actor Agent: AgentRuntime {
             if stopStreaming { break }
         }
 
-        await hooks?.onLLMEnd(context: nil, agent: self, response: content, usage: usage)
+        await observer?.onLLMEnd(context: nil, agent: self, response: content, usage: usage)
 
         return InferenceResponse(
             content: content.isEmpty ? nil : content,
@@ -1176,7 +1176,17 @@ public extension Agent {
             return copy
         }
 
-        /// Adds a tool.
+        /// Adds a tool (concrete type preferred; Swift resolves `some` before opening `any`).
+        /// - Parameter tool: The tool to add.
+        /// - Returns: A new builder with the tool added.
+        @discardableResult
+        public func addTool(_ tool: some AnyJSONTool) -> Builder {
+            var copy = self
+            copy._tools.append(tool)
+            return copy
+        }
+
+        /// Adds a tool from an existential (use when the concrete type is not available at the call site).
         /// - Parameter tool: The tool to add.
         /// - Returns: A new builder with the tool added.
         @discardableResult
@@ -1325,6 +1335,40 @@ public extension Agent {
             return copy
         }
 
+        /// Adds a handoff target using typed options.
+        ///
+        /// This is the canonical front-facing handoff API.
+        ///
+        /// - Parameters:
+        ///   - target: The target agent.
+        ///   - configure: Optional typed options transformer.
+        /// - Returns: A new builder with the handoff added.
+        @discardableResult
+        public func handoff<Target: AgentRuntime>(
+            to target: Target,
+            configure: (HandoffOptions<Target>) -> HandoffOptions<Target> = { $0 }
+        ) -> Builder {
+            var copy = self
+            let options = configure(HandoffOptions())
+            copy._handoffs.append(options.erasedConfiguration(for: target))
+            return copy
+        }
+
+        /// Adds multiple handoff targets using Swift parameter packs.
+        ///
+        /// Example:
+        /// ```swift
+        /// let agent = try Agent.Builder()
+        ///     .handoffs(billingAgent, supportAgent, salesAgent)
+        ///     .build()
+        /// ```
+        @discardableResult
+        public func handoffs<each Target: AgentRuntime>(_ targets: repeat each Target) -> Builder {
+            var copy = self
+            repeat copy._handoffs.append(AnyHandoffConfiguration(targetAgent: each targets))
+            return copy
+        }
+
         /// Builds the agent.
         /// - Returns: A new Agent instance.
         /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
@@ -1379,12 +1423,28 @@ public extension Agent {
     ///
     /// - Parameter content: A closure that builds the agent components.
     /// - Throws: `ToolRegistryError.duplicateToolName` if duplicate tool names are provided.
-    init(@LegacyAgentBuilder _ content: () -> LegacyAgentBuilder.Components) throws {
+    init(@AgentBuilder _ content: () -> AgentBuilder.Components) throws {
         let components = content()
+
+        // Merge Phase 5/6 builder settings into configuration
+        var config = components.configuration ?? .default
+        if let modelSettings = components.modelSettings {
+            config.modelSettings = modelSettings
+        }
+        if let parallelToolCalls = components.parallelToolCalls {
+            config.parallelToolCalls = parallelToolCalls
+        }
+        if let previousResponseId = components.previousResponseId {
+            config.previousResponseId = previousResponseId
+        }
+        if let autoPreviousResponseId = components.autoPreviousResponseId {
+            config.autoPreviousResponseId = autoPreviousResponseId
+        }
+
         try self.init(
             tools: components.tools,
             instructions: components.instructions ?? "",
-            configuration: components.configuration ?? .default,
+            configuration: config,
             memory: components.memory,
             inferenceProvider: components.inferenceProvider,
             tracer: components.tracer,

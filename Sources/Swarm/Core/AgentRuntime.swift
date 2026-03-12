@@ -21,7 +21,7 @@ import Foundation
 ///
 /// Example:
 /// ```swift
-/// let agent = ReActAgent(
+/// let agent = Agent(
 ///     tools: [CalculatorTool(), DateTimeTool()],
 ///     instructions: "You are a helpful assistant."
 /// )
@@ -75,18 +75,18 @@ public protocol AgentRuntime: Sendable {
     /// - Parameters:
     ///   - input: The user's input/query.
     ///   - session: Optional session for conversation history management.
-    ///   - hooks: Optional hooks for lifecycle callbacks.
+    ///   - observer: Optional observer for lifecycle callbacks.
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
-    func run(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) async throws -> AgentResult
+    func run(_ input: String, session: (any Session)?, observer: (any AgentObserver)?) async throws -> AgentResult
 
     /// Streams the agent's execution, yielding events as they occur.
     /// - Parameters:
     ///   - input: The user's input/query.
     ///   - session: Optional session for conversation history management.
-    ///   - hooks: Optional hooks for lifecycle callbacks.
+    ///   - observer: Optional observer for lifecycle callbacks.
     /// - Returns: An async stream of agent events.
-    nonisolated func stream(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error>
+    nonisolated func stream(_ input: String, session: (any Session)?, observer: (any AgentObserver)?) -> AsyncThrowingStream<AgentEvent, Error>
 
     /// Cancels any ongoing execution.
     func cancel() async
@@ -102,13 +102,13 @@ public protocol AgentRuntime: Sendable {
     /// - Parameters:
     ///   - input: The user's input/query.
     ///   - session: Optional session for conversation history management.
-    ///   - hooks: Optional hooks for lifecycle callbacks.
+    ///   - observer: Optional observer for lifecycle callbacks.
     /// - Returns: An `AgentResponse` with unique ID and detailed metadata.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     func runWithResponse(
         _ input: String,
         session: (any Session)?,
-        hooks: (any RunHooks)?
+        observer: (any AgentObserver)?
     ) async throws -> AgentResponse
 }
 
@@ -137,48 +137,39 @@ public extension AgentRuntime {
     nonisolated var handoffs: [AnyHandoffConfiguration] { [] }
 }
 
-// MARK: - Agent Backward Compatibility
+// MARK: - Agent Convenience Extensions
 
 public extension AgentRuntime {
-    /// Convenience method for run with hooks but no session.
-    func run(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
-        try await run(input, session: nil, hooks: hooks)
+    /// Convenience method for running without a session.
+    func run(_ input: String, observer: (any AgentObserver)? = nil) async throws -> AgentResult {
+        try await run(input, session: nil, observer: observer)
     }
 
-    /// Convenience method for run without session or hooks.
-    func run(_ input: String) async throws -> AgentResult {
-        try await run(input, session: nil, hooks: nil)
-    }
-
-    /// Convenience method for stream with hooks but no session.
-    nonisolated func stream(_ input: String, hooks: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error> {
-        stream(input, session: nil, hooks: hooks)
-    }
-
-    /// Convenience method for stream without session or hooks.
-    nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
-        stream(input, session: nil, hooks: nil)
+    /// Convenience method for streaming without a session.
+    nonisolated func stream(
+        _ input: String,
+        observer: (any AgentObserver)? = nil
+    ) -> AsyncThrowingStream<AgentEvent, Error> {
+        stream(input, session: nil, observer: observer)
     }
 }
 
 // MARK: - Agent runWithResponse Extensions
 
 public extension AgentRuntime {
-    /// Default implementation of `runWithResponse` using the existing `run()` method.
+    /// Default implementation of `runWithResponse` using `run()`.
     ///
     /// This creates an `AgentResponse` from the `AgentResult`, generating a unique
     /// response ID and converting tool results to `ToolCallRecord` format.
     func runWithResponse(
         _ input: String,
         session: (any Session)? = nil,
-        hooks: (any RunHooks)? = nil
+        observer: (any AgentObserver)? = nil
     ) async throws -> AgentResponse {
-        let result = try await run(input, session: session, hooks: hooks)
+        let result = try await run(input, session: session, observer: observer)
 
-        // Create lookup dictionary for O(1) access instead of O(n²)
         let toolCallsById = Dictionary(uniqueKeysWithValues: result.toolCalls.map { ($0.id, $0) })
 
-        // Convert ToolResults to ToolCallRecords
         let toolCallRecords: [ToolCallRecord] = result.toolResults.compactMap { toolResult in
             guard let toolCall = toolCallsById[toolResult.callId] else {
                 Log.agents.warning("Tool result missing matching call: \(toolResult.callId)")
@@ -207,14 +198,12 @@ public extension AgentRuntime {
         )
     }
 
-    /// Convenience method for runWithResponse with hooks but no session.
-    func runWithResponse(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResponse {
-        try await runWithResponse(input, session: nil, hooks: hooks)
-    }
-
-    /// Convenience method for runWithResponse without session or hooks.
-    func runWithResponse(_ input: String) async throws -> AgentResponse {
-        try await runWithResponse(input, session: nil, hooks: nil)
+    /// Convenience method for `runWithResponse` without a session.
+    func runWithResponse(
+        _ input: String,
+        observer: (any AgentObserver)? = nil
+    ) async throws -> AgentResponse {
+        try await runWithResponse(input, session: nil, observer: observer)
     }
 }
 
@@ -472,27 +461,6 @@ public struct InferenceResponse: Sendable, Equatable {
             self.id = id
             self.name = name
             self.arguments = arguments
-        }
-    }
-
-    /// Token usage statistics from inference.
-    public struct TokenUsage: Sendable, Equatable {
-        /// Number of tokens in the input/prompt.
-        public let inputTokens: Int
-
-        /// Number of tokens in the output/response.
-        public let outputTokens: Int
-
-        /// Total tokens used.
-        public var totalTokens: Int { inputTokens + outputTokens }
-
-        /// Creates token usage statistics.
-        /// - Parameters:
-        ///   - inputTokens: Number of tokens in the input/prompt.
-        ///   - outputTokens: Number of tokens in the output/response.
-        public init(inputTokens: Int, outputTokens: Int) {
-            self.inputTokens = inputTokens
-            self.outputTokens = outputTokens
         }
     }
 

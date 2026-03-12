@@ -9,17 +9,17 @@ import Testing
 
 // MARK: - ReActAgentTests
 
-@Suite("ReActAgent Tests")
+@Suite("Agent Tests")
 struct ReActAgentTests {
     @Test("Simple query returns final answer")
     func simpleQuery() async throws {
-        // Create a mock provider that immediately returns a final answer
+        // Create a mock provider that immediately returns a response
         let mockProvider = MockInferenceProvider(responses: [
-            "Final Answer: 42"
+            "42"
         ])
 
         // Create agent with the mock provider
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "You are a helpful assistant.",
             inferenceProvider: mockProvider
@@ -28,44 +28,10 @@ struct ReActAgentTests {
         // Run the agent
         let result = try await agent.run("What is the answer?")
 
-        // Verify the output
+        // Verify the output — Agent returns the raw model response
         #expect(result.output == "42")
         #expect(result.iterationCount == 1)
         #expect(await mockProvider.generateCallCount == 1)
-    }
-
-    @Test("Tool call execution")
-    func toolCallExecution() async throws {
-        // Create a spy tool to verify it gets called
-        let spyTool = await SpyTool(
-            name: "test_tool",
-            result: .string("Tool result")
-        )
-
-        // Create mock provider that first calls the tool, then provides final answer
-        let mockProvider = MockInferenceProvider(responses: [
-            "Thought: I need to use the test_tool.\nAction: test_tool()",
-            "Final Answer: The tool returned: Tool result"
-        ])
-
-        // Create agent with the spy tool
-        let agent = try ReActAgent(
-            tools: [spyTool],
-            instructions: "You are a helpful assistant.",
-            inferenceProvider: mockProvider
-        )
-
-        // Run the agent
-        let result = try await agent.run("Use the tool")
-
-        // Verify the tool was called
-        let callCount = await spyTool.callCount
-        #expect(callCount == 1)
-
-        // Verify the final answer
-        #expect(result.output.contains("Tool result"))
-        #expect(result.toolCalls.count == 1)
-        #expect(result.toolCalls[0].toolName == "test_tool")
     }
 
     @Test("Native tool calling executes provider tool calls")
@@ -90,7 +56,7 @@ struct ReActAgentTests {
                 usage: nil
             ),
             InferenceResponse(
-                content: "Final Answer: Done",
+                content: "Done",
                 toolCalls: [],
                 finishReason: .completed,
                 usage: nil
@@ -100,7 +66,7 @@ struct ReActAgentTests {
         let config = AgentConfiguration.default
             .modelSettings(ModelSettings.default.toolChoice(.required))
 
-        let agent = try ReActAgent(
+        let agent = try Agent(
             tools: [spyTool],
             instructions: "You are a helpful assistant.",
             configuration: config,
@@ -124,14 +90,17 @@ struct ReActAgentTests {
 
     @Test("Max iterations exceeded")
     func maxIterationsExceeded() async throws {
-        // Create mock provider that never provides a final answer
+        // Create mock provider that always returns tool calls (never a final text response)
         let mockProvider = MockInferenceProvider()
-        await mockProvider.configureInfiniteThinking(thoughts: ["Still thinking..."])
+        await mockProvider.configureInfiniteToolCalling(toolName: "noop")
+
+        // A no-op tool so the agent enters the tool-calling path
+        let noopTool = MockTool(name: "noop", description: "Does nothing")
 
         // Create agent with maxIterations=1
         let config = AgentConfiguration.default.maxIterations(1)
-        let agent = try ReActAgent(
-            tools: [],
+        let agent = try Agent(
+            tools: [noopTool],
             instructions: "You are a helpful assistant.",
             configuration: config,
             inferenceProvider: mockProvider

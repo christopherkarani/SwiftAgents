@@ -38,13 +38,7 @@ struct MyApp {
         guard let openRouterKey = ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"], !openRouterKey.isEmpty else {
             fatalError("Missing OPENROUTER_API_KEY in environment variables.")
         }
-        let config: OpenRouterConfiguration
-        do {
-            config = try OpenRouterConfiguration(apiKey: openRouterKey, model: .init("xiaomi/mimo-v2-flash:free"))
-        } catch {
-            fatalError("Failed to create OpenRouterConfiguration: \(error)")
-        }
-        let provider = OpenRouterProvider(configuration: config)
+        let provider = LLM.openRouter(apiKey: openRouterKey, model: "xiaomi/mimo-v2-flash:free")
 
         let inferenceProvider: any InferenceProvider
         #if canImport(AnyLanguageModel) && SWARM_DEMO_ANYLANGUAGEMODEL
@@ -75,7 +69,7 @@ struct MyApp {
 
         
 
-        let agent = ReActAgent.Builder()
+        let agent = Agent.Builder()
             .instructions("Your a deep research Agent, when you dont find something you keep looking ")
             .inferenceProvider(inferenceProvider)
             .addTool(searchTool)

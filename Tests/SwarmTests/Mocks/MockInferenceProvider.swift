@@ -14,11 +14,10 @@ import Foundation
 /// ```swift
 /// let mock = await MockInferenceProvider()
 /// await mock.setResponses([
-///     "Thought: I need to calculate.\nAction: calculator(expression: 2+2)",
-///     "Final Answer: The result is 4"
+///     "The result is 4"
 /// ])
 ///
-/// let agent = try ReActAgent(tools: [CalculatorTool()], inferenceProvider: mock)
+/// let agent = try Agent(tools: [CalculatorTool()], inferenceProvider: mock)
 /// let result = try await agent.run("What is 2+2?")
 /// ```
 public actor MockInferenceProvider: InferenceProvider {
@@ -42,7 +41,7 @@ public actor MockInferenceProvider: InferenceProvider {
     public var responseDelay: Duration = .zero
 
     /// Default response when responses array is exhausted.
-    public var defaultResponse = "Final Answer: Mock response"
+    public var defaultResponse = "Mock response"
 
     // MARK: - Call Recording
 
@@ -186,30 +185,64 @@ public actor MockInferenceProvider: InferenceProvider {
         errorToThrow = nil
     }
 
-    /// Configures the mock for a simple ReAct sequence.
+    /// Configures the mock for a simple tool calling sequence.
     /// - Parameters:
     ///   - toolCalls: Tool calls to simulate, with tool name and arguments.
     ///   - finalAnswer: The final answer to return.
-    public func configureReActSequence(
-        toolCalls: [(name: String, args: String)] = [],
+    public func configureToolCallingSequence(
+        toolCalls: [(name: String, args: [String: SendableValue])] = [],
         finalAnswer: String
     ) {
-        responses = []
+        var structured: [InferenceResponse] = []
 
-        for (name, args) in toolCalls {
-            responses.append("Thought: I need to use the \(name) tool.\nAction: \(name)(\(args))")
+        for (index, call) in toolCalls.enumerated() {
+            structured.append(InferenceResponse(
+                content: nil,
+                toolCalls: [
+                    InferenceResponse.ParsedToolCall(
+                        id: "call_\(index)",
+                        name: call.name,
+                        arguments: call.args
+                    )
+                ],
+                finishReason: .toolCall,
+                usage: nil
+            ))
         }
 
-        responses.append("Final Answer: \(finalAnswer)")
-        responseIndex = 0
+        structured.append(InferenceResponse(
+            content: finalAnswer,
+            toolCalls: [],
+            finishReason: .completed,
+            usage: nil
+        ))
+
+        toolCallResponses = structured
+        toolCallResponseIndex = 0
     }
 
-    /// Configures the mock to always think (never finish).
-    /// - Parameter thoughts: The thoughts to cycle through.
-    public func configureInfiniteThinking(thoughts: [String] = ["Still thinking..."]) {
-        responses = thoughts.map { "Thought: \($0)" }
-        defaultResponse = "Thought: \(thoughts.first ?? "thinking...")"
-        responseIndex = 0
+    /// Configures the mock to always return tool calls (never finish with a text response).
+    /// - Parameter toolName: The name of the tool to call in each response.
+    ///
+    /// This simulates an agent that keeps calling tools and never produces a final answer,
+    /// which will trigger `maxIterationsExceeded` when the iteration limit is reached.
+    public func configureInfiniteToolCalling(toolName: String = "noop") {
+        let loopingToolCall = InferenceResponse(
+            content: nil,
+            toolCalls: [
+                InferenceResponse.ParsedToolCall(
+                    id: "call_loop",
+                    name: toolName,
+                    arguments: [:]
+                )
+            ],
+            finishReason: .toolCall,
+            usage: nil
+        )
+        // Set a single tool call response. For maxIterations=1, one response is sufficient
+        // because the agent will consume it, process the tool call, and then exit the loop.
+        toolCallResponses = [loopingToolCall]
+        toolCallResponseIndex = 0
     }
 
     // MARK: Private

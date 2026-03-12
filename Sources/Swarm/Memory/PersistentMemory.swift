@@ -97,7 +97,7 @@ public actor PersistentMemory: Memory {
 
     public func context(for _: String, tokenLimit: Int) async -> String {
         let messages = await allMessages()
-        return formatMessagesForContext(
+        return MemoryMessage.formatContext(
             messages,
             tokenLimit: tokenLimit,
             tokenEstimator: tokenEstimator

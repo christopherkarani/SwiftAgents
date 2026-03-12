@@ -222,17 +222,17 @@ public extension LLM {
     struct AdvancedOptions: Sendable {
         public static let `default` = AdvancedOptions()
 
-        /// Baseline Conduit generation configuration.
-        ///
-        /// Swarm still applies `InferenceOptions` (temperature/maxTokens/etc) per request.
-        public var baseConfig: Conduit.GenerateConfig
+        /// Baseline Conduit generation configuration (internal — not part of the public API).
+        var baseConfig: Conduit.GenerateConfig
 
         public var openRouter: OpenRouterOptions
 
-        public init(
-            baseConfig: Conduit.GenerateConfig = .default,
-            openRouter: OpenRouterOptions = .default
-        ) {
+        public init(openRouter: OpenRouterOptions = .default) {
+            self.baseConfig = .default
+            self.openRouter = openRouter
+        }
+
+        init(baseConfig: Conduit.GenerateConfig, openRouter: OpenRouterOptions = .default) {
             self.baseConfig = baseConfig
             self.openRouter = openRouter
         }

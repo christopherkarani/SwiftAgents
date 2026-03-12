@@ -316,24 +316,3 @@ extension MultiProvider: CustomStringConvertible {
     }
 }
 
-// MARK: - Factory Methods
-
-public extension MultiProvider {
-    /// Creates a MultiProvider with OpenRouter as the default provider.
-    ///
-    /// This is a convenience factory for the common case of using OpenRouter
-    /// as the default fallback for unmatched prefixes.
-    ///
-    /// - Parameters:
-    ///   - apiKey: The OpenRouter API key.
-    ///   - defaultModel: The default model to use. Default: `.gpt4o`
-    /// - Returns: A configured MultiProvider instance.
-    /// - Throws: `OpenRouterConfigurationError` if configuration fails.
-    static func withOpenRouter(
-        apiKey: String,
-        defaultModel: OpenRouterModel = .gpt4o
-    ) throws -> MultiProvider {
-        let openRouter = try OpenRouterProvider(apiKey: apiKey, model: defaultModel)
-        return MultiProvider(defaultProvider: openRouter)
-    }
-}

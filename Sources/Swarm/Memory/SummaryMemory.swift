@@ -142,7 +142,7 @@ public actor SummaryMemory: Memory {
 
         // Add recent messages within remaining budget
         if remainingTokens > 0 {
-            let recentContext = formatMessagesForContext(
+            let recentContext = MemoryMessage.formatContext(
                 recentMessages,
                 tokenLimit: remainingTokens,
                 tokenEstimator: tokenEstimator

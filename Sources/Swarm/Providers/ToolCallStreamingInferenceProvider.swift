@@ -17,7 +17,7 @@ public enum InferenceStreamUpdate: Sendable, Equatable {
     case toolCallsCompleted([InferenceResponse.ParsedToolCall])
 
     /// Token usage statistics (typically available at the end of streaming).
-    case usage(InferenceResponse.TokenUsage)
+    case usage(TokenUsage)
 }
 
 /// An inference provider that can stream tool-call assembly.

@@ -120,7 +120,7 @@ public actor HTTPMCPServer: MCPServer {
             ])
         ]
 
-        let request = MCPRequest(method: "initialize", params: params)
+        let request = try MCPRequest(method: "initialize", params: params)
         let response = try await sendRequest(request)
 
         if let error = response.error {
@@ -141,7 +141,7 @@ public actor HTTPMCPServer: MCPServer {
     /// - Returns: An array of tool schemas describing available tools.
     /// - Throws: `MCPError` if the request fails.
     public func listTools() async throws -> [ToolSchema] {
-        let request = MCPRequest(method: "tools/list")
+        let request = try MCPRequest(method: "tools/list")
         let response = try await sendRequest(request)
 
         if let error = response.error {
@@ -168,7 +168,7 @@ public actor HTTPMCPServer: MCPServer {
             "arguments": .dictionary(arguments)
         ]
 
-        let request = MCPRequest(method: "tools/call", params: params)
+        let request = try MCPRequest(method: "tools/call", params: params)
         let response = try await sendRequest(request)
 
         if let error = response.error {
@@ -187,7 +187,7 @@ public actor HTTPMCPServer: MCPServer {
     /// - Returns: An array of resource metadata objects.
     /// - Throws: `MCPError` if the request fails.
     public func listResources() async throws -> [MCPResource] {
-        let request = MCPRequest(method: "resources/list")
+        let request = try MCPRequest(method: "resources/list")
         let response = try await sendRequest(request)
 
         if let error = response.error {
@@ -234,7 +234,7 @@ public actor HTTPMCPServer: MCPServer {
             "uri": .string(uri)
         ]
 
-        let request = MCPRequest(method: "resources/read", params: params)
+        let request = try MCPRequest(method: "resources/read", params: params)
         let response = try await sendRequest(request)
 
         if let error = response.error {
@@ -545,7 +545,7 @@ public actor HTTPMCPServer: MCPServer {
         let text = extractString(contentDict["text"])
         let blob = extractString(contentDict["blob"])
 
-        return MCPResourceContent(
+        return try MCPResourceContent(
             uri: uri,
             mimeType: mimeType,
             text: text,

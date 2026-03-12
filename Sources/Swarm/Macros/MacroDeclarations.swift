@@ -231,8 +231,8 @@ public macro AgentActor(
 /// - `var inferenceProvider: (any InferenceProvider)?` - Optional provider
 /// - `var tracer: (any Tracer)?` - Optional tracer
 /// - `init(...)` - Standard initializer with all parameters
-/// - `run(_ input:session:hooks:)` - Calls your `process()` method
-/// - `stream(_ input:session:hooks:)` - Wraps run() in tracked async stream
+/// - `run(_ input:session:observer:)` - Calls your `process()` method
+/// - `stream(_ input:session:observer:)` - Wraps run() in tracked async stream
 /// - `cancel()` - Cancellation support
 /// - `Agent` conformance
 ///
