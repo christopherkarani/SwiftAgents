@@ -53,14 +53,23 @@ struct MyApp {
 
         let input = "Conduct deep research on the war on ukraine and its impact on global security. Provide a detailed report with findings, potential implications, and recommendations."
 
-        let agent = Agent.Builder()
-            .instructions("Your a deep research Agent, when you dont find something you keep looking ")
-            .inferenceProvider(inferenceProvider)
-            .addTool(searchTool)
-            .addTool(StringTool())
-            .addTool(DateTimeTool())
-            .tracer(PrettyConsoleTracer())
-            .build()
+        // V3 canonical Agent init — one path, no Builder.
+        // Provider resolution order:
+        //   1. Explicit provider passed to Agent(...)
+        //   2. Environment provider via .environment(\.inferenceProvider, ...)
+        //   3. Swarm.defaultProvider / Swarm.cloudProvider
+        //   4. Apple Foundation Models (on-device), if available
+        let agent: Agent
+        do {
+            agent = try Agent(
+                tools: [searchTool, StringTool(), DateTimeTool()],
+                instructions: "You are a deep research Agent. When you don't find something you keep looking.",
+                inferenceProvider: inferenceProvider,
+                tracer: PrettyConsoleTracer()
+            )
+        } catch {
+            fatalError("Failed to create agent: \(error)")
+        }
 
         do {
             for try await event in agent.stream(input) {
