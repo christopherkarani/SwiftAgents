@@ -204,7 +204,7 @@ struct OutputGuardrailTests {
         #expect(result.outputInfo == violationInfo)
     }
 
-    // MARK: - LegacyAgent Parameter Tests
+    // MARK: - Agent Parameter Tests
 
     @Test("ClosureOutputGuardrail receives agent parameter")
     func closureGuardrailWithAgent() async throws {

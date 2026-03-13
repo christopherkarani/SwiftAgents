@@ -1,23 +1,22 @@
 import Foundation
 
-/// Composable, value-type orchestration primitive.
-/// Replaces all 11 OrchestrationStep types at the user-facing API level.
+/// Composable, value-type orchestration primitive for V3.
 ///
 /// ```swift
-/// let result = try await Workflow()
+/// let result = try await WorkflowV3()
 ///     .step(researchAgent)
 ///     .step(writerAgent)
 ///     .run(input: "Write about Swift concurrency")
 /// ```
-public struct Workflow: Sendable {
+public struct WorkflowV3: Sendable {
 
     // MARK: - Internal step representation
 
     enum StepKind: @unchecked Sendable {
-        case single(Agent)
-        case parallel([Agent], merge: Parallel.MergeStrategy)
-        case route(@Sendable (String) -> Agent?)
-        case repeatUntil(Agent, condition: @Sendable (String) -> Bool, maxIterations: Int)
+        case single(AgentV3)
+        case parallel([AgentV3], merge: Workflow.MergeStrategy)
+        case route(@Sendable (String) -> AgentV3?)
+        case repeatUntil(AgentV3, condition: @Sendable (String) -> Bool, maxIterations: Int)
         case transform(@Sendable (String) async throws -> String)
     }
 
@@ -28,10 +27,10 @@ public struct Workflow: Sendable {
 
     public init() {}
 
-    // MARK: - Step builders (each returns a NEW Workflow — value semantics)
+    // MARK: - Step builders (each returns a NEW WorkflowV3 — value semantics)
 
     /// Add a single agent step.
-    public func step(_ agent: Agent) -> Workflow {
+    public func step(_ agent: AgentV3) -> WorkflowV3 {
         var copy = self
         copy.steps.append(.single(agent))
         return copy
@@ -39,23 +38,23 @@ public struct Workflow: Sendable {
 
     /// Add a parallel execution step with multiple agents.
     public func parallel(
-        _ agents: Agent...,
-        merge: Parallel.MergeStrategy = .concatenate
-    ) -> Workflow {
+        _ agents: AgentV3...,
+        merge: Workflow.MergeStrategy = .indexed
+    ) -> WorkflowV3 {
         var copy = self
         copy.steps.append(.parallel(agents, merge: merge))
         return copy
     }
 
     /// Add a transform step (pure function, no LLM call).
-    public func map(_ transform: @escaping @Sendable (String) async throws -> String) -> Workflow {
+    public func map(_ transform: @escaping @Sendable (String) async throws -> String) -> WorkflowV3 {
         var copy = self
         copy.steps.append(.transform(transform))
         return copy
     }
 
     /// Add a routing step that selects an agent based on input.
-    public func route(_ selector: @escaping @Sendable (String) -> Agent?) -> Workflow {
+    public func route(_ selector: @escaping @Sendable (String) -> AgentV3?) -> WorkflowV3 {
         var copy = self
         copy.steps.append(.route(selector))
         return copy
@@ -63,10 +62,10 @@ public struct Workflow: Sendable {
 
     /// Add a loop step that repeats until a condition is met.
     public func repeatUntil(
-        _ agent: Agent,
+        _ agent: AgentV3,
         maxIterations: Int = 5,
         until condition: @escaping @Sendable (String) -> Bool
-    ) -> Workflow {
+    ) -> WorkflowV3 {
         var copy = self
         copy.steps.append(.repeatUntil(agent, condition: condition, maxIterations: maxIterations))
         return copy
@@ -75,18 +74,18 @@ public struct Workflow: Sendable {
 
 // MARK: - Execution
 
-extension Workflow {
+extension WorkflowV3 {
     /// Execute the workflow sequentially, passing output from each step to the next.
     public func run(
         input: String,
-        hooks: (any RunHooks)? = nil
+        observer: (any AgentObserver)? = nil
     ) async throws -> AgentResult {
         var currentInput = input
         var lastResult = AgentResult(output: input)
         let startTime = ContinuousClock.now
 
         for step in steps {
-            lastResult = try await executeStep(step, input: currentInput, hooks: hooks)
+            lastResult = try await executeStep(step, input: currentInput, observer: observer)
             currentInput = lastResult.output
         }
 
@@ -105,7 +104,7 @@ extension Workflow {
     private func executeStep(
         _ step: StepKind,
         input: String,
-        hooks: (any RunHooks)?
+        observer: (any AgentObserver)?
     ) async throws -> AgentResult {
         switch step {
         case .single(let agent):
@@ -127,7 +126,7 @@ extension Workflow {
 
         case .route(let selector):
             guard let selected = selector(input) else {
-                throw OrchestrationError.routingFailed(reason: "No route matched input")
+                throw WorkflowError.routingFailed(reason: "No route matched input")
             }
             return try await selected.run(input)
 

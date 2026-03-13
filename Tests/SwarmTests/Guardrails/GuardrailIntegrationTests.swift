@@ -57,9 +57,9 @@ private actor MockGuardrailAgent: AgentRuntime {
 
 @Suite("Guardrail Integration Tests")
 struct GuardrailIntegrationTests {
-    // MARK: - LegacyAgent + Input Guardrails
+    // MARK: - Agent + Input Guardrails
 
-    @Test("LegacyAgent with input guardrail passed - execution proceeds normally")
+    @Test("Agent with input guardrail passed - execution proceeds normally")
     func agentWithInputGuardrailPassed() async throws {
         // Given: An agent with a passing input guardrail
         let mockProvider = MockInferenceProvider()
@@ -79,7 +79,7 @@ struct GuardrailIntegrationTests {
         }
 
         // When: Running the agent with passing guardrail
-        // Note: This test assumes LegacyAgent protocol will have inputGuardrails property
+        // Note: This test assumes Agent protocol will have inputGuardrails property
         // For now, we test the guardrail runner directly
         let context = AgentContext(input: "Test query")
         let runner = GuardrailRunner()
@@ -97,7 +97,7 @@ struct GuardrailIntegrationTests {
         #expect(results[0].result.message == "Input validation successful")
     }
 
-    @Test("LegacyAgent with input guardrail triggered - execution halts with error")
+    @Test("Agent with input guardrail triggered - execution halts with error")
     func agentWithInputGuardrailTriggered() async throws {
         // Given: An agent with a failing input guardrail
         let agent = await MockGuardrailAgent(name: "TestAgent")
@@ -142,7 +142,7 @@ struct GuardrailIntegrationTests {
         }
     }
 
-    @Test("LegacyAgent with multiple input guardrails - executes in order")
+    @Test("Agent with multiple input guardrails - executes in order")
     func agentWithMultipleInputGuardrails() async throws {
         // Given: An agent with multiple input guardrails
         let agent = await MockGuardrailAgent(name: "TestAgent")
@@ -189,9 +189,9 @@ struct GuardrailIntegrationTests {
         #expect(results[1].guardrailName == "format_check")
     }
 
-    // MARK: - LegacyAgent + Output Guardrails
+    // MARK: - Agent + Output Guardrails
 
-    @Test("LegacyAgent with output guardrail passed - result returned normally")
+    @Test("Agent with output guardrail passed - result returned normally")
     func agentWithOutputGuardrailPassed() async throws {
         // Given: An agent with output guardrail
         let agent = await MockGuardrailAgent(
@@ -224,7 +224,7 @@ struct GuardrailIntegrationTests {
         #expect(guardrailResults[0].guardrailName == "output_validator")
     }
 
-    @Test("LegacyAgent with output guardrail triggered - throws after execution")
+    @Test("Agent with output guardrail triggered - throws after execution")
     func agentWithOutputGuardrailTriggered() async throws {
         // Given: An agent with output guardrail that detects inappropriate content
         let agent = await MockGuardrailAgent(
@@ -399,7 +399,7 @@ extension GuardrailIntegrationTests {
 
     // MARK: - Combined Scenarios
 
-    @Test("LegacyAgent with both input and output guardrails - full validation flow")
+    @Test("Agent with both input and output guardrails - full validation flow")
     func agentWithBothInputAndOutputGuardrails() async throws {
         // Given: An agent with both input and output guardrails
         let agent = await MockGuardrailAgent(
@@ -437,7 +437,7 @@ extension GuardrailIntegrationTests {
             context: context
         )
 
-        // LegacyAgent execution
+        // Agent execution
         let result = try await agent.run("Valid input query")
 
         // Output guardrail check
@@ -547,7 +547,7 @@ extension GuardrailIntegrationTests {
 
     @Test("Empty guardrail arrays - execution proceeds normally")
     func emptyGuardrailArrays() async throws {
-        // Given: LegacyAgent with no guardrails
+        // Given: Agent with no guardrails
         let agent = await MockGuardrailAgent(
             name: "UnguardedAgent",
             responseHandler: { input in "Response: \(input)" }

@@ -9,20 +9,19 @@ import Foundation
 
 /// Events emitted during agent execution, used for streaming responses.
 ///
-/// These events allow observers to track the agent's progress through
-/// its reasoning and action cycle.
+/// `AgentEvent` is organized into five nested namespaces so consumers can
+/// pattern-match at whatever level of detail they need:
 ///
-/// Example:
 /// ```swift
 /// for try await event in agent.stream("What's 2+2?") {
 ///     switch event {
-///     case .started(let input):
+///     case .lifecycle(.started(let input)):
 ///         print("Started with: \(input)")
-///     case .thinking(let thought):
+///     case .output(.thinking(thought: let thought)):
 ///         print("Thinking: \(thought)")
-///     case .toolCallStarted(let call):
+///     case .tool(.started(call: let call)):
 ///         print("Calling tool: \(call.toolName)")
-///     case .completed(let result):
+///     case .lifecycle(.completed(let result)):
 ///         print("Result: \(result.output)")
 ///     default:
 ///         break
@@ -30,116 +29,218 @@ import Foundation
 /// }
 /// ```
 public enum AgentEvent: Sendable {
-    // MARK: - Lifecycle Events
 
-    /// LegacyAgent execution has started.
-    case started(input: String)
+    // MARK: - New V3 Nested Cases
 
-    /// LegacyAgent execution has completed successfully.
-    case completed(result: AgentResult)
+    /// Agent lifecycle events (start, complete, fail, cancel, guardrail, iteration).
+    case lifecycle(Lifecycle)
 
-    /// LegacyAgent execution failed with an error.
-    case failed(error: AgentError)
+    /// Tool call events (started, partial streaming, completed, failed).
+    case tool(Tool)
 
-    /// LegacyAgent execution was cancelled.
-    case cancelled
+    /// Output events (token, chunk, thinking, partial thinking).
+    case output(Output)
 
-    /// Guardrail validation failed.
-    case guardrailFailed(error: GuardrailError)
+    /// Agent handoff events (requested, started, completed, skipped).
+    case handoff(Handoff)
 
-    // MARK: - Thinking Events
+    /// Observability events (decision, plan, guardrail state, memory, LLM telemetry).
+    case observation(Observation)
 
-    /// LegacyAgent is thinking/reasoning (ReAct "Thought" step).
-    case thinking(thought: String)
+    // MARK: - Nested Enums
 
-    /// Partial thought during streaming.
-    case thinkingPartial(partialThought: String)
+    /// Lifecycle events covering the overall agent execution arc.
+    public enum Lifecycle: Sendable {
+        /// Agent execution has started.
+        case started(input: String)
 
-    // MARK: - Tool Events
+        /// Agent execution completed successfully.
+        case completed(result: AgentResult)
 
-    /// LegacyAgent is calling a tool (ReAct "Action" step).
-    case toolCallStarted(call: ToolCall)
+        /// Agent execution failed.
+        case failed(error: AgentError)
 
-    /// Tool call arguments are being streamed (partial JSON fragments).
-    ///
-    /// This event is emitted before tool execution begins and is intended for live UI.
-    case toolCallPartial(update: PartialToolCallUpdate)
+        /// Agent execution was cancelled.
+        case cancelled
 
-    /// Tool execution completed (ReAct "Observation" step).
-    case toolCallCompleted(call: ToolCall, result: ToolResult)
+        /// A guardrail rejected input or output.
+        case guardrailFailed(error: GuardrailError)
 
-    /// Tool execution failed.
-    case toolCallFailed(call: ToolCall, error: AgentError)
+        /// A new iteration of the reasoning loop began.
+        case iterationStarted(number: Int)
 
-    // MARK: - Output Events
+        /// An iteration of the reasoning loop completed.
+        case iterationCompleted(number: Int)
+    }
 
-    /// Final output token (for streaming).
-    case outputToken(token: String)
+    /// Tool invocation events.
+    public enum Tool: Sendable {
+        /// A tool call was initiated.
+        case started(call: ToolCall)
 
-    /// Final output chunk (larger than single token).
-    case outputChunk(chunk: String)
+        /// Partial (streaming) argument data arrived for an in-progress tool call.
+        case partial(update: PartialToolCallUpdate)
 
-    // MARK: - Iteration Events
+        /// A tool call completed successfully.
+        case completed(call: ToolCall, result: ToolResult)
 
-    /// New iteration started in the reasoning loop.
-    case iterationStarted(number: Int)
+        /// A tool call failed.
+        case failed(call: ToolCall, error: AgentError)
+    }
 
-    /// Iteration completed.
-    case iterationCompleted(number: Int)
+    /// Token and thought output events.
+    public enum Output: Sendable {
+        /// A single token streamed from the model.
+        case token(String)
 
-    // MARK: - Decision Events
+        /// A larger text chunk streamed from the model.
+        case chunk(String)
 
-    /// LegacyAgent made a decision
-    case decision(decision: String, options: [String]?)
+        /// The agent produced a reasoning thought (ReAct "Thought" step).
+        case thinking(thought: String)
 
-    /// LegacyAgent created or updated a plan
-    case planUpdated(plan: String, stepCount: Int)
+        /// A partial thought during streaming.
+        case thinkingPartial(String)
+    }
 
-    // MARK: - Handoff Events
+    /// Handoff events when control transfers between agents.
+    public enum Handoff: Sendable {
+        /// A handoff was requested but not yet started.
+        case requested(from: String, to: String, reason: String?)
 
-    /// LegacyAgent handoff initiated
-    case handoffRequested(fromAgent: String, toAgent: String, reason: String?)
+        /// A handoff completed.
+        case completed(from: String, to: String)
 
-    /// LegacyAgent handoff completed
-    case handoffCompleted(fromAgent: String, toAgent: String)
+        /// A handoff has started with specific input forwarded to the target agent.
+        case started(from: String, to: String, input: String)
 
-    /// A handoff to another agent started with input.
-    case handoffStarted(from: String, to: String, input: String)
+        /// A handoff completed and produced a result.
+        case completedWithResult(from: String, to: String, result: AgentResult)
 
-    /// A handoff to another agent completed with result.
-    case handoffCompletedWithResult(from: String, to: String, result: AgentResult)
+        /// A handoff was skipped (e.g. handoffs disabled).
+        case skipped(from: String, to: String, reason: String)
+    }
 
-    /// A handoff was skipped because it was disabled.
-    case handoffSkipped(from: String, to: String, reason: String)
+    /// Observability and telemetry events.
+    public enum Observation: Sendable {
+        /// The agent made a named decision, optionally from a set of options.
+        case decision(String, options: [String]?)
 
-    // MARK: - Guardrail Events
+        /// The agent's execution plan was created or updated.
+        case planUpdated(String, stepCount: Int)
 
-    /// Guardrail check started
-    case guardrailStarted(name: String, type: GuardrailType)
+        /// A guardrail check started.
+        case guardrailStarted(name: String, type: GuardrailType)
 
-    /// Guardrail check passed
-    case guardrailPassed(name: String, type: GuardrailType)
+        /// A guardrail check passed.
+        case guardrailPassed(name: String, type: GuardrailType)
 
-    /// Guardrail tripwire triggered
-    case guardrailTriggered(name: String, type: GuardrailType, message: String?)
+        /// A guardrail tripwire was triggered.
+        case guardrailTriggered(name: String, type: GuardrailType, message: String?)
 
-    // MARK: - Memory Events
+        /// Memory was accessed.
+        case memoryAccessed(operation: MemoryOperation, count: Int)
 
-    /// Memory was accessed
-    case memoryAccessed(operation: MemoryOperation, count: Int)
+        /// An LLM call started.
+        case llmStarted(model: String?, promptTokens: Int?)
 
-    // MARK: - LLM Events
+        /// An LLM call completed with usage telemetry.
+        case llmCompleted(model: String?, promptTokens: Int?, completionTokens: Int?, duration: TimeInterval)
+    }
 
-    /// LLM call started
-    case llmStarted(model: String?, promptTokens: Int?)
+    // Lifecycle
+    @available(*, deprecated, message: "Use .lifecycle(.started(input:))")
+    static func started(input: String) -> AgentEvent { .lifecycle(.started(input: input)) }
 
-    /// LLM call completed
-    case llmCompleted(model: String?, promptTokens: Int?, completionTokens: Int?, duration: TimeInterval)
+    @available(*, deprecated, message: "Use .lifecycle(.completed(result:))")
+    static func completed(result: AgentResult) -> AgentEvent { .lifecycle(.completed(result: result)) }
+
+    @available(*, deprecated, message: "Use .lifecycle(.failed(error:))")
+    static func failed(error: AgentError) -> AgentEvent { .lifecycle(.failed(error: error)) }
+
+    @available(*, deprecated, message: "Use .lifecycle(.cancelled)")
+    static var cancelled: AgentEvent { .lifecycle(.cancelled) }
+
+    @available(*, deprecated, message: "Use .lifecycle(.guardrailFailed(error:))")
+    static func guardrailFailed(error: GuardrailError) -> AgentEvent { .lifecycle(.guardrailFailed(error: error)) }
+
+    @available(*, deprecated, message: "Use .lifecycle(.iterationStarted(number:))")
+    static func iterationStarted(number: Int) -> AgentEvent { .lifecycle(.iterationStarted(number: number)) }
+
+    @available(*, deprecated, message: "Use .lifecycle(.iterationCompleted(number:))")
+    static func iterationCompleted(number: Int) -> AgentEvent { .lifecycle(.iterationCompleted(number: number)) }
+
+    // Tool
+    @available(*, deprecated, message: "Use .tool(.started(call:))")
+    static func toolCallStarted(call: ToolCall) -> AgentEvent { .tool(.started(call: call)) }
+
+    @available(*, deprecated, message: "Use .tool(.partial(update:))")
+    static func toolCallPartial(update: PartialToolCallUpdate) -> AgentEvent { .tool(.partial(update: update)) }
+
+    @available(*, deprecated, message: "Use .tool(.completed(call:result:))")
+    static func toolCallCompleted(call: ToolCall, result: ToolResult) -> AgentEvent { .tool(.completed(call: call, result: result)) }
+
+    @available(*, deprecated, message: "Use .tool(.failed(call:error:))")
+    static func toolCallFailed(call: ToolCall, error: AgentError) -> AgentEvent { .tool(.failed(call: call, error: error)) }
+
+    // Output
+    @available(*, deprecated, message: "Use .output(.token(_:))")
+    static func outputToken(token: String) -> AgentEvent { .output(.token(token)) }
+
+    @available(*, deprecated, message: "Use .output(.chunk(_:))")
+    static func outputChunk(chunk: String) -> AgentEvent { .output(.chunk(chunk)) }
+
+    @available(*, deprecated, message: "Use .output(.thinking(thought:))")
+    static func thinking(thought: String) -> AgentEvent { .output(.thinking(thought: thought)) }
+
+    @available(*, deprecated, message: "Use .output(.thinkingPartial(_:))")
+    static func thinkingPartial(partialThought: String) -> AgentEvent { .output(.thinkingPartial(partialThought)) }
+
+    // Handoff
+    @available(*, deprecated, message: "Use .handoff(.requested(from:to:reason:))")
+    static func handoffRequested(fromAgent: String, toAgent: String, reason: String?) -> AgentEvent { .handoff(.requested(from: fromAgent, to: toAgent, reason: reason)) }
+
+    @available(*, deprecated, message: "Use .handoff(.completed(from:to:))")
+    static func handoffCompleted(fromAgent: String, toAgent: String) -> AgentEvent { .handoff(.completed(from: fromAgent, to: toAgent)) }
+
+    @available(*, deprecated, message: "Use .handoff(.started(from:to:input:))")
+    static func handoffStarted(from: String, to: String, input: String) -> AgentEvent { .handoff(.started(from: from, to: to, input: input)) }
+
+    @available(*, deprecated, message: "Use .handoff(.completedWithResult(from:to:result:))")
+    static func handoffCompletedWithResult(from: String, to: String, result: AgentResult) -> AgentEvent { .handoff(.completedWithResult(from: from, to: to, result: result)) }
+
+    @available(*, deprecated, message: "Use .handoff(.skipped(from:to:reason:))")
+    static func handoffSkipped(from: String, to: String, reason: String) -> AgentEvent { .handoff(.skipped(from: from, to: to, reason: reason)) }
+
+    // Observation
+    @available(*, deprecated, message: "Use .observation(.decision(_:options:))")
+    static func decision(decision: String, options: [String]?) -> AgentEvent { .observation(.decision(decision, options: options)) }
+
+    @available(*, deprecated, message: "Use .observation(.planUpdated(_:stepCount:))")
+    static func planUpdated(plan: String, stepCount: Int) -> AgentEvent { .observation(.planUpdated(plan, stepCount: stepCount)) }
+
+    @available(*, deprecated, message: "Use .observation(.guardrailStarted(name:type:))")
+    static func guardrailStarted(name: String, type: GuardrailType) -> AgentEvent { .observation(.guardrailStarted(name: name, type: type)) }
+
+    @available(*, deprecated, message: "Use .observation(.guardrailPassed(name:type:))")
+    static func guardrailPassed(name: String, type: GuardrailType) -> AgentEvent { .observation(.guardrailPassed(name: name, type: type)) }
+
+    @available(*, deprecated, message: "Use .observation(.guardrailTriggered(name:type:message:))")
+    static func guardrailTriggered(name: String, type: GuardrailType, message: String?) -> AgentEvent { .observation(.guardrailTriggered(name: name, type: type, message: message)) }
+
+    @available(*, deprecated, message: "Use .observation(.memoryAccessed(operation:count:))")
+    static func memoryAccessed(operation: MemoryOperation, count: Int) -> AgentEvent { .observation(.memoryAccessed(operation: operation, count: count)) }
+
+    @available(*, deprecated, message: "Use .observation(.llmStarted(model:promptTokens:))")
+    static func llmStarted(model: String?, promptTokens: Int?) -> AgentEvent { .observation(.llmStarted(model: model, promptTokens: promptTokens)) }
+
+    @available(*, deprecated, message: "Use .observation(.llmCompleted(model:promptTokens:completionTokens:duration:))")
+    static func llmCompleted(model: String?, promptTokens: Int?, completionTokens: Int?, duration: TimeInterval) -> AgentEvent { .observation(.llmCompleted(model: model, promptTokens: promptTokens, completionTokens: completionTokens, duration: duration)) }
 }
 
 // MARK: - GuardrailType
 
-/// Type of guardrail check
+/// Type of guardrail check.
 public enum GuardrailType: String, Sendable, Codable {
     case input
     case output
@@ -149,7 +250,7 @@ public enum GuardrailType: String, Sendable, Codable {
 
 // MARK: - MemoryOperation
 
-/// Type of memory operation
+/// Type of memory operation.
 public enum MemoryOperation: String, Sendable, Codable {
     case read
     case write
@@ -316,177 +417,129 @@ extension ToolResult: CustomStringConvertible {
 // MARK: - AgentEvent + Equatable
 
 extension AgentEvent: Equatable {
-    // MARK: Public
-
     public static func == (lhs: AgentEvent, rhs: AgentEvent) -> Bool {
         switch (lhs, rhs) {
-        // Lifecycle events
-        case let (.started(lhsInput), .started(rhsInput)):
-            lhsInput == rhsInput
+        case let (.lifecycle(l), .lifecycle(r)):
+            l == r
+        case let (.tool(l), .tool(r)):
+            l == r
+        case let (.output(l), .output(r)):
+            l == r
+        case let (.handoff(l), .handoff(r)):
+            l == r
+        case let (.observation(l), .observation(r)):
+            l == r
+        default:
+            false
+        }
+    }
+}
 
-        case let (.completed(lhsResult), .completed(rhsResult)):
-            lhsResult == rhsResult
+// MARK: - AgentEvent.Lifecycle + Equatable
 
-        case let (.failed(lhsError), .failed(rhsError)):
-            lhsError == rhsError
-
+extension AgentEvent.Lifecycle: Equatable {
+    public static func == (lhs: AgentEvent.Lifecycle, rhs: AgentEvent.Lifecycle) -> Bool {
+        switch (lhs, rhs) {
+        case let (.started(l), .started(r)):
+            l == r
+        case let (.completed(l), .completed(r)):
+            l == r
+        case let (.failed(l), .failed(r)):
+            l == r
         case (.cancelled, .cancelled):
             true
-
-        case let (.guardrailFailed(lhsError), .guardrailFailed(rhsError)):
-            lhsError == rhsError
-
-        // Thinking events - delegated to helper
-        case (.thinking, .thinking),
-             (.thinkingPartial, .thinkingPartial):
-            lhs.isEqualThinkingEvent(rhs)
-
-        // Tool events - delegated to helper
-        case (.toolCallCompleted, .toolCallCompleted),
-             (.toolCallFailed, .toolCallFailed),
-             (.toolCallPartial, .toolCallPartial),
-             (.toolCallStarted, .toolCallStarted):
-            lhs.isEqualToolEvent(rhs)
-
-        // Output events - delegated to helper
-        case (.outputChunk, .outputChunk),
-             (.outputToken, .outputToken):
-            lhs.isEqualOutputEvent(rhs)
-
-        // Iteration events - delegated to helper
-        case (.iterationCompleted, .iterationCompleted),
-             (.iterationStarted, .iterationStarted):
-            lhs.isEqualIterationEvent(rhs)
-
-        // Decision events
-        case let (.decision(lhsDecision, lhsOptions), .decision(rhsDecision, rhsOptions)):
-            lhsDecision == rhsDecision && lhsOptions == rhsOptions
-
-        case let (.planUpdated(lhsPlan, lhsCount), .planUpdated(rhsPlan, rhsCount)):
-            lhsPlan == rhsPlan && lhsCount == rhsCount
-
-        // Handoff events - delegated to helper
-        case (.handoffCompleted, .handoffCompleted),
-             (.handoffCompletedWithResult, .handoffCompletedWithResult),
-             (.handoffRequested, .handoffRequested),
-             (.handoffSkipped, .handoffSkipped),
-             (.handoffStarted, .handoffStarted):
-            lhs.isEqualHandoffEvent(rhs)
-
-        // Guardrail events - delegated to helper
-        case (.guardrailPassed, .guardrailPassed),
-             (.guardrailStarted, .guardrailStarted),
-             (.guardrailTriggered, .guardrailTriggered):
-            lhs.isEqualGuardrailEvent(rhs)
-
-        // LLM and memory events - delegated to helper
-        case (.llmCompleted, .llmCompleted),
-             (.llmStarted, .llmStarted),
-             (.memoryAccessed, .memoryAccessed):
-            lhs.isEqualLLMAndMemoryEvent(rhs)
-
+        case let (.guardrailFailed(l), .guardrailFailed(r)):
+            l == r
+        case let (.iterationStarted(l), .iterationStarted(r)):
+            l == r
+        case let (.iterationCompleted(l), .iterationCompleted(r)):
+            l == r
         default:
             false
         }
     }
+}
 
-    // MARK: Private
+// MARK: - AgentEvent.Tool + Equatable
 
-    // MARK: - Private Equality Helpers
-
-    /// Compares thinking events for equality.
-    private func isEqualThinkingEvent(_ other: AgentEvent) -> Bool {
-        switch (self, other) {
-        case let (.thinking(lhsThought), .thinking(rhsThought)):
-            lhsThought == rhsThought
-        case let (.thinkingPartial(lhsPartial), .thinkingPartial(rhsPartial)):
-            lhsPartial == rhsPartial
+extension AgentEvent.Tool: Equatable {
+    public static func == (lhs: AgentEvent.Tool, rhs: AgentEvent.Tool) -> Bool {
+        switch (lhs, rhs) {
+        case let (.started(l), .started(r)):
+            l == r
+        case let (.partial(l), .partial(r)):
+            l == r
+        case let (.completed(lCall, lResult), .completed(rCall, rResult)):
+            lCall == rCall && lResult == rResult
+        case let (.failed(lCall, lError), .failed(rCall, rError)):
+            lCall == rCall && lError == rError
         default:
             false
         }
     }
+}
 
-    /// Compares tool events for equality.
-    private func isEqualToolEvent(_ other: AgentEvent) -> Bool {
-        switch (self, other) {
-        case let (.toolCallStarted(lhsCall), .toolCallStarted(rhsCall)):
-            lhsCall == rhsCall
-        case let (.toolCallPartial(lhsUpdate), .toolCallPartial(rhsUpdate)):
-            lhsUpdate == rhsUpdate
-        case let (.toolCallCompleted(lhsCall, lhsResult), .toolCallCompleted(rhsCall, rhsResult)):
-            lhsCall == rhsCall && lhsResult == rhsResult
-        case let (.toolCallFailed(lhsCall, lhsError), .toolCallFailed(rhsCall, rhsError)):
-            lhsCall == rhsCall && lhsError == rhsError
+// MARK: - AgentEvent.Output + Equatable
+
+extension AgentEvent.Output: Equatable {
+    public static func == (lhs: AgentEvent.Output, rhs: AgentEvent.Output) -> Bool {
+        switch (lhs, rhs) {
+        case let (.token(l), .token(r)):
+            l == r
+        case let (.chunk(l), .chunk(r)):
+            l == r
+        case let (.thinking(l), .thinking(r)):
+            l == r
+        case let (.thinkingPartial(l), .thinkingPartial(r)):
+            l == r
         default:
             false
         }
     }
+}
 
-    /// Compares output events for equality.
-    private func isEqualOutputEvent(_ other: AgentEvent) -> Bool {
-        switch (self, other) {
-        case let (.outputToken(lhsToken), .outputToken(rhsToken)):
-            lhsToken == rhsToken
-        case let (.outputChunk(lhsChunk), .outputChunk(rhsChunk)):
-            lhsChunk == rhsChunk
+// MARK: - AgentEvent.Handoff + Equatable
+
+extension AgentEvent.Handoff: Equatable {
+    public static func == (lhs: AgentEvent.Handoff, rhs: AgentEvent.Handoff) -> Bool {
+        switch (lhs, rhs) {
+        case let (.requested(lFrom, lTo, lReason), .requested(rFrom, rTo, rReason)):
+            lFrom == rFrom && lTo == rTo && lReason == rReason
+        case let (.completed(lFrom, lTo), .completed(rFrom, rTo)):
+            lFrom == rFrom && lTo == rTo
+        case let (.started(lFrom, lTo, lInput), .started(rFrom, rTo, rInput)):
+            lFrom == rFrom && lTo == rTo && lInput == rInput
+        case let (.completedWithResult(lFrom, lTo, lResult), .completedWithResult(rFrom, rTo, rResult)):
+            lFrom == rFrom && lTo == rTo && lResult == rResult
+        case let (.skipped(lFrom, lTo, lReason), .skipped(rFrom, rTo, rReason)):
+            lFrom == rFrom && lTo == rTo && lReason == rReason
         default:
             false
         }
     }
+}
 
-    /// Compares iteration events for equality.
-    private func isEqualIterationEvent(_ other: AgentEvent) -> Bool {
-        switch (self, other) {
-        case let (.iterationStarted(lhsNumber), .iterationStarted(rhsNumber)):
-            lhsNumber == rhsNumber
-        case let (.iterationCompleted(lhsNumber), .iterationCompleted(rhsNumber)):
-            lhsNumber == rhsNumber
-        default:
-            false
-        }
-    }
+// MARK: - AgentEvent.Observation + Equatable
 
-    /// Compares handoff events for equality.
-    private func isEqualHandoffEvent(_ other: AgentEvent) -> Bool {
-        switch (self, other) {
-        case let (.handoffRequested(lhsFrom, lhsTo, lhsReason), .handoffRequested(rhsFrom, rhsTo, rhsReason)):
-            lhsFrom == rhsFrom && lhsTo == rhsTo && lhsReason == rhsReason
-        case let (.handoffCompleted(lhsFrom, lhsTo), .handoffCompleted(rhsFrom, rhsTo)):
-            lhsFrom == rhsFrom && lhsTo == rhsTo
-        case let (.handoffStarted(lhsFrom, lhsTo, lhsInput), .handoffStarted(rhsFrom, rhsTo, rhsInput)):
-            lhsFrom == rhsFrom && lhsTo == rhsTo && lhsInput == rhsInput
-        case let (.handoffCompletedWithResult(lhsFrom, lhsTo, lhsResult), .handoffCompletedWithResult(rhsFrom, rhsTo, rhsResult)):
-            lhsFrom == rhsFrom && lhsTo == rhsTo && lhsResult == rhsResult
-        case let (.handoffSkipped(lhsFrom, lhsTo, lhsReason), .handoffSkipped(rhsFrom, rhsTo, rhsReason)):
-            lhsFrom == rhsFrom && lhsTo == rhsTo && lhsReason == rhsReason
-        default:
-            false
-        }
-    }
-
-    /// Compares guardrail events for equality.
-    private func isEqualGuardrailEvent(_ other: AgentEvent) -> Bool {
-        switch (self, other) {
-        case let (.guardrailStarted(lhsName, lhsType), .guardrailStarted(rhsName, rhsType)):
-            lhsName == rhsName && lhsType == rhsType
-        case let (.guardrailPassed(lhsName, lhsType), .guardrailPassed(rhsName, rhsType)):
-            lhsName == rhsName && lhsType == rhsType
-        case let (.guardrailTriggered(lhsName, lhsType, lhsMsg), .guardrailTriggered(rhsName, rhsType, rhsMsg)):
-            lhsName == rhsName && lhsType == rhsType && lhsMsg == rhsMsg
-        default:
-            false
-        }
-    }
-
-    /// Compares LLM and memory events for equality.
-    private func isEqualLLMAndMemoryEvent(_ other: AgentEvent) -> Bool {
-        switch (self, other) {
-        case let (.memoryAccessed(lhsOp, lhsCount), .memoryAccessed(rhsOp, rhsCount)):
-            lhsOp == rhsOp && lhsCount == rhsCount
-        case let (.llmStarted(lhsModel, lhsTokens), .llmStarted(rhsModel, rhsTokens)):
-            lhsModel == rhsModel && lhsTokens == rhsTokens
-        case let (.llmCompleted(lhsModel, lhsPrompt, lhsCompletion, lhsDuration), .llmCompleted(rhsModel, rhsPrompt, rhsCompletion, rhsDuration)):
-            lhsModel == rhsModel && lhsPrompt == rhsPrompt && lhsCompletion == rhsCompletion && lhsDuration == rhsDuration
+extension AgentEvent.Observation: Equatable {
+    public static func == (lhs: AgentEvent.Observation, rhs: AgentEvent.Observation) -> Bool {
+        switch (lhs, rhs) {
+        case let (.decision(lD, lO), .decision(rD, rO)):
+            lD == rD && lO == rO
+        case let (.planUpdated(lP, lC), .planUpdated(rP, rC)):
+            lP == rP && lC == rC
+        case let (.guardrailStarted(lN, lT), .guardrailStarted(rN, rT)):
+            lN == rN && lT == rT
+        case let (.guardrailPassed(lN, lT), .guardrailPassed(rN, rT)):
+            lN == rN && lT == rT
+        case let (.guardrailTriggered(lN, lT, lM), .guardrailTriggered(rN, rT, rM)):
+            lN == rN && lT == rT && lM == rM
+        case let (.memoryAccessed(lO, lC), .memoryAccessed(rO, rC)):
+            lO == rO && lC == rC
+        case let (.llmStarted(lM, lP), .llmStarted(rM, rP)):
+            lM == rM && lP == rP
+        case let (.llmCompleted(lM, lP, lC, lD), .llmCompleted(rM, rP, rC, rD)):
+            lM == rM && lP == rP && lC == rC && lD == rD
         default:
             false
         }

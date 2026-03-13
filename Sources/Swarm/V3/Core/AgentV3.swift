@@ -1,9 +1,9 @@
 import Foundation
 
-/// THE agent type for V3 API. Struct (value type), ONE init, modifier chain.
+/// V3 agent type with modifier chain API. Struct (value type), ONE init.
 ///
 /// ```swift
-/// let agent = Agent("You are a helpful assistant.") {
+/// let agent = AgentV3("You are a helpful assistant.") {
 ///     SearchTool()
 ///     CalculatorTool()
 /// }
@@ -12,20 +12,23 @@ import Foundation
 /// .memory(.conversation(limit: 50))
 /// .provider(myProvider)
 /// ```
-public struct Agent: Sendable {
+///
+/// Note: Coexists with the primary `Agent` struct during migration.
+/// Will replace `Agent` once all callers are migrated.
+public struct AgentV3: Sendable {
     public let instructions: String
     public let tools: [any ToolV3]
     public let name: String
     public let options: RunOptions
     public let memoryOption: MemoryOption
     public let guardrails: [GuardrailSpec]
-    public let handoffAgents: [Agent]
+    public let handoffAgents: [AgentV3]
     let _provider: (any InferenceProvider)?
 
     /// Create an agent. This is the ONLY public init.
     public init(
         _ instructions: String,
-        @ToolBuilder tools: () -> [any ToolV3] = { [] }
+        @ToolV3Builder tools: () -> [any ToolV3] = { [] }
     ) {
         self.instructions = instructions
         self.tools = tools()
@@ -45,7 +48,7 @@ public struct Agent: Sendable {
         options: RunOptions,
         memoryOption: MemoryOption,
         guardrails: [GuardrailSpec],
-        handoffAgents: [Agent],
+        handoffAgents: [AgentV3],
         provider: (any InferenceProvider)?
     ) {
         self.instructions = instructions
@@ -61,49 +64,49 @@ public struct Agent: Sendable {
 
 // MARK: - Modifier Chain
 
-extension Agent {
-    public func named(_ name: String) -> Agent {
-        Agent(
+extension AgentV3 {
+    public func named(_ name: String) -> AgentV3 {
+        AgentV3(
             instructions: instructions, tools: tools, name: name,
             options: options, memoryOption: memoryOption, guardrails: guardrails,
             handoffAgents: handoffAgents, provider: _provider
         )
     }
 
-    public func options(_ options: RunOptions) -> Agent {
-        Agent(
+    public func options(_ options: RunOptions) -> AgentV3 {
+        AgentV3(
             instructions: instructions, tools: tools, name: name,
             options: options, memoryOption: memoryOption, guardrails: guardrails,
             handoffAgents: handoffAgents, provider: _provider
         )
     }
 
-    public func memory(_ memory: MemoryOption) -> Agent {
-        Agent(
+    public func memory(_ memory: MemoryOption) -> AgentV3 {
+        AgentV3(
             instructions: instructions, tools: tools, name: name,
             options: options, memoryOption: memory, guardrails: guardrails,
             handoffAgents: handoffAgents, provider: _provider
         )
     }
 
-    public func guardrails(_ guardrails: GuardrailSpec...) -> Agent {
-        Agent(
+    public func guardrails(_ guardrails: GuardrailSpec...) -> AgentV3 {
+        AgentV3(
             instructions: instructions, tools: tools, name: name,
             options: options, memoryOption: memoryOption, guardrails: guardrails,
             handoffAgents: handoffAgents, provider: _provider
         )
     }
 
-    public func handoffs(_ agents: Agent...) -> Agent {
-        Agent(
+    public func handoffs(_ agents: AgentV3...) -> AgentV3 {
+        AgentV3(
             instructions: instructions, tools: tools, name: name,
             options: options, memoryOption: memoryOption, guardrails: guardrails,
             handoffAgents: agents, provider: _provider
         )
     }
 
-    public func provider(_ provider: some InferenceProvider) -> Agent {
-        Agent(
+    public func provider(_ provider: some InferenceProvider) -> AgentV3 {
+        AgentV3(
             instructions: instructions, tools: tools, name: name,
             options: options, memoryOption: memoryOption, guardrails: guardrails,
             handoffAgents: handoffAgents, provider: provider
@@ -111,9 +114,9 @@ extension Agent {
     }
 }
 
-// MARK: - Execution (Bridge to existing LegacyAgent actor)
+// MARK: - Execution (Bridge to Agent struct)
 
-extension Agent {
+extension AgentV3 {
     /// Run the agent with the given input. Returns the final result.
     public func run(_ input: String) async throws -> AgentResult {
         let runtime = try makeRuntime()
@@ -128,9 +131,8 @@ extension Agent {
         return runtime.stream(input)
     }
 
-    /// Bridge: creates an internal `LegacyAgent` actor from V3 config.
-    /// This is the temporary bridge — replaced in Phase 11 when Agent becomes canonical.
-    func makeRuntime() throws -> LegacyAgent {
+    /// Bridge: creates an `Agent` struct from V3 config.
+    func makeRuntime() throws -> Agent {
         let config = AgentConfiguration(
             name: name,
             maxIterations: options.maxIterations,
@@ -138,7 +140,7 @@ extension Agent {
             maxTokens: options.maxTokens
         )
 
-        return try LegacyAgent(
+        return try Agent(
             tools: tools.map { $0.toAnyJSONTool() },
             instructions: instructions,
             configuration: config,

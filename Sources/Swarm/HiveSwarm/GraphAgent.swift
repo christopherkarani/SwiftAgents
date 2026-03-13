@@ -174,12 +174,12 @@ struct GraphAgent: AgentRuntime, Sendable {
 
             guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 let error = AgentError.invalidInput(reason: "Input cannot be empty")
-                continuation.yield(.failed(error: error))
+                continuation.yield(.lifecycle(.failed(error: error)))
                 continuation.finish(throwing: error)
                 return
             }
 
-            continuation.yield(.started(input: input))
+            continuation.yield(.lifecycle(.started(input: input)))
 
             let resultBuilder = AgentResult.Builder()
             _ = resultBuilder.start()
@@ -216,7 +216,7 @@ struct GraphAgent: AgentRuntime, Sendable {
                             mapped = AgentError.internalError(reason: "Hive event stream failed: \(error.localizedDescription)")
                         }
                         await observer?.onError(context: nil, agent: self, error: mapped)
-                        continuation.yield(.failed(error: mapped))
+                        continuation.yield(.lifecycle(.failed(error: mapped)))
                         continuation.finish(throwing: mapped)
                         handle.outcome.cancel()
                     }
@@ -237,20 +237,20 @@ struct GraphAgent: AgentRuntime, Sendable {
                 let result = try buildResult(from: outcome, builder: resultBuilder)
 
                 await observer?.onAgentEnd(context: nil, agent: self, result: result)
-                continuation.yield(.completed(result: result))
+                continuation.yield(.lifecycle(.completed(result: result)))
                 _ = await finishGate.markFinished()
                 continuation.finish()
             } catch let error as HiveRuntimeError {
                 guard await finishGate.markFinished() else { return }
                 let agentError = mapHiveError(error)
                 await observer?.onError(context: nil, agent: self, error: agentError)
-                continuation.yield(.failed(error: agentError))
+                continuation.yield(.lifecycle(.failed(error: agentError)))
                 continuation.finish(throwing: agentError)
             } catch {
                 guard await finishGate.markFinished() else { return }
                 await observer?.onError(context: nil, agent: self, error: error)
                 let wrapped = AgentError.internalError(reason: error.localizedDescription)
-                continuation.yield(.failed(error: wrapped))
+                continuation.yield(.lifecycle(.failed(error: wrapped)))
                 continuation.finish(throwing: error)
             }
         }
@@ -268,66 +268,66 @@ struct GraphAgent: AgentRuntime, Sendable {
     private static func mapHiveEvent(_ event: HiveEvent) -> AgentEvent? {
         switch event.kind {
         case .runResumed(let interruptID):
-            return .decision(
-                decision: "hive.runResumed",
+            return .observation(.decision(
+                "hive.runResumed",
                 options: [interruptID.rawValue]
-            )
+            ))
 
         case .runInterrupted(let interruptID):
-            return .decision(
-                decision: "hive.runInterrupted",
+            return .observation(.decision(
+                "hive.runInterrupted",
                 options: [interruptID.rawValue]
-            )
+            ))
 
         case .runCancelled:
-            return .cancelled
+            return .lifecycle(.cancelled)
 
         case .modelInvocationStarted(let model):
-            return .llmStarted(model: model, promptTokens: nil)
+            return .observation(.llmStarted(model: model, promptTokens: nil))
 
         case .modelToken(let text):
-            return .outputToken(token: text)
+            return .output(.token(text))
 
         case .modelInvocationFinished:
-            return .llmCompleted(model: nil, promptTokens: nil, completionTokens: nil, duration: 0)
+            return .observation(.llmCompleted(model: nil, promptTokens: nil, completionTokens: nil, duration: 0))
 
         case .toolInvocationStarted(let name):
             let call = toolCall(from: event, toolName: name)
-            return .toolCallStarted(call: call)
+            return .tool(.started(call: call))
 
         case .toolInvocationFinished(let name, let success):
             let call = toolCall(from: event, toolName: name)
             if success {
                 let result = ToolResult(callId: call.id, isSuccess: true, output: .null, duration: .zero)
-                return .toolCallCompleted(call: call, result: result)
+                return .tool(.completed(call: call, result: result))
             } else {
                 let error = AgentError.toolExecutionFailed(toolName: name, underlyingError: "Tool invocation failed")
-                return .toolCallFailed(call: call, error: error)
+                return .tool(.failed(call: call, error: error))
             }
 
         case .stepStarted(let stepIndex, _):
-            return .iterationStarted(number: stepIndex + 1)
+            return .lifecycle(.iterationStarted(number: stepIndex + 1))
 
         case .stepFinished(let stepIndex, _):
-            return .iterationCompleted(number: stepIndex + 1)
+            return .lifecycle(.iterationCompleted(number: stepIndex + 1))
 
         case .checkpointSaved(let checkpointID):
-            return .decision(
-                decision: "hive.checkpointSaved",
+            return .observation(.decision(
+                "hive.checkpointSaved",
                 options: [checkpointID.rawValue]
-            )
+            ))
 
         case .checkpointLoaded(let checkpointID):
-            return .decision(
-                decision: "hive.checkpointLoaded",
+            return .observation(.decision(
+                "hive.checkpointLoaded",
                 options: [checkpointID.rawValue]
-            )
+            ))
 
         case .writeApplied(let channelID, let payloadHash):
-            return .decision(
-                decision: "hive.writeApplied.\(channelID.rawValue)",
+            return .observation(.decision(
+                "hive.writeApplied.\(channelID.rawValue)",
                 options: [payloadHash]
-            )
+            ))
 
         default:
             return nil

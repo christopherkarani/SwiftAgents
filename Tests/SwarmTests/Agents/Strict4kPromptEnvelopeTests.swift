@@ -10,7 +10,7 @@ struct Strict4kPromptEnvelopeTests {
         let memory = MockAgentMemory(context: longBlock("memory", lines: 420))
         let session = try await makeLargeSession()
 
-        let agent = try LegacyAgent(
+        let agent = try Agent(
             tools: [],
             instructions: longBlock("instructions", lines: 220),
             configuration: strict4kConfig(),
@@ -21,7 +21,7 @@ struct Strict4kPromptEnvelopeTests {
         _ = try await agent.run("needle-user-input", session: session)
 
         guard let prompt = await provider.lastGenerateCall?.prompt else {
-            Issue.record("Expected LegacyAgent to call generate() when no tools are configured")
+            Issue.record("Expected Agent to call generate() when no tools are configured")
             return
         }
 

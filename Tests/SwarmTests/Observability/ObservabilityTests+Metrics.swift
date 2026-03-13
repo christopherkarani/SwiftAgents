@@ -121,13 +121,13 @@ struct MetricsCollectorTests {
         // 3 successful, 1 failed = 75% success rate
         for i in 1...3 {
             let spanId = UUID()
-            await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "LegacyAgent"))
-            await collector.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", duration: 1.0))
+            await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "Agent"))
+            await collector.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "Agent", duration: 1.0))
         }
 
         let failSpanId = UUID()
-        await collector.trace(.agentStart(traceId: traceId, spanId: failSpanId, agentName: "LegacyAgent"))
-        await collector.trace(.agentError(traceId: traceId, spanId: failSpanId, agentName: "LegacyAgent", error: NSError(domain: "test", code: 1)))
+        await collector.trace(.agentStart(traceId: traceId, spanId: failSpanId, agentName: "Agent"))
+        await collector.trace(.agentError(traceId: traceId, spanId: failSpanId, agentName: "Agent", error: NSError(domain: "test", code: 1)))
 
         let snapshot = await collector.snapshot()
         #expect(snapshot.totalExecutions == 4)
@@ -143,13 +143,13 @@ struct MetricsCollectorTests {
 
         // 1 successful, 3 failed = 75% error rate
         let successSpanId = UUID()
-        await collector.trace(.agentStart(traceId: traceId, spanId: successSpanId, agentName: "LegacyAgent"))
-        await collector.trace(.agentComplete(traceId: traceId, spanId: successSpanId, agentName: "LegacyAgent", duration: 1.0))
+        await collector.trace(.agentStart(traceId: traceId, spanId: successSpanId, agentName: "Agent"))
+        await collector.trace(.agentComplete(traceId: traceId, spanId: successSpanId, agentName: "Agent", duration: 1.0))
 
         for _ in 1...3 {
             let spanId = UUID()
-            await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "LegacyAgent"))
-            await collector.trace(.agentError(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", error: NSError(domain: "test", code: 1)))
+            await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "Agent"))
+            await collector.trace(.agentError(traceId: traceId, spanId: spanId, agentName: "Agent", error: NSError(domain: "test", code: 1)))
         }
 
         let snapshot = await collector.snapshot()
@@ -176,8 +176,8 @@ struct MetricsCollectorTests {
         let durations: [TimeInterval] = [1.0, 2.0, 3.0]
         for duration in durations {
             let spanId = UUID()
-            await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "LegacyAgent"))
-            await collector.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", duration: duration))
+            await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "Agent"))
+            await collector.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "Agent", duration: duration))
         }
 
         let snapshot = await collector.snapshot()
@@ -192,8 +192,8 @@ struct MetricsCollectorTests {
         let durations: [TimeInterval] = [1.5, 0.5, 3.0, 2.0]
         for duration in durations {
             let spanId = UUID()
-            await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "LegacyAgent"))
-            await collector.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", duration: duration))
+            await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "Agent"))
+            await collector.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "Agent", duration: duration))
         }
 
         let snapshot = await collector.snapshot()
@@ -210,8 +210,8 @@ struct MetricsCollectorTests {
         let durations: [TimeInterval] = [1.0, 3.0, 2.0]
         for duration in durations {
             let spanId = UUID()
-            await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "LegacyAgent"))
-            await collector.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", duration: duration))
+            await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "Agent"))
+            await collector.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "Agent", duration: duration))
         }
 
         let snapshot = await collector.snapshot()
@@ -227,8 +227,8 @@ struct MetricsCollectorTests {
         for i in 1...100 {
             let spanId = UUID()
             let duration = Double(i) * 0.1
-            await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "LegacyAgent"))
-            await collector.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", duration: duration))
+            await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "Agent"))
+            await collector.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "Agent", duration: duration))
         }
 
         let snapshot = await collector.snapshot()
@@ -274,8 +274,8 @@ struct MetricsCollectorTests {
         let spanId = UUID()
 
         // Add some metrics
-        await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "LegacyAgent"))
-        await collector.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", duration: 1.0))
+        await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "Agent"))
+        await collector.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "Agent", duration: 1.0))
         await collector.trace(.toolCall(traceId: traceId, parentSpanId: UUID(), toolName: "tool"))
 
         // Verify metrics exist
@@ -304,9 +304,9 @@ struct MetricsCollectorTests {
         let spanId = UUID()
 
         // Add metric, reset, add another
-        await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "LegacyAgent"))
+        await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "Agent"))
         await collector.reset()
-        await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "LegacyAgent"))
+        await collector.trace(.agentStart(traceId: traceId, spanId: spanId, agentName: "Agent"))
 
         let total = await collector.getTotalExecutions()
         #expect(total == 1) // Only the metric after reset

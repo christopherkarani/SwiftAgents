@@ -26,7 +26,7 @@ struct HiveBackedAgentStreamingTests {
         }
 
         let tokenEvents = events.compactMap { event -> String? in
-            if case .outputToken(let token) = event { return token }
+            if case .output(.token(let token)) = event { return token }
             return nil
         }
         #expect(tokenEvents == ["Hello", " world"])
@@ -45,11 +45,11 @@ struct HiveBackedAgentStreamingTests {
         }
 
         let hasLLMStarted = events.contains { event in
-            if case .llmStarted = event { return true }
+            if case .observation(.llmStarted) = event { return true }
             return false
         }
         let hasLLMCompleted = events.contains { event in
-            if case .llmCompleted = event { return true }
+            if case .observation(.llmCompleted) = event { return true }
             return false
         }
         #expect(hasLLMStarted)
@@ -73,11 +73,11 @@ struct HiveBackedAgentStreamingTests {
         }
 
         let startedCall = events.compactMap { event -> ToolCall? in
-            if case let .toolCallStarted(call) = event { return call }
+            if case let .tool(.started(call: call)) = event { return call }
             return nil
         }.first
         let completed = events.compactMap { event -> (ToolCall, ToolResult)? in
-            if case let .toolCallCompleted(call, result) = event { return (call, result) }
+            if case let .tool(.completed(call: call, result: result)) = event { return (call, result) }
             return nil
         }.first
 
@@ -103,11 +103,11 @@ struct HiveBackedAgentStreamingTests {
         }
 
         let iterationStarted = events.contains { event in
-            if case .iterationStarted = event { return true }
+            if case .lifecycle(.iterationStarted) = event { return true }
             return false
         }
         let iterationCompleted = events.contains { event in
-            if case .iterationCompleted = event { return true }
+            if case .lifecycle(.iterationCompleted) = event { return true }
             return false
         }
         #expect(iterationStarted)
@@ -127,11 +127,11 @@ struct HiveBackedAgentStreamingTests {
         }
 
         let hasStarted = events.contains { event in
-            if case .started = event { return true }
+            if case .lifecycle(.started) = event { return true }
             return false
         }
         let hasCompleted = events.contains { event in
-            if case .completed = event { return true }
+            if case .lifecycle(.completed) = event { return true }
             return false
         }
         #expect(hasStarted)
@@ -148,7 +148,7 @@ struct HiveBackedAgentStreamingTests {
 
         var finalResult: AgentResult?
         for try await event in agent.stream("test") {
-            if case .completed(let result) = event {
+            if case .lifecycle(.completed(result: let result)) = event {
                 finalResult = result
             }
         }
@@ -168,11 +168,11 @@ struct HiveBackedAgentStreamingTests {
         var eventKinds: [String] = []
         for try await event in agent.stream("test") {
             switch event {
-            case .started: eventKinds.append("started")
-            case .llmStarted: eventKinds.append("llmStarted")
-            case .outputToken: eventKinds.append("outputToken")
-            case .llmCompleted: eventKinds.append("llmCompleted")
-            case .completed: eventKinds.append("completed")
+            case .lifecycle(.started): eventKinds.append("started")
+            case .observation(.llmStarted): eventKinds.append("llmStarted")
+            case .output(.token): eventKinds.append("outputToken")
+            case .observation(.llmCompleted): eventKinds.append("llmCompleted")
+            case .lifecycle(.completed): eventKinds.append("completed")
             default: break
             }
         }

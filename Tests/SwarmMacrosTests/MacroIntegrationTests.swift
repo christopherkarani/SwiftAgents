@@ -70,7 +70,7 @@ final class MacroIntegrationTests: XCTestCase {
         XCTAssertTrue(true, "Optional parameter test placeholder")
     }
 
-    // MARK: - LegacyAgent Macro Integration
+    // MARK: - Agent Macro Integration
 
     /// Tests that an agent created with @AgentActor macro works correctly.
     func testAgentMacroIntegration() async throws {
@@ -167,7 +167,7 @@ final class MacroIntegrationTests: XCTestCase {
         // AgentError.invalidInput
 
         // This would be tested with actual macro-generated code
-        XCTAssertTrue(true, "LegacyAgent input validation test placeholder")
+        XCTAssertTrue(true, "Agent input validation test placeholder")
     }
 
     // MARK: - Performance

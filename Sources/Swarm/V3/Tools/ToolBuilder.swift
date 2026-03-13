@@ -1,13 +1,16 @@
 // ToolBuilder.swift
 // Swarm V3 API
 //
-// Result builder for composing tools in a trailing closure.
+// Result builder for composing ToolV3 instances in a trailing closure.
 
-// MARK: - @ToolBuilder
+// MARK: - @ToolV3Builder
 
 /// Result builder that collects `ToolV3` instances into an array.
+///
+/// Used with V3 workflow and agent APIs that accept `[any ToolV3]`.
+/// The primary `ToolBuilder` in `ToolParameterBuilder.swift` works with `AnyJSONTool`.
 @resultBuilder
-public struct ToolBuilder {
+public struct ToolV3Builder {
     public static func buildBlock(_ components: [any ToolV3]...) -> [any ToolV3] {
         components.flatMap { $0 }
     }

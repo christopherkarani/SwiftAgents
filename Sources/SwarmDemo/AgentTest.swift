@@ -66,76 +66,66 @@ struct MyApp {
             for try await event in agent.stream(input) {
                 switch event {
                 // Lifecycle
-                case .started(input: let input):
+                case .lifecycle(.started(input: let input)):
                     print("Agent started with input: \(input.prefix(80))...")
-                case .completed(result: let result):
+                case .lifecycle(.completed(result: let result)):
                     print("🏁 Finished with reason: \(result.output)")
-                case .failed(error: let error):
+                case .lifecycle(.failed(error: let error)):
                     print("❌ Agent failed: \(error)")
-                case .cancelled:
+                case .lifecycle(.cancelled):
                     print("⚠️ Agent cancelled")
-
-                // Thinking
-                case .thinking(thought: let text):
-                    print(text, terminator: "")
-                case .thinkingPartial(partialThought: let text):
-                    print(text, terminator: "")
-
-                // Tool calls
-                case .toolCallStarted(call: let call):
-                    print("-> Calling \"\(call.toolName)\" with \(call.arguments)")
-                case .toolCallPartial:
+                case .lifecycle(.guardrailFailed(error: let error)):
+                    print("❌ Guardrail failed: \(error)")
+                case .lifecycle(.iterationStarted), .lifecycle(.iterationCompleted):
                     break
-                case .toolCallCompleted(call: let tool, result: let result):
-                    print("✅ Tool \"\(tool.toolName)\" returned: \(result.output)")
-                case .toolCallFailed(call: let tool, error: let error):
-                    print("❌ Tool \"\(tool.toolName)\" failed: \(error)")
 
-                // Output streaming
-                case .outputToken:
+                // Output
+                case .output(.thinking(thought: let text)):
+                    print(text, terminator: "")
+                case .output(.thinkingPartial(let text)):
+                    print(text, terminator: "")
+                case .output(.token):
                     break
-                case .outputChunk(chunk: let chunk):
+                case .output(.chunk(let chunk)):
                     print(chunk, terminator: "")
 
-                // Iteration tracking
-                case .iterationStarted, .iterationCompleted:
+                // Tool calls
+                case .tool(.started(call: let call)):
+                    print("-> Calling \"\(call.toolName)\" with \(call.arguments)")
+                case .tool(.partial):
                     break
-
-                // LLM lifecycle
-                case .llmStarted, .llmCompleted:
-                    break
-
-                // Decision and planning
-                case .decision(decision: let decision, options: _):
-                    print("Decision: \(decision)")
-                case .planUpdated(plan: let plan, stepCount: let steps):
-                    print("Plan updated (\(steps) steps): \(plan.prefix(80))...")
+                case .tool(.completed(call: let tool, result: let result)):
+                    print("✅ Tool \"\(tool.toolName)\" returned: \(result.output)")
+                case .tool(.failed(call: let tool, error: let error)):
+                    print("❌ Tool \"\(tool.toolName)\" failed: \(error)")
 
                 // Handoffs
-                case .handoffRequested(fromAgent: let from, toAgent: let to, reason: let reason):
+                case .handoff(.requested(from: let from, to: let to, reason: let reason)):
                     print("Handoff requested: \(from) -> \(to) (\(reason ?? "no reason"))")
-                case .handoffStarted(from: let from, to: let to, input: _):
+                case .handoff(.started(from: let from, to: let to, input: _)):
                     print("Handoff started: \(from) -> \(to)")
-                case .handoffCompleted(fromAgent: let from, toAgent: let to):
+                case .handoff(.completed(from: let from, to: let to)):
                     print("Handoff completed: \(from) -> \(to)")
-                case .handoffCompletedWithResult(from: let from, to: let to, result: _):
+                case .handoff(.completedWithResult(from: let from, to: let to, result: _)):
                     print("Handoff completed with result: \(from) -> \(to)")
-                case .handoffSkipped(from: let from, to: let to, reason: let reason):
+                case .handoff(.skipped(from: let from, to: let to, reason: let reason)):
                     print("Handoff skipped: \(from) -> \(to) (\(reason))")
 
-                // Guardrails
-                case .guardrailFailed(error: let error):
-                    print("❌ Guardrail failed: \(error)")
-                case .guardrailStarted(name: let name, type: _):
+                // Observation
+                case .observation(.decision(let decision, options: _)):
+                    print("Decision: \(decision)")
+                case .observation(.planUpdated(let plan, stepCount: let steps)):
+                    print("Plan updated (\(steps) steps): \(plan.prefix(80))...")
+                case .observation(.guardrailStarted(name: let name, type: _)):
                     print("Guardrail started: \(name)")
-                case .guardrailPassed(name: let name, type: _):
+                case .observation(.guardrailPassed(name: let name, type: _)):
                     print("Guardrail passed: \(name)")
-                case .guardrailTriggered(name: let name, type: _, message: let msg):
+                case .observation(.guardrailTriggered(name: let name, type: _, message: let msg)):
                     print("⚠️ Guardrail triggered: \(name) — \(msg ?? "")")
-
-                // Memory
-                case .memoryAccessed(operation: let op, count: let count):
+                case .observation(.memoryAccessed(operation: let op, count: let count)):
                     print("Memory \(op): \(count) items")
+                case .observation(.llmStarted), .observation(.llmCompleted):
+                    break
                 }
             }
         } catch {

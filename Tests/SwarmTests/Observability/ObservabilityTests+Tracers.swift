@@ -37,12 +37,12 @@ struct ConsoleTracerTests {
         let spanId = UUID()
 
         // Test all event kinds
-        await tracer.trace(.agentStart(traceId: traceId, agentName: "LegacyAgent"))
-        await tracer.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", duration: 1.0))
-        await tracer.trace(.agentError(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", error: NSError(domain: "test", code: 1)))
+        await tracer.trace(.agentStart(traceId: traceId, agentName: "Agent"))
+        await tracer.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "Agent", duration: 1.0))
+        await tracer.trace(.agentError(traceId: traceId, spanId: spanId, agentName: "Agent", error: NSError(domain: "test", code: 1)))
         await tracer.trace(.toolCall(traceId: traceId, parentSpanId: spanId, toolName: "tool"))
         await tracer.trace(.toolResult(traceId: traceId, spanId: spanId, toolName: "tool", duration: 0.5))
-        await tracer.trace(.thought(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", thought: "thinking"))
+        await tracer.trace(.thought(traceId: traceId, spanId: spanId, agentName: "Agent", thought: "thinking"))
         await tracer.trace(.custom(traceId: traceId, message: "custom"))
 
         // Test passes if all events are formatted without crash
@@ -104,8 +104,8 @@ struct PrettyConsoleTracerTests {
         let spanId = UUID()
 
         // Test all event kinds to ensure emoji formatting works
-        await tracer.trace(.agentStart(traceId: traceId, agentName: "LegacyAgent"))
-        await tracer.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", duration: 1.0))
+        await tracer.trace(.agentStart(traceId: traceId, agentName: "Agent"))
+        await tracer.trace(.agentComplete(traceId: traceId, spanId: spanId, agentName: "Agent", duration: 1.0))
         await tracer.trace(.custom(traceId: traceId, message: "Custom event"))
 
         // Test passes if all formatting completes without crash

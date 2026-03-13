@@ -36,7 +36,7 @@ struct ToolSchemaIntegrationTests {
     func agentsAcceptTypedTools() throws {
         let tool = SchemaEchoTool()
 
-        let agent = try LegacyAgent(tools: [tool])
+        let agent = try Agent(tools: [tool])
         #expect(agent.tools.count == 1)
         #expect(agent.tools.first?.name == "echo")
 

@@ -25,8 +25,8 @@ private struct MockAgentForAgentObserver: AgentRuntime {
 
     nonisolated func stream(_ input: String, session _: (any Session)? = nil, observer _: (any AgentObserver)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
-            continuation.yield(.started(input: input))
-            continuation.yield(.completed(result: AgentResult(output: "Mock response")))
+            continuation.yield(.lifecycle(.started(input: input)))
+            continuation.yield(.lifecycle(.completed(result: AgentResult(output: "Mock response"))))
             continuation.finish()
         }
     }

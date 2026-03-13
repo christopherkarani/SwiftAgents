@@ -72,13 +72,13 @@ public struct Workflow: Sendable {
 
     public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream { continuation in
-            continuation.yield(.started(input: input))
+            continuation.yield(.lifecycle(.started(input: input)))
             do {
                 let result = try await run(input)
-                continuation.yield(.completed(result: result))
+                continuation.yield(.lifecycle(.completed(result: result)))
                 continuation.finish()
             } catch let error as AgentError {
-                continuation.yield(.failed(error: error))
+                continuation.yield(.lifecycle(.failed(error: error)))
                 continuation.finish(throwing: error)
             } catch {
                 continuation.finish(throwing: error)

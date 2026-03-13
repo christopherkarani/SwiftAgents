@@ -1,15 +1,15 @@
-/// A handoff is a tool. Sits in `@ToolBuilder` alongside regular tools.
+/// A handoff is a tool. Sits in `@ToolV3Builder` alongside regular tools.
 /// When the LLM calls it, execution transfers to the target agent.
 ///
 /// ```swift
-/// let specialist = Agent("Expert in billing.").named("billing")
-/// let agent = Agent("Route requests.") {
+/// let specialist = AgentV3("Expert in billing.").named("billing")
+/// let agent = AgentV3("Route requests.") {
 ///     Handoff(specialist)
 ///     SearchTool()
 /// }
 /// ```
 public struct Handoff: ToolV3 {
-    public let target: Agent
+    public let target: AgentV3
     public let handoffDescription: String
 
     // Static conformance — instance-level names used instead
@@ -25,7 +25,7 @@ public struct Handoff: ToolV3 {
         return "handoff_to_\(snake)"
     }
 
-    public init(_ target: Agent, description: String? = nil) {
+    public init(_ target: AgentV3, description: String? = nil) {
         self.target = target
         self.handoffDescription = description ?? "Transfer to \(target.name)"
     }
@@ -48,8 +48,8 @@ struct HandoffAnyJSONTool: AnyJSONTool {
 
     init(_ handoff: Handoff) { self.handoff = handoff }
 
-    /// Convenience init from Agent (used in Agent.makeRuntime)
-    init(_ target: Agent) { handoff = Handoff(target) }
+    /// Convenience init from AgentV3 (used in AgentV3.makeRuntime)
+    init(_ target: AgentV3) { handoff = Handoff(target) }
 
     var name: String { handoff.instanceName }
     var description: String { handoff.handoffDescription }

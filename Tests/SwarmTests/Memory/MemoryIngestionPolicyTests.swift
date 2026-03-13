@@ -3,7 +3,7 @@ import Testing
 
 @Suite("Memory Ingestion Policy")
 struct MemoryIngestionPolicyTests {
-    @Test("LegacyAgent stores tool results in memory")
+    @Test("Agent stores tool results in memory")
     func agentStoresToolResults() async throws {
         let tool = MockTool(name: "mock_tool", result: .string("ok"))
 
@@ -17,7 +17,7 @@ struct MemoryIngestionPolicyTests {
         ])
 
         let memory = MockAgentMemory()
-        let agent = try LegacyAgent(
+        let agent = try Agent(
             tools: [tool],
             configuration: .default.maxIterations(3),
             memory: memory,
@@ -46,7 +46,7 @@ struct MemoryIngestionPolicyTests {
         let provider = MockInferenceProvider(responses: ["Final Answer: ok"])
         let memory = MockAgentMemory()
 
-        let agent = try LegacyAgent(
+        let agent = try Agent(
             memory: memory,
             inferenceProvider: provider
         )

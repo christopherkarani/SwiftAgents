@@ -41,36 +41,36 @@ struct SwarmConfigurationTests {
         }
     }
 
-    @Test("LegacyAgent resolves Swarm.defaultProvider when no explicit provider")
+    @Test("Agent resolves Swarm.defaultProvider when no explicit provider")
     func agentResolvesGlobalProvider() async throws {
         try await withIsolatedConfiguration {
             let mock = MockInferenceProvider(responses: ["from global"])
             await Swarm.configure(provider: mock)
-            let agent = try LegacyAgent(instructions: "test")
+            let agent = try Agent(instructions: "test")
             let result = try await agent.run("hello")
             #expect(result.output == "from global")
         }
     }
 
-    @Test("Explicit provider on LegacyAgent takes priority over global")
+    @Test("Explicit provider on Agent takes priority over global")
     func explicitProviderPriority() async throws {
         try await withIsolatedConfiguration {
             let globalMock = MockInferenceProvider(responses: ["from global"])
             let explicitMock = MockInferenceProvider(responses: ["from explicit"])
             await Swarm.configure(provider: globalMock)
-            let agent = try LegacyAgent(instructions: "test", inferenceProvider: explicitMock)
+            let agent = try Agent(instructions: "test", inferenceProvider: explicitMock)
             let result = try await agent.run("hello")
             #expect(result.output == "from explicit")
         }
     }
 
-    @Test("LegacyAgent with tools resolves Swarm.cloudProvider")
+    @Test("Agent with tools resolves Swarm.cloudProvider")
     func cloudProviderForToolAgents() async throws {
         try await withIsolatedConfiguration {
             let cloudMock = MockInferenceProvider(responses: ["from cloud"])
             await Swarm.configure(cloudProvider: cloudMock)
             let tool = MockTool(name: "test_tool")
-            let agent = try LegacyAgent(tools: [tool], instructions: "test")
+            let agent = try Agent(tools: [tool], instructions: "test")
             let result = try await agent.run("use tool")
             #expect(result.output == "from cloud")
         }
@@ -83,13 +83,13 @@ struct SwarmConfigurationTests {
             let cloudMock = MockInferenceProvider(responses: ["from cloud"])
             await Swarm.configure(provider: defaultMock)
             await Swarm.configure(cloudProvider: cloudMock)
-            let agent = try LegacyAgent(instructions: "test")
+            let agent = try Agent(instructions: "test")
             let result = try await agent.run("hello")
             #expect(result.output == "from default")
         }
     }
 
-    @Test("LegacyAgent with handoff only resolves Swarm.cloudProvider")
+    @Test("Agent with handoff only resolves Swarm.cloudProvider")
     func cloudProviderForHandoffOnlyAgents() async throws {
         try await withIsolatedConfiguration {
             let cloudMock = MockInferenceProvider(responses: ["from handoff-cloud"])

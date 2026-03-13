@@ -2,7 +2,7 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
-/// The `@Agent` macro generates an `Agent` factory for a struct.
+/// The `@Agent` macro generates an `AgentV3` factory for a struct.
 ///
 /// Usage:
 /// ```swift
@@ -10,7 +10,7 @@ import SwiftSyntaxMacros
 /// struct HelperBot {
 ///     var tools: [any ToolV3] { [SearchTool()] }
 /// }
-/// // Generates: static func makeAgent() -> Agent
+/// // Generates: static func makeAgent() -> AgentV3
 /// ```
 public struct AgentV3Macro: MemberMacro {
     public static func expansion(
@@ -52,9 +52,9 @@ public struct AgentV3Macro: MemberMacro {
         let factoryBody: DeclSyntax
         if hasTools {
             factoryBody = """
-                static func makeAgent() -> Agent {
+                static func makeAgent() -> AgentV3 {
                     let instance = \(raw: typeName)()
-                    return Agent("\(raw: instructions)") {
+                    return AgentV3("\(raw: instructions)") {
                         for tool in instance.tools {
                             tool
                         }
@@ -63,8 +63,8 @@ public struct AgentV3Macro: MemberMacro {
                 """
         } else {
             factoryBody = """
-                static func makeAgent() -> Agent {
-                    Agent("\(raw: instructions)")
+                static func makeAgent() -> AgentV3 {
+                    AgentV3("\(raw: instructions)")
                 }
                 """
         }

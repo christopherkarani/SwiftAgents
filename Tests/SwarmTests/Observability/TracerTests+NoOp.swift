@@ -71,12 +71,12 @@ struct NoOpTracerTests {
         let spanId = UUID()
 
         // When/Then - should not crash for any event kind
-        await tracer.trace(TraceEvent.agentStart(traceId: traceId, agentName: "LegacyAgent"))
-        await tracer.trace(TraceEvent.agentComplete(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", duration: 1.0))
-        await tracer.trace(TraceEvent.agentError(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", error: NSError(domain: "test", code: 1)))
+        await tracer.trace(TraceEvent.agentStart(traceId: traceId, agentName: "Agent"))
+        await tracer.trace(TraceEvent.agentComplete(traceId: traceId, spanId: spanId, agentName: "Agent", duration: 1.0))
+        await tracer.trace(TraceEvent.agentError(traceId: traceId, spanId: spanId, agentName: "Agent", error: NSError(domain: "test", code: 1)))
         await tracer.trace(TraceEvent.toolCall(traceId: traceId, parentSpanId: nil, toolName: "Tool"))
         await tracer.trace(TraceEvent.toolResult(traceId: traceId, spanId: spanId, toolName: "Tool", duration: 0.5))
-        await tracer.trace(TraceEvent.thought(traceId: traceId, spanId: spanId, agentName: "LegacyAgent", thought: "Thinking..."))
+        await tracer.trace(TraceEvent.thought(traceId: traceId, spanId: spanId, agentName: "Agent", thought: "Thinking..."))
         await tracer.trace(TraceEvent.custom(traceId: traceId, message: "Custom"))
     }
 }

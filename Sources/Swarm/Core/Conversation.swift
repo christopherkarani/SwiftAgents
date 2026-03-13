@@ -60,11 +60,11 @@ public actor Conversation {
         var final = ""
         for try await event in agent.stream(input, session: session, observer: observer) {
             switch event {
-            case .outputToken(let token):
+            case .output(.token(let token)):
                 final += token
-            case .outputChunk(let chunk):
+            case .output(.chunk(let chunk)):
                 final += chunk
-            case .completed(let result):
+            case .lifecycle(.completed(let result)):
                 if final.isEmpty {
                     final = result.output
                 }

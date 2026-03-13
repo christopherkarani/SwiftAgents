@@ -35,14 +35,14 @@ public struct ConversationMessage: Identifiable, Sendable {
 /// ```
 @Observable
 @MainActor
-public final class Conversation {
+public final class ConversationV3 {
     public private(set) var messages: [ConversationMessage] = []
     public private(set) var isThinking: Bool = false
     public private(set) var streamingText: String = ""
 
-    private let agent: Agent
+    private let agent: AgentV3
 
-    public init(agent: Agent) {
+    public init(agent: AgentV3) {
         self.agent = agent
     }
 
@@ -73,13 +73,13 @@ public final class Conversation {
 
         for try await event in agent.stream(text) {
             switch event {
-            case .outputToken(let token):
+            case .output(.token(let token)):
                 streamingText += token
                 messages[assistantIndex].text = streamingText
-            case .outputChunk(let chunk):
+            case .output(.chunk(let chunk)):
                 streamingText += chunk
                 messages[assistantIndex].text = streamingText
-            case .completed(let result):
+            case .lifecycle(.completed(let result)):
                 messages[assistantIndex].text = result.output
                 streamingText = ""
             default:

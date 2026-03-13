@@ -57,7 +57,7 @@ struct AgentActorMacroConformanceTests {
 
         var completed: AgentResult?
         for try await event in agent.stream("hello", session: nil, observer: nil) {
-            if case let .completed(result) = event {
+            if case let .lifecycle(.completed(result: result)) = event {
                 completed = result
             }
         }

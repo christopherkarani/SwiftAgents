@@ -11,7 +11,7 @@ final class AgentToolTests: XCTestCase {
     // MARK: - AgentTool Creation Tests
 
     func testAgentToolCreation() async throws {
-        let innerAgent = try LegacyAgent(
+        let innerAgent = try Agent(
             name: "Researcher",
             instructions: "Research topics",
             inferenceProvider: MockInferenceProvider()
@@ -26,7 +26,7 @@ final class AgentToolTests: XCTestCase {
     }
 
     func testAgentToolCustomNameAndDescription() async throws {
-        let innerAgent = try LegacyAgent(
+        let innerAgent = try Agent(
             name: "Worker",
             instructions: "Work",
             inferenceProvider: MockInferenceProvider()
@@ -45,7 +45,7 @@ final class AgentToolTests: XCTestCase {
     // MARK: - .asTool() Extension Tests
 
     func testAgentAsToolExtension() async throws {
-        let agent = try LegacyAgent(
+        let agent = try Agent(
             name: "Helper",
             instructions: "Help users",
             inferenceProvider: MockInferenceProvider()
@@ -57,7 +57,7 @@ final class AgentToolTests: XCTestCase {
     }
 
     func testAgentAsToolWithCustomParams() async throws {
-        let agent = try LegacyAgent(
+        let agent = try Agent(
             name: "Helper",
             instructions: "Help users",
             inferenceProvider: MockInferenceProvider()
@@ -74,7 +74,7 @@ final class AgentToolTests: XCTestCase {
         let mock = MockInferenceProvider()
         await mock.setResponses(["Final Answer: done"])
 
-        let innerAgent = try LegacyAgent(
+        let innerAgent = try Agent(
             name: "Worker",
             instructions: "Work",
             inferenceProvider: mock
@@ -94,7 +94,7 @@ final class AgentToolTests: XCTestCase {
         let mock = MockInferenceProvider()
         await mock.setResponses(["Final Answer: done"])
 
-        let innerAgent = try LegacyAgent(
+        let innerAgent = try Agent(
             name: "Worker",
             instructions: "Work",
             inferenceProvider: mock
@@ -113,7 +113,7 @@ final class AgentToolTests: XCTestCase {
     // MARK: - AgentTool Name Derivation Tests
 
     func testAgentToolNameDerivedFromAgentName() async throws {
-        let agent = try LegacyAgent(
+        let agent = try Agent(
             name: "MyResearchAgent",
             instructions: "Research",
             inferenceProvider: MockInferenceProvider()
@@ -125,7 +125,7 @@ final class AgentToolTests: XCTestCase {
     }
 
     func testAgentToolNameFallbackForEmptyAgentName() async throws {
-        let agent = try LegacyAgent(
+        let agent = try Agent(
             instructions: "Test",
             configuration: AgentConfiguration(name: ""),
             inferenceProvider: MockInferenceProvider()

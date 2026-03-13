@@ -15,13 +15,13 @@ struct AgentEventTests {
 
     @Test("AgentEvent.started creation")
     func startedEventCreation() {
-        let event = AgentEvent.started(input: "What is 2+2?")
+        let event = AgentEvent.lifecycle(.started(input: "What is 2+2?"))
 
         // Verify the event can be pattern-matched
-        if case let .started(input) = event {
+        if case let .lifecycle(.started(input: input)) = event {
             #expect(input == "What is 2+2?")
         } else {
-            Issue.record("Expected .started event")
+            Issue.record("Expected .lifecycle(.started) event")
         }
     }
 
@@ -33,39 +33,39 @@ struct AgentEventTests {
             duration: .seconds(1)
         )
 
-        let event = AgentEvent.completed(result: result)
+        let event = AgentEvent.lifecycle(.completed(result: result))
 
         // Verify the event can be pattern-matched
-        if case let .completed(capturedResult) = event {
+        if case let .lifecycle(.completed(result: capturedResult)) = event {
             #expect(capturedResult.output == "The answer is 4")
             #expect(capturedResult.iterationCount == 2)
         } else {
-            Issue.record("Expected .completed event")
+            Issue.record("Expected .lifecycle(.completed) event")
         }
     }
 
     @Test("AgentEvent.failed creation")
     func failedEventCreation() {
         let error = AgentError.toolNotFound(name: "calculator")
-        let event = AgentEvent.failed(error: error)
+        let event = AgentEvent.lifecycle(.failed(error: error))
 
         // Verify the event can be pattern-matched
-        if case let .failed(capturedError) = event {
+        if case let .lifecycle(.failed(error: capturedError)) = event {
             #expect(capturedError == error)
         } else {
-            Issue.record("Expected .failed event")
+            Issue.record("Expected .lifecycle(.failed) event")
         }
     }
 
     @Test("AgentEvent.cancelled creation")
     func cancelledEventCreation() {
-        let event = AgentEvent.cancelled
+        let event = AgentEvent.lifecycle(.cancelled)
 
         // Verify the event can be pattern-matched
-        if case .cancelled = event {
+        if case .lifecycle(.cancelled) = event {
             // Success
         } else {
-            Issue.record("Expected .cancelled event")
+            Issue.record("Expected .lifecycle(.cancelled) event")
         }
     }
 
@@ -73,25 +73,25 @@ struct AgentEventTests {
 
     @Test("AgentEvent.thinking creation")
     func thinkingEventCreation() {
-        let event = AgentEvent.thinking(thought: "I need to calculate 2+2")
+        let event = AgentEvent.output(.thinking(thought: "I need to calculate 2+2"))
 
         // Verify the event can be pattern-matched
-        if case let .thinking(thought) = event {
+        if case let .output(.thinking(thought: thought)) = event {
             #expect(thought == "I need to calculate 2+2")
         } else {
-            Issue.record("Expected .thinking event")
+            Issue.record("Expected .output(.thinking) event")
         }
     }
 
     @Test("AgentEvent.thinkingPartial creation")
     func thinkingPartialEventCreation() {
-        let event = AgentEvent.thinkingPartial(partialThought: "I need to")
+        let event = AgentEvent.output(.thinkingPartial("I need to"))
 
         // Verify the event can be pattern-matched
-        if case let .thinkingPartial(partial) = event {
+        if case let .output(.thinkingPartial(partial)) = event {
             #expect(partial == "I need to")
         } else {
-            Issue.record("Expected .thinkingPartial event")
+            Issue.record("Expected .output(.thinkingPartial) event")
         }
     }
 
@@ -104,14 +104,14 @@ struct AgentEventTests {
             arguments: ["expression": .string("2+2")]
         )
 
-        let event = AgentEvent.toolCallStarted(call: toolCall)
+        let event = AgentEvent.tool(.started(call: toolCall))
 
         // Verify the event can be pattern-matched
-        if case let .toolCallStarted(call) = event {
+        if case let .tool(.started(call: call)) = event {
             #expect(call.toolName == "calculator")
             #expect(call.arguments["expression"] == .string("2+2"))
         } else {
-            Issue.record("Expected .toolCallStarted event")
+            Issue.record("Expected .tool(.started) event")
         }
     }
 
@@ -128,15 +128,15 @@ struct AgentEventTests {
             duration: .milliseconds(100)
         )
 
-        let event = AgentEvent.toolCallCompleted(call: toolCall, result: result)
+        let event = AgentEvent.tool(.completed(call: toolCall, result: result))
 
         // Verify the event can be pattern-matched
-        if case let .toolCallCompleted(call, capturedResult) = event {
+        if case let .tool(.completed(call: call, result: capturedResult)) = event {
             #expect(call.toolName == "calculator")
             #expect(capturedResult.isSuccess == true)
             #expect(capturedResult.output == .int(4))
         } else {
-            Issue.record("Expected .toolCallCompleted event")
+            Issue.record("Expected .tool(.completed) event")
         }
     }
 
@@ -152,14 +152,14 @@ struct AgentEventTests {
             underlyingError: "Invalid expression"
         )
 
-        let event = AgentEvent.toolCallFailed(call: toolCall, error: error)
+        let event = AgentEvent.tool(.failed(call: toolCall, error: error))
 
         // Verify the event can be pattern-matched
-        if case let .toolCallFailed(call, capturedError) = event {
+        if case let .tool(.failed(call: call, error: capturedError)) = event {
             #expect(call.toolName == "calculator")
             #expect(capturedError == error)
         } else {
-            Issue.record("Expected .toolCallFailed event")
+            Issue.record("Expected .tool(.failed) event")
         }
     }
 
@@ -167,25 +167,25 @@ struct AgentEventTests {
 
     @Test("AgentEvent.outputToken creation")
     func outputTokenEventCreation() {
-        let event = AgentEvent.outputToken(token: "Hello")
+        let event = AgentEvent.output(.token("Hello"))
 
         // Verify the event can be pattern-matched
-        if case let .outputToken(token) = event {
+        if case let .output(.token(token)) = event {
             #expect(token == "Hello")
         } else {
-            Issue.record("Expected .outputToken event")
+            Issue.record("Expected .output(.token) event")
         }
     }
 
     @Test("AgentEvent.outputChunk creation")
     func outputChunkEventCreation() {
-        let event = AgentEvent.outputChunk(chunk: "Hello, world!")
+        let event = AgentEvent.output(.chunk("Hello, world!"))
 
         // Verify the event can be pattern-matched
-        if case let .outputChunk(chunk) = event {
+        if case let .output(.chunk(chunk)) = event {
             #expect(chunk == "Hello, world!")
         } else {
-            Issue.record("Expected .outputChunk event")
+            Issue.record("Expected .output(.chunk) event")
         }
     }
 
@@ -193,25 +193,25 @@ struct AgentEventTests {
 
     @Test("AgentEvent.iterationStarted creation")
     func iterationStartedEventCreation() {
-        let event = AgentEvent.iterationStarted(number: 1)
+        let event = AgentEvent.lifecycle(.iterationStarted(number: 1))
 
         // Verify the event can be pattern-matched
-        if case let .iterationStarted(number) = event {
+        if case let .lifecycle(.iterationStarted(number: number)) = event {
             #expect(number == 1)
         } else {
-            Issue.record("Expected .iterationStarted event")
+            Issue.record("Expected .lifecycle(.iterationStarted) event")
         }
     }
 
     @Test("AgentEvent.iterationCompleted creation")
     func iterationCompletedEventCreation() {
-        let event = AgentEvent.iterationCompleted(number: 5)
+        let event = AgentEvent.lifecycle(.iterationCompleted(number: 5))
 
         // Verify the event can be pattern-matched
-        if case let .iterationCompleted(number) = event {
+        if case let .lifecycle(.iterationCompleted(number: number)) = event {
             #expect(number == 5)
         } else {
-            Issue.record("Expected .iterationCompleted event")
+            Issue.record("Expected .lifecycle(.iterationCompleted) event")
         }
     }
 
@@ -221,22 +221,22 @@ struct AgentEventTests {
     func allEventCasesAreSendable() {
         // This test verifies compilation - all events should conform to Sendable
         let events: [AgentEvent] = [
-            .started(input: "test"),
-            .completed(result: AgentResult(output: "done")),
-            .failed(error: .cancelled),
-            .cancelled,
-            .thinking(thought: "thinking"),
-            .thinkingPartial(partialThought: "think"),
-            .toolCallStarted(call: ToolCall(toolName: "test")),
-            .toolCallCompleted(
+            .lifecycle(.started(input: "test")),
+            .lifecycle(.completed(result: AgentResult(output: "done"))),
+            .lifecycle(.failed(error: .cancelled)),
+            .lifecycle(.cancelled),
+            .output(.thinking(thought: "thinking")),
+            .output(.thinkingPartial("think")),
+            .tool(.started(call: ToolCall(toolName: "test"))),
+            .tool(.completed(
                 call: ToolCall(toolName: "test"),
                 result: ToolResult.success(callId: UUID(), output: .null, duration: .zero)
-            ),
-            .toolCallFailed(call: ToolCall(toolName: "test"), error: .cancelled),
-            .outputToken(token: "hi"),
-            .outputChunk(chunk: "hello"),
-            .iterationStarted(number: 1),
-            .iterationCompleted(number: 1)
+            )),
+            .tool(.failed(call: ToolCall(toolName: "test"), error: .cancelled)),
+            .output(.token("hi")),
+            .output(.chunk("hello")),
+            .lifecycle(.iterationStarted(number: 1)),
+            .lifecycle(.iterationCompleted(number: 1))
         ]
 
         #expect(events.count == 13)

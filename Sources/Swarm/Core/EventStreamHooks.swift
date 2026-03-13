@@ -23,87 +23,86 @@ internal struct EventStreamObserver: AgentObserver {
     // MARK: - AgentObserver Implementation
 
     func onAgentStart(context _: AgentContext?, agent _: any AgentRuntime, input: String) async {
-        continuation.yield(.started(input: input))
+        continuation.yield(.lifecycle(.started(input: input)))
     }
 
     func onAgentEnd(context _: AgentContext?, agent _: any AgentRuntime, result: AgentResult) async {
-        continuation.yield(.completed(result: result))
+        continuation.yield(.lifecycle(.completed(result: result)))
     }
 
     func onError(context _: AgentContext?, agent _: any AgentRuntime, error: Error) async {
         if let agentError = error as? AgentError {
-            continuation.yield(.failed(error: agentError))
+            continuation.yield(.lifecycle(.failed(error: agentError)))
         } else {
-            continuation.yield(.failed(error: .internalError(reason: error.localizedDescription)))
+            continuation.yield(.lifecycle(.failed(error: .internalError(reason: error.localizedDescription))))
         }
     }
 
     func onToolStart(context _: AgentContext?, agent _: any AgentRuntime, call: ToolCall) async {
         await toolCallStore.record(call)
-        continuation.yield(.toolCallStarted(call: call))
+        continuation.yield(.tool(.started(call: call)))
     }
 
     func onToolCallPartial(context _: AgentContext?, agent _: any AgentRuntime, update: PartialToolCallUpdate) async {
-        continuation.yield(.toolCallPartial(update: update))
+        continuation.yield(.tool(.partial(update: update)))
     }
 
     func onToolEnd(context _: AgentContext?, agent _: any AgentRuntime, result: ToolResult) async {
         let call = await toolCallStore.take(id: result.callId)
             ?? ToolCall(id: result.callId, toolName: "unknown", arguments: [:])
-        continuation.yield(.toolCallCompleted(call: call, result: result))
+        continuation.yield(.tool(.completed(call: call, result: result)))
 
         if !result.isSuccess {
             let errorMessage = result.errorMessage ?? "Unknown error"
-            continuation.yield(.toolCallFailed(
+            continuation.yield(.tool(.failed(
                 call: call,
                 error: .toolExecutionFailed(toolName: call.toolName, underlyingError: errorMessage)
-            ))
+            )))
         }
     }
 
     func onThinking(context _: AgentContext?, agent _: any AgentRuntime, thought: String) async {
-        continuation.yield(.thinking(thought: thought))
+        continuation.yield(.output(.thinking(thought: thought)))
     }
 
     func onThinkingPartial(context _: AgentContext?, agent _: any AgentRuntime, partialThought: String) async {
-        continuation.yield(.thinkingPartial(partialThought: partialThought))
+        continuation.yield(.output(.thinkingPartial(partialThought)))
     }
 
     func onOutputToken(context _: AgentContext?, agent _: any AgentRuntime, token: String) async {
-        continuation.yield(.outputToken(token: token))
+        continuation.yield(.output(.token(token)))
     }
 
     func onIterationStart(context _: AgentContext?, agent _: any AgentRuntime, number: Int) async {
-        continuation.yield(.iterationStarted(number: number))
+        continuation.yield(.lifecycle(.iterationStarted(number: number)))
     }
 
     func onIterationEnd(context _: AgentContext?, agent _: any AgentRuntime, number: Int) async {
-        continuation.yield(.iterationCompleted(number: number))
+        continuation.yield(.lifecycle(.iterationCompleted(number: number)))
     }
-    
+
     func onGuardrailTriggered(context: AgentContext?, guardrailName: String, guardrailType: GuardrailType, result: GuardrailResult) async {
-        continuation.yield(.guardrailTriggered(name: guardrailName, type: guardrailType, message: result.message))
+        continuation.yield(.observation(.guardrailTriggered(name: guardrailName, type: guardrailType, message: result.message)))
     }
 
     func onHandoff(context: AgentContext?, fromAgent: any AgentRuntime, toAgent: any AgentRuntime) async {
         let fromName = fromAgent.configuration.name.isEmpty ? String(describing: type(of: fromAgent)) : fromAgent.configuration.name
         let toName = toAgent.configuration.name.isEmpty ? String(describing: type(of: toAgent)) : toAgent.configuration.name
-        
-        continuation.yield(.handoffRequested(fromAgent: fromName, toAgent: toName, reason: nil))
+
+        continuation.yield(.handoff(.requested(from: fromName, to: toName, reason: nil)))
     }
 
     func onLLMStart(context: AgentContext?, agent: any AgentRuntime, systemPrompt: String?, inputMessages: [MemoryMessage]) async {
-        // Calculate prompt tokens if possible, otherwise nil
-        continuation.yield(.llmStarted(model: nil, promptTokens: nil))
+        continuation.yield(.observation(.llmStarted(model: nil, promptTokens: nil)))
     }
 
     func onLLMEnd(context: AgentContext?, agent: any AgentRuntime, response: String, usage: TokenUsage?) async {
-        continuation.yield(.llmCompleted(
-            model: nil, 
-            promptTokens: usage?.inputTokens, 
-            completionTokens: usage?.outputTokens, 
-            duration: 0 // We don't have duration here easily without tracking
-        ))
+        continuation.yield(.observation(.llmCompleted(
+            model: nil,
+            promptTokens: usage?.inputTokens,
+            completionTokens: usage?.outputTokens,
+            duration: 0 // Duration not available without explicit tracking
+        )))
     }
 }
 

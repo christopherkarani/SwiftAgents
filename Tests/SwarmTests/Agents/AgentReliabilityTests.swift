@@ -2,12 +2,12 @@ import Foundation
 @testable import Swarm
 import Testing
 
-@Suite("LegacyAgent Reliability Tests")
+@Suite("Agent Reliability Tests")
 struct AgentReliabilityTests {
-    @Test("LegacyAgent cancel terminates in-flight run promptly")
+    @Test("Agent cancel terminates in-flight run promptly")
     func agentCancelTerminatesInflightRun() async throws {
         let provider = HangingInferenceProvider(delay: .seconds(2))
-        let agent = try LegacyAgent(
+        let agent = try Agent(
             tools: [],
             instructions: "Cancellation test agent",
             inferenceProvider: provider
@@ -23,7 +23,7 @@ struct AgentReliabilityTests {
         let completion = await awaitTaskResult(runTask, timeout: .milliseconds(500))
         guard let completion else {
             runTask.cancel()
-            Issue.record("LegacyAgent run did not stop promptly after cancel()")
+            Issue.record("Agent run did not stop promptly after cancel()")
             return
         }
 
@@ -70,7 +70,7 @@ struct AgentReliabilityTests {
         }
     }
 
-    @Test("LegacyAgent emits onIterationEnd for terminal no-tool return")
+    @Test("Agent emits onIterationEnd for terminal no-tool return")
     func agentAlwaysEmitsIterationEndOnTerminalReturn() async throws {
         let provider = MockInferenceProvider(responses: ["terminal output"])
         let observer = IterationRecordingObserver()
