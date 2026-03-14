@@ -23,7 +23,7 @@ Two agents. One pipeline. Compiled to a DAG. Crash-resumable. Zero data races.
 ## Install
 
 ```swift
-.package(url: "https://github.com/christopherkarani/Swarm.git", from: "0.3.4")
+.package(url: "https://github.com/christopherkarani/Swarm.git", from: "0.4.0")
 ```
 
 ## Quick Start
