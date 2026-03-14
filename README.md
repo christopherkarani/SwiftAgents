@@ -1,5 +1,5 @@
 <div align="center">
-  <img alt="Swarm — Swift Agent Framework" src="https://github.com/user-attachments/assets/62b0d34a-a0d4-45a9-a289-0e384939839f" />
+  <img alt="Swarm — Swift Agent Framework" src="docs/public/banner.svg" />
 
   <p><strong>The agent framework Swift has been missing.</strong></p>
 
