@@ -547,7 +547,7 @@ struct HiveAgentsTests {
             _ = try await runControl.getCheckpointHistory(threadID: HiveThreadID("query-unsupported"), limit: 1)
         }
         let queryError = try #require(thrown as? HiveCheckpointQueryError)
-        #expect(queryError == .unsupported)
+        #expect(queryError == .unsupported(operation: .listCheckpoints))
     }
 
     @Test("getState returns nil for missing thread and deterministic snapshot for existing thread")

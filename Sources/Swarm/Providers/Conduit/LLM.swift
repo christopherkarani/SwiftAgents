@@ -173,6 +173,7 @@ public struct LLM: Sendable, InferenceProvider {
                 host: config.settings.host,
                 port: config.settings.port
             )
+            .ollama(config.settings.toConduit())
             let provider = OpenAIProvider(configuration: configuration)
             let modelID = OpenAIModelID.ollama(config.model)
             return ConduitInferenceProvider(provider: provider, model: modelID)

@@ -4,8 +4,8 @@ import Testing
 
 @Suite("Agent Reliability Tests")
 struct AgentReliabilityTests {
-    @Test("Agent cancel terminates in-flight run promptly")
-    func agentCancelTerminatesInflightRun() async throws {
+    @Test("Agent.cancel() terminates in-flight run promptly")
+    func agentInstanceCancelTerminatesInflightRun() async throws {
         let provider = HangingInferenceProvider(delay: .seconds(2))
         let agent = try Agent(
             tools: [],
@@ -18,31 +18,31 @@ struct AgentReliabilityTests {
         }
 
         try await Task.sleep(for: .milliseconds(50))
-        runTask.cancel()
+        await agent.cancel()
 
         let completion = await awaitTaskResult(runTask, timeout: .milliseconds(500))
         guard let completion else {
             runTask.cancel()
-            Issue.record("Agent run did not stop promptly after cancel()")
+            Issue.record("Agent run did not stop promptly after agent.cancel()")
             return
         }
 
         switch completion {
         case .success:
-            Issue.record("Expected cancellation error but run succeeded")
+            Issue.record("Expected cancellation error after agent.cancel(), but run succeeded")
         case let .failure(error as AgentError):
             #expect(error == .cancelled)
         case let .failure(error):
-            Issue.record("Expected AgentError.cancelled, got \(error)")
+            Issue.record("Expected AgentError.cancelled after agent.cancel(), got \(error)")
         }
     }
 
-    @Test("Agent cancel terminates in-flight run promptly")
-    func reactCancelTerminatesInflightRun() async throws {
+    @Test("Task cancellation terminates in-flight run promptly")
+    func taskCancelTerminatesInflightRun() async throws {
         let provider = HangingInferenceProvider(delay: .seconds(2))
         let agent = try Agent(
             tools: [],
-            instructions: "Cancellation test ReAct agent",
+            instructions: "Cancellation test agent",
             inferenceProvider: provider
         )
 

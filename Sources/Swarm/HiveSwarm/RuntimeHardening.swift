@@ -535,12 +535,41 @@ enum HiveDeterminism {
             ("runStarted", ["threadID": threadID.rawValue])
         case .runFinished:
             ("runFinished", [:])
-        case .runInterrupted:
-            ("runInterrupted", [:])
-        case .runResumed:
-            ("runResumed", [:])
-        case .runCancelled:
-            ("runCancelled", [:])
+        case let .runInterrupted(interruptID):
+            ("runInterrupted", ["interruptID": interruptID.rawValue])
+        case let .runResumed(interruptID):
+            ("runResumed", ["interruptID": interruptID.rawValue])
+        case let .runCancelled(cause):
+            ("runCancelled", ["cause": cause.rawValue])
+        case let .forkStarted(sourceThreadID, targetThreadID, sourceCheckpointID):
+            (
+                "forkStarted",
+                [
+                    "sourceThreadID": sourceThreadID.rawValue,
+                    "targetThreadID": targetThreadID.rawValue,
+                    "sourceCheckpointID": sourceCheckpointID?.rawValue ?? "nil"
+                ]
+            )
+        case let .forkCompleted(sourceThreadID, targetThreadID, sourceCheckpointID, targetCheckpointID):
+            (
+                "forkCompleted",
+                [
+                    "sourceThreadID": sourceThreadID.rawValue,
+                    "targetThreadID": targetThreadID.rawValue,
+                    "sourceCheckpointID": sourceCheckpointID.rawValue,
+                    "targetCheckpointID": targetCheckpointID?.rawValue ?? "nil"
+                ]
+            )
+        case let .forkFailed(sourceThreadID, targetThreadID, sourceCheckpointID, errorCode):
+            (
+                "forkFailed",
+                [
+                    "sourceThreadID": sourceThreadID.rawValue,
+                    "targetThreadID": targetThreadID.rawValue,
+                    "sourceCheckpointID": sourceCheckpointID?.rawValue ?? "nil",
+                    "errorCode": errorCode
+                ]
+            )
         case let .stepStarted(stepIndex, frontierCount):
             ("stepStarted", ["stepIndex": String(stepIndex), "frontierCount": String(frontierCount)])
         case let .stepFinished(stepIndex, nextFrontierCount):
@@ -554,10 +583,10 @@ enum HiveDeterminism {
         case let .writeApplied(channelID, _):
             // payloadHash includes runtime identity (e.g., message IDs) and is not stable across fresh runtimes.
             ("writeApplied", ["channelID": channelID.rawValue])
-        case .checkpointSaved:
-            ("checkpointSaved", [:])
-        case .checkpointLoaded:
-            ("checkpointLoaded", [:])
+        case let .checkpointSaved(checkpointID):
+            ("checkpointSaved", ["checkpointID": checkpointID.rawValue])
+        case let .checkpointLoaded(checkpointID):
+            ("checkpointLoaded", ["checkpointID": checkpointID.rawValue])
         case let .storeSnapshot(channelValues):
             (
                 "storeSnapshot",
@@ -856,7 +885,7 @@ extension GraphRunController {
             _ = try await runtime.getCheckpointHistory(threadID: probeThreadID, limit: 1)
             return .queryable
         } catch let error as HiveCheckpointQueryError {
-            if error == .unsupported {
+            if case .unsupported = error {
                 return .latestOnly
             }
             return .queryable

@@ -172,10 +172,9 @@ struct WorkflowHiveEngine: Sendable {
     private func makeGraph() throws -> CompiledHiveGraph<WorkflowHiveSchema> {
         var builder = HiveGraphBuilder<WorkflowHiveSchema>(start: [WorkflowNodeID.execute])
         builder.addNode(WorkflowNodeID.execute, workflowNode)
-        builder.addEdge(from: WorkflowNodeID.execute, to: WorkflowNodeID.execute)
         builder.addRouter(from: WorkflowNodeID.execute) { store in
             let completed = (try? store.get(WorkflowHiveSchema.completedKey)) ?? false
-            return completed ? .end : .useGraphEdges
+            return completed ? .end : .nodes([WorkflowNodeID.execute])
         }
         return try builder.compile()
     }

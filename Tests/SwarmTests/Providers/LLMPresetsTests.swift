@@ -45,4 +45,28 @@ struct LLMPresetsTests {
             }
         }
     }
+
+    @Test("Ollama preset with custom settings builds Conduit provider")
+    func ollamaPresetBuildsProviderWithSettings() throws {
+        let settings = OllamaSettings(
+            host: "127.0.0.1",
+            port: 11435,
+            keepAlive: "10m",
+            pullOnMissing: true,
+            numGPU: 2,
+            lowVRAM: true,
+            numCtx: 4096,
+            healthCheck: false
+        )
+        let agent = try Agent(.ollama("llama3.2", settings: settings))
+
+        let provider = agent.inferenceProvider
+        #expect(provider != nil)
+        if let provider {
+            #expect(provider is LLM)
+            if let preset = provider as? LLM {
+                #expect(preset._makeProviderForTesting() is ConduitInferenceProvider<OpenAIProvider>)
+            }
+        }
+    }
 }

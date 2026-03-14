@@ -293,15 +293,34 @@ public struct Agent: AgentRuntime, Sendable {
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     public func run(_ input: String, session: (any Session)? = nil, observer: (any AgentObserver)? = nil) async throws -> AgentResult {
-        try await runInternal(input, session: session, observer: observer)
+        let runID = UUID()
+        let task = Task { [self] in
+            try await runInternal(input, session: session, observer: observer)
+        }
+        await cancellationState.begin(runID: runID, task: task)
+
+        do {
+            let result = try await withTaskCancellationHandler(
+                operation: {
+                    try await task.value
+                },
+                onCancel: {
+                    task.cancel()
+                }
+            )
+            await cancellationState.finish(runID: runID)
+            return result
+        } catch {
+            task.cancel()
+            await cancellationState.finish(runID: runID)
+            throw normalizeCancellation(error)
+        }
     }
 
     /// Cancels any ongoing execution.
     ///
-    /// Since `Agent` is a value type (struct), cancellation is cooperative via
-    /// Swift's `Task.checkCancellation()`. Cancel the enclosing `Task` instead.
     public func cancel() async {
-        // No-op: struct agents use cooperative cancellation via Task.cancel()
+        await cancellationState.cancelCurrent()
     }
 
     /// Streams the agent's execution, yielding events as they occur.
@@ -372,8 +391,29 @@ public struct Agent: AgentRuntime, Sendable {
     // MARK: - Internal State
 
     private let toolRegistry: ToolRegistry
+    private let cancellationState = ActiveRunCancellationState()
     private static let autoResponseTracker = ResponseTracker()
     private static let responseIDMetadataKey = "response.id"
+
+    private actor ActiveRunCancellationState {
+        private var activeRunID: UUID?
+        private var activeTask: Task<AgentResult, Error>?
+
+        func begin(runID: UUID, task: Task<AgentResult, Error>) {
+            activeRunID = runID
+            activeTask = task
+        }
+
+        func finish(runID: UUID) {
+            guard activeRunID == runID else { return }
+            activeRunID = nil
+            activeTask = nil
+        }
+
+        func cancelCurrent() {
+            activeTask?.cancel()
+        }
+    }
 
     private func runInternal(_ input: String, session: (any Session)? = nil, observer: (any AgentObserver)? = nil) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
