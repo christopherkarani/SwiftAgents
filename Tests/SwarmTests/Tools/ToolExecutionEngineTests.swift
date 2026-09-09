@@ -197,6 +197,35 @@ struct ToolExecutionSemanticsEngineTests {
         #expect(outcomeUnique == unique)
     }
 
+    @Test("executeBatch preserves input order for concurrent tools")
+    func executeBatchPreservesInputOrder() async throws {
+        let engine = ToolExecutionEngine()
+        let registry = ToolRegistry()
+        try await registry.register(MockDelayTool(name: "slow", delay: .milliseconds(30), resultValue: .string("first")))
+        try await registry.register(MockDelayTool(name: "fast", delay: .zero, resultValue: .string("second")))
+        let builder = AgentResult.Builder()
+
+        let outcomes = try await engine.executeBatch(
+            [
+                ToolCall(toolName: "slow", arguments: [:]),
+                ToolCall(toolName: "fast", arguments: [:]),
+            ],
+            registry: registry,
+            agent: ParallelTestMockAgent(),
+            context: nil,
+            resultBuilder: builder,
+            observer: nil,
+            tracing: nil,
+            stopOnToolError: false
+        )
+
+        #expect(outcomes.map(\.call.toolName) == ["slow", "fast"])
+        #expect(outcomes.map(\.result.output) == [.string("first"), .string("second")])
+        let recorded = builder.build()
+        #expect(recorded.toolCalls.map(\.toolName) == ["slow", "fast"])
+        #expect(recorded.toolResults.map(\.output) == [.string("first"), .string("second")])
+    }
+
     @Test("execute still wraps stopOnToolError throws with original cause")
     func stopOnToolErrorThrowsWrappedToolFailureWithCause() async throws {
         let unique = UniqueToolError(code: 23)
