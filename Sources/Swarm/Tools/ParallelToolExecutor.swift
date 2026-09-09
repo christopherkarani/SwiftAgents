@@ -316,7 +316,8 @@ public actor ParallelToolExecutor {
             resultBuilder: AgentResult.Builder(),
             observer: nil,
             tracing: nil,
-            stopOnToolError: stopOnToolError
+            stopOnToolError: stopOnToolError,
+            allowConcurrent: true
         )
         return zip(calls, outcomes).map { call, outcome in
             ToolExecutionResult.from(

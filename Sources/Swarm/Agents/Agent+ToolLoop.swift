@@ -558,7 +558,8 @@ extension Agent {
 
     /// Registry-backed regular tools through ``ToolExecutionEngine/executeBatch``.
     ///
-    /// Engine is invoked with `stopOnToolError: false`. After transcript and
+    /// Engine is invoked with `stopOnToolError: false` and
+    /// `allowConcurrent: configuration.parallelToolCalls`. After transcript and
     /// memory updates, this throws ``AgentError/toolFailure`` when configured.
     private func executeRegularToolBatch(
         calls: [InferenceResponse.ParsedToolCall],
@@ -585,7 +586,8 @@ extension Agent {
                 resultBuilder: resultBuilder,
                 observer: observer,
                 tracing: tracing,
-                stopOnToolError: false
+                stopOnToolError: false,
+                allowConcurrent: configuration.parallelToolCalls
             )
         }
 

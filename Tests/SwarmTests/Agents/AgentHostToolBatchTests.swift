@@ -14,6 +14,8 @@ struct AgentHostToolBatchTests {
         .timeout(.seconds(30))
         .defaultTracingEnabled(false)
 
+    private static let parallelConfiguration = configuration.parallelToolCalls(true)
+
     @Test("Two parallel-eligible regular tools both run; transcript order matches input")
     func twoRegularToolsBatchInInputOrder() async throws {
         let handshake = ToolHandshake()
@@ -34,7 +36,7 @@ struct AgentHostToolBatchTests {
         ])
         let agent = try Agent(
             tools: [search, calc],
-            configuration: Self.configuration,
+            configuration: Self.parallelConfiguration,
             inferenceProvider: provider
         )
 
@@ -46,6 +48,90 @@ struct AgentHostToolBatchTests {
         #expect(result.toolResults.map(\.isSuccess) == [true, true])
         #expect(result.toolResults.map(\.output) == [.string("search"), .string("calc")])
         #expect(await handshake.arrivals == 2)
+    }
+
+    @Test("Default parallelToolCalls false keeps consecutive regulars serial")
+    func defaultConfigurationSerializesRegulars() async throws {
+        let log = ToolPhaseLog()
+        let first = FunctionTool(name: "search", description: "Search") { _ in
+            await log.record("start-search")
+            await Task.yield()
+            await log.record("end-search")
+            return .string("hits")
+        }
+        let second = FunctionTool(name: "calc", description: "Calc") { _ in
+            await log.record("start-calc")
+            await Task.yield()
+            await log.record("end-calc")
+            return .string("4")
+        }
+        let provider = MockInferenceProvider()
+        await provider.setToolCallResponses([
+            InferenceResponse(
+                content: nil,
+                toolCalls: [
+                    InferenceResponse.ParsedToolCall(id: "call_search", name: "search", arguments: [:]),
+                    InferenceResponse.ParsedToolCall(id: "call_calc", name: "calc", arguments: [:]),
+                ],
+                finishReason: .toolCall,
+                usage: nil
+            ),
+            InferenceResponse(content: "done", toolCalls: [], finishReason: .completed, usage: nil),
+        ])
+        let agent = try Agent(
+            tools: [first, second],
+            configuration: Self.configuration,
+            inferenceProvider: provider
+        )
+
+        let result = try await agent.run("search then calc")
+
+        #expect(result.output == "done")
+        #expect(result.toolCalls.map(\.toolName) == ["search", "calc"])
+        #expect(await log.snapshot() == ["start-search", "end-search", "start-calc", "end-calc"])
+    }
+
+    @Test("stopOnToolError still runs later regulars in the same batch then throws")
+    func stopOnToolErrorRunsLaterRegularsThenThrows() async throws {
+        let failing = MockTool(name: "first") { _ in
+            throw AgentError.toolFailure(toolName: "first", message: "boom", cause: nil)
+        }
+        let succeeding = SpyTool(name: "second", result: .string("ok"))
+        let provider = MockInferenceProvider()
+        await provider.setToolCallResponses([
+            InferenceResponse(
+                content: nil,
+                toolCalls: [
+                    InferenceResponse.ParsedToolCall(id: "call_first", name: "first", arguments: [:]),
+                    InferenceResponse.ParsedToolCall(id: "call_second", name: "second", arguments: [:]),
+                ],
+                finishReason: .toolCall,
+                usage: nil
+            ),
+            InferenceResponse(content: "should not run", toolCalls: [], finishReason: .completed, usage: nil),
+        ])
+        let agent = try Agent(
+            tools: [failing, succeeding],
+            configuration: Self.configuration.stopOnToolError(true),
+            inferenceProvider: provider
+        )
+
+        do {
+            _ = try await agent.run("use both")
+            Issue.record("Expected stopOnToolError to throw")
+        } catch let error as AgentError {
+            switch error {
+            case let .toolFailure(toolName, message, _):
+                #expect(toolName == "first")
+                #expect(message?.contains("boom") == true)
+            default:
+                Issue.record("Expected toolFailure, got \(error)")
+            }
+        } catch {
+            Issue.record("Expected AgentError, got \(error)")
+        }
+
+        #expect(await succeeding.callCount == 1)
     }
 
     @Test("Successful handoff skips later regular tools")

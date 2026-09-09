@@ -154,6 +154,14 @@ struct ToolExecutionEngine: Sendable {
     /// stay in input order. Each call uses ``execute`` (live builder, observer,
     /// tracing). `stopOnToolError` rethrows the original tool error after
     /// recording, matching ``executeMapped``.
+    ///
+    /// Concurrent groups are only formed when `allowConcurrent` is true **and**
+    /// the tool's ``ToolExecutionSemantics/runtimePolicy()`` allows overlap.
+    /// Missing tools are treated as parallel-eligible so they fail inside
+    /// ``execute`` rather than forcing a serial split. Isolated builders record
+    /// each overlapping call; results are merged onto `resultBuilder` in input
+    /// order. Observer and tracing callbacks for a concurrent group follow
+    /// completion order.
     func executeBatch(
         _ calls: [some ToolCallGoal],
         registry: ToolRegistry,
@@ -162,7 +170,8 @@ struct ToolExecutionEngine: Sendable {
         resultBuilder: AgentResult.Builder,
         observer: (any AgentObserver)?,
         tracing: TracingHelper?,
-        stopOnToolError: Bool
+        stopOnToolError: Bool,
+        allowConcurrent: Bool
     ) async throws -> [Outcome] {
         guard !calls.isEmpty else {
             return []
@@ -172,7 +181,8 @@ struct ToolExecutionEngine: Sendable {
         eligibility.reserveCapacity(calls.count)
         for call in calls {
             let tool = await registry.tool(named: call.toolName)
-            eligibility.append(tool?.executionSemantics.runtimePolicy().mayRunInParallel ?? true)
+            let mayOverlap = tool?.executionSemantics.runtimePolicy().mayRunInParallel ?? true
+            eligibility.append(allowConcurrent && mayOverlap)
         }
 
         var outcomes = [Outcome?](repeating: nil, count: calls.count)

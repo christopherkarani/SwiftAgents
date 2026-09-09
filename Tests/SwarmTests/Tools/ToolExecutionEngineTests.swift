@@ -216,7 +216,8 @@ struct ToolExecutionSemanticsEngineTests {
             resultBuilder: builder,
             observer: nil,
             tracing: nil,
-            stopOnToolError: false
+            stopOnToolError: false,
+            allowConcurrent: true
         )
 
         #expect(outcomes.map(\.call.toolName) == ["slow", "fast"])
@@ -224,6 +225,50 @@ struct ToolExecutionSemanticsEngineTests {
         let recorded = builder.build()
         #expect(recorded.toolCalls.map(\.toolName) == ["slow", "fast"])
         #expect(recorded.toolResults.map(\.output) == [.string("first"), .string("second")])
+    }
+
+    @Test("executeBatch serializes parallel-eligible tools when allowConcurrent is false")
+    func executeBatchSerializesWhenConcurrencyDisallowed() async throws {
+        let log = ToolPhaseLog()
+        let engine = ToolExecutionEngine()
+        let registry = ToolRegistry()
+        try await registry.register(
+            FunctionTool(name: "a", description: "A") { _ in
+                await log.record("start-a")
+                await Task.yield()
+                await log.record("end-a")
+                return .string("a")
+            }
+        )
+        try await registry.register(
+            FunctionTool(name: "b", description: "B") { _ in
+                await log.record("start-b")
+                await Task.yield()
+                await log.record("end-b")
+                return .string("b")
+            }
+        )
+        let builder = AgentResult.Builder()
+
+        let outcomes = try await engine.executeBatch(
+            [
+                ToolCall(toolName: "a", arguments: [:]),
+                ToolCall(toolName: "b", arguments: [:]),
+            ],
+            registry: registry,
+            agent: ParallelTestMockAgent(),
+            context: nil,
+            resultBuilder: builder,
+            observer: nil,
+            tracing: nil,
+            stopOnToolError: false,
+            allowConcurrent: false
+        )
+
+        #expect(outcomes.map(\.call.toolName) == ["a", "b"])
+        #expect(await log.snapshot() == ["start-a", "end-a", "start-b", "end-b"])
+        let recorded = builder.build()
+        #expect(recorded.toolCalls.map(\.toolName) == ["a", "b"])
     }
 
     @Test("execute still wraps stopOnToolError throws with original cause")
